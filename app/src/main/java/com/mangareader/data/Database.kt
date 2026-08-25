@@ -202,7 +202,7 @@ interface MangaDao {
     suspend fun insertBook(book: Book): Long
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
-    suspend fun insertBooksBatch(books: List<Book>)
+    suspend fun insertBooksBatch(books: List<Book>): List<Long>
 
     @Update
     suspend fun updateBook(book: Book)
@@ -447,6 +447,89 @@ interface MangaDao {
 
     @Query("SELECT anim_dialog_choice FROM reading_progress WHERE bookId = :bookId AND path = :path LIMIT 1")
     suspend fun getAnimDialogChoice(bookId: Long, path: String): Int?
+
+    // ==================== ★ C1 修复：rescan 四表快照回填 ====================
+
+    /** 全字段裸插入回填行（内存合并后调用，IGNORE 仅作防御） */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertProgressFull(row: ReadingProgress)
+
+    @Query("SELECT * FROM reading_progress WHERE bookId IN (:bookIds)")
+    suspend fun getProgressForBooks(bookIds: List<Long>): List<ReadingProgress>
+
+    @Query("SELECT * FROM reading_history WHERE bookId IN (:bookIds)")
+    suspend fun getHistoryForBooks(bookIds: List<Long>): List<ReadingHistory>
+
+    @Query("SELECT * FROM bookshelf_items WHERE bookId IN (:bookIds)")
+    suspend fun getShelfItemsForBooks(bookIds: List<Long>): List<BookshelfItem>
+
+    @Query("SELECT * FROM tag_links WHERE bookId IN (:bookIds)")
+    suspend fun getTagLinksForBooks(bookIds: List<Long>): List<TagLink>
+
+    /**
+     * ★ C1 修复：rescan 原子替换同文件夹书目。
+     *
+     *   旧实现"先删后插"无事务，且 Book 删除经外键 CASCADE 连带清光 reading_progress/tag_links
+     *   （Database.kt :111/:73 外键实锤），bookshelf_items 还会留孤儿记录、history 的 bookId 悬空——
+     *   用户重扫一次书架就丢全部阅读进度。现流程（单事务；SAF 扫描已在事务外完成，防长事务锁库）：
+     *     ① getBooksByFolderParams 快照旧书（与 deleteBooksByFolderParams 完全同 LIKE 范围）
+     *     ② 快照四表旧数据（progress/history/bookshelf_items/tag_links）
+     *     ③ 删旧书（CASCADE 清掉的正是②已快照的数据）
+     *     ④ insertBooksBatch 返回新 id，按 filePath 建 oldId→newId 映射（filePath 有索引无唯一约束）
+     *     ⑤ 回填四表：
+     *        - progress：(newId,path) 冲突（多旧书映射同一新书）保留 updatedAt 最新一条
+     *        - history/bookshelf_items/tag_links：直接重挂 newId
+     *   已知取舍（K.c）：极端并发（正在阅读时 rescan）退出保存写旧 bookId 会因 FK 失败被上层
+     *   try-catch 吞掉——丢一次保存不崩，可接受。
+     */
+    @Transaction
+    suspend fun rescanFolderReplace(auth: String, treeDocId: String, newBooks: List<Book>) {
+        val oldBooks = getBooksByFolderParams(auth, treeDocId)
+        if (oldBooks.isEmpty()) {
+            insertBooksBatch(newBooks)
+            return
+        }
+        val oldIds = oldBooks.map { it.id }
+        val progSnap = getProgressForBooks(oldIds)
+        val histSnap = getHistoryForBooks(oldIds)
+        val shelfSnap = getShelfItemsForBooks(oldIds)
+        val tagSnap = getTagLinksForBooks(oldIds)
+
+        deleteBooksByFolderParams(auth, treeDocId)
+        val newIds = insertBooksBatch(newBooks)
+
+        val newIdByPath = HashMap<String, Long>(newBooks.size * 2)
+        newBooks.forEachIndexed { i, b ->
+            newIds.getOrNull(i)?.takeIf { it != -1L }?.let { newIdByPath[b.filePath] = it }
+        }
+        if (newIdByPath.isEmpty()) return
+
+        val newIdByOldId = HashMap<Long, Long>(oldBooks.size * 2)
+        for (ob in oldBooks) newIdByPath[ob.filePath]?.let { newIdByOldId[ob.id] = it }
+        if (newIdByOldId.isNotEmpty()) {
+            // progress 回填：内存按 (newId,path) 合并，同 key 保留 updatedAt 最新一条后 IGNORE 插入
+            val progMerged = HashMap<Pair<Long, String>, ReadingProgress>()
+            for (p in progSnap) {
+                val nid = newIdByOldId[p.bookId] ?: continue
+                val key = nid to p.path
+                val exist = progMerged[key]
+                if (exist == null || p.updatedAt >= exist.updatedAt) progMerged[key] = p.copy(bookId = nid)
+            }
+            for (p in progMerged.values) insertProgressFull(p)
+
+            for (h in histSnap) {
+                newIdByOldId[h.bookId]?.let { insertHistory(h.copy(id = 0, bookId = it)) }
+            }
+            for (s in shelfSnap) {
+                newIdByOldId[s.bookId]?.let {
+                    insertBookshelfItem(BookshelfItem(bookshelfId = s.bookshelfId, bookId = it))
+                }
+            }
+            for (t in tagSnap) {
+                newIdByOldId[t.bookId]?.let { insertTagLink(TagLink(tagId = t.tagId, bookId = it)) }
+            }
+        }
+    }
 }
 
 @Database(

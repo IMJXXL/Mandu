@@ -157,6 +157,11 @@ class Scanner(private val ctx: Context, private val dao: MangaDao) {
                         }
                     }
                 } finally {
+                    // ★ C5 修复：closeMobiHandle 把 openMobiWithFd 建的 refCount=1 整书 MobiCache 归零释放。
+                    //   注意不要在此关 fd——native openMobiWithFd 五条路径全部自关（cache hit close(fd)/
+                    //   fdopen 后 fclose(fp) 连同底层 fd），此处再关是 double-close，批量 preload 下 fd 号
+                    //   复用会误关下一本书刚打开的 fd
+                    try { com.mangareader.native.NativeEngine.closeMobiHandle(cacheKey) } catch (_: Exception) {}
                     try { pfd?.close() } catch (_: Exception) {}
                 }
             }
@@ -246,13 +251,16 @@ class Scanner(private val ctx: Context, private val dao: MangaDao) {
         if (data.isEmpty()) return null
         return try {
             com.mangareader.native.NativeEngine.decodeRaw(data, 1024, 1024)
-                ?: BitmapFactory.decodeByteArray(data, 0, data.size, BitmapFactory.Options().apply {
-                    inJustDecodeBounds = true
-                }.let { opts ->
+                ?: run {
+                    // ★ C4 修复：显式两遍解码。旧写法在 apply{inJustDecodeBounds=true} 的同一 Options 上
+                    //   立即 let 读 outWidth——decodeByteArray 尚未执行，outWidth=0 → inSampleSize 恒 1，
+                    //   大封面全尺寸解码（正是 catch(OOM) 高发根因）
+                    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    BitmapFactory.decodeByteArray(data, 0, data.size, bounds)
                     var s = 1
-                    while (opts.outWidth / s > 1024 || opts.outHeight / s > 1024) s *= 2
-                    BitmapFactory.Options().apply { inSampleSize = s }
-                })
+                    while (bounds.outWidth / s > 1024 || bounds.outHeight / s > 1024) s *= 2
+                    BitmapFactory.decodeByteArray(data, 0, data.size, BitmapFactory.Options().apply { inSampleSize = s })
+                }
         } catch (e: OutOfMemoryError) {
             System.gc()
             try {
@@ -382,8 +390,9 @@ class Scanner(private val ctx: Context, private val dao: MangaDao) {
             val books = mutableListOf<Book>()
             scanDirFast(auth, f.treeUri, docId, child, books, skipDedup = true)
             if (books.isNotEmpty()) {
-                dao.deleteBooksByFolderParams(auth, docId)
-                dao.insertBooksBatch(books)
+                // ★ C1 修复：删前快照四表+单事务删插回填（原"先删后插"CASCADE 清光阅读进度/标签、书架留孤儿）
+                //   SAF 扫描在事务外，纯 DB 操作由 DAO @Transaction 打包防长事务锁库
+                dao.rescanFolderReplace(auth, docId, books)
                 cacheRealPaths(books)
                 preloadCovers(books)
                 count = books.size - oldCount
@@ -434,17 +443,13 @@ class Scanner(private val ctx: Context, private val dao: MangaDao) {
                     val isDir = mime == DocumentsContract.Document.MIME_TYPE_DIR
 
                     if (isDir) {
-                        // 跳过空文件夹：递归探测（深度≤3）替代原 1 层浅探，让 A/B/C/cbz 等嵌套场景能被扫到
-                        var hasComics = false
-                        try {
-                            hasComics = findFirstCoverInFolder(auth, treeDocId, id) != null
-                        } catch (_: Exception) {}
-                        if (!hasComics) continue  // 真正空文件夹，跳过
-
                         val path = "d:$auth|$treeDocId|$id"
                         if (skipDedup || !isPathDuplicate(path)) {
+                            // ★ C2 修复：判空与取封面合并为一次递归（原 :440+:447 同目录跑两遍
+                            //   findFirstCoverInFolder，SAF binder 开销翻倍；函数确定性保证两次结果相同）
                             var firstCover: String? = null
                             try { firstCover = findFirstCoverInFolder(auth, treeDocId, id) } catch (_: Exception) {}
+                            if (firstCover == null) continue  // 真正空文件夹，跳过
                             books.add(Book(title = name.replace(Regex("[._-]"), " ").trim(), filePath = path, fileType = "dir", coverPath = firstCover))
                             found++; onFound?.invoke(found)
                         }

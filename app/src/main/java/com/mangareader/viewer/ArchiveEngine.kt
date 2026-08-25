@@ -2600,6 +2600,10 @@ class ArchiveEngine(private val ctx: Context) {
 
     private fun buildZipTree(entryNames: List<String>): ZipDirNode {
         val root = ZipDirNode("", "", true)
+        // ★ B4 修复：预建 name→首个 index 映射替代循环内 entryNames.indexOf(name) 的 O(N²)；
+        //   putIfAbsent 保持 indexOf"首个匹配"语义（ZIP 重名时与旧行为一致，getOrDefault 保 -1 语义）
+        val nameToFirstIdx = HashMap<String, Int>(entryNames.size * 2)
+        entryNames.forEachIndexed { i, n -> if (!nameToFirstIdx.containsKey(n)) nameToFirstIdx[n] = i }
         val sorted = entryNames.sortedBy { name -> name.count { it == '/' || it == '\\' } }
         for (name in sorted) {
             val isDir = name.endsWith('/')
@@ -2623,7 +2627,7 @@ class ArchiveEngine(private val ctx: Context) {
                     current.children.add(ZipDirNode(leafName, name, true))
                 }
             } else if (isImg(name)) {
-                current.imageIndices.add(entryNames.indexOf(name))
+                current.imageIndices.add(nameToFirstIdx.getOrDefault(name, -1))
             }
         }
         // 对每个节点的 imageIndices 按文件名自然排序
