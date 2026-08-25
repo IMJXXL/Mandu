@@ -134,7 +134,11 @@ data class ReadingProgress(
     val lastPage: Int = 0,
     val completed: Boolean = false,
     val updatedAt: Long = System.currentTimeMillis(),
-    val anim_dialog_choice: Int = 0
+    val anim_dialog_choice: Int = 0,
+    // ★ v1.13 A'：该卷真实页数（enterReader listPages 结果写入）。
+    //   历史页"第 X/N 页"的 N 改读此卷级值，摆脱 manga_books.totalPages 被多卷聚合污染的问题
+    @ColumnInfo(defaultValue = "0")
+    val totalPages: Int = 0
 )
 
 @Dao
@@ -326,6 +330,31 @@ interface MangaDao {
     @Query("DELETE FROM reading_history")
     suspend fun clearAllHistory()
 
+    // ==================== ★ v1.13 A' 历史页 progress 主导数据源 ====================
+
+    /** 每卷一行：(bookId,path) 唯一索引天然保证；updatedAt>0 过滤 Scanner 占位行与"已隐藏"行 */
+    @Query("""
+        SELECT p.bookId AS bookId, p.path AS chPath, b.title AS bookTitle, b.coverPath AS coverPath,
+               p.lastPage AS lastPage, p.totalPages AS totalPages, p.updatedAt AS updatedAt,
+               p.completed AS completed
+        FROM reading_progress p LEFT JOIN manga_books b ON b.id = p.bookId
+        WHERE p.updatedAt > 0
+        ORDER BY p.updatedAt DESC
+        LIMIT :limit OFFSET :offset
+    """)
+    suspend fun getProgressHistoryPage(limit: Int, offset: Int): List<ProgressHistoryRow>
+
+    /**
+     * ★ v1.13 A' 裁定：删除/清空 = updatedAt 归零"隐藏"，不物理删行——
+     *   lastPage/completed/anim_dialog_choice 全保留（续读与动图选择不受影响），
+     *   归零形态与 Scanner 占位行同构，被所有 updatedAt>0 过滤规则自然兼容。
+     */
+    @Query("UPDATE reading_progress SET updatedAt = 0 WHERE bookId = :bookId AND path = :path")
+    suspend fun hideProgress(bookId: Long, path: String)
+
+    @Query("UPDATE reading_progress SET updatedAt = 0")
+    suspend fun hideAllProgress()
+
     @Query("SELECT * FROM reading_history WHERE bookId = :bookId ORDER BY timestamp DESC LIMIT 10")
     fun getBookHistory(bookId: Long): Flow<List<ReadingHistory>>
 
@@ -428,35 +457,39 @@ interface MangaDao {
     suspend fun getProgress(bookId: Long, path: String): ReadingProgress?
 
     @Query("""
-        INSERT INTO reading_progress(bookId, path, lastPage, completed, updatedAt, anim_dialog_choice)
-        VALUES (:bookId, :path, :lastPage, :completed, :updatedAt, 0)
+        INSERT INTO reading_progress(bookId, path, lastPage, completed, updatedAt, anim_dialog_choice, totalPages)
+        VALUES (:bookId, :path, :lastPage, :completed, :updatedAt, 0, :totalPages)
         ON CONFLICT(bookId, path) DO UPDATE SET
             lastPage = :lastPage,
             completed = :completed,
-            updatedAt = :updatedAt
+            updatedAt = :updatedAt,
+            totalPages = max(totalPages, :totalPages)
         -- ★ v1.11 修订：移除原 completed 的 CASE 单向锁（1→0 禁降）。
         --   实机教训：一旦误标 completed=1（如小页数卷 done 误判/历史脏数据），单向锁让该卷
         --   永久命中"已读完→跳第1页"（enterReader 决策1）且无法自愈——正是"记忆全失效永远回第一页"根因。
         --   改为直写后：save(done=false) 可把误标拉回 false 自然恢复；
         --   动图弹窗按钮不再走本方法（改用 preinsertProgressIfAbsent 占位 + setAnimDialogChoice），
         --   原"弹窗冲掉 completed"的担忧源头已消除。
+        -- ★ v1.13 A'：新增 totalPages 列；UPDATE 用 max() 单调递增——调用点传 0/未知值不会
+        --   把已积累的真实页数覆盖归零（审核第二轮修正项）
     """)
     suspend fun upsertProgress(
-        bookId: Long, path: String, lastPage: Int, completed: Boolean, updatedAt: Long
+        bookId: Long, path: String, lastPage: Int, completed: Boolean, updatedAt: Long,
+        totalPages: Int
     )
 
     // ★ 3+5 改动2：@Transaction 批量保存阅读进度——把 updateReadingProgress + upsertProgress + insertHistory
     //   三条写入打包在单个事务内，save/兜底 save 共用此方法。@Transaction 保证不读到半折叠状态。
     //   绝对不包 syncBookStatusFromProgress：它含 engine.children 文件 IO + nested scope.launch，
-    //   长持事务会卡读者。schema 不升版本（纯加 DAO 方法），version 保持 10。
+    //   长持事务会卡读者。
     @Transaction
     suspend fun saveReaderProgressBatch(
         bookId: Long, pages: Int, timestamp: Long,
         chPath: String, lastPage: Int, completed: Boolean,
-        history: ReadingHistory
+        history: ReadingHistory, totalPages: Int
     ) {
         updateReadingProgress(bookId, pages, timestamp)
-        upsertProgress(bookId, chPath, lastPage, completed, timestamp)
+        upsertProgress(bookId, chPath, lastPage, completed, timestamp, totalPages)
         insertHistory(history)
     }
 
@@ -615,9 +648,24 @@ interface MangaDao {
     }
 }
 
+/**
+ * ★ v1.13 A'：历史页 progress 主导行——每分卷一条独立阅读记忆。
+ *   totalPages 为卷级真实页数（v11 起写入；存量旧行=0 时 UI 退化显示"第 X 页"）。
+ */
+data class ProgressHistoryRow(
+    val bookId: Long,
+    val chPath: String,
+    val bookTitle: String?,
+    val coverPath: String?,
+    val lastPage: Int,
+    val totalPages: Int,
+    val updatedAt: Long,
+    val completed: Boolean
+)
+
 @Database(
     entities = [Book::class, Folder::class, ReadingHistory::class, Bookshelf::class, BookshelfItem::class, Tag::class, TagLink::class, ReadingProgress::class],
-    version = 10,
+    version = 11,
     exportSchema = false
 )
 abstract class MangaDatabase : RoomDatabase() {
@@ -693,13 +741,22 @@ abstract class MangaDatabase : RoomDatabase() {
             }
         }
 
+        // ★ v1.13 A'：reading_progress 加卷级 totalPages 列（历史页"共 N 页"数据源）
+        private val MIGRATION_10_11 = object : androidx.room.migration.Migration(10, 11) {
+            override fun migrate(database: androidx.sqlite.db.SupportSQLiteDatabase) {
+                database.execSQL(
+                    "ALTER TABLE reading_progress ADD COLUMN totalPages INTEGER NOT NULL DEFAULT 0"
+                )
+            }
+        }
+
         fun getDatabase(context: Context): MangaDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
                     context.applicationContext,
                     MangaDatabase::class.java,
                     "manga_reader_db"
-                ).addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
+                ).addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
                 .build()
                 INSTANCE = instance
                 instance

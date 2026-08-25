@@ -27,31 +27,36 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
-import com.mangareader.data.HistoryRow
+import com.mangareader.data.ProgressHistoryRow
 import java.io.File
 import java.security.MessageDigest
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+/** ★ v1.13 A'：每分卷一条独立阅读记忆（数据源 reading_progress，(bookId,path) 唯一天然每卷一行） */
 private data class HistorySession(
     val bookId: Long,
     val title: String?,
     val coverPath: String?,
-    val lastPath: String?,
-    val pagesRead: Int,
-    val latestTimestamp: Long,
-    val histIds: List<Long>,
-    val lastPage: Int?,
-    val totalPages: Int?
+    val chPath: String,
+    val lastPage: Int,
+    val totalPages: Int,
+    val updatedAt: Long,
+    val completed: Boolean
+)
+
+private fun ProgressHistoryRow.toSession() = HistorySession(
+    bookId = bookId, title = bookTitle, coverPath = coverPath, chPath = chPath,
+    lastPage = lastPage, totalPages = totalPages, updatedAt = updatedAt, completed = completed
 )
 
 /**
  * ★ F 历史记录页：阅读时间线 + 点击续读。
- *  - ②同书 <30min 的连续记录内存聚合为一个"阅读会话"，防逐页刷屏
+ *  - v1.13 A'：progress 主导——downloads 多分卷书每卷独立展示，"共 N 页"取卷级真实页数
  *  - 时间分桶组头：今天/昨天/本周/更早
- *  - 点击列表项 → openBook(bookId, lastPath) 复用 reader/{id}?jump={jump} 精确续读
- *  - 顶栏清空按钮（二次确认），不做自动清理
+ *  - 点击列表项 → openBook(bookId, chPath) 复用 reader/{id}?jump={jump} 精确续读
+ *  - 清空/长按移除 = updatedAt 归零隐藏（不物理删行，续读进度与动图选择全保留）
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -66,8 +71,7 @@ fun HistoryScreen(onBack: () -> Unit, onOpen: (Long, String?) -> Unit) {
 
     LaunchedEffect(Unit) {
         try {
-            val rows = dao.getHistoryPage(limit = 500, offset = 0)
-            sessions = aggregateSessions(rows)
+            sessions = dao.getProgressHistoryPage(limit = 500, offset = 0).map { it.toSession() }
         } catch (_: Exception) {}
         loaded = true
     }
@@ -76,12 +80,12 @@ fun HistoryScreen(onBack: () -> Unit, onOpen: (Long, String?) -> Unit) {
         AlertDialog(
             onDismissRequest = { showClearDialog = false },
             title = { Text("清空阅读历史") },
-            text = { Text("将删除全部历史记录，此操作不可恢复。确定继续吗？") },
+            text = { Text("将把全部记录移出阅读历史。\n各卷的阅读进度与「继续读」位置会保留，不受影响。") },
             confirmButton = {
                 TextButton(onClick = {
                     showClearDialog = false
                     scope.launch {
-                        try { dao.clearAllHistory() } catch (_: Exception) {}
+                        try { dao.hideAllProgress() } catch (_: Exception) {}
                         sessions = emptyList()
                     }
                 }) { Text("清空", color = MaterialTheme.colorScheme.error) }
@@ -120,7 +124,7 @@ fun HistoryScreen(onBack: () -> Unit, onOpen: (Long, String?) -> Unit) {
             ) {
                 var lastBucket = -1
                 for ((i, s) in sessions.withIndex()) {
-                    val bucket = bucketOf(s.latestTimestamp)
+                    val bucket = bucketOf(s.updatedAt)
                     if (bucket != lastBucket) {
                         lastBucket = bucket
                         item(key = "header_$bucket") {
@@ -133,16 +137,16 @@ fun HistoryScreen(onBack: () -> Unit, onOpen: (Long, String?) -> Unit) {
                             )
                         }
                     }
-                    item(key = "s_${s.bookId}_${s.latestTimestamp}_$i") {
+                    item(key = "p_${s.bookId}_${s.chPath.hashCode()}_$i") {
                         HistoryItemRow(
                             s,
                             onDelete = {
                                 scope.launch {
-                                    try { dao.deleteHistoryByIds(s.histIds) } catch (_: Exception) {}
+                                    try { dao.hideProgress(s.bookId, s.chPath) } catch (_: Exception) {}
                                     sessions = sessions.filterNot { it === s }
                                 }
                             }
-                        ) { onOpen(s.bookId, s.lastPath) }
+                        ) { onOpen(s.bookId, s.chPath) }
                     }
                 }
             }
@@ -151,24 +155,7 @@ fun HistoryScreen(onBack: () -> Unit, onOpen: (Long, String?) -> Unit) {
 }
 
 /** 同一本书只聚合成一条：时间取最近一次，路径/页码取最新在读卷，histIds 收齐供移除 */
-private fun aggregateSessions(rows: List<HistoryRow>): List<HistorySession> {
-    val byBook = LinkedHashMap<Long, MutableList<HistoryRow>>()
-    for (r in rows) byBook.getOrPut(r.bookId) { mutableListOf() }.add(r)
-    return byBook.values.map { list ->
-        val latest = list.maxByOrNull { it.timestamp } ?: list.first()
-        HistorySession(
-            bookId = latest.bookId,
-            title = list.firstNotNullOfOrNull { it.bookTitle } ?: latest.bookTitle,
-            coverPath = list.firstNotNullOfOrNull { it.coverPath } ?: latest.coverPath,
-            lastPath = latest.lastPath ?: list.firstNotNullOfOrNull { it.lastPath },
-            pagesRead = latest.pagesRead,
-            latestTimestamp = latest.timestamp,
-            histIds = list.map { it.histId },
-            lastPage = latest.lastPage,
-            totalPages = latest.totalPages
-        )
-    }
-}
+// v1.13 A'：数据源已切 reading_progress（每卷一行），聚合函数不再需要
 
 // —— 时间分桶 ——
 
@@ -203,7 +190,7 @@ private fun HistoryItemRow(s: HistorySession, onDelete: () -> Unit, onClick: () 
         AlertDialog(
             onDismissRequest = { showDelete = false },
             title = { Text("移除这条记录") },
-            text = { Text("将从阅读历史中移除「${s.title ?: "已删除书籍"}」的这条会话记录。") },
+            text = { Text("将把「${s.title ?: "已删除书籍"}」的这一卷移出阅读历史。\n该卷的阅读进度与「继续读」位置会保留。") },
             confirmButton = {
                 TextButton(onClick = { showDelete = false; onDelete() }) { Text("移除", color = MaterialTheme.colorScheme.error) }
             },
@@ -224,24 +211,17 @@ private fun HistoryItemRow(s: HistorySession, onDelete: () -> Unit, onClick: () 
                 s.title ?: "已删除书籍",
                 fontSize = 15.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis
             )
-            if (!s.lastPath.isNullOrEmpty()) {
-                Text(
-                    chapterLabel(s.lastPath),
-                    fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis
-                )
-            }
+            Text(
+                chapterLabel(s.chPath),
+                fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1, overflow = TextOverflow.Ellipsis
+            )
             Text(
                 buildString {
-                    append("读 ")
-                    if (s.lastPage != null && s.lastPage >= 0) {
-                        val total = s.totalPages
-                        if (total != null && total > 0) append("第 ${s.lastPage + 1}/$total 页")
-                        else append("第 ${s.lastPage + 1} 页")
-                    } else {
-                        append("${s.pagesRead} 页")
-                    }
-                    append(" · ${relativeTime(s.latestTimestamp)}")
+                    append(if (s.completed) "读完 · " else "读 ")
+                    if (s.totalPages > 0) append("第 ${s.lastPage + 1}/${s.totalPages} 页")
+                    else append("第 ${s.lastPage + 1} 页")
+                    append(" · ${relativeTime(s.updatedAt)}")
                 },
                 fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -273,13 +253,13 @@ private fun CoverThumb(coverPath: String?) {
     )
 }
 
-/** 卷名提取：z:a:...//subPath/ → subPath 尾段；d:/a: → doc 段文件名 */
+/** 卷名提取：z:a:...//subPath/ → subPath 尾段（去扩展名）；d:/a: → doc 段文件名 */
 private fun chapterLabel(path: String): String {
     return try {
         if (path.startsWith("z:")) {
             val inner = path.removePrefix("z:")
             val subPath = inner.substringAfter("//", "").trimEnd('/')
-            if (subPath.isNotEmpty()) subPath.substringAfterLast('/')
+            if (subPath.isNotEmpty()) subPath.substringAfterLast('/').substringBeforeLast('.')
             else inner.substringBefore("//").substringAfterLast('/').substringBeforeLast('.')
         } else {
             val doc = path.split("|").getOrNull(2) ?: path

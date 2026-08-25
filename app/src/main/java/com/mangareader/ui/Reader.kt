@@ -373,7 +373,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit) {
                             scrollX = sx, scrollY = sy, zoomLevel = zs
                         )
                         withContext(Dispatchers.IO) {
-                            dao.saveReaderProgressBatch(b.id, curSnap + 1, now, chPathSnap, curSnap, done, history)
+                            dao.saveReaderProgressBatch(b.id, curSnap + 1, now, chPathSnap, curSnap, done, history, pageListSnap.size)
                         }
                         syncBookStatusFromProgress(b, now, pageListSnap.size)
                     } catch (_: Exception) {}
@@ -412,7 +412,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit) {
                     scrollX = cx, scrollY = cy, zoomLevel = zs
                 )
                 withContext(Dispatchers.IO) {
-                    dao.saveReaderProgressBatch(b.id, curSnap + 1, now, chPathSnap, curSnap, done, history)
+                    dao.saveReaderProgressBatch(b.id, curSnap + 1, now, chPathSnap, curSnap, done, history, pageListSnap.size)
                 }
                 syncBookStatusFromProgress(b, now, pageListSnap.size)
             } catch (_: Exception) {
@@ -468,7 +468,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit) {
         //   重置 completed=false 后走下方正常恢复分支，用户下次翻页即彻底自愈，无需手动清数据。
         val healed = if (progress != null && progress.completed && progress.lastPage == 0 && pages.size > 1) {
             try {
-                withContext(Dispatchers.IO) { dao.upsertProgress(b.id, path, 0, false, System.currentTimeMillis()) }
+                withContext(Dispatchers.IO) { dao.upsertProgress(b.id, path, 0, false, System.currentTimeMillis(), pages.size) }
             } catch (_: Exception) {}
             true
         } else false
@@ -484,7 +484,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit) {
         val willMarkRead = !healed && progress != null && !progress.completed && pages.size > 1 && progress.lastPage >= pages.size - 1
         if (willMarkRead) {
             val now = System.currentTimeMillis()
-            try { withContext(Dispatchers.IO) { dao.upsertProgress(b.id, path, progress.lastPage, true, now) } } catch (_: Exception) {}
+            try { withContext(Dispatchers.IO) { dao.upsertProgress(b.id, path, progress.lastPage, true, now, pages.size) } } catch (_: Exception) {}
         }
         // ★ 已读完卷再次进入跳第 1 页（progress.completed==true 或本次正补写完成位 willMarkRead → lastPage=0）
         val lastPage = if (progress?.completed == true || willMarkRead) 0 else (progress?.lastPage ?: 0)
@@ -860,7 +860,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit) {
         app.appScope.launch {
             try {
                 withContext(Dispatchers.IO) {
-                    dao.upsertProgress(b.id, chPathSnap, curPageCount - 1, true, now)
+                    dao.upsertProgress(b.id, chPathSnap, curPageCount - 1, true, now, curPageCount)
                 }
                 // ★ §37(14) 父书状态聚合：按子卷 completed 计数判定阅读中/已读完/未读
                 //   单卷书（a: 类型无子卷）保留原 readPages>=totalPages 语义
