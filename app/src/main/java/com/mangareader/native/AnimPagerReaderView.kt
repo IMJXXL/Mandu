@@ -1,0 +1,318 @@
+package com.mangareader.native
+
+import android.content.Context
+import android.graphics.Canvas
+import android.graphics.drawable.Drawable
+import android.view.GestureDetector
+import android.view.MotionEvent
+import android.view.View
+import android.view.ViewGroup
+import android.widget.FrameLayout
+import android.widget.ImageView
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
+import androidx.viewpager2.widget.ViewPager2
+import com.github.penfeizhou.animation.apng.APNGDrawable
+import com.github.penfeizhou.animation.gif.GifDrawable
+import com.github.penfeizhou.animation.loader.ByteBufferLoader
+import com.github.penfeizhou.animation.webp.WebPDrawable
+import com.mangareader.viewer.AnimKind
+import com.mangareader.viewer.ArchiveEngine
+import java.nio.ByteBuffer
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+/**
+ * ★ §34 动图卷专用阅读视图（用户 2026-08-15 决策：动图卷单独引入全新视图，不复用 PagerReaderView 复杂时序）。
+ *
+ * 设计要点：
+ * 1. ViewPager2 + PagerAdapter 做"一页一整页"翻页（与 PagerReaderView 一致，VERT_PAGER 时切竖向）。
+ * 2. Adapter 不复用 holder：[RecyclerView.RecycledViewPool.setMaxRecycledViews] 设 0 → 每次 onBind 都 onCreate 新 holder
+ *    → 每个 page 独立 ImageView + 独立 Drawable，离开屏幕后 holder 被回收不复用至别的 page。
+ * 3. WebView 行为委托 Android framework：drawable 构造后 iv.setImageDrawable(drawable)，
+ *    holder attach → ImageView 触发 drawable.setVisible(true) → FrameAnimationDrawable.autoPlay=true → innerStart() 自动启动；
+ *    holder detach → setVisible(false) → innerStop() 自动停止。**完全不写 stop/start 状态机**。
+ * 4. 不维护 pageAnimDrawables map / inflight set / animRawCache——holder 自带的 drawable 就是缓存。
+ *    唯一 IO 优化：onBind 时若 inflightLoads 已含此 idx → 复用正在飞的 load 结果（避免快速翻动重复 IO）。
+ *
+ * 数据源支持：folder (d:)、zip/apk/epub (a:)、压缩内嵌套 (z:)——Api 全部经 ArchiveEngine.loadPageRaw 抽象。
+ *
+ * 注意：本视图不做静图降级——若卷里出现静图页，它会显示空白（静图卷会被 Reader.kt 路由至 PagerReaderView）。
+ * Reader.kt 进卷 peek 首页判定为动图后才用本视图。
+ */
+class AnimPagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelegate {
+
+    private val viewPager: ViewPager2
+    private var pagerAdapter: AnimPagerAdapter? = null
+
+    private var engine: ArchiveEngine? = null
+    private var treePath: String = ""
+    private var pageList: List<ArchiveEngine.PageMeta> = emptyList()
+    private var currentPage = 0
+    private var isRtl = false
+    private var verticalPager: Boolean = false
+
+    var pageBgColor: Int = android.graphics.Color.parseColor("#111111")
+    var imageMarginH: Int = 0
+
+    private var loadScope: CoroutineScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+    /** IO inflight 守卫：避免 onBind 同 idx 触发多次 load + 同 holder 二次重设 */
+    private val inflightLoads = java.util.Collections.synchronizedSet(HashSet<Int>())
+
+    override var onPageChanged: ((Int) -> Unit)? = null
+    override var onToggleUi: (() -> Unit)? = null
+
+    /** ★ §34.1 hook：同 PagerReaderView 语义——Reader.kt 用来挂钩动图提示（本视图本身就在播，不需弹窗）*/
+    var onAnimDetected: ((animatedCount: Int) -> Unit)? = null
+    /** ★ §34.1 进卷必须调一次该批量检查以判定本卷是否动图卷——Reader.kt 触发外部提示决策 */
+    var onChapterAllAnimated: ((isAllAnimated: Boolean) -> Unit)? = null
+
+    private var navigation: ViewerNavigation = DefaultNavigation
+    private var centerGapType: Int = 0
+
+    init {
+        viewPager = ViewPager2(context).apply {
+            layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
+            offscreenPageLimit = 1
+            isUserInputEnabled = true
+            registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
+                override fun onPageSelected(position: Int) {
+                    val realPos = if (isRtl) pageList.size - 1 - position else position
+                    if (realPos in pageList.indices && realPos != currentPage) {
+                        currentPage = realPos
+                        onPageChanged?.invoke(currentPage)
+                    }
+                }
+            })
+        }
+        addView(viewPager)
+        isFocusable = true; isFocusableInTouchMode = true
+    }
+
+    private val gestureDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
+        override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
+            if (width == 0 || height == 0) return false
+            val fx = e.x / width
+            val fy = e.y / height
+            val action = navigation.getAction(fx, fy)
+            when (action) {
+                NavigationAction.PREV -> { if (!verticalPager && isRtl) nextPage() else prevPage() }
+                NavigationAction.NEXT -> { if (!verticalPager && isRtl) prevPage() else nextPage() }
+                NavigationAction.MENU -> { onToggleUi?.invoke() }
+            }
+            return true
+        }
+    })
+
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        super.dispatchTouchEvent(ev)
+        gestureDetector.onTouchEvent(ev)
+        return true
+    }
+
+    override fun setup(
+        engine: ArchiveEngine, treePath: String, pages: List<ArchiveEngine.PageMeta>,
+        startPage: Int, vertical: Boolean, clickFlip: Int, rtl: Boolean, verticalPager: Boolean
+    ) {
+        val pagesChanged = this.pageList.size != pages.size || this.treePath != treePath
+        val rtlChanged = this.isRtl != rtl
+        val orientationChanged = this.verticalPager != verticalPager
+        this.engine = engine; this.treePath = treePath; this.pageList = pages; this.isRtl = rtl; this.verticalPager = verticalPager
+        this.navigation = if (verticalPager) VerticalPagerNavigation else DefaultNavigation
+        viewPager.orientation = if (verticalPager) ViewPager2.ORIENTATION_VERTICAL else ViewPager2.ORIENTATION_HORIZONTAL
+        if (pagesChanged) {
+            this.currentPage = startPage
+            loadScope.cancel()
+            loadScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+            inflightLoads.clear()
+            pagerAdapter = AnimPagerAdapter()
+            viewPager.adapter = pagerAdapter
+            // ★ 关键：禁用 RecyclerView 的 holder 复用——每页独立 holder，避免 drawable 被错种到别页
+            val rv = viewPager.getChildAt(0) as? RecyclerView
+            rv?.setRecycledViewPool(object : RecyclerView.RecycledViewPool() {
+                override fun setMaxRecycledViews(viewType: Int, max: Int) {}  // 永远不增长
+                override fun getRecycledView(viewType: Int): RecyclerView.ViewHolder? = null  // 永不返回复用实例
+            })
+            // 强制 RV 每次都 onCreateViewHolder——还给一个超大的缓存上限，避免 drop
+            rv?.setItemViewCacheSize(0)
+            viewPager.setCurrentItem((if (isRtl) pages.size - 1 - startPage else startPage).coerceIn(0, pages.size - 1), false)
+        } else if (rtlChanged || orientationChanged) {
+            this.currentPage = startPage
+            val pos = if (isRtl) pages.size - 1 - startPage else startPage
+            viewPager.setCurrentItem(pos.coerceIn(0, pages.size - 1), false)
+        } else {
+            this.currentPage = startPage
+        }
+    }
+
+    override fun goToPage(page: Int) {
+        if (page < 0 || page >= pageList.size) return
+        val pos = if (isRtl) pageList.size - 1 - page else page
+        viewPager.setCurrentItem(pos.coerceIn(0, pagerAdapter?.itemCount?.minus(1) ?: 0), false)
+    }
+
+    override fun release() {
+        loadScope.cancel()
+        pagerAdapter = null
+        viewPager.adapter = null
+    }
+
+    override fun trimMemory(level: Int) {
+        // ★ 简版：不开销——RV 自己会回收离屏 holder，drawable 在 detach 时被 innerStop
+    }
+
+    fun nextPage() {
+        if (currentPage < pageList.size - 1) goToPage(currentPage + 1)
+    }
+    fun prevPage() {
+        if (currentPage > 0) goToPage(currentPage - 1)
+    }
+
+    /** ★ §34.1 单页动图 Drawable 构造——同 PagerReaderView.makeAPNGAnimDrawable，复制以解耦 */
+    private fun makeAnimDrawable(raw: ByteArray, kind: AnimKind): Drawable? {
+        return try {
+            val loader = object : ByteBufferLoader() {
+                override fun getByteBuffer(): ByteBuffer = ByteBuffer.wrap(raw)
+            }
+            when (kind) {
+                AnimKind.WEBP -> WebPDrawable(loader)
+                AnimKind.APNG -> APNGDrawable(loader)
+                AnimKind.GIF -> GifDrawable(loader)
+                AnimKind.NONE -> null
+            }
+        } catch (t: Throwable) {
+            null
+        }
+    }
+
+    /** ★ §34.1 单页 raw kind peek（suspend）——在 IO 线程做，不能在主线程同步调
+     *   这是 ArchiveEngine.peekAnimKind 是 suspend 函数的强制要求 */
+    private suspend fun peekAnimKindSuspend(idx: Int): AnimKind {
+        val e = engine ?: return AnimKind.NONE
+        val meta = pageList.getOrNull(idx) ?: return AnimKind.NONE
+        return try { e.peekAnimKind(treePath, meta) } catch (_: Exception) {
+            AnimKind.NONE
+        }
+    }
+
+    /** ★ §34.1 异步加载单页动图——内部走 peekAnimKind 判 kind → loadPageRaw → makeAnimDrawable → set 到 ImageView。
+     *  使用 inflight 守卫避免同 idx 重复触发。userIdx 是调用者期望的 page idx（用于 holder fresh 校验） */
+    private fun loadAndSetDrawableAsync(idx: Int, holder: AnimViewHolder) {
+        val e = engine ?: return
+        val meta = pageList.getOrNull(idx) ?: return
+        if (!inflightLoads.add(idx)) {
+            return
+        }
+        loadScope.launch {
+            try {
+                // 1. peek kind（IO 线程）
+                val kind = withContext(Dispatchers.IO) { peekAnimKindSuspend(idx) }
+                if (kind == AnimKind.NONE) {
+                    // ★ §34.5 静图 placeholder 空白（理论上 Reader.kt 已分流：纯动图卷才用本视图）
+                    return@launch
+                }
+                // 2. load raw
+                val raw = withContext(Dispatchers.IO) {
+                    try { e.loadPageRaw(meta, treePath) } catch (_: Exception) {
+                        null
+                    }
+                }
+                if (raw == null) return@launch
+                // 3. 构造 drawable
+                val drawable = withContext(Dispatchers.IO) {
+                    try { makeAnimDrawable(raw, kind) } catch (_: Exception) { null }
+                }
+                if (drawable == null) return@launch
+                // 4. 主线程 set 到 holder
+                withContext(Dispatchers.Main) {
+                    val pos = holder.bindingAdapterPosition
+                    val fresh = pos != RecyclerView.NO_POSITION && pos in pageList.indices
+                            && (if (isRtl) pageList.size - 1 - pos else pos) == idx
+                    if (fresh) {
+                        holder.setDrawable(idx, drawable)
+                    }
+                }
+            } finally {
+                inflightLoads.remove(idx)
+            }
+        }
+    }
+
+    inner class AnimPagerAdapter : RecyclerView.Adapter<AnimViewHolder>() {
+        override fun getItemCount() = pageList.size
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): AnimViewHolder {
+            val container = FrameLayout(parent.context).apply {
+                layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                setBackgroundColor(pageBgColor)
+                val marginPx = (imageMarginH * parent.context.resources.displayMetrics.density).toInt()
+                setPadding(marginPx, 0, marginPx, 0)
+            }
+            val iv = ImageView(parent.context).apply {
+                id = android.R.id.content
+                layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                scaleType = ImageView.ScaleType.FIT_CENTER
+                visibility = View.VISIBLE
+            }
+            container.addView(iv)
+            return AnimViewHolder(container)
+        }
+        override fun onBindViewHolder(holder: AnimViewHolder, position: Int) {
+            val realIdx = if (isRtl) pageList.size - 1 - position else position
+            val container = holder.itemView as FrameLayout
+            val marginPx = (imageMarginH * container.context.resources.displayMetrics.density).toInt()
+            container.setPadding(marginPx, 0, marginPx, 0)
+            container.setBackgroundColor(pageBgColor)
+
+            holder.reset()  // ★ 清前一张残留 drawable（若是新 holder 则空操作）
+            // ★ §34.5：peek 改到 loadAndSetDrawableAsync 内部做（ArchiveEngine.peekAnimKind 是 suspend，
+            //   不能在主线程同步调）。该函数里 IO peek + load + makeDrawable + 主线程 set。
+            loadAndSetDrawableAsync(realIdx, holder)
+        }
+        override fun onViewRecycled(holder: AnimViewHolder) {
+            holder.reset()
+        }
+    }
+
+    inner class AnimViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
+        private val iv: ImageView? = itemView.findViewById(android.R.id.content)
+        private var currentIdx: Int = -1
+        private var currentDrawable: Drawable? = null
+
+        /** ★ 设置 idx 的 drawable——记住 idx 防错配，set 到 ImageView 让 framework 管 start/stop */
+        fun setDrawable(idx: Int, drawable: Drawable) {
+            if (currentIdx == idx && currentDrawable === drawable) return  // 同实例 SKIP
+            reset()
+            currentIdx = idx
+            currentDrawable = drawable
+            iv?.setImageDrawable(drawable)
+            // ★ 不主动 start——holder attach 到 RV 后 ImageView 会调 drawable.setVisible(true)
+            //   → FrameAnimationDrawable 内部 autoPlay=true → innerStart() 自动跑
+            //   但本调用发生时 holder 已经 attach（onBindViewHolder 在可见前调）
+            //   实测部分情况 setVisible 未触发，安全兜底：若 isRunning=false 直接 start
+            (drawable as? android.graphics.drawable.Animatable)?.let { anim ->
+                if (!anim.isRunning) {
+                    try { anim.start() } catch (_: Throwable) {}
+                }
+            }
+        }
+
+        /** 清掉本 holder 的 drawable——detach 时被 onViewRecycled 调；或下次 onBind 防残留调 */
+        fun reset() {
+            currentDrawable?.let { d ->
+                (d as? android.graphics.drawable.Animatable)?.let {
+                    try { if (it.isRunning) it.stop() } catch (_: Throwable) {}
+                }
+                iv?.setImageDrawable(null)
+            }
+            currentIdx = -1
+            currentDrawable = null
+        }
+    }
+
+    fun setCenterGapType(type: Int) { this.centerGapType = type }
+}

@@ -1,0 +1,757 @@
+package com.mangareader.ui
+
+import android.app.Activity
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.core.content.FileProvider
+import com.mangareader.App
+import com.mangareader.Scanner
+import com.mangareader.data.Bookshelf
+import com.mangareader.data.Folder
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SettingsScreen(onBack: () -> Unit) {
+    val ctx = LocalContext.current
+    val app = ctx.applicationContext as App
+    val dao = remember { app.db.mangaDao() }
+    val scanner = remember { Scanner(ctx, dao) }
+    val scope = rememberCoroutineScope()
+    val prefs = remember { ctx.getSharedPreferences("manga_reader", Context.MODE_PRIVATE) }
+    var config by remember { mutableStateOf(com.mangareader.data.ReaderConfig.load(ctx)) }
+    var totalBooks by remember { mutableIntStateOf(0) }
+    var readBooks by remember { mutableIntStateOf(0) }
+    var folders by remember { mutableStateOf(listOf<Folder>()) }
+    var bookshelves by remember { mutableStateOf(listOf<Bookshelf>()) }
+    var scanning by remember { mutableStateOf(false) }
+    var scanTarget by remember { mutableStateOf("") }
+    var scanCount by remember { mutableIntStateOf(0) }
+    var showDeleteFolder by remember { mutableStateOf<Folder?>(null) }
+    var showDeleteShelf by remember { mutableStateOf<Bookshelf?>(null) }
+    var showNomediaDialog by remember { mutableStateOf<android.net.Uri?>(null) }
+    var editShelf by remember { mutableStateOf<Bookshelf?>(null) }
+    var editShelfName by remember { mutableStateOf("") }
+    var showCreateShelf by remember { mutableStateOf(false) }
+    var newShelfName by remember { mutableStateOf("") }
+
+    var showScrollModeDialog by remember { mutableStateOf(false) }
+    var showClickFlipDialog by remember { mutableStateOf(false) }
+    var showReadingSettings by remember { mutableStateOf(false) }
+
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
+        if (r.resultCode == Activity.RESULT_OK) r.data?.data?.let { uri ->
+            scope.launch {
+                try { ctx.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION) } catch (_: Exception) {}
+                scanning = true; scanTarget = "扫描中..."; scanCount = 0
+                val n = withContext(Dispatchers.IO) { scanner.scan(uri) { count -> scanCount = count } }
+                scanning = false
+                withContext(Dispatchers.IO) { totalBooks = dao.countAll() }
+                Toast.makeText(ctx, if (n > 0) "导入完成，共 $n 本漫画" else "未找到漫画文件", Toast.LENGTH_SHORT).show()
+                if (n > 0) {
+                    // 检查.nomedia（立即执行，不等封面预加载）
+                    try {
+                        val hasNomedia = withContext(Dispatchers.IO) { scanner.checkNomedia(uri) }
+                        if (!hasNomedia) {
+                            showNomediaDialog = uri
+                        }
+                    } catch (_: Exception) {}
+                    withContext(Dispatchers.IO) {
+                        val books = dao.getAllBooksList()
+                        scanner.preloadCovers(books)
+                        totalBooks = dao.countAll()
+                    }
+                }
+            }
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) { totalBooks = dao.countAll(); readBooks = dao.countReadBooks() }
+    }
+    LaunchedEffect(Unit) { dao.getAllFolders().collect { folders = it } }
+    LaunchedEffect(Unit) { dao.getAllBookshelves().collect { bookshelves = it } }
+
+    if (showDeleteFolder != null) {
+        val f = showDeleteFolder!!
+        AlertDialog(onDismissRequest = { showDeleteFolder = null }, title = { Text("删除文件夹") },
+            text = { Text("删除「${f.displayName}」及该文件夹下所有漫画记录？原始文件不受影响。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    scope.launch {
+                        withContext(Dispatchers.IO) {
+                            val treeUri = Uri.parse(f.treeUri)
+                            val docId = treeUri.lastPathSegment ?: ""
+                            val auth = treeUri.authority ?: ""
+                            dao.deleteBooksByFolderParams(auth, docId.removePrefix("tree:"))
+                            dao.deleteFolder(f)
+                        }
+                        showDeleteFolder = null
+                        withContext(Dispatchers.IO) { totalBooks = dao.countAll() }
+                        Toast.makeText(ctx, "已删除", Toast.LENGTH_SHORT).show()
+                    }
+                }) { Text("确定", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { showDeleteFolder = null }) { Text("取消") } })
+    }
+
+    if (showNomediaDialog != null) {
+        val uri = showNomediaDialog!!
+        AlertDialog(onDismissRequest = { showNomediaDialog = null },
+            title = { Text("添加 .nomedia 文件") },
+            text = { Text("该文件夹中没有 .nomedia 文件。\n\n添加后可以防止系统相册扫描到漫画图片，避免漫画封面出现在相册中。\n\n是否添加？") },
+            confirmButton = {
+                TextButton(onClick = {
+                    scope.launch {
+                        withContext(Dispatchers.IO) { scanner.createNomedia(uri) }
+                        showNomediaDialog = null
+                        Toast.makeText(ctx, "已添加 .nomedia 文件", Toast.LENGTH_SHORT).show()
+                    }
+                }) { Text("添加") }
+            },
+            dismissButton = { TextButton(onClick = { showNomediaDialog = null }) { Text("跳过") } })
+    }
+
+    if (showDeleteShelf != null) {
+        val s = showDeleteShelf!!
+        AlertDialog(onDismissRequest = { showDeleteShelf = null }, title = { Text("删除书架") },
+            text = { Text("删除书架「${s.name}」？书架内的漫画不受影响。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    scope.launch { withContext(Dispatchers.IO) { dao.deleteBookshelf(s) }; showDeleteShelf = null }
+                }) { Text("确定", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { showDeleteShelf = null }) { Text("取消") } })
+    }
+
+    if (editShelf != null) {
+        AlertDialog(onDismissRequest = { editShelf = null }, title = { Text("编辑书架名称") },
+            text = { OutlinedTextField(value = editShelfName, onValueChange = { editShelfName = it }, singleLine = true, modifier = Modifier.fillMaxWidth()) },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (editShelfName.isNotBlank()) {
+                        scope.launch { withContext(Dispatchers.IO) { dao.updateBookshelf(editShelf!!.copy(name = editShelfName.trim())) }; editShelf = null }
+                    }
+                }) { Text("保存") }
+            },
+            dismissButton = { TextButton(onClick = { editShelf = null }) { Text("取消") } })
+    }
+
+    if (showCreateShelf) {
+        AlertDialog(onDismissRequest = { showCreateShelf = false }, title = { Text("新建书架") },
+            text = { OutlinedTextField(value = newShelfName, onValueChange = { newShelfName = it }, label = { Text("书架名称") }, singleLine = true, modifier = Modifier.fillMaxWidth()) },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (newShelfName.isNotBlank()) {
+                        scope.launch {
+                            withContext(Dispatchers.IO) {
+                                val maxOrder = bookshelves.maxOfOrNull { it.sortOrder } ?: 0
+                                dao.insertBookshelf(Bookshelf(name = newShelfName.trim(), sortOrder = maxOrder + 1))
+                            }
+                            newShelfName = ""
+                            showCreateShelf = false
+                        }
+                    }
+                }) { Text("创建") }
+            },
+            dismissButton = { TextButton(onClick = { showCreateShelf = false; newShelfName = "" }) { Text("取消") } })
+    }
+
+    if (scanning) {
+        val infiniteTransition = rememberInfiniteTransition(label = "scan")
+        val animProgress by infiniteTransition.animateFloat(
+            initialValue = 0f, targetValue = 1f,
+            animationSpec = infiniteRepeatable(tween(800, easing = LinearEasing), RepeatMode.Restart),
+            label = "runCycle"
+        )
+        AlertDialog(onDismissRequest = {}, title = { Text("导入漫画") },
+            text = {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                    Canvas(Modifier.size(64.dp)) {
+                        val w = size.width; val h = size.height
+                        val cx = w * 0.5f; val ground = h * 0.85f
+                        val phase = animProgress * 2f * Math.PI.toFloat()
+                        drawCircle(Color(0xFF7C8CF8), radius = w * 0.08f, center = Offset(cx, h * 0.3f))
+                        drawLine(Color(0xFF7C8CF8), Offset(cx, h * 0.38f), Offset(cx, h * 0.6f), strokeWidth = w * 0.06f)
+                        val armSwing = kotlin.math.sin(phase.toDouble()).toFloat() * w * 0.12f
+                        drawLine(Color(0xFF7C8CF8), Offset(cx, h * 0.42f), Offset(cx - armSwing, h * 0.55f), strokeWidth = w * 0.04f)
+                        drawLine(Color(0xFF7C8CF8), Offset(cx, h * 0.42f), Offset(cx + armSwing, h * 0.55f), strokeWidth = w * 0.04f)
+                        val legSwing = kotlin.math.sin(phase.toDouble()).toFloat() * w * 0.14f
+                        drawLine(Color(0xFF7C8CF8), Offset(cx, h * 0.6f), Offset(cx - legSwing, ground), strokeWidth = w * 0.05f)
+                        drawLine(Color(0xFF7C8CF8), Offset(cx, h * 0.6f), Offset(cx + legSwing, ground), strokeWidth = w * 0.05f)
+                        drawLine(Color.Gray, Offset(w * 0.1f, ground), Offset(w * 0.9f, ground), strokeWidth = w * 0.02f)
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    Text(scanTarget, fontSize = 16.sp)
+                    Spacer(Modifier.height(6.dp))
+                    Text("已发现 $scanCount 本漫画", fontSize = 14.sp, color = MaterialTheme.colorScheme.primary)
+                }
+            }, confirmButton = {})
+    }
+
+    if (showScrollModeDialog) {
+        AlertDialog(onDismissRequest = { showScrollModeDialog = false }, title = { Text("翻页模式") },
+            text = {
+                Column {
+                    listOf(
+                        com.mangareader.data.ReaderConfig.ScrollMode.VERTICAL to "竖向滚动",
+                        com.mangareader.data.ReaderConfig.ScrollMode.HORIZONTAL_LEFT to "翻页 (左→右)",
+                        com.mangareader.data.ReaderConfig.ScrollMode.HORIZONTAL_RIGHT to "翻页 (右→左/RTL)"
+                    ).forEach { (mode, label) ->
+                        Row(Modifier.fillMaxWidth().clickable { config = config.copy(scrollMode = mode); config.save(ctx); showScrollModeDialog = false }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            RadioButton(selected = config.scrollMode == mode, onClick = { config = config.copy(scrollMode = mode); config.save(ctx); showScrollModeDialog = false })
+                            Spacer(Modifier.width(8.dp))
+                            Text(label, fontSize = 16.sp)
+                        }
+                    }
+                }
+            }, confirmButton = {})
+    }
+
+    if (showClickFlipDialog) {
+        val accentColor = MaterialTheme.colorScheme.primary
+        val surfaceColor = MaterialTheme.colorScheme.surfaceVariant
+        AlertDialog(onDismissRequest = { showClickFlipDialog = false }, title = { Text("点击翻页区域") },
+            text = {
+                Column {
+                    listOf(
+                        com.mangareader.data.ReaderConfig.ClickFlipType.NO to "关闭" to "所有区域均切换UI",
+                        com.mangareader.data.ReaderConfig.ClickFlipType.LEFT_RIGHT to "左右分区" to "左35%上一页, 右35%下一页, 中间切换UI",
+                        com.mangareader.data.ReaderConfig.ClickFlipType.DIAGONAL_LB_RT to "对角线 (左下→右上)" to "左下区域上一页, 右上区域下一页",
+                        com.mangareader.data.ReaderConfig.ClickFlipType.DIAGONAL_LT_RB to "对角线 (左上→右下)" to "左上区域上一页, 右下区域下一页"
+                    ).forEach { (item, desc) ->
+                        val (type, label) = item
+                        Row(Modifier.fillMaxWidth().clickable { config = config.copy(clickFlipType = type); config.save(ctx); showClickFlipDialog = false }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            RadioButton(selected = config.clickFlipType == type, onClick = { config = config.copy(clickFlipType = type); config.save(ctx); showClickFlipDialog = false })
+                            Spacer(Modifier.width(8.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(label, fontSize = 16.sp)
+                                Text(desc, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Box(Modifier.size(48.dp, 36.dp).clip(RoundedCornerShape(4.dp)).background(surfaceColor), contentAlignment = Alignment.Center) {
+                                androidx.compose.foundation.Canvas(Modifier.fillMaxSize().padding(4.dp)) {
+                                    val w = size.width
+                                    val h = size.height
+                                    when (type) {
+                                        com.mangareader.data.ReaderConfig.ClickFlipType.NO -> {
+                                            drawRect(Color.Gray, style = Stroke(width = 1.dp.toPx()))
+                                        }
+                                        com.mangareader.data.ReaderConfig.ClickFlipType.LEFT_RIGHT -> {
+                                            drawRect(Color.Gray, style = Stroke(width = 1.dp.toPx()))
+                                            drawLine(Color.Gray, Offset(w * 0.35f, 0f), Offset(w * 0.35f, h), strokeWidth = 1.dp.toPx())
+                                            drawLine(Color.Gray, Offset(w * 0.65f, 0f), Offset(w * 0.65f, h), strokeWidth = 1.dp.toPx())
+                                            drawLine(accentColor, Offset(w * 0.17f, h * 0.5f), Offset(w * 0.05f, h * 0.5f), strokeWidth = 2.dp.toPx())
+                                            drawLine(accentColor, Offset(w * 0.83f, h * 0.5f), Offset(w * 0.95f, h * 0.5f), strokeWidth = 2.dp.toPx())
+                                        }
+                                        com.mangareader.data.ReaderConfig.ClickFlipType.DIAGONAL_LB_RT -> {
+                                            drawRect(Color.Gray, style = Stroke(width = 1.dp.toPx()))
+                                            drawLine(Color.Gray, Offset(0f, h), Offset(w, 0f), strokeWidth = 1.dp.toPx())
+                                            drawLine(accentColor, Offset(w * 0.15f, h * 0.85f), Offset(w * 0.05f, h * 0.95f), strokeWidth = 2.dp.toPx())
+                                            drawLine(accentColor, Offset(w * 0.85f, h * 0.15f), Offset(w * 0.95f, h * 0.05f), strokeWidth = 2.dp.toPx())
+                                        }
+                                        com.mangareader.data.ReaderConfig.ClickFlipType.DIAGONAL_LT_RB -> {
+                                            drawRect(Color.Gray, style = Stroke(width = 1.dp.toPx()))
+                                            drawLine(Color.Gray, Offset(0f, 0f), Offset(w, h), strokeWidth = 1.dp.toPx())
+                                            drawLine(accentColor, Offset(w * 0.15f, h * 0.15f), Offset(w * 0.05f, h * 0.05f), strokeWidth = 2.dp.toPx())
+                                            drawLine(accentColor, Offset(w * 0.85f, h * 0.85f), Offset(w * 0.95f, h * 0.95f), strokeWidth = 2.dp.toPx())
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }, confirmButton = {})
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(title = { Text("设置") },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") } })
+        }
+    ) { padding ->
+        Column(modifier = Modifier.padding(padding).verticalScroll(rememberScrollState()).padding(16.dp)) {
+            Spacer(Modifier.height(12.dp))
+            Button(onClick = { picker.launch(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply { putExtra("android.content.extra.SHOW_ADVANCED", true) }) }, modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.Default.Add, null)
+                Spacer(Modifier.width(8.dp))
+                Text("导入文件夹")
+            }
+
+            // ★ §37 扫描时校验压缩包内容开关 —— 默认关闭，保持扫描速度；
+            //   开启后扫描会对每个 .zip/.cbz 文件打开内部 entry 验证至少含一张图才收，
+            //   避免"纳*save.zip 这种非漫画 archive 被误认成漫画"。
+            //   代价：大书库扫描会变慢（每个 zip 都要打开读中央目录；native 句柄复用，单文件几十 ms）。
+            Spacer(Modifier.height(8.dp))
+            var verifyZipContent by remember { mutableStateOf(prefs.getBoolean("scan_verify_zip_content", false)) }
+            Surface(
+                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)),
+                color = MaterialTheme.colorScheme.surfaceVariant
+            ) {
+                Column(Modifier.padding(12.dp)) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("扫描时校验压缩包内容", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                            Text(
+                                "开启后：.zip/.cbz 须内部含图才视为漫画\n防止非漫画 archive 被误识别\n代价：大书库扫描会变慢",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                lineHeight = 14.sp
+                            )
+                        }
+                        Switch(checked = verifyZipContent, onCheckedChange = { v ->
+                            verifyZipContent = v
+                            prefs.edit().putBoolean("scan_verify_zip_content", v).apply()
+                        })
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
+            Text("已导入文件夹", fontSize = 16.sp, fontWeight = FontWeight.Medium)
+            Spacer(Modifier.height(8.dp))
+            if (folders.isEmpty()) {
+                Text("还没有导入文件夹", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                if (folders.size >= 2) {
+                    Button(onClick = {
+                        scope.launch {
+                            scanning = true; scanTarget = "一键扫描所有文件夹..."; scanCount = 0
+                            var total = 0
+                            withContext(Dispatchers.IO) {
+                                folders.forEach { f -> total += scanner.rescan(f) }
+                            }
+                            scanCount = total
+                            scanning = false
+                            withContext(Dispatchers.IO) { totalBooks = dao.countAll() }
+                            val msg = if (total > 0) "扫描完成，新增 $total 本漫画" else "扫描完成，没有新漫画"
+                            Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show()
+                        }
+                    }, modifier = Modifier.fillMaxWidth()) {
+                        Icon(Icons.Default.Refresh, null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("一键扫描全部 (${folders.size}个文件夹)")
+                    }
+                    Spacer(Modifier.height(8.dp))
+                }
+                val dateFormat = remember { java.text.SimpleDateFormat("MM-dd HH:mm") }
+                folders.forEach { f ->
+                    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(f.displayName, fontWeight = FontWeight.Medium, fontSize = 14.sp)
+                            Text("扫描于 ${if (f.lastScanAt > 0) dateFormat.format(java.util.Date(f.lastScanAt)) else "未扫描"}",
+                                fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        TextButton(onClick = {
+                            scope.launch {
+                                scanning = true; scanTarget = "正在扫描「${f.displayName}」..."; scanCount = 0
+                                val c = withContext(Dispatchers.IO) { scanner.rescan(f) }
+                                scanCount = c
+                                scanning = false
+                                withContext(Dispatchers.IO) { totalBooks = dao.countAll() }
+                                val msg = if (c > 0) "刷新完成，新增 $c 本漫画" else "刷新完成，没有新漫画"
+                                Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show()
+                            }
+                        }) { Text("刷新") }
+                        // 隐藏/显示开关：切换该文件夹下所有书的isHidden
+                        var folderHidden by remember(f.id) {
+                            mutableStateOf(false).also { state ->
+                                scope.launch {
+                                    val hidden = withContext(Dispatchers.IO) {
+                                        val treeUri = android.net.Uri.parse(f.treeUri)
+                                        val auth = treeUri.authority ?: ""
+                                        val treeDocId = android.net.Uri.decode(treeUri.lastPathSegment ?: "").removePrefix("tree:")
+                                        dao.getBooksByFolderParams(auth, treeDocId).any { it.isHidden }
+                                    }
+                                    state.value = hidden
+                                }
+                            }
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(if (folderHidden) "隐藏" else "已显示", fontSize = 12.sp,
+                                color = if (folderHidden) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary)
+                        Switch(checked = !folderHidden, onCheckedChange = { show ->
+                            folderHidden = !show
+                            scope.launch {
+                                withContext(Dispatchers.IO) {
+                                    val treeUri = android.net.Uri.parse(f.treeUri)
+                                    val auth = treeUri.authority ?: ""
+                                    val treeDocId = android.net.Uri.decode(treeUri.lastPathSegment ?: "").removePrefix("tree:")
+                                    dao.setHiddenByFolderParams(auth, treeDocId, !show)
+                                }
+                                withContext(Dispatchers.IO) { totalBooks = dao.countAll() }
+                                Toast.makeText(ctx, if (show) "已显示「${f.displayName}」的漫画" else "已隐藏「${f.displayName}」的漫画", Toast.LENGTH_SHORT).show()
+                            }
+                        })
+                        }
+                        TextButton(onClick = { showDeleteFolder = f }) { Text("删除", color = MaterialTheme.colorScheme.error) }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(24.dp))
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("书架管理", fontSize = 16.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+                TextButton(onClick = { showCreateShelf = true }) { Text("+ 新建", color = MaterialTheme.colorScheme.primary) }
+            }
+            Spacer(Modifier.height(8.dp))
+            Text("长按拖动排序", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(4.dp))
+            if (bookshelves.isEmpty()) Text("还没有书架", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            else {
+                var draggedIndex by remember { mutableIntStateOf(-1) }
+                var dragOffset by remember { mutableFloatStateOf(0f) }
+                val density = LocalDensity.current.density
+                val itemHeight = 52f
+                bookshelves.forEachIndexed { index, shelf ->
+                    val maxUp = index * itemHeight
+                    val maxDown = (bookshelves.size - 1 - index) * itemHeight
+                    val offset = if (draggedIndex == index) dragOffset.coerceIn(-maxUp, maxDown) else 0f
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 2.dp)
+                            .graphicsLayer { translationY = offset * density }
+                            .pointerInput(index, bookshelves.size) {
+                                detectDragGesturesAfterLongPress(
+                                    onDragStart = { draggedIndex = index },
+                                    onDragEnd = {
+                                        // 拖拽结束时一次性写入数据库
+                                        if (draggedIndex >= 0 && draggedIndex < bookshelves.size) {
+                                            val finalIndex = (draggedIndex + (dragOffset / itemHeight).toInt()).coerceIn(0, bookshelves.size - 1)
+                                            if (finalIndex != draggedIndex) {
+                                                val mutable = bookshelves.toMutableList()
+                                                val item = mutable.removeAt(draggedIndex)
+                                                mutable.add(finalIndex, item)
+                                                bookshelves = mutable
+                                                scope.launch {
+                                                    withContext(Dispatchers.IO) {
+                                                        mutable.forEachIndexed { i, s -> dao.updateBookshelfSort(s.id, i) }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        draggedIndex = -1; dragOffset = 0f
+                                    },
+                                    onDragCancel = { draggedIndex = -1; dragOffset = 0f },
+                                    onDrag = { change, dragAmount ->
+                                        change.consume()
+                                        val maxUp2 = draggedIndex * itemHeight
+                                        val maxDown2 = (bookshelves.size - 1 - draggedIndex) * itemHeight
+                                        dragOffset = (dragOffset + dragAmount.y).coerceIn(-maxUp2, maxDown2)
+                                    }
+                                )
+                            },
+                        shape = RoundedCornerShape(8.dp),
+                        color = if (draggedIndex == index) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
+                    ) {
+                        Row(Modifier.padding(horizontal = 12.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.DragHandle, null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(Modifier.width(8.dp))
+                            Icon(Icons.Default.Book, null, modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text(shelf.name, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                            IconButton(onClick = { editShelf = shelf; editShelfName = shelf.name }) { Icon(Icons.Default.Edit, "编辑", modifier = Modifier.size(20.dp)) }
+                            IconButton(onClick = { showDeleteShelf = shelf }) { Icon(Icons.Default.Delete, "删除", modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.error) }
+                        }
+                    }
+                }
+            }
+
+            HorizontalDivider()
+            Spacer(Modifier.height(24.dp))
+            Text("显示", fontSize = 18.sp, fontWeight = FontWeight.Medium)
+            Spacer(Modifier.height(12.dp))
+            var globalHide by remember { mutableStateOf(prefs.getBoolean("global_hide", false)) }
+            Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("全局隐藏", fontSize = 16.sp)
+                    Text("开启后首页不显示任何漫画", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Switch(checked = globalHide, onCheckedChange = { newHide ->
+                    globalHide = newHide
+                    prefs.edit().putBoolean("global_hide", newHide).apply()
+                    Toast.makeText(ctx, if (newHide) "已全局隐藏" else "已取消全局隐藏", Toast.LENGTH_SHORT).show()
+                })
+            }
+
+            HorizontalDivider()
+            Spacer(Modifier.height(24.dp))
+            Text("外观（待完善）", fontSize = 18.sp, fontWeight = FontWeight.Medium)
+            Spacer(Modifier.height(12.dp))
+
+            // 暗色模式切换
+            var darkMode by remember { mutableStateOf(prefs.getString("dark_mode", "SYSTEM") ?: "SYSTEM") }
+            Text("暗色模式", fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(horizontal = 4.dp))
+            Spacer(Modifier.height(8.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("亮色" to "LIGHT", "暗色" to "DARK", "系统" to "SYSTEM").forEach { (label, value) ->
+                    FilterChip(
+                        selected = darkMode == value,
+                        onClick = {
+                            darkMode = value
+                            prefs.edit().putString("dark_mode", value).apply()
+                            // 通过 recompose 生效，需要重启 activity
+                            (ctx as? android.app.Activity)?.recreate()
+                        },
+                        label = { Text(label, fontSize = 13.sp) },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(12.dp))
+            // 主题选择
+            Text("主题", fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(horizontal = 4.dp))
+            Spacer(Modifier.height(8.dp))
+            val currentThemeOrdinal = prefs.getInt("app_theme", 0)
+            val currentDarkMode = prefs.getString("dark_mode", "SYSTEM") ?: "SYSTEM"
+            val previewIsDark = when (currentDarkMode) {
+                "LIGHT" -> false
+                "DARK" -> true
+                else -> {
+                    val nightMode = ctx.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK
+                    nightMode == android.content.res.Configuration.UI_MODE_NIGHT_YES
+                }
+            }
+            androidx.compose.foundation.lazy.LazyRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp)
+            ) {
+                items(com.mangareader.ui.AppTheme.entries.size) { index ->
+                    val theme = com.mangareader.ui.AppTheme.entries[index]
+                    val isSelected = currentThemeOrdinal == index
+                    val themePrimary = com.mangareader.ui.getThemePrimaryColor(theme, previewIsDark)
+                    Card(
+                        modifier = Modifier.width(72.dp).clickable {
+                            prefs.edit().putInt("app_theme", index).apply()
+                            (ctx as? android.app.Activity)?.recreate()
+                        },
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (isSelected) themePrimary.copy(alpha = 0.15f)
+                            else MaterialTheme.colorScheme.surfaceVariant
+                        ),
+                        border = if (isSelected) androidx.compose.foundation.BorderStroke(2.dp, themePrimary) else null
+                    ) {
+                        Column(Modifier.padding(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Box(Modifier.size(32.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp)).background(themePrimary))
+                            Spacer(Modifier.height(4.dp))
+                            Text(theme.label, fontSize = 10.sp, maxLines = 1, color = if (isSelected) themePrimary else MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+            }
+
+            HorizontalDivider()
+            Spacer(Modifier.height(24.dp))
+            Text("阅读", fontSize = 18.sp, fontWeight = FontWeight.Medium)
+            Spacer(Modifier.height(12.dp))
+            Card(Modifier.fillMaxWidth().clickable { showReadingSettings = true }) {
+                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.MenuBook, null, modifier = Modifier.size(24.dp))
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("阅读设置", fontSize = 16.sp)
+                        Text("背景颜色、墨水屏、PDF质量、自动翻页等", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Icon(Icons.Default.ChevronRight, null)
+                }
+            }
+
+            HorizontalDivider()
+            Spacer(Modifier.height(12.dp))
+            var personalNoteExpanded by remember { mutableStateOf(false) }
+            Card(
+                Modifier.fillMaxWidth().clickable { personalNoteExpanded = !personalNoteExpanded },
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+            ) {
+                Column(Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("私心没放关于", fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+                        Icon(
+                            if (personalNoteExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    if (personalNoteExpanded) {
+                        Spacer(Modifier.height(8.dp))
+                        Text("    大家好，我是瑾轩小狼。", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("    最开始做漫读，不过是想打造一款贴合自身习惯的本地漫画阅读工具。iOS 平台的可达阅读器堪称标杆，我一直十分推崇；安卓端其实也有不少成熟优质的阅读软件，只是都不太契合我的使用习惯，于是决定从零独立开发。", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("    每个人的使用偏好各不相同，漫读未必适合所有人，大家可以多体验几款软件，总能找到心仪的那一款。", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(Modifier.height(4.dp))
+                        Text("    项目全程利用业余碎片时间开发，前后耗时三周左右。原本计划加入 SMB 文件读取以及图片无损放大功能，空余精力有限，相关逻辑始终没能调试完善，最后只能忍痛舍弃这两项功能。", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("    受自身技术水平局限，成品距离标杆软件还有不小差距，程序内仍存在不少待修复 bug，好在主体功能均可正常使用，便先行定稿发布。", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("    整个项目前后推倒重写三次，反复迭代优化；还有一处兼容问题始终没能解决，高版本安卓系统下，滑动动画流畅度反而不及低版本，暂时没能找到问题根源。", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(Modifier.height(4.dp))
+                        Text("    本软件为纯个人业余开发，全程免费，没有任何商业收益。如果这款阅读器用着合你的心意，欢迎添加 ", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("QQ：1173350134（点击可复制）", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary, modifier = Modifier.clickable {
+                            val clipboard = ctx.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                            clipboard.setPrimaryClip(android.content.ClipData.newPlainText("QQ", "1173350134"))
+                            android.widget.Toast.makeText(ctx, "QQ 号已复制", android.widget.Toast.LENGTH_SHORT).show()
+                        })
+                        Text("    ，请我喝杯咖啡，随心就好。", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(Modifier.height(4.dp))
+                        Text("    特别感谢身边亲友的鼎力支持：", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.primary)
+                        Text("    感谢晓萌抽空为本项目绘制专属 Logo，感谢染林同学耐心测试，及时反馈各类问题；更要谢谢我的妻子，包容我占用大量空余时间投入开发，给予我充足的理解与支持。", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+
+            HorizontalDivider()
+            Spacer(Modifier.height(24.dp))
+            Text("阅读统计", fontSize = 18.sp, fontWeight = FontWeight.Medium)
+            Spacer(Modifier.height(12.dp))
+            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+                Column(Modifier.padding(16.dp)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text("漫画总数", fontSize = 14.sp); Text("$totalBooks", fontSize = 14.sp, fontWeight = FontWeight.Bold) }
+                    Spacer(Modifier.height(8.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text("已阅读", fontSize = 14.sp); Text("$readBooks", fontSize = 14.sp, fontWeight = FontWeight.Bold) }
+                }
+            }
+
+            HorizontalDivider()
+            Spacer(Modifier.height(24.dp))
+            var showAbout by remember { mutableStateOf(false) }
+            Card(Modifier.fillMaxWidth().clickable { showAbout = true }) {
+                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Info, null, modifier = Modifier.size(24.dp))
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("关于", fontSize = 16.sp)
+                        Text("漫读 v1.1", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Icon(Icons.Default.ChevronRight, null)
+                }
+            }
+
+            if (showAbout) {
+                AlertDialog(
+                    onDismissRequest = { showAbout = false },
+                    title = { Text("关于") },
+                    text = {
+                        Column(Modifier.verticalScroll(rememberScrollState())) {
+                            Text("漫读 v1.1", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                            Spacer(Modifier.height(8.dp))
+                            Text("支持格式", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                            Text("漫画: ZIP/CBZ · RAR/CBR · 7Z/CB7 · PDF · EPUB · MOBI/AZW/AZW3/PDB/PRC", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("图片: JPG · PNG · WEBP · GIF · BMP · HEIF", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(Modifier.height(8.dp))
+                            Text("版本兼容性", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                            val sdk = android.os.Build.VERSION.SDK_INT
+                            val abi = android.os.Build.SUPPORTED_ABIS.firstOrNull() ?: "unknown"
+                            val is64Bit = abi.contains("arm64") || abi.contains("x86_64")
+                            Text("当前设备: Android ${android.os.Build.VERSION.RELEASE} (API $sdk)", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+                            Text("处理器: $abi", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            if (!is64Bit) {
+                                Text("32位系统，部分功能性能可能有所下降", fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
+                            } else {
+                                Text("64位系统，可使用全部功能", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
+                            }
+                            Spacer(Modifier.height(12.dp))
+                            HorizontalDivider()
+                            Spacer(Modifier.height(12.dp))
+                            Text("开源许可", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                            Spacer(Modifier.height(4.dp))
+                            LicenseLink("SubsamplingScaleImageView (Tachiyomi)", "https://github.com/niceSaber/SubsamplingScaleImagePicker")
+                            LicenseLink("Coil", "https://github.com/coil-kt/coil")
+                            LicenseLink("Apache Commons Compress", "https://github.com/apache/commons-compress")
+                            LicenseLink("junrar", "https://github.com/junrar/junrar")
+                            LicenseLink("libarchive-android (zhanghai)", "https://github.com/niceSaber/libarchive-android")
+                            LicenseLink("pdfium", "https://github.com/niceSaber/pdfium")
+                            LicenseLink("stb_image", "https://github.com/niceSaber/stb")
+                            LicenseLink("libwebp", "https://github.com/niceSaber/libwebp")
+                            LicenseLink("libmobi", "https://github.com/niceSaber/libmobi")
+                            LicenseLink("libzip", "https://github.com/niceSaber/libzip")
+                            LicenseLink("APNG4Android (penfeizhou)", "https://github.com/penfeizhou/APNG4Android")
+                            Spacer(Modifier.height(8.dp))
+                            Text("特别感谢", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                            Text("· TachiyomiSY — 阅读器架构与功能设计的重要参考", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("· MHark — 文件访问机制与本地漫画读取方案的重要参考", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(Modifier.height(4.dp))
+                            Text("感谢所有开源项目的贡献者，让这一切成为可能。", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { showAbout = false }) { Text("确定") }
+                    }
+                )
+            }
+        }
+    }
+
+    if (showReadingSettings) {
+        ReadingSettingsScreen(onBack = { showReadingSettings = false })
+    }
+}
+
+private fun formatFileSize(bytes: Long): String {
+    return when {
+        bytes < 1024 -> "$bytes B"
+        bytes < 1024 * 1024 -> "${bytes / 1024} KB"
+        bytes < 1024 * 1024 * 1024 -> "${"%.1f".format(bytes / (1024.0 * 1024.0))} MB"
+        else -> "${"%.2f".format(bytes / (1024.0 * 1024.0 * 1024.0))} GB"
+    }
+}
+
+@Composable
+private fun LicenseLink(name: String, url: String) {
+    val ctx = LocalContext.current
+    Text(
+        text = name,
+        fontSize = 11.sp,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.clickable {
+            try {
+                ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+            } catch (_: Exception) {}
+        }
+    )
+}

@@ -1,0 +1,1199 @@
+package com.mangareader.native
+
+import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.PointF
+import android.graphics.RectF
+import android.graphics.drawable.Animatable
+import android.graphics.drawable.Drawable
+import android.view.GestureDetector
+import android.view.MotionEvent
+import android.view.View
+import android.view.ViewGroup
+import androidx.core.view.doOnLayout
+import android.widget.FrameLayout
+import android.widget.ImageView
+import androidx.viewpager2.widget.ViewPager2
+import androidx.recyclerview.widget.RecyclerView
+import androidx.recyclerview.widget.LinearLayoutManager
+import com.mangareader.viewer.AnimKind
+import com.mangareader.viewer.ArchiveEngine
+import com.github.penfeizhou.animation.loader.ByteBufferLoader
+import com.github.penfeizhou.animation.webp.WebPDrawable
+import com.github.penfeizhou.animation.apng.APNGDrawable
+import com.github.penfeizhou.animation.gif.GifDrawable
+import java.nio.ByteBuffer
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+
+class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelegate {
+
+    private val viewPager: ViewPager2
+    private var pagerAdapter: PagerAdapter? = null
+
+    private var engine: ArchiveEngine? = null
+    private var treePath: String = ""
+    private var pageList: List<ArchiveEngine.PageMeta> = emptyList()
+    private var currentPage = 0
+    private var isRtl = false
+    @Volatile private var isScrolling = false
+    private var doublePageMode = false
+    private var shiftDoublePage = false
+    private var useSSIV = true
+    private var landscapeZoomEnabled = true
+    private var trimWhiteBorder = false
+    private var trimThreshold: Int = 220
+    private var trimWhiteRatio: Float = 0.90f
+    private var panNavigation = false
+    private var pageLayoutMode = 0 // 0=SINGLE, 1=DOUBLE, 2=AUTO
+    var pageBgColor: Int = android.graphics.Color.parseColor("#111111")
+    var imageMarginH: Int = 0
+
+    private var loadScope: CoroutineScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+    private val decodeSemaphore = Semaphore(2)
+    private val archiveMutex = Mutex()
+
+    @Volatile private var nativeArchive: com.mangareader.native.NativeEngine.Archive? = null
+    private var nativeArchivePath = ""
+
+    // ★ §24 二代（翻页化）：动图状态——只在翻页模式下处理动图播放。条漫不再处理（条漫看到动图按静图渲染首帧）
+    private data class AnimFlag(val pageIdx: Int, val kind: AnimKind)
+    @Volatile private var pageAnimFlags: List<AnimFlag> = emptyList()
+    @Volatile private var animatedCount: Int = 0
+    /** 持有"正在播"的动图 Drawable（idx -> drawable），同时最多一个 isRunning（当前页）
+     *  ★ 改用 coil AnimatedImageDecoder 路线后，drawable 是 Android 系统 AnimatedDrawable（Animatable） */
+    private val pageAnimDrawables = java.util.LinkedHashMap<Int, Drawable>()
+    @Volatile private var currentPlayingAnimIdx: Int = -1
+    /** P9 弹窗 hook：用户切条漫遇动图时由 Reader.kt 弹"只能静态看，是否切换"对话框 */
+    var onAnimDetected: ((animatedCount: Int) -> Unit)? = null
+    // ★ Bug#9 修复：同 idx 重复 loadAnim 导致重复 IO + 反复 set/new drawable → 翻页卡顿、回已停页不动。
+    //   animRawCache：idx → raw bytes（首次 load 后复用，避免每次 onBindViewHolder 重读、重建 Drawable）
+    //   inflightAnimLoads：正在 IO 中的 idx Set，防同 idx 并发多次触发 loadAnim
+    private val animRawCache = java.util.LinkedHashMap<Int, ByteArray>(16, 0.75f, true)
+    private val inflightAnimLoads = java.util.Collections.synchronizedSet(HashSet<Int>())
+
+    /**
+     * ★ §34.1 动图修复：APNG4Android 旁路 Coil。
+     *   真根因（字节码级定性）：Coil 2 ImageDecoderDecoder.wrapDrawable 会把动图 AnimatedImageDrawable
+     *   包进 coil.drawable.ScaleDrawable（implements Animatable，start/stop 转发给 child）——
+     *   但 AnimatedImageDrawable 首帧解码前 getIntrinsicWidth/Height 返回 0 → ScaleDrawable.onBoundsChange
+     *   算出 0×0 bounds → draw 画到 0×0 区域 → 画面空白（动图确在动但不可见）。
+     *   unwrapAnimatable 剥不掉：Coil 的 ScaleDrawable 自己implements Animatable，循环跳不出。
+     *   解法：直接走 APNG4Android 的 WebPDrawable/APNGDrawable/GifDrawable（Java 解码器，全 API 兼容），
+     *   FrameAnimationDrawable 自带 Matrix 缩放（setBounds 时自算），不走 Coil 就不被 ScaleDrawable 包装。
+     *   参考：EhViewer 自写 Decoder 绕开 Coil wrap；APNG4Android 库本设计即不依赖任何上层 loader。
+     */
+    private fun makeAPNGAnimDrawable(raw: ByteArray, kind: AnimKind): Drawable? {
+        return try {
+            val loader = object : ByteBufferLoader() {
+                override fun getByteBuffer(): ByteBuffer = ByteBuffer.wrap(raw)
+            }
+            val drawable = when (kind) {
+                AnimKind.WEBP -> WebPDrawable(loader)
+                AnimKind.APNG -> APNGDrawable(loader)
+                AnimKind.GIF -> GifDrawable(loader)
+                AnimKind.NONE -> return null
+            }
+            // ★ §34.1 初始化步骤（非日志）：drawable 构造后主线程同步触发 decoder 解析 header
+            //   （getIntrinsicWidth 阻塞读 header），拿到 canvas 尺寸后才返回。
+            //   若得到 0 或异常，说明 WebP header 解析失败 → draw 时 bitmap=null → 全白。
+            try { drawable.intrinsicWidth } catch (_: Throwable) {}
+            try { drawable.intrinsicHeight } catch (_: Throwable) {}
+            drawable
+        } catch (t: Throwable) {
+            null
+        }
+    }
+
+    /**
+     * ★ §24 二代：单页懒 peek → 写入 pageAnimFlags（单元素追加）
+     *   命中动图则 notifyItemChanged("anim") 让 onBindViewHolder 重走动图路径
+     *   累计 ≥3 张动图时触发 onAnimDetected 回调（弹"切条漫只能静态看"对话框）
+     */
+    private fun ensureAnimKindAsync(idx: Int) {
+        val e = engine ?: return
+        val meta = pageList.getOrNull(idx) ?: return
+        loadScope.launch {
+            val kind = withContext(Dispatchers.IO) {
+                try { e.peekAnimKind(treePath, meta) } catch (_: Exception) {
+                    AnimKind.NONE
+                }
+            }
+            if (pageAnimFlags.any { it.pageIdx == idx }) return@launch  // 已判过
+            pageAnimFlags = pageAnimFlags + AnimFlag(idx, kind)
+            if (kind != AnimKind.NONE) {
+                animatedCount++
+                // ★ Bug C-2 修复：peek 完判定为动图后，立刻预构 drawable 入 pageAnimDrawables map，
+                //   不等 onBindViewHolder → loadAnimPageAsync → IO + makeAnimDrawable 的 360ms 串行延迟。
+                //   这样翻页瞬间 startAnimIfNotRunning 能命中 map → START OK 无空窗闪白。
+                //   预构不设到任何 ImageView（此时无 holder），只入 map + 入 raw cache 复用。
+                if (pageAnimDrawables[idx] == null && !inflightAnimLoads.contains(idx)) {
+                    inflightAnimLoads.add(idx)
+                    val preRaw = withContext(Dispatchers.IO) {
+                        try { e.loadPageRaw(meta, treePath) } catch (_: Exception) {
+                            null
+                        }
+                    }
+                    if (preRaw != null) {
+                        synchronized(animRawCache) {
+                            animRawCache[idx] = preRaw
+                            while (animRawCache.size > 6) {
+                                val it = animRawCache.entries.iterator()
+                                if (it.hasNext()) { it.next(); it.remove() } else break
+                            }
+                        }
+                        val preDrawable = withContext(Dispatchers.IO) {
+                            try { makeAPNGAnimDrawable(preRaw, kind) } catch (_: Exception) { null }
+                        }
+                        if (preDrawable != null && pageAnimDrawables[idx] == null) {
+                            pageAnimDrawables[idx] = preDrawable
+                        }
+                    }
+                    inflightAnimLoads.remove(idx)
+                }
+                withContext(Dispatchers.Main) { pagerAdapter?.notifyItemChanged(idx, "anim") }
+                if (animatedCount >= com.mangareader.ui.ReaderParams.ANIM_PROMPT_THRESHOLD) {
+                    onAnimDetected?.invoke(animatedCount)
+                }
+            }
+        }
+    }
+
+    /** ★ §24 二代动图加载路径：loadPageRaw（全质量） → 主线程构造 drawable → setDrawable */
+    private fun loadAnimPageAsync(idx: Int, holder: PagerViewHolder) {
+        val e = engine ?: return
+        val meta = pageList.getOrNull(idx) ?: return
+        val kind = pageAnimFlags.firstOrNull { it.pageIdx == idx }?.kind ?: return
+        // ★ Bug#9：命中 raw cache 直接复用，不重走 IO；命中已构造 drawable 直接补 start
+        if (pageAnimDrawables[idx] != null) {
+            val existingDrawable = pageAnimDrawables[idx]!!
+            // ★ Bug C-1a 修复：drawable 虽在 map 里，但 holder 可能是新复用的（ImageView 上没有这个 drawable）。
+            //   原版只 startAnimIfNotRunning 不 setAnimDrawable → 回翻时 holder 的 ImageView 空白 → 闪白。
+            //   若 holder 当前 held 的不是这个 drawable，则 setAnimDrawable 重设到 ImageView（内部 SKIP 同实例）。
+            if (holder.heldIdx != idx || holder.heldAnimDrawable !== existingDrawable) {
+                holder.setAnimDrawable(idx, existingDrawable)
+            }
+            if (idx == currentPage) startAnimIfNotRunning(idx)
+            return
+        }
+        val cachedRaw = synchronized(animRawCache) { animRawCache[idx] }
+        if (cachedRaw != null) {
+            loadScope.launch {
+                val drawable = withContext(Dispatchers.IO) {
+                    try { makeAPNGAnimDrawable(cachedRaw, kind) } catch (_: Exception) { null }
+                }
+                if (drawable == null) return@launch
+                withContext(Dispatchers.Main) {
+                    val pos = holder.bindingAdapterPosition
+                    val fresh = pos != androidx.recyclerview.widget.RecyclerView.NO_POSITION && pos in pageList.indices
+                            && (if (isRtl) pageList.size - 1 - pos else pos) == idx
+                    if (fresh) {
+                        holder.setAnimDrawable(idx, drawable)
+                        if (idx == currentPage) startAnimIfNotRunning(idx)
+                    }
+                }
+            }
+            return
+        }
+        // ★ Bug#9 inflight 守卫：同 idx 正在 IO 中，这帧不再二次触发，IO 完成时 holder 已经/会再次被 bind 触发
+        if (!inflightAnimLoads.add(idx)) {
+            return
+        }
+        loadScope.launch {
+            try {
+                val raw = withContext(Dispatchers.IO) {
+                    try { e.loadPageRaw(meta, treePath) } catch (_: Exception) { null }
+                }
+                if (raw == null) return@launch
+                // 入 cache（只留最近 6 个 raw，估算上限 6 × 20MB ≈ 120MB）
+                synchronized(animRawCache) {
+                    animRawCache[idx] = raw
+                    while (animRawCache.size > 6) {
+                        val it = animRawCache.entries.iterator()
+                        if (it.hasNext()) { it.next(); it.remove() } else break
+                    }
+                }
+                val drawable = withContext(Dispatchers.IO) {
+                    try { makeAPNGAnimDrawable(raw, kind) } catch (_: Exception) { null }
+                }
+                if (drawable == null) return@launch
+                withContext(Dispatchers.Main) {
+                    // ★ Bug#7 holder-freshness 守卫：异步载入期间 holder 可能已被 Recycler 复用到别的页位置。
+                    //   若 holder.bindingAdapterPosition 已 NO_POSITION 或映射到的 realIdx ≠ 当前请求的 idx，
+                    //   说明这帧动图属于已被滚走的页 → 丢弃，避免把错误位置里的 drawable 塞给当前 holder。
+                    //   非动图分支下 onBindViewHolder 已过滤 doublePage，故此处只在 non-double 模式到达，
+                    //   flat 公式为 realIdx = isRtl ? size-1-pos : pos。
+                    //   注：suspend inline withContext 块内不允许 non-local return@launch，故用 if 条件执行
+                    val pos = holder.bindingAdapterPosition
+                    val freshOuter = pos != androidx.recyclerview.widget.RecyclerView.NO_POSITION && pos in pageList.indices
+                            && (if (isRtl) pageList.size - 1 - pos else pos) == idx
+                    if (freshOuter) {
+                        holder.setAnimDrawable(idx, drawable)
+                        if (idx == currentPage) startAnimIfNotRunning(idx)
+                    }
+                }
+            } finally {
+                inflightAnimLoads.remove(idx)
+            }
+        }
+    }
+
+    /** 启动当前页动图（PagerReaderView 单页同时只有一页可见，逻辑极简）
+     *  ★ §34.1 APNG4Android 关键调整：**不 stop 其他页的 drawable**。
+     *    FrameAnimationDrawable.stop() 会 innerStop：frames.clear() + bitmap.recycle() + frameBuffer=null
+     *    → drawable 进入"死掉"状态，下次再 start() 要从头 initCanvasBounds + 异步 onRender 才能填 bitmap
+     *    → 期间 draw() 因 bitmap==null 不画 → 回翻该页画面全白 ~200-700ms。
+     *    解决：保持所有已构造 drawable 持续 running（最多 offscreenPageLimit=2 + 预构页 ≈ 6 个同时跑，
+     *      WebPDrawable 单个解码 buffer ~3-5MB × 6 ≈ 30MB，可控）。
+     *      可见页就是用户当前看的，其它页解码线程在跑但 ImageView 不显示——浪费 CPU 但确保回翻无空窗。
+     *    ★ 替代方案（如内存紧张可改）：drawable 不 stop，但若 onPageSelected 显示回来后 isRunning=false → START。
+     *      这里走"不 stop "+ "isRunning false 才 START" 双保险。 */
+    private fun startAnimIfNotRunning(idx: Int) {
+        // ★ §34.1：不再 forEach stop 其他页——保留它们持续 running 以避免 stop/start 重启空窗
+        val d = pageAnimDrawables[idx]
+        if (d == null) {
+            currentPlayingAnimIdx = -1
+            return
+        }
+        val anim = d as? Animatable
+        if (anim != null && anim.isRunning) {
+            currentPlayingAnimIdx = idx
+            return
+        }
+        try {
+            anim?.start()
+        } catch (t: Throwable) {
+            // ★ Bug#10 兜底：start 异常时把坏 drawable 从 map 移除，下次进这页能重新 load/build
+            pageAnimDrawables.remove(idx)
+        }
+        currentPlayingAnimIdx = idx
+    }
+
+    // Zoom indicator state (driven by SSIV scale change detection)
+    internal var zoomIndicatorTime = 0L
+    private var zoomIndicatorAlpha = 0f
+    private var lastReportedScale = 1f
+
+    // SSIV zoom state for progress save/restore
+    var currentZoomScale: Float = 1f
+        private set
+    var currentCenterX: Float = 0f
+        private set
+    var currentCenterY: Float = 0f
+        private set
+
+    /** Read zoom state from the currently visible SSIV */
+    fun updateZoomStateFromSSIV() {
+        if (!useSSIV) return
+        try {
+            val rv = viewPager.getChildAt(0) as? androidx.recyclerview.widget.RecyclerView ?: return
+            val lm = rv.layoutManager as? androidx.recyclerview.widget.LinearLayoutManager ?: return
+            val pos = lm.findFirstVisibleItemPosition()
+            if (pos == androidx.recyclerview.widget.RecyclerView.NO_POSITION) return
+            val holder = rv.findViewHolderForAdapterPosition(pos) as? PagerViewHolder ?: return
+            val ssiv = holder.ssiv ?: return
+            if (ssiv.visibility == View.VISIBLE && ssiv.scale > 1.01f) {
+                currentZoomScale = ssiv.scale
+                val center = ssiv.center ?: return
+                currentCenterX = center.x
+                currentCenterY = center.y
+            } else {
+                currentZoomScale = 1f
+                currentCenterX = 0f
+                currentCenterY = 0f
+            }
+        } catch (_: Exception) {}
+    }
+
+    private val bitmapCache = java.util.concurrent.ConcurrentHashMap<Int, Bitmap>()
+
+    // ★ ⑧ 最小修复辅助：recycle + clear 一个 ConcurrentHashMap<Int,Bitmap>，避免裸 clear 漏 recycle
+    //   造成的内存泄漏（无 LRU 上限下尤其明显）。Pager 是 ConcurrentHashMap 无需额外同步。
+    //   ★ release() 不改：原版 recycle + clear 已对，不引入 helper 避免行为差异。
+    private fun clearBitmapCacheRecycling() {
+        val it = bitmapCache.entries.iterator()
+        while (it.hasNext()) {
+            val e = it.next()
+            try { if (!e.value.isRecycled) e.value.recycle() } catch (_: Exception) {}
+            it.remove()
+        }
+    }
+
+    // Zoom indicator paint
+    private val zoomPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.WHITE; textSize = 42f; textAlign = Paint.Align.CENTER
+        setShadowLayer(4f, 2f, 2f, Color.BLACK)
+    }
+    private val zoomBgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(160, 0, 0, 0) }
+
+    override var onPageChanged: ((Int) -> Unit)? = null
+    override var onToggleUi: (() -> Unit)? = null
+    var onChapterEnd: ((Boolean) -> Unit)? = null  // true=last page, false=first page
+    var onPageLongPress: ((Int) -> Unit)? = null  // long press on page
+
+    // Tap + long press detection via GestureDetector (TSY approach)
+    private val gestureDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
+        override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
+            if (width == 0 || height == 0) return false
+            val fx = e.x / width
+            val fy = e.y / height
+            val action = navigation.getAction(fx, fy)
+            when (action) {
+                // ★ §34.3：竖向翻页时 PREV/NEXT 不受 RTL 影响（上下方向无 RTL 概念）
+                NavigationAction.PREV -> { if (!verticalPager && isRtl) nextPage() else prevPage() }
+                NavigationAction.NEXT -> { if (!verticalPager && isRtl) prevPage() else nextPage() }
+                NavigationAction.MENU -> { onToggleUi?.invoke() }
+            }
+            return true
+        }
+
+        override fun onLongPress(e: MotionEvent) {
+            val pageIdx = if (isRtl) pageList.size - 1 - currentPage else currentPage
+            onPageLongPress?.invoke(pageIdx)
+            try { performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS) } catch (_: Exception) {}
+        }
+    })
+    private var navigation: ViewerNavigation = DefaultNavigation
+    /** ★ §34.3：VERT_PAGER（单页从上到下）专用导航。fy<0.4→PREV、fy>0.6→NEXT、中间菜单。
+     *  与横向 DefaultNavigation 不同——竖向翻页时 fx 无意义，只用 fy。 */
+    private var verticalPager: Boolean = false
+    private var centerGapType: Int = 0
+    private var doublePageReverseEnabled: Boolean = false
+    private var doublePageSplitEnabled: Boolean = false
+
+    private fun isCurrentPageZoomed(): Boolean {
+        return try {
+            val rv = viewPager.getChildAt(0) as? androidx.recyclerview.widget.RecyclerView ?: return false
+            val lm = rv.layoutManager as? androidx.recyclerview.widget.LinearLayoutManager ?: return false
+            val pos = lm.findFirstVisibleItemPosition()
+            if (pos == -1 || pos == androidx.recyclerview.widget.RecyclerView.NO_POSITION) return false
+            val holder = rv.findViewHolderForAdapterPosition(pos) as? PagerViewHolder ?: return false
+            val ssiv = holder.ssiv ?: return false
+            ssiv.visibility == View.VISIBLE && ssiv.scale > 1.01f
+        } catch (_: Exception) { false }
+    }
+
+    private val fadeOutRunnable = Runnable { invalidate() }
+
+    init {
+        viewPager = ViewPager2(context).apply {
+            layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
+            offscreenPageLimit = 2
+            isUserInputEnabled = true
+            // 初始不设置 PageTransformer，等 setup 完成后再应用
+            registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
+                override fun onPageSelected(position: Int) {
+                    // Convert adapter position to page index
+                    val pageIdx = if (doublePageMode) {
+                        if (shiftDoublePage && pageList.size > 1) {
+                            if (position == 0) 0 else 1 + (position - 1) * 2
+                        } else position * 2
+                    } else position
+                    val realPos = if (isRtl) pageList.size - 1 - pageIdx else pageIdx
+                    com.mangareader.viewer.ArchiveEngine.d("PagerView", "onPageSelected pos=$position pageIdx=$pageIdx realPos=$realPos rtl=$isRtl double=$doublePageMode total=${pageList.size} curPage=$currentPage")
+                    if (realPos in pageList.indices && realPos != currentPage) {
+                        currentPage = realPos; onPageChanged?.invoke(currentPage)
+                        if (currentPage == pageList.size - 1) onChapterEnd?.invoke(true)
+                        if (currentPage == 0) onChapterEnd?.invoke(false)
+                    }
+                    // ★ §24 二代：翻到新页时启动该页动图、停止其他正在播的
+                    if (realPos in pageList.indices) {
+                        startAnimIfNotRunning(realPos)
+                        // ★ Bug A 修复：onBindViewHolder 的 ensureAnimKindAsync 受 !isScrolling 守卫，
+                        //   快速翻页 / 预载范围外的页 (
+                        //   idx ≥ offscreenPageLimit+2）翻到位时还没被 peek → pageAnimFlags 无 entry
+                        //   → IDLE 后 Bug#14 的 notifyItemChanged 因 flag==null 被跳过 → 永远 NOT IN MAP。
+                        //   解法：onPageSelected 是用户实际翻到该页的权威时机，主动 enqueue peek。
+                        //   ensureAnimKindAsync 内部 (第 128 行) 已有 "已判过 return@launch" 幂等守卫，重复触发安全。
+                        if (pageAnimFlags.none { it.pageIdx == realPos }) {
+                            ensureAnimKindAsync(realPos)
+                        }
+                    }
+                }
+                override fun onPageScrollStateChanged(state: Int) {
+                    isScrolling = state != ViewPager2.SCROLL_STATE_IDLE
+                    if (!isScrolling) {
+                        preloadAround(currentPage)
+                        // ★ Bug#14：如果当前页或附近页是动图但 IDLE 之前 onBindViewHolder 因 isScrolling=true
+                        //   skip 了 loadAnimPageAsync，现在 IDLE 后无法再触发它（preloadAround 只走静图路径）。
+                        //   主动 notifyItemChanged 让 RV 重 bind 当前页 → 走动图分支的 loadAnimPageAsync。
+                        val rv = viewPager.getChildAt(0) as? androidx.recyclerview.widget.RecyclerView ?: return
+                        val lm = rv.layoutManager as? androidx.recyclerview.widget.LinearLayoutManager ?: return
+                        for (delta in -1..1) {
+                            val target = currentPage + delta
+                            if (target !in pageList.indices) continue
+                            val flag = pageAnimFlags.firstOrNull { it.pageIdx == target } ?: continue
+                            if (flag.kind == AnimKind.NONE) continue
+                            val pos = if (isRtl) pageList.size - 1 - target else target
+                            if (lm.findViewByPosition(pos) != null) {
+                                pagerAdapter?.notifyItemChanged(pos, "anim")
+                            }
+                        }
+                    }
+                }
+            })
+        }
+        addView(viewPager)
+        isFocusable = true; isFocusableInTouchMode = true
+    }
+
+    var flipAnimationEnabled = true
+        set(value) {
+            field = value
+            // ★ §34.3：竖向翻页禁 FlipPageTransformer（3D 左右翻对竖向不符）
+            val effective = value && !verticalPager
+            viewPager.setPageTransformer(if (effective) FlipPageTransformer() else NoOpTransformer())
+        }
+
+    private class NoOpTransformer : ViewPager2.PageTransformer {
+        override fun transformPage(page: View, position: Float) {}
+    }
+
+    private class FlipPageTransformer : ViewPager2.PageTransformer {
+        override fun transformPage(page: View, position: Float) {
+            val absPos = kotlin.math.abs(position)
+            page.apply {
+                // 3D翻转效果
+                cameraDistance = 12000f
+                rotationY = position * -30f
+                scaleX = 1f - absPos * 0.15f
+                scaleY = 1f - absPos * 0.15f
+                alpha = 1f - absPos * 0.4f
+                translationX = -position * width * 0.1f
+            }
+        }
+    }
+
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        super.dispatchTouchEvent(ev)
+        gestureDetector.onTouchEvent(ev)
+        return true
+    }
+
+    override fun dispatchDraw(canvas: Canvas) {
+        super.dispatchDraw(canvas)
+    }
+
+    override fun setup(engine: ArchiveEngine, treePath: String, pages: List<ArchiveEngine.PageMeta>, startPage: Int, vertical: Boolean, clickFlip: Int, rtl: Boolean, verticalPager: Boolean) {
+        val pagerOrientChanged = this.verticalPager != verticalPager
+        this.verticalPager = verticalPager
+        // ★ §34.3：竖向翻页用全宽三分纵切导航；横向保持默认左右三分
+        this.navigation = if (verticalPager) VerticalPagerNavigation else DefaultNavigation
+        // ★ §34.3：ViewPager2 方向——竖向翻页时 VERTICAL（上下滑切页），横向时 HORIZONTAL
+        viewPager.orientation = if (verticalPager) ViewPager2.ORIENTATION_VERTICAL else ViewPager2.ORIENTATION_HORIZONTAL
+        // ★ §34.3：竖向翻页禁用 FlipPageTransformer（3D 翻转对竖向不符）；后面 flipAnimationEnabled setter 会读 verticalPager
+        this.useSSIV = true
+        val pagesChanged = this.pageList.size != pages.size || this.treePath != treePath
+        val rtlChanged = this.isRtl != rtl
+        val engineChanged = this.engine != engine
+        this.engine = engine; this.treePath = treePath; this.pageList = pages; this.isRtl = rtl
+        if (pagesChanged || engineChanged) {
+            // 页数或引擎变化：完全重建
+            this.currentPage = startPage
+            loadScope.cancel()
+            loadScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+            // ★ ⑧ 最小修复：切章 clear 前 recycle 所有 bitmap，避免裸 clear 导致 Bitmap 泄漏（内存只涨不回收）
+            clearBitmapCacheRecycling()
+            // ★ §24 二代 Bug#6：切卷时必须清空动图状态——否则上一卷的 pageAnimDrawables 不释放（decoder/内存泄露）、
+            //   pageAnimFlags 残留污染新卷 idx 判定、animatedCount 不归零导致提前弹"切翻页"对话框
+            pageAnimDrawables.values.forEach { try { if (it is Animatable && it.isRunning) it.stop() } catch (_: Throwable) {} }
+            pageAnimDrawables.clear()
+            pageAnimFlags = emptyList()
+            animatedCount = 0
+            currentPlayingAnimIdx = -1
+            // ★ ① 修复：切章必须清 inflightAnimLoads 和 animRawCache。
+            //   原因：viewPager/NativeReaderScreen 实例跨 setup 复用（remember{} 创建同一 PagerReaderView），
+            //   这两个字段是 view 实例字段也跨 setup 复用。旧卷残留 inflightAnimLoads[idx] 守卫把
+            //   新卷同 idx 的 loadAnimPageAsync 跳过（行 141/210 守卫），导致新卷动图页不加载 → 永久白屏。
+            //   触发条件：用户拒绝 §34.5 动图专属视图（choice==4）+ PagerReaderView 自己跑 fallback 动图 +
+            //   切到另一个含动图页的卷。修复后 inflightAnimLoads 清空，新卷动图 idx 不再被旧 idx 守卫跳过。
+            //   ★ 边界条件（known limitation）：loadScope.cancel() 不会等已飞到 main 分支的旧协程取消完，
+            //     理论上旧协程仍可能在 clear 后 setAnimDrawable 塞错 holder——根治需要 generation token。
+            //     但此 race 在修复前就同样存在，本改动不引入新 race。
+            inflightAnimLoads.clear()
+            synchronized(animRawCache) { animRawCache.clear() }
+            viewPager.setPageTransformer(NoOpTransformer())
+            pagerAdapter = PagerAdapter()
+            viewPager.adapter = pagerAdapter
+            viewPager.setCurrentItem((if (isRtl) pages.size - 1 - startPage else startPage).coerceIn(0, pagerAdapter?.itemCount?.minus(1) ?: 0), false)
+            if (flipAnimationEnabled && !verticalPager) {
+                viewPager.postDelayed({ viewPager.setPageTransformer(FlipPageTransformer()) }, 300)
+            }
+        } else if (rtlChanged) {
+            // 仅RTL变化：保留缓存，只更新位置映射
+            this.currentPage = startPage
+            val pos = if (doublePageMode) startPage / 2 else (if (isRtl) pages.size - 1 - startPage else startPage)
+            viewPager.setCurrentItem(pos.coerceIn(0, pagerAdapter?.itemCount?.minus(1) ?: 0), false)
+        } else {
+            this.currentPage = startPage
+            val pos = if (doublePageMode) startPage / 2 else (if (isRtl) pages.size - 1 - startPage else startPage)
+            viewPager.setCurrentItem(pos.coerceIn(0, pagerAdapter?.itemCount?.minus(1) ?: 0), false)
+        }
+        if (pagesChanged || engineChanged) preloadAround(startPage)
+    }
+
+    fun setNavigationMode(mode: Int) {
+        this.navigation = DefaultNavigation
+    }
+
+    fun setCenterGapType(type: Int) {
+        this.centerGapType = type
+    }
+
+    fun setLandscapeZoom(enabled: Boolean) {
+        this.landscapeZoomEnabled = enabled
+    }
+
+    fun setTrimWhiteBorder(trim: Boolean, threshold: Int = trimThreshold, whiteRatio: Float = trimWhiteRatio) {
+        if (trimWhiteBorder == trim && trimThreshold == threshold && trimWhiteRatio == whiteRatio) return
+        this.trimWhiteBorder = trim
+        this.trimThreshold = threshold
+        this.trimWhiteRatio = whiteRatio
+        clearBitmapCacheRecycling()  // ★ ⑧ 最小修复
+        pagerAdapter?.notifyDataSetChanged()
+    }
+
+    fun setPanNavigation(pan: Boolean) {
+        this.panNavigation = pan
+    }
+
+    fun setDoublePageReverse(reverse: Boolean) {
+        this.doublePageReverseEnabled = reverse
+        pagerAdapter?.notifyDataSetChanged()
+    }
+
+    fun setDoublePageSplit(split: Boolean) {
+        if (this.doublePageSplitEnabled == split) return
+        this.doublePageSplitEnabled = split
+        pagerAdapter?.notifyDataSetChanged()
+    }
+
+    fun setShiftDoublePage(enabled: Boolean) {
+        if (shiftDoublePage == enabled) return
+        shiftDoublePage = enabled
+        clearBitmapCacheRecycling()  // ★ ⑧ 最小修复
+        pagerAdapter?.notifyDataSetChanged()
+        val newPos = if (doublePageMode) {
+            if (shiftDoublePage && pageList.size > 1) {
+                if (currentPage == 0) 0 else 1 + (currentPage - 1) / 2
+            } else currentPage / 2
+        } else currentPage
+        val finalPos = newPos.coerceIn(0, pagerAdapter?.itemCount?.minus(1) ?: 0)
+        viewPager.post { viewPager.setCurrentItem(finalPos, false) }
+    }
+
+    /** 注入放大后的 bitmap 到缓存并刷新当前页显示 */
+    fun injectUpscaledBitmap(pageIndex: Int, bitmap: Bitmap) {
+        // 不主动回收旧bitmap，让GC自然处理（避免ViewHolder还在使用时被回收导致黑屏）
+        bitmapCache[pageIndex] = bitmap
+        val pos = if (isRtl) pageList.size - 1 - pageIndex else pageIndex
+        if (pos >= 0 && pos < pageList.size) {
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                // 先清理旧 ViewHolder 状态，避免 OOM
+                try {
+                    val rv = viewPager.getChildAt(0) as? androidx.recyclerview.widget.RecyclerView ?: return@post
+                    val holder = rv.findViewHolderForAdapterPosition(pos) as? PagerViewHolder ?: return@post
+                    holder.clear()
+                } catch (_: Exception) {}
+                pagerAdapter?.notifyItemChanged(pos, "loaded")
+            }
+        }
+    }
+
+    fun setPageLayout(layout: Int) {
+        this.pageLayoutMode = layout
+    }
+
+    fun setDoublePageMode(enabled: Boolean) {
+        if (doublePageMode == enabled) return
+        doublePageMode = enabled
+        clearBitmapCacheRecycling()  // ★ ⑧ 最小修复
+        pagerAdapter?.notifyDataSetChanged()
+        val newPos = if (doublePageMode) currentPage / 2 else currentPage
+        val finalPos = newPos.coerceIn(0, pagerAdapter?.itemCount?.minus(1) ?: 0)
+        viewPager.post { viewPager.setCurrentItem(finalPos, false) }
+    }
+
+    fun setDoublePageModeAndShift(doubleEnabled: Boolean, shiftEnabled: Boolean) {
+        if (doublePageMode == doubleEnabled && shiftDoublePage == shiftEnabled) return
+        val savedPage = currentPage
+        doublePageMode = doubleEnabled
+        shiftDoublePage = shiftEnabled
+        clearBitmapCacheRecycling()  // ★ ⑧ 最小修复
+        pagerAdapter?.notifyDataSetChanged()
+        val newPos = if (doublePageMode) {
+            if (shiftDoublePage && pageList.size > 1) {
+                if (savedPage == 0) 0 else 1 + (savedPage - 1) / 2
+            } else savedPage / 2
+        } else savedPage
+        val finalPos = newPos.coerceIn(0, pagerAdapter?.itemCount?.minus(1) ?: 0)
+        viewPager.postDelayed({ viewPager.setCurrentItem(finalPos, false) }, 100)
+    }
+
+    override fun goToPage(page: Int) {
+        if (page < 0 || page >= pageList.size) return
+        val pos = if (doublePageMode) {
+            if (shiftDoublePage && pageList.size > 1) {
+                if (page == 0) 0 else 1 + (page - 1) / 2
+            } else page / 2
+        } else if (isRtl) pageList.size - 1 - page else page
+        viewPager.setCurrentItem(pos.coerceIn(0, pagerAdapter?.itemCount?.minus(1) ?: 0), false)
+        preloadAround(page)
+    }
+
+    fun nextPage() {
+        // navigateToPan: 缩放时先平移到边缘再翻页
+        if (panNavigation && tryPanIfZoomed(forward = !isRtl)) return
+        if (doublePageMode) {
+            if (shiftDoublePage && currentPage == 0) goToPage(1)
+            else if (currentPage < pageList.size - 1) goToPage(currentPage + 2)
+        } else {
+            if (currentPage < pageList.size - 1) goToPage(currentPage + 1)
+        }
+    }
+    fun prevPage() {
+        // navigateToPan: 缩放时先平移到边缘再翻页
+        if (panNavigation && tryPanIfZoomed(forward = isRtl)) return
+        if (doublePageMode) {
+            if (shiftDoublePage && currentPage <= 1) goToPage(0)
+            else if (currentPage > 0) goToPage(currentPage - 2)
+        } else {
+            if (currentPage > 0) goToPage(currentPage - 1)
+        }
+    }
+
+    /**
+     * navigateToPan: 如果当前页SSIV已缩放且还有可平移空间，执行平移动画并返回true。
+     * 返回false表示无法平移，应正常翻页。
+     */
+    private fun tryPanIfZoomed(forward: Boolean): Boolean {
+        return try {
+            val rv = viewPager.getChildAt(0) as? androidx.recyclerview.widget.RecyclerView ?: return false
+            val lm = rv.layoutManager as? androidx.recyclerview.widget.LinearLayoutManager ?: return false
+            val pos = lm.findFirstVisibleItemPosition()
+            if (pos == -1 || pos == androidx.recyclerview.widget.RecyclerView.NO_POSITION) return false
+            val holder = rv.findViewHolderForAdapterPosition(pos) as? PagerViewHolder ?: return false
+            val ssiv = holder.ssiv ?: return false
+            if (ssiv.visibility != View.VISIBLE || ssiv.scale <= ssiv.minScale + 0.01f) return false
+            val remaining = android.graphics.RectF()
+            ssiv.getPanRemaining(remaining)
+            val canPan = if (forward) remaining.right > 1f else remaining.left > 1f
+            if (canPan) {
+                val targetX = ssiv.center!!.x + if (forward) ssiv.width.toFloat() / ssiv.scale else -ssiv.width.toFloat() / ssiv.scale
+                val target = PointF(targetX, ssiv.center!!.y)
+                ssiv.animateCenter(target)
+                    ?.withDuration(250)
+                    ?.withInterruptible(true)
+                    ?.start()
+                true
+            } else false
+        } catch (_: Exception) { false }
+    }
+
+    private fun loadPageAsync(idx: Int) {
+        if (idx < 0 || idx >= pageList.size) return
+        val cached = bitmapCache[idx]
+        if (cached != null && !cached.isRecycled) return
+        val meta = pageList[idx]
+        loadScope.launch {
+            ensureNativeArchive()
+            val screenMax = maxOf(width, height).coerceAtLeast(800)
+            var bmp = withContext(Dispatchers.IO) {
+                var result: Bitmap? = null
+                // 文件夹来源直接走 Java loadPage，跳过 native 引擎（native 对文件夹返回错误数据）
+                if (meta.source == "dir") {
+                    result = engine?.loadPage(pageList[idx], treePath)
+                } else {
+                    // 所有格式统一走 Java BitmapFactory（正确处理 CMYK/ICC 色彩空间）
+                    result = engine?.loadPage(pageList[idx], treePath)
+                }
+                result
+            }
+            com.mangareader.viewer.ArchiveEngine.d("PagerView", "loaded idx=$idx bmp=${bmp?.width}x${bmp?.height} source=${meta.source}")
+            // Apply trim white border
+            if (bmp != null && !bmp.isRecycled && trimWhiteBorder && bmp.width > 10 && bmp.height > 10) {
+                try {
+                    val trim = com.mangareader.viewer.ImageTrimmer.trimWhiteBorders(bmp, threshold = trimThreshold, whiteRatio = trimWhiteRatio, factor = 0.15f)
+                    bmp = com.mangareader.viewer.ImageTrimmer.applyTrim(bmp, trim)
+                } catch (_: Exception) {}
+            }
+            if (bmp != null && !bmp.isRecycled) {
+                bitmapCache[idx] = bmp
+                withContext(Dispatchers.Main) {
+                    // Convert page index to adapter position
+                    val adapterPos = if (doublePageMode) {
+                        if (shiftDoublePage && pageList.size > 1) {
+                            if (idx == 0) 0 else 1 + (idx - 1) / 2
+                        } else idx / 2
+                    } else if (isRtl) pageList.size - 1 - idx else idx
+                    if (adapterPos >= 0 && adapterPos < (pagerAdapter?.itemCount ?: 0)) pagerAdapter?.notifyItemChanged(adapterPos, "loaded")
+                }
+            } else {
+                bitmapCache.remove(idx)
+            }
+        }
+    }
+
+    private fun preloadAround(centerIdx: Int) {
+        if (isScrolling) return
+        if (doublePageMode) {
+            // In double page mode, load both pages of current spread and adjacent spreads
+            val leftIdx = centerIdx - (centerIdx % 2)
+            loadPageAsync(leftIdx)
+            if (leftIdx + 1 < pageList.size) loadPageAsync(leftIdx + 1)
+            if (leftIdx - 2 >= 0) { loadPageAsync(leftIdx - 2); loadPageAsync(leftIdx - 1) }
+            if (leftIdx + 2 < pageList.size) { loadPageAsync(leftIdx + 2); if (leftIdx + 3 < pageList.size) loadPageAsync(leftIdx + 3) }
+        } else {
+            loadPageAsync(centerIdx)
+            for (i in 1..2) {
+                val fwd = centerIdx + i
+                if (fwd < pageList.size) loadPageAsync(fwd)
+                val bwd = centerIdx - i
+                if (bwd >= 0) loadPageAsync(bwd)
+            }
+        }
+        // ★ §34.1 预 peek ±5 idx 动图——确保翻到该页时 pageAnimFlags 已就绪 + drawable 已入 map，
+        //   翻页瞬间 setAnimDrawable 即可命中 → 无 ~700ms 白窗。
+        //   动图 raw 16-20MB，peekCost ≈ 80-150ms/页，±5 共 10 个并发 peek 不会阻塞主线程
+        //   （ensureAnimKindAsync 内部走 Dispatchers.IO）。
+        if (!doublePageMode) {
+            for (delta in -5..5) {
+                val target = centerIdx + delta
+                if (target !in pageList.indices) continue
+                if (pageAnimFlags.none { it.pageIdx == target }) {
+                    ensureAnimKindAsync(target)
+                }
+            }
+        }
+    }
+
+    private suspend fun ensureNativeArchive() {
+        val eng = engine ?: return
+        val path = withContext(Dispatchers.IO) { try { eng.getRealFileForPath(treePath) } catch (_: Exception) { "" } }
+        if (path.isEmpty()) return
+        if (path == nativeArchivePath && nativeArchive != null) return
+        archiveMutex.withLock {
+            if (path == nativeArchivePath && nativeArchive != null) return
+            nativeArchive?.close()
+            nativeArchive = withContext(Dispatchers.IO) { try { com.mangareader.native.NativeEngine.openArchive(path) } catch (_: Exception) { null } }
+            nativeArchivePath = path
+        }
+    }
+
+    override fun release() {
+        // ★ §24 二代释放动图 Drawable（停 + 清 map），防 View 销毁后 decoder 跑漏内存
+        pageAnimDrawables.values.forEach { try { if (it is Animatable && it.isRunning) it.stop() } catch (_: Throwable) {} }
+        pageAnimDrawables.clear()
+        currentPlayingAnimIdx = -1
+        pageAnimFlags = emptyList()
+        animatedCount = 0
+
+        loadScope.cancel()
+        nativeArchive?.close()
+        nativeArchive = null
+        nativeArchivePath = ""
+        bitmapCache.values.forEach { try { it.recycle() } catch (_: Exception) {} }
+        bitmapCache.clear()
+    }
+
+    override fun trimMemory(level: Int) {
+        when {
+            level >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL -> {
+                loadScope.cancel(); loadScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+                clearBitmapCacheRecycling()  // ★ ⑧ 最小修复
+            }
+            level >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW -> {
+                loadScope.cancel(); loadScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+                // Keep only current page in cache —— 踢出的 bitmap 也要 recycle
+                val keep = currentPage
+                val it = bitmapCache.entries.iterator()
+                while (it.hasNext()) {
+                    val e = it.next()
+                    if (e.key != keep) {
+                        try { if (!e.value.isRecycled) e.value.recycle() } catch (_: Exception) {}
+                        it.remove()
+                    }
+                }
+            }
+        }
+    }
+
+    private fun mergeBitmaps(left: Bitmap, right: Bitmap, gapPx: Int = 0): Bitmap {
+        val w = left.width + right.width + gapPx
+        val h = maxOf(left.height, right.height)
+        val merged = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(merged)
+        canvas.drawColor(pageBgColor)
+        canvas.drawBitmap(left, 0f, (h - left.height) / 2f, null)
+        canvas.drawBitmap(right, (left.width + gapPx).toFloat(), (h - right.height) / 2f, null)
+        return merged
+    }
+
+    inner class PagerAdapter : androidx.recyclerview.widget.RecyclerView.Adapter<PagerViewHolder>() {
+        override fun getItemCount() = if (doublePageMode) {
+            if (shiftDoublePage && pageList.size > 1) 1 + (pageList.size / 2) else (pageList.size + 1) / 2
+        } else pageList.size
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): PagerViewHolder {
+            val container = android.widget.FrameLayout(parent.context).apply {
+                layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                setBackgroundColor(pageBgColor)
+                val marginPx = (imageMarginH * parent.context.resources.displayMetrics.density).toInt()
+                setPadding(marginPx, 0, marginPx, 0)
+            }
+            val iv = ImageView(parent.context).apply {
+                id = android.R.id.content
+                layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                scaleType = ImageView.ScaleType.FIT_CENTER
+                visibility = View.VISIBLE
+            }
+            val ssiv = PagerSSIV(parent.context).apply {
+                id = com.mangareader.R.id.ssiv_pager
+                layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                isZoomEnabled = true
+                isPanEnabled = true
+                isQuickScaleEnabled = true
+                setMaxScale(5f)
+                setMaxTileSize(512)
+                setMinimumTileDpi(160)
+                setMinimumScaleType(1) // SCALE_TYPE_FIT_CENTER
+                setDoubleTapZoomDuration(300)
+                visibility = View.GONE
+            }
+            container.addView(iv)
+            container.addView(ssiv)
+            return PagerViewHolder(container)
+        }
+
+        override fun onBindViewHolder(holder: PagerViewHolder, position: Int, payloads: MutableList<Any>) {
+            if (payloads.contains("loaded")) {
+                onBindViewHolder(holder, position)
+                return
+            }
+            // ★ §24 二代懒预读：peek 完一页后 notifyItemChanged("anim") → 走 onBindViewHolder(holder, position) 重绑
+            if (payloads.contains("anim")) {
+                onBindViewHolder(holder, position)
+                return
+            }
+            onBindViewHolder(holder, position)
+        }
+
+        override fun onBindViewHolder(holder: PagerViewHolder, position: Int) {
+            // Apply margin and background color immediately so settings take effect
+            val container = holder.itemView as android.widget.FrameLayout
+            val marginPx = (imageMarginH * container.context.resources.displayMetrics.density).toInt()
+            container.setPadding(marginPx, 0, marginPx, 0)
+            container.setBackgroundColor(pageBgColor)
+
+            val debugLabel = container.findViewById<android.widget.TextView>(0x7F000001)
+            debugLabel?.visibility = View.GONE
+
+            if (doublePageMode) {
+                // Shift mode: position 0 shows first page alone, position 1+ shows merged pairs starting from page 1
+                val leftIdx = if (shiftDoublePage && pageList.size > 1) {
+                    if (position == 0) 0 else 1 + (position - 1) * 2
+                } else {
+                    if (isRtl) pageList.size - 1 - position * 2 else position * 2
+                }
+
+                // In shift mode, position 0 is a single page
+                if (shiftDoublePage && position == 0 && pageList.size > 1) {
+                    val bmp = bitmapCache[leftIdx]
+                    if (bmp != null && !bmp.isRecycled) {
+                        val needFitWidth = bmp.width > holder.itemView.width
+                        holder.setImage(bmp, useSSIV, landscapeZoomEnabled, fitWidth = needFitWidth)
+                    } else {
+                        bitmapCache.remove(leftIdx)
+                        holder.clear()
+                        if (!isScrolling) loadPageAsync(leftIdx)
+                    }
+                    return
+                }
+
+                val rightIdx = if (isRtl) leftIdx - 1 else leftIdx + 1
+                val gapPx = if (centerGapType in 1..3) (16 * holder.itemView.context.resources.displayMetrics.density).toInt() else 0
+
+                // wide image split: 全图加载到SSIV，视口定位显示左/右半边
+                if (doublePageSplitEnabled) {
+                    val leftBmp = bitmapCache[leftIdx]
+                    if (leftBmp != null && !leftBmp.isRecycled && leftBmp.width.toFloat() / leftBmp.height > 1.5f) {
+                        val showRight = doublePageReverseEnabled
+                        holder.setImageSplit(leftBmp, showRight, useSSIV, landscapeZoomEnabled)
+                        return
+                    }
+                }
+
+                // Normal double-page: merge two pages
+                val leftBmp = bitmapCache[leftIdx]
+                val rightBmp = if (rightIdx in 0 until pageList.size) bitmapCache[rightIdx] else null
+                if (leftBmp != null && !leftBmp.isRecycled) {
+                    try {
+                        val merged = if (rightBmp != null && !rightBmp.isRecycled) {
+                            if (doublePageReverseEnabled) mergeBitmaps(rightBmp, leftBmp, gapPx)
+                            else mergeBitmaps(leftBmp, rightBmp, gapPx)
+                        } else leftBmp
+                        holder.setImage(merged, useSSIV, landscapeZoomEnabled, fitWidth = true)
+                    } catch (_: OutOfMemoryError) {
+                        holder.setImage(leftBmp, useSSIV, landscapeZoomEnabled, fitWidth = true)
+                    }
+                    return
+                }
+                // Not loaded yet: load both
+                bitmapCache.remove(leftIdx)
+                bitmapCache.remove(rightIdx)
+                holder.clear()
+                if (!isScrolling) {
+                    loadPageAsync(leftIdx)
+                    if (rightIdx < pageList.size) loadPageAsync(rightIdx)
+                }
+            } else {
+                val realIdx = if (isRtl) pageList.size - 1 - position else position
+                // ★ §24 二代：动图判定——动图页走 ImageView + Drawable 路径（不走 SSIV，不用 BitmapFactory，全质量）
+                val animFlag = pageAnimFlags.firstOrNull { it.pageIdx == realIdx }
+                if (animFlag != null && animFlag.kind != AnimKind.NONE) {
+                    // 已判为动图：走动图路径
+                    holder.clearStatic()
+                    if (!isScrolling) loadAnimPageAsync(realIdx, holder)
+                    return
+                }
+                val bmp = bitmapCache[realIdx]
+                if (bmp != null && !bmp.isRecycled) {
+                    // 双页裁剪：全图加载到SSIV，视口定位显示左/右半边
+                    if (doublePageSplitEnabled && bmp.width > bmp.height) {
+                        val showRight = doublePageReverseEnabled
+                        holder.setImageSplit(bmp, showRight, useSSIV, landscapeZoomEnabled)
+                    } else {
+                        val needFitWidth = bmp.width > holder.itemView.width
+                        holder.setImage(bmp, useSSIV, landscapeZoomEnabled, fitWidth = needFitWidth)
+                    }
+                    return
+                }
+                // bitmap已回收或不存在，清除缓存重新加载
+                bitmapCache.remove(realIdx)
+                holder.clear()
+                if (!isScrolling) {
+                    loadPageAsync(realIdx)
+                    // ★ §24 二代懒预读：未判过的页，异步 peek 这一页；命中动图后会重 bind 到动图路径
+                    ensureAnimKindAsync(realIdx)
+                }
+            }
+        }
+        override fun onViewRecycled(holder: PagerViewHolder) {
+            // ★ Bug B/C 修复：onViewRecycled 之前 holder.clear() → disposeAnimDrawable() →
+            //   pageAnimDrawables.remove(heldIdx) → ViewHolder 回收时把动图 drawable 从全局 map 删掉。
+            //   后续 IDLE → notifyItemChanged → onBindViewHolder → loadAnimPageAsync NEW load
+            //   → makeAnimDrawable + setAnimDrawable（先清后设）→ 屏幕闪一下空帧 + 动图回到第 1 帧。
+            //   解法：回收时只清静图槽，保留动图槽与 pageAnimDrawables 的 entry。
+            //   动图 drawable 的生命周期集中交给 pageAnimDrawables 统管（看 currentPage 时 start / 远离时 stop）。
+            // ★ Bug C-1b：不再 setImageDrawable(null)——回翻时 holder 复用，drawable 还在 map，
+            //   IDLE rebind → loadAnimPageAsync SKIP → setAnimDrawable 重设到 ImageView 即可。
+            //   之前这里清 ImageView 导致 SKIP 路径一个空窗 → 闪白。
+            holder.clearStatic()
+        }
+    }
+
+    /** ★ §24 二代：改 inner class 让 ViewHolder 可访问外层 pageAnimDrawables 等动图状态 */
+    inner class PagerViewHolder(itemView: android.view.View) : androidx.recyclerview.widget.RecyclerView.ViewHolder(itemView) {
+        private var heldBitmap: Bitmap? = null
+        internal var ssiv: PagerSSIV? = itemView.findViewById(com.mangareader.R.id.ssiv_pager)
+        private val iv: ImageView? = itemView.findViewById(android.R.id.content)
+        /** §24 二代动图槽：setAnimDrawable 时存入，clear 时 stop+释放
+         *  ★ 改 Coil AnimatedImageDecoder 后类型从 FrameAnimationDrawable<*> → 普通 Drawable */
+        internal var heldAnimDrawable: Drawable? = null
+        /** ★ Bug#11：heldIdx 是 setAnimDrawable 进入时缓存的 page idx。
+         *   disposeAnimDrawable 用它从 pageAnimDrawables 移除对应 entry，
+         *   不用 bindingAdapterPosition（holder 复用后 dp 会变，错删别的页）。 */
+        internal var heldIdx: Int = -1
+
+        private fun createSsiv(): PagerSSIV {
+            return PagerSSIV(itemView.context).apply {
+                id = com.mangareader.R.id.ssiv_pager
+                layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                isZoomEnabled = true
+                isPanEnabled = true
+                isQuickScaleEnabled = true
+                setMaxScale(5f)
+                setMaxTileSize(512)
+                setMinimumTileDpi(160)
+                setMinimumScaleType(1) // SCALE_TYPE_FIT_CENTER
+                setDoubleTapZoomDuration(300)
+                visibility = View.GONE
+            }
+        }
+
+        fun setImage(bmp: Bitmap, useSsiv: Boolean, landscapeZoom: Boolean = true, fitWidth: Boolean = false) {
+            if (bmp.isRecycled) return
+            heldBitmap = bmp
+            if (useSsiv) {
+                val container = itemView as android.widget.FrameLayout
+                // 移除旧SSIV，创建全新实例（模仿TSY，避免复用导致的渲染状态残留）
+                ssiv?.let { container.removeView(it) }
+                val newSsiv = createSsiv()
+                container.addView(newSsiv)
+                ssiv = newSsiv
+
+                newSsiv.visibility = View.VISIBLE
+                iv?.visibility = View.GONE
+                // 先设listener，再setImage，确保onReady能捕获到
+                newSsiv.setOnImageEventListener(object : com.davemorrissey.labs.subscaleview.SubsamplingScaleImageView.DefaultOnImageEventListener() {
+                    override fun onReady() {
+                        newSsiv.setOnImageEventListener(null)
+                        applyScale(newSsiv, bmp, fitWidth, landscapeZoom)
+                    }
+                    override fun onImageLoadError(e: Exception) {
+                        newSsiv.setOnImageEventListener(null)
+                    }
+                })
+                newSsiv.setImage(com.davemorrissey.labs.subscaleview.ImageSource.bitmap(bmp))
+            } else {
+                // 不使用 SSIV：用 ImageView FIT_CENTER
+                ssiv?.visibility = View.GONE
+                iv?.visibility = View.VISIBLE
+                iv?.scaleType = ImageView.ScaleType.FIT_CENTER
+                try { iv?.setImageBitmap(bmp) } catch (_: Exception) {}
+            }
+        }
+
+        /**
+         * 裁剪双页视口定位：全图加载到SSIV，用视口显示左/右半边。
+         * 用户可以通过navigateToPan平移到另一半。
+         */
+        fun setImageSplit(bmp: Bitmap, showRight: Boolean, useSsiv: Boolean, landscapeZoom: Boolean) {
+            if (bmp.isRecycled) return
+            heldBitmap = bmp
+            if (useSsiv) {
+                val container = itemView as android.widget.FrameLayout
+                ssiv?.let { container.removeView(it) }
+                val newSsiv = createSsiv()
+                container.addView(newSsiv)
+                ssiv = newSsiv
+                newSsiv.visibility = View.VISIBLE
+                iv?.visibility = View.GONE
+                newSsiv.setOnImageEventListener(object : com.davemorrissey.labs.subscaleview.SubsamplingScaleImageView.DefaultOnImageEventListener() {
+                    override fun onReady() {
+                        newSsiv.setOnImageEventListener(null)
+                        applySplitScale(newSsiv, bmp, showRight)
+                    }
+                    override fun onImageLoadError(e: Exception) {
+                        newSsiv.setOnImageEventListener(null)
+                    }
+                })
+                newSsiv.setImage(com.davemorrissey.labs.subscaleview.ImageSource.bitmap(bmp))
+            } else {
+                val halfW = bmp.width / 2
+                val srcX = if (showRight) halfW else 0
+                val splitBmp = Bitmap.createBitmap(bmp, srcX, 0, halfW, bmp.height)
+                ssiv?.visibility = View.GONE
+                iv?.visibility = View.VISIBLE
+                iv?.scaleType = ImageView.ScaleType.FIT_CENTER
+                try { iv?.setImageBitmap(splitBmp) } catch (_: Exception) {}
+            }
+        }
+
+        private fun applySplitScale(ssiv: PagerSSIV, bmp: Bitmap, showRight: Boolean) {
+            if (!ssiv.isReady || ssiv.width <= 0) {
+                ssiv.post { applySplitScale(ssiv, bmp, showRight) }
+                return
+            }
+            val targetScale = ssiv.width.toFloat() / (bmp.width / 2f)
+            val centerX = if (showRight) bmp.width * 3f / 4f else bmp.width / 4f
+            val centerY = bmp.height / 2f
+            ssiv.setScaleAndCenter(targetScale, android.graphics.PointF(centerX, centerY))
+        }
+
+        private fun applyScale(ssiv: PagerSSIV, bmp: Bitmap, fitWidth: Boolean, landscapeZoom: Boolean) {
+            if (!ssiv.isReady || ssiv.width <= 0) {
+                ssiv.post { applyScale(ssiv, bmp, fitWidth, landscapeZoom) }
+                return
+            }
+            // 等 layout 完成后再设 scale（避免 fitToLower 在 layout 时覆盖）
+            ssiv.viewTreeObserver.addOnGlobalLayoutListener(object : android.view.ViewTreeObserver.OnGlobalLayoutListener {
+                override fun onGlobalLayout() {
+                    ssiv.viewTreeObserver.removeOnGlobalLayoutListener(this)
+                    val w = ssiv.width.toFloat()
+                    if (w > 0 && bmp.width > 0) {
+                        val scale = w / bmp.width
+                        ssiv.setScaleAndCenter(scale, android.graphics.PointF(bmp.width / 2f, bmp.height / 2f))
+                    }
+                }
+            })
+            // landscapeZoom：宽图自动放大适配高度
+            if (landscapeZoom && bmp.width > bmp.height) {
+                ssiv.handler?.postDelayed({
+                    if (ssiv.isReady) {
+                        val targetScale = ssiv.height.toFloat() / bmp.height.toFloat()
+                        val center = ssiv.center ?: android.graphics.PointF(bmp.width / 2f, bmp.height / 2f)
+                        ssiv.animateScaleAndCenter(targetScale, center)
+                            ?.withDuration(500)?.withInterruptible(true)?.start()
+                    }
+                }, 1000)
+            }
+        }
+        fun clear() {
+            disposeAnimDrawable()
+            heldBitmap = null
+            iv?.setImageBitmap(null)
+            try { ssiv?.resetScaleAndCenter() } catch (_: Exception) {}
+            ssiv?.visibility = View.GONE
+            iv?.visibility = View.VISIBLE
+        }
+        /** ★ §24 二代动图 set —— 接 drawable，存到 heldAnimDrawable 和全局 pageAnimDrawables，用 ImageView 显示；不 start（翻到这页时 startAnimIfNotRunning 才 start）
+         *   ★ Coil 路线后 drawable 是 Animatable（系统 AnimatedDrawable），不强制是 FrameAnimationDrawable */
+        fun setAnimDrawable(idx: Int, drawable: Drawable) {
+            // ★ Bug B 修复 2：若是同一 idx 的同一 drawable 实例，跳过 dispose+再设，
+            //   避免 ImageView.setImageDrawable(null) → setImageDrawable(same) 这瞬空白 → 画面闪一下。
+            if (heldIdx == idx && heldAnimDrawable === drawable) {
+                return
+            }
+            // ★ Bug#11：先把上一张 drawable 从 map 清掉再用新 idx 入 map，
+            //   不能依赖下游 disposeAnimDrawable（它用 heldIdx 是对的）。
+            disposeAnimDrawable()
+            heldIdx = idx
+            heldAnimDrawable = drawable
+            pageAnimDrawables[idx] = drawable
+            // 动图页隐藏 SSIV 走 ImageView 显示
+            ssiv?.visibility = View.GONE
+            iv?.visibility = View.VISIBLE
+            iv?.scaleType = ImageView.ScaleType.FIT_CENTER
+            iv?.setImageDrawable(drawable)
+        }
+        /** 清理动图槽：stop 释放 decoder + 从全局 map 删除（用 heldIdx 不是 bindingAdapterPosition）
+         *  ★ §34.2 T1 修复：不再调 iv.setImageDrawable(null)——dispose 与后续 setAnimDrawable 之间
+         *    ImageView 短暂空白会闪白。setAnimDrawable 内先 disposeAnimDrawable() 再 setImageDrawable(new)，
+         *    原代码 dispose 里清 null 产生一个空窗帧。现在 dispose 只停动图 + 清 map entry，不动 ImageView。
+         *    setAnimDrawable 紧接着 setImageDrawable(new) 覆盖即可。 */
+        private fun disposeAnimDrawable() {
+            heldAnimDrawable?.let { d ->
+                try { if (d is Animatable && d.isRunning) d.stop() } catch (_: Throwable) {}
+                // ★ Bug#11：原版用 `this.bindingAdapterPosition` 当 idx 去删 map，
+                //   但 holder 被复用到别的页后 dp ≠ 原 idx → 错删或漏删。
+                //   改用 setAnimDrawable 进入时缓存的 heldIdx（setAnimDrawable 写入时是真正的 idx）。
+                pageAnimDrawables.remove(heldIdx)
+            }
+            heldIdx = -1
+            heldAnimDrawable = null
+            // ★ §34.2 T1：不再 iv.setImageDrawable(null)，避免闪白空窗
+        }
+        /** §24 二代 clearStatic：动图路径前的清理（仅清静图状态不及动图槽）
+         *  ★ §34.2 T2：动图 holder 回收时也走这里——clearStatic 不动动图槽（heldAnimDrawable/pageAnimDrawables），
+         *    也不 setImageDrawable(null)（只 setImageBitmap(null)，不影响 drawable 槽）→ 回翻复用 holder 时
+         *    drawable 仍在 map，SKIP 路径 setAnimDrawable 重设到 ImageView 无空窗。 */
+        fun clearStatic() {
+            heldBitmap = null
+            iv?.setImageBitmap(null)
+            try { ssiv?.resetScaleAndCenter() } catch (_: Exception) {}
+            ssiv?.visibility = View.GONE
+            iv?.visibility = View.VISIBLE
+        }
+    }
+}

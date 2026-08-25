@@ -1,0 +1,26 @@
+# Build outputs
+build/
+app/build/
+*/build/
+
+# Gradle
+.gradle/
+
+# NDK build cache
+.cxx/
+
+# Kotlin compile cache
+.kotlin/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Machine-local SDK path
+local.properties
+
+# Logs & dumps
+*.log
+*.hprof
+crash-logs/

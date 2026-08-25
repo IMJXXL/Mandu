@@ -1,0 +1,8 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.MangaReader" parent="android:Theme.Material.Light.NoActionBar">
+    </style>
+
+    <style name="Theme.MangaReader.Dark" parent="android:Theme.Material.NoActionBar">
+    </style>
+</resources>

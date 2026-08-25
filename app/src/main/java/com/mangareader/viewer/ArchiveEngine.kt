@@ -1,0 +1,2781 @@
+package com.mangareader.viewer
+
+import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.pdf.PdfRenderer
+import android.net.Uri
+import android.provider.DocumentsContract
+import android.util.Log
+import com.mangareader.zip.CommonsZipHelper
+import org.apache.commons.compress.archivers.sevenz.SevenZFile
+import com.github.junrar.Archive as RarArchive
+import com.github.junrar.rarfile.FileHeader as RarFileHeader
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
+import java.io.File
+import java.io.FileOutputStream
+import java.security.MessageDigest
+import java.util.zip.ZipInputStream
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+
+/**
+ * ★ §24 P3：动图类型枚举（GIF / WebP / APNG / NONE）
+ * - 由 [com.mangareader.viewer.ArchiveEngine.peekAnimKind] 推断
+ * - [com.mangareader.native.WebtoonReaderView] 用它决定走哪条 Drawable 创建路径
+ */
+enum class AnimKind { NONE, GIF, WEBP, APNG }
+
+class ArchiveEngine(private val ctx: Context) {
+    companion object {
+        private const val TAG = "ArchiveEngine"
+        private const val CACHE_SIZE = 30
+        private var debugLogBuffer = StringBuilder()
+        private var debugLogFile: File? = null
+
+        // 统一排序比较器：路径深度优先与自然排序
+        private val imageSortComparator = Comparator<java.util.zip.ZipEntry> { a, b ->
+            val depthA = com.mangareader.util.ComicSortUtil.getPathDepth(a.name)
+            val depthB = com.mangareader.util.ComicSortUtil.getPathDepth(b.name)
+            if (depthA != depthB) depthA - depthB
+            else com.mangareader.zip.CommonsZipHelper.compareNatural(a.name, b.name)
+        }
+        private val rarSortComparator = Comparator<com.github.junrar.rarfile.FileHeader> { a, b ->
+            val depthA = com.mangareader.util.ComicSortUtil.getPathDepth(a.fileName)
+            val depthB = com.mangareader.util.ComicSortUtil.getPathDepth(b.fileName)
+            if (depthA != depthB) depthA - depthB
+            else com.mangareader.zip.CommonsZipHelper.compareNatural(a.fileName, b.fileName)
+        }
+
+        fun flushLog(ctx: Context) {
+            try {
+                if (debugLogBuffer.isEmpty()) return
+                if (debugLogFile == null) {
+                    debugLogFile = File(ctx.filesDir, "cover_debug.log")
+                }
+                val f = debugLogFile ?: return
+                synchronized(f) {
+                    f.appendText(debugLogBuffer.toString())
+                }
+                debugLogBuffer.clear()
+            } catch (e: Exception) {
+                Log.e(TAG, "flushLog failed: ${e.message}")
+                debugLogBuffer.clear()
+            }
+        }
+
+        fun getDebugLog(ctx: Context): String {
+            flushLog(ctx)
+            val f = debugLogFile ?: return ""
+            if (!f.exists()) return ""
+            val lines = f.readLines()
+            val sb = StringBuilder()
+            var last = ""
+            var cnt = 0
+            for (l in lines) {
+                if (l == last) { cnt++ } else {
+                    sb.appendLine(if (cnt > 1) "$last *$cnt" else last)
+                    last = l; cnt = 1
+                }
+            }
+            if (cnt > 0) sb.appendLine(if (cnt > 1) "$last *$cnt" else last)
+            return sb.toString()
+        }
+
+        fun d(tag: String, msg: String) {
+            Log.d(tag, msg)
+            debugLogBuffer.appendLine("${System.currentTimeMillis()} D/$tag: $msg")
+        }
+
+        fun w(tag: String, msg: String) {
+            Log.w(tag, msg)
+            debugLogBuffer.appendLine("${System.currentTimeMillis()} W/$tag: $msg")
+        }
+
+        fun e(tag: String, msg: String) {
+            Log.e(tag, msg)
+            debugLogBuffer.appendLine("${System.currentTimeMillis()} E/$tag: $msg")
+        }
+    }
+
+    private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO + kotlinx.coroutines.SupervisorJob())
+    private val config by lazy { com.mangareader.data.ReaderConfig.load(ctx) }
+
+    private val isEink by lazy { config.isEinkMode }
+    private val maxDecodeSize by lazy { if (isEink) config.einkDecodeSize else 4096 }
+    private val maxCoverSize by lazy {
+        val dpi = ctx.resources.displayMetrics.densityDpi
+        (dpi * 1.5f).toInt().coerceIn(480, 2048)
+    }
+
+    private val optimalCacheSize: Int by lazy {
+        if (isEink) 10 else 60
+    }
+
+    data class PageMeta(val index: Int, val source: String, val ext: String, val localIdx: Int = 0, val splitSide: Int = 0, val name: String = "")
+    data class Item(val name: String, val auth: String, val tree: String, val doc: String, val dir: Boolean, val subPath: String = "")
+    data class ZipDirNode(
+        val name: String,
+        val entryPath: String,
+        val isDir: Boolean,
+        val children: MutableList<ZipDirNode> = mutableListOf(),
+        val imageIndices: MutableList<Int> = mutableListOf()
+    )
+
+    private val bitmapCache = object : LinkedHashMap<String, Bitmap>(64, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Bitmap>?): Boolean {
+            return size > optimalCacheSize
+        }
+    }
+    private val sharedBitmapCache = object : LinkedHashMap<String, Bitmap>(100, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Bitmap>?): Boolean {
+            return size > 100
+        }
+    }
+    private val epubSpineCache = object : LinkedHashMap<String, List<Int>>(10, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<Int>>?): Boolean = size > 10
+    }
+    private val sortedImageNamesCache = object : LinkedHashMap<String, List<String>>(30, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<String>>?): Boolean = size > 30
+    }
+    private val coverCache = object : LinkedHashMap<String, Bitmap>(50, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Bitmap>?): Boolean {
+            val limit = if (isEink) 20 else 50
+            return size > limit
+        }
+    }
+
+    private val coverDir: File by lazy {
+        File(ctx.filesDir, "covers").also { if (!it.exists()) it.mkdirs() }
+    }
+
+    private val pageCacheDir: File by lazy {
+        File(ctx.filesDir, "page_cache").also { if (!it.exists()) it.mkdirs() }
+    }
+
+    fun cacheGet(key: String): Bitmap? = synchronized(bitmapCache) { bitmapCache[key] }
+
+    private fun cachePut(key: String, bmp: Bitmap) { synchronized(bitmapCache) { bitmapCache[key] = bmp } }
+
+    fun getCachedBitmap(key: String): Bitmap? = synchronized(sharedBitmapCache) { sharedBitmapCache[key] }
+
+    fun putCachedBitmap(key: String, bmp: Bitmap) { synchronized(sharedBitmapCache) { sharedBitmapCache[key] = bmp } }
+
+    private fun loadPageFromDisk(key: String): Bitmap? {
+        try {
+            val file = File(pageCacheDir, "${md5(key)}.page")
+            if (file.exists() && System.currentTimeMillis() - file.lastModified() < 7 * 24 * 60 * 60 * 1000L) {
+                return BitmapFactory.decodeFile(file.absolutePath)
+            }
+        } catch (_: Exception) {}
+        return null
+    }
+
+    private fun savePageToDisk(key: String, bmp: Bitmap) {
+        try {
+            val file = File(pageCacheDir, "${md5(key)}.page")
+            file.outputStream().use { bmp.compress(Bitmap.CompressFormat.JPEG, 85, it) }
+        } catch (_: Exception) {}
+    }
+
+    private val nativeArchives = object : LinkedHashMap<Long, com.mangareader.native.NativeEngine.Archive>(5, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Long, com.mangareader.native.NativeEngine.Archive>?) = size > 5
+    }
+
+    private fun getNativeArchive(treeStr: String): com.mangareader.native.NativeEngine.Archive? {
+        val p = parsePath(treeStr) ?: return null
+        if (p.ext !in listOf("cbz", "zip", "epub")) return null
+        val uri = DocumentsContract.buildDocumentUriUsingTree(makeTree(p.auth, p.tree), p.doc)
+        val realFile = getRealFile(uri) ?: return null
+        val path = realFile.absolutePath
+        val key = path.hashCode().toLong()
+        synchronized(nativeArchives) {
+            nativeArchives[key]?.let { return it }
+        }
+        val archive = com.mangareader.native.NativeEngine.openArchive(path) ?: return null
+        synchronized(nativeArchives) { nativeArchives[key] = archive }
+        return archive
+    }
+
+    fun clearNativeCache() {
+        com.mangareader.native.NativeEngine.clearCache()
+        com.mangareader.native.NativeEngine.clearMobiCache()
+        synchronized(nativeArchives) {
+            nativeArchives.values.forEach { it.close() }
+            nativeArchives.clear()
+        }
+    }
+
+    fun clearCache() {
+        synchronized(bitmapCache) {
+            bitmapCache.clear()
+        }
+        synchronized(coverCache) {
+            coverCache.clear()
+        }
+        clearNativeCache()
+    }
+
+    fun clearCoverCache() {
+        coverDir.listFiles()?.forEach { it.delete() }
+    }
+
+    fun deleteCoverCache(coverPath: String) {
+        val hash = md5(coverPath)
+        File(coverDir, "$hash.thumb").delete()
+    }
+
+    private fun md5(input: String): String {
+        val bytes = MessageDigest.getInstance("MD5").digest(input.toByteArray())
+        return bytes.joinToString("") { "%02x".format(it) }
+    }
+
+    private fun saveCoverToDisk(key: String, bmp: Bitmap) {
+        try {
+            evictOldCoverFiles()
+            val file = File(coverDir, "${md5(key)}.thumb")
+            file.outputStream().use { bmp.compress(Bitmap.CompressFormat.JPEG, 80, it) }
+        } catch (e: Exception) {
+            Log.e(TAG, "saveCoverToDisk: ${e.message}")
+        }
+    }
+
+    private fun loadCoverFromDisk(key: String): Bitmap? {
+        try {
+            val file = File(coverDir, "${md5(key)}.thumb")
+            if (file.exists()) {
+                file.setLastModified(System.currentTimeMillis())
+                return BitmapFactory.decodeFile(file.absolutePath)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "loadCoverFromDisk: ${e.message}")
+        }
+        return null
+    }
+
+    private fun evictOldCoverFiles() {
+        try {
+            val files = coverDir.listFiles() ?: return
+            val totalSize = files.sumOf { it.length() }
+            val maxSize = 100L * 1024 * 1024
+            if (totalSize <= maxSize) return
+            val sorted = files.sortedBy { it.lastModified() }
+            var freed = 0L
+            for (f in sorted) {
+                if (totalSize - freed <= maxSize * 0.7) break
+                freed += f.length()
+                f.delete()
+            }
+        } catch (_: Exception) {}
+    }
+
+    private val pageListCache = object : LinkedHashMap<String, List<PageMeta>>(20, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<PageMeta>>?) = size > 20
+    }
+
+    private val zipEntryCache = object : LinkedHashMap<String, List<java.util.zip.ZipEntry>>(10, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<java.util.zip.ZipEntry>>?) = size > 10
+    }
+
+    // Cache for ZIP files copied from ContentResolver (key: URI, value: cached File)
+    private val zipFileCache = object : LinkedHashMap<String, File>(4, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, File>?) = size > 4
+    }
+
+    private fun getSortedZipEntries(zf: java.util.zip.ZipFile, cacheKey: String): List<java.util.zip.ZipEntry> {
+        synchronized(zipEntryCache) { zipEntryCache[cacheKey]?.let { return it } }
+        val entries = zf.entries().asSequence()
+            .filter { !it.isDirectory && isImg(it.name) }
+            .sortedWith(compareBy<java.util.zip.ZipEntry> { it.name.count { c -> c == '/' || c == '\\' } }
+                .thenComparing { a, b -> com.mangareader.zip.CommonsZipHelper.compareNatural(a.name, b.name) })
+            .toList()
+        synchronized(zipEntryCache) { zipEntryCache[cacheKey] = entries }
+        return entries
+    }
+
+    fun listPages(path: String): List<PageMeta> {
+        synchronized(pageListCache) {
+            val cached = pageListCache[path]
+            if (cached != null) {
+                d(TAG, "listPages CACHED path=${path.takeLast(30)} total=${cached.size}")
+                return cached
+            }
+        }
+        return try {
+            val result = when {
+                path.startsWith("z:") -> {
+                    val inner = path.removePrefix("z:")
+                    val sepIdx = inner.indexOf("//")
+                    if (sepIdx < 0) emptyList()
+                    else {
+                        var archivePath = inner.substring(0, sepIdx)
+                        if (!archivePath.startsWith("a:") && !archivePath.startsWith("d:")) {
+                            archivePath = "a:$archivePath"
+                        }
+                        val subPath = inner.substring(sepIdx + 2)
+                        listZipSubDirPages(archivePath, subPath)
+                    }
+                }
+                else -> {
+                    val p = parsePath(path)
+                    if (p == null) emptyList()
+                    else {
+                        val tree = makeTree(p.auth, p.tree)
+                        when {
+                            p.tag == "d" -> scanDir(tree, p.doc)
+                            p.ext == "epub" -> scanEpub(tree, p.doc)
+                            p.ext == "mobi" || p.ext == "azw" || p.ext == "azw3" || p.ext == "pdb" || p.ext == "prc" -> scanMobi(tree, p.doc)
+                            p.ext == "cbr" || p.ext == "rar" -> scanRar(tree, p.doc)
+                            p.ext == "cb7" || p.ext == "7z" -> scan7z(tree, p.doc)
+                            else -> scanFile(tree, p.doc, p.ext, "")
+                        }
+                    }
+                }
+            }
+            synchronized(pageListCache) { pageListCache[path] = result }
+            d(TAG, "listPages path=${path.takeLast(40)} total=${result.size} first5=${result.take(5).map { it.index }}")
+            result
+        } catch (e: Exception) {
+            Log.e(TAG, "listPages: ${e.message}", e)
+            emptyList()
+        }
+    }
+
+    fun expandWidePages(pages: List<PageMeta>, treeStr: String): List<PageMeta> {
+        val result = mutableListOf<PageMeta>()
+        for (meta in pages) {
+            val key = "$treeStr|${meta.index}"
+            var bmp = cacheGet(key)
+            if (bmp == null) {
+                // Try to load from disk cache first (fast)
+                val diskKey = md5(key)
+                val diskFile = File(coverDir, "${diskKey}.page")
+                if (diskFile.exists()) {
+                    try { bmp = BitmapFactory.decodeFile(diskFile.absolutePath) } catch (_: Exception) {}
+                }
+                // If not cached, skip expensive decode on first open
+                // The page will be decoded when actually viewed
+                if (bmp == null) {
+                    result.add(meta)
+                    continue
+                }
+            }
+            if (bmp != null) {
+                if (bmp.width > bmp.height * 1.2f) {
+                    result.add(meta.copy(splitSide = 1))
+                    result.add(meta.copy(splitSide = 2))
+                } else {
+                    result.add(meta)
+                }
+            } else {
+                result.add(meta)
+            }
+        }
+        return result
+    }
+
+    fun preFetch(pages: List<PageMeta>, treeStr: String, currentIdx: Int, count: Int = if (isEink) 1 else 3) {
+        for (i in 1..count) {
+            val idx = currentIdx + i
+            if (idx < pages.size) {
+                val key = "$treeStr|$idx"
+                if (cacheGet(key) == null) {
+                    try {
+                        loadPage(pages[idx], treeStr)
+                    } catch (_: Exception) {}
+                }
+            }
+        }
+    }
+
+    /**
+     * ★ §24 P3b：返回某一页的**原始字节**（不解码为 Bitmap）——给 APNG4Android 的 FrameAnimationDrawable 用
+     * 决策 2：这是新增方法，不动现有 `loadPage` 的 6 处 IO 分支逻辑——只是把相同的 source 分发再写一遍，
+     *   但直接返回 ByteArray，跳过 `decodeBitmap + cache` 两步。
+     *
+     * - 不复用 `loadPage` 的 bitmap cache（动图走 Drawable 路径自带解码 + 帧缓存，复用它反而内存翻倍）
+     * - 不应用 splitSide（动图一般不会是 split 图）
+     * - 不应用签名随机黑页机制（动图也要播，签名未验证时返回正常字节而非 null）
+     *
+     * 6 处 source 分支与 loadPage 完全对应：zip(z:) / zip(a:) / rar / 7z / tar / mobi 系 / dir / pdf
+     */
+    fun loadPageRaw(meta: PageMeta, treeStr: String): ByteArray? {
+        // 一、ZIP + treeStr z:→ NativeEngine.readZipEntry
+        if (treeStr.isNotEmpty() && meta.source == "zip") {
+            if (treeStr.startsWith("z:")) {
+                try {
+                    val inner = treeStr.removePrefix("z:")
+                    val sepIdx = inner.indexOf("//")
+                    if (sepIdx >= 0) {
+                        var archivePath = inner.substring(0, sepIdx)
+                        if (!archivePath.startsWith("a:")) archivePath = "a:$archivePath"
+                        val subPath = inner.substring(sepIdx + 2)
+                        val result = getZipAllNames(archivePath) ?: return null
+                        val (cacheKey, allNames) = result
+                        val root = zipTreeCache.getOrPut(cacheKey) { buildZipTree(allNames.toList()) }
+                        var current = root
+                        val pathParts = subPath.split('/').filter { it.isNotEmpty() }
+                        for (part in pathParts) {
+                            val child = current.children.find { it.name == part && it.isDir } ?: return null
+                            current = child
+                        }
+                        val imgLocalIdx = meta.localIdx
+                        if (imgLocalIdx in current.imageIndices.indices) {
+                            val rawEntryIdx = current.imageIndices[imgLocalIdx]
+                            return com.mangareader.native.NativeEngine.readZipEntry(cacheKey, rawEntryIdx)
+                        }
+                    }
+                } catch (_: Exception) { return null }
+                return null
+            }
+            // 二、ZIP + 普通 a: 路径 → loadFromZip
+            try {
+                val p = parsePath(treeStr) ?: return null
+                val tree = makeTree(p.auth, p.tree)
+                val uri = DocumentsContract.buildDocumentUriUsingTree(tree, p.doc)
+                return loadFromZip(uri, meta.localIdx, treeStr)
+            } catch (_: Exception) { return null }
+        }
+        // 三、RAR/7Z/TAR → loadFrom{Rar/7z/Tar}
+        if (treeStr.isNotEmpty() && meta.source in listOf("rar", "7z", "tar")) {
+            try {
+                val p = parsePath(treeStr) ?: return null
+                val tree = makeTree(p.auth, p.tree)
+                val uri = DocumentsContract.buildDocumentUriUsingTree(tree, p.doc)
+                return when (meta.source) {
+                    "rar" -> loadFromRar(uri, meta.localIdx)
+                    "7z" -> loadFrom7z(uri, meta.localIdx)
+                    "tar" -> loadFromTar(uri, meta.localIdx)
+                    else -> null
+                }
+            } catch (_: Exception) { return null }
+        }
+        // 四、MOBI/AZW/PDB/PRC → NativeEngine.readMobiPage + fallback loadMobiPage
+        if (treeStr.isNotEmpty() && meta.source in listOf("mobi", "azw", "azw3", "pdb", "prc")) {
+            try {
+                val p = parsePath(treeStr) ?: return null
+                val tree = makeTree(p.auth, p.tree)
+                val uri = DocumentsContract.buildDocumentUriUsingTree(tree, p.doc)
+                val cacheKey = uri.toString()
+                ctx.contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
+                    val fd = pfd.detachFd()
+                    try { com.mangareader.native.NativeEngine.openMobiWithFd(cacheKey, fd) } catch (_: Exception) {}
+                    val rawData = com.mangareader.native.NativeEngine.readMobiPage(cacheKey, meta.localIdx)
+                    if (rawData != null) return rawData
+                }
+                return loadMobiPage(uri, meta.localIdx)  // fallback Java 两遍扫描
+            } catch (_: Exception) { return null }
+        }
+        // 五、DIR → loadDirPage 包 ByteArray 的 java fallback
+        if (meta.source == "dir") {
+            try {
+                val p = parsePath(treeStr) ?: return null
+                val tree = makeTree(p.auth, p.tree)
+                return loadDirPageRaw(tree, meta, treeStr)
+            } catch (_: Exception) { return null }
+        }
+        // 六、PDF → loadPdfPageRaw（如有）；当前未实现 PDF 的 raw 路径，返回 null 走 loadPage 兜底
+        if (meta.source == "pdf") {
+            return null  // ★ 动图 PDF 极少；不做（如果需要可加 loadPdfPageRaw）
+        }
+        return null
+    }
+
+    /**
+     * ★ P2 优化：autoWebtoon 判定专用——只读页尺寸不解帧。
+     *   比 loadPage 节省 ~95% 时间（不解码 RGB，只扫文件头读宽高）。
+     *   比 notes 第 303 行被否版多 PDF 分路——loadPageRaw 对 pdf 硬返回 null，
+     *   本方法把 PDF 单独走 NativeEngine.pdfGetPageSize（已有 API，纯 metadata 读取不解帧）
+     *   修正原方案被否的"PDF 条漫书判不中"缺口。
+     *   ★ 返回 IntArray[width, height] 或 null；调用方 ratio = w.toFloat()/h
+     *   ★ 不缓存 Bitmap（没解出来）；不读 SignatureVerifier.isVerified 守卫
+     *     （autoWebtoon 判定只是读 size 决策 mode，不显示给用户，跳签名门不破坏杀进程机制——
+     *      原 loadPage 的签名门是"未验证时随机返回 null 导致黑页"，本方法不显示不需此门）
+     */
+    fun loadPageSize(meta: PageMeta, treeStr: String): IntArray? {
+        // ★ PDF 分路：NativeEngine.pdfGetPageSize 返回 IntArray[width, height]，纯 metadata 不 render
+        //   ★★★ 审查修正 1：docKey 必须用 docUri.toString()，不带 "pdf:" 前缀。
+        //     理由：CPP 句柄表（pdfium_wrapper.cpp:132 `handles.find(key)`）用 key 直接查表。
+        //     loadPdfPage（行 1939）用 `docKey = uri.toString()` 不带前缀。
+        //     本方法必须与 loadPdfPage 用相同 docKey 才能复用同一 PDF 句柄；
+        //     若带 "pdf:" 前缀会创建独立条目 → 句柄泄漏 + 表膨胀 + 后续 loadPdfPage 仍重新 open。
+        //     （"pdf:" 前缀只在 sharedKey = "pdf:$uri|$pageIndex" 做 bitmap 缓存键用，与 docKey 不同用途）
+        if (meta.source == "pdf") {
+            return try {
+                val p = parsePath(treeStr) ?: return null
+                val tree = makeTree(p.auth, p.tree)
+                val docUri = DocumentsContract.buildDocumentUriUsingTree(tree, meta.ext)
+                val docKey = docUri.toString()  // ★ 不带 "pdf:" 前缀，与 loadPdfPage 对齐
+                // ★ 审查修正 2：pfd 处理范式对齐 loadPdfPage（行 1943-1953）：
+                //   detachFd() 后 pfd 不再持有 fd，但用 try/finally { pfd.close() } 兜底（detachFd 后 close 是 no-op 不抛）
+                //   比 .use { } 更明确语义、与原版范式一致；避免 detachFd 边界行为差异
+                if (!com.mangareader.native.NativeEngine.pdfIsOpen(docKey)) {
+                    val pfd = ctx.contentResolver.openFileDescriptor(docUri, "r")
+                    if (pfd != null) {
+                        try {
+                            val fd = pfd.detachFd()
+                            try {
+                                com.mangareader.native.NativeEngine.pdfOpen(docKey, fd)
+                            } catch (e: Exception) {
+                                Log.e(TAG, "loadPageSize pdfOpen failed: ${e.message}", e)
+                            }
+                        } finally { try { pfd.close() } catch (_: Exception) {} }
+                    }
+                }
+                com.mangareader.native.NativeEngine.pdfGetPageSize(docKey, meta.localIdx)
+            } catch (_: Exception) { null }
+        }
+        // 其他 source：loadPageRaw 拿字节 + inJustDecodeBounds 扫头部
+        //   ★ readZipEntry（native_engine.cpp:195-204）对 DEFLATE 压缩已 inflate 返回解压后字节；
+        //     loadDirPageRaw（行 496）读完整文件字节；loadFromRar/7z/tar 同理都是解压后字节。
+        //   ★ inJustDecodeBounds 对 JPEG/PNG/WebP/GIF/APNG 头部都能读 outWidth/outHeight 不解帧。
+        val raw = try { loadPageRaw(meta, treeStr) } catch (_: Exception) { null } ?: return null
+        if (raw.isEmpty()) return null
+        val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(raw, 0, raw.size, opts)
+        return if (opts.outWidth > 0 && opts.outHeight > 0) intArrayOf(opts.outWidth, opts.outHeight) else null
+    }
+
+    /** §24 P3 dir 分支：loadDirPage 返回 Bitmap，这里补一个返回 ByteArray 的同款函数（直接读图字节） */
+    private fun loadDirPageRaw(tree: Uri, meta: PageMeta, treeStr: String): ByteArray? {
+        // 复用 loadDirPage 的 URI 构造，但直接读文件字节而非 decode
+        try {
+            val docUri = if (meta.ext.isNotEmpty()) {
+                DocumentsContract.buildDocumentUriUsingTree(tree, meta.ext)
+            } else {
+                DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
+            }
+            ctx.contentResolver.openInputStream(docUri)?.use { return it.readBytes() }
+        } catch (_: Exception) {}
+        return null
+    }
+
+    /**
+     * ★ §24 P3 二代：读唯一一次全文件 → 判 magic 头 → 三个 Parser 共用同一 ByteBufferReader。
+     *   旧版本 peekHeadBytes + isAnimatedGif/isApng/isAWebP 各读一遍（共 2 次全读）→ 大卷 IO 翻倍。
+     *   注意：仍要读全文件——APNG 需遍历整文件找 acTL chunk（§25 B2 修订）。
+     *   bind 时单页调，不会卷级联阻塞翻页 IO（旧版本是整章串行预读）。
+     */
+    suspend fun peekAnimKind(treeStr: String, meta: PageMeta): AnimKind {
+        val raw = try { loadPageRaw(meta, treeStr) } catch (_: Exception) { null } ?: return AnimKind.NONE
+        if (raw.size < 8) {
+            return AnimKind.NONE
+        }
+        // 三个 Parser 共用同一 reader（注意 reader 内部 mark 后可能消费，按需 new）
+        // GIF: 47 49 46 38 (GIF8)
+        if (raw[0]==0x47.toByte() && raw[1]==0x49.toByte() && raw[2]==0x46.toByte() && raw[3]==0x38.toByte()) {
+            val r = com.github.penfeizhou.animation.io.ByteBufferReader(java.nio.ByteBuffer.wrap(raw))
+            val anim = try { com.github.penfeizhou.animation.gif.decode.GifParser.isGif(r) } catch (_: Exception) { false }
+            return if (anim) AnimKind.GIF else AnimKind.NONE
+        }
+        // PNG: 89 50 4E 47 → 可能 APNG
+        if (raw[0]==0x89.toByte() && raw[1]==0x50.toByte() && raw[2]==0x4E.toByte() && raw[3]==0x47.toByte()) {
+            val r = com.github.penfeizhou.animation.io.ByteBufferReader(java.nio.ByteBuffer.wrap(raw))
+            val anim = try { com.github.penfeizhou.animation.apng.decode.APNGParser.isAPNG(r) } catch (_: Exception) { false }
+            return if (anim) AnimKind.APNG else AnimKind.NONE
+        }
+        // WEBP: 52 49 46 46 (RIFF) ... 57 45 42 50 (WEBP)
+        if (raw.size>=12 && raw[0]==0x52.toByte() && raw[1]==0x49.toByte() && raw[2]==0x46.toByte() && raw[3]==0x46.toByte()
+            && raw[8]==0x57.toByte() && raw[9]==0x45.toByte() && raw[10]==0x42.toByte() && raw[11]==0x50.toByte()) {
+            val r = com.github.penfeizhou.animation.io.ByteBufferReader(java.nio.ByteBuffer.wrap(raw))
+            val anim = try { com.github.penfeizhou.animation.webp.decode.WebPParser.isAWebP(r) } catch (_: Exception) { false }
+            return if (anim) AnimKind.WEBP else AnimKind.NONE
+        }
+        // JPEG 等：直接 NONE（不算动图）
+        return AnimKind.NONE
+    }
+
+
+    fun loadPage(meta: PageMeta, treeStr: String): Bitmap? {
+        // 签名校验：未验证时随机返回 null 导致黑页
+        if (!com.mangareader.SignatureVerifier.isVerified && meta.index % 3 == 0) return null
+        // For ZIP/EPUB: go straight to loadFromZip (libzip fd-based, skip getNativeArchive)
+        if (treeStr.isNotEmpty() && meta.source == "zip") {
+            // z: path — ZIP internal directory
+            if (treeStr.startsWith("z:")) {
+                try {
+                    val inner = treeStr.removePrefix("z:")
+                    val sepIdx = inner.indexOf("//")
+                    if (sepIdx >= 0) {
+                        var archivePath = inner.substring(0, sepIdx)
+                        if (!archivePath.startsWith("a:")) archivePath = "a:$archivePath"
+                        val subPath = inner.substring(sepIdx + 2)
+                        android.util.Log.d(TAG, "loadPage z: archivePath=$archivePath subPath=$subPath idx=${meta.localIdx}")
+                        val result = getZipAllNames(archivePath) ?: return null
+                        val (cacheKey, allNames) = result
+                        val root = zipTreeCache.getOrPut(cacheKey) { buildZipTree(allNames.toList()) }
+                        var current = root
+                        val pathParts = subPath.split('/').filter { it.isNotEmpty() }
+                        for (part in pathParts) {
+                            val child = current.children.find { it.name == part && it.isDir }
+                            if (child != null) current = child
+                            else { android.util.Log.e(TAG, "loadPage z: node not found: $part"); return null }
+                        }
+                        android.util.Log.d(TAG, "loadPage z: imageIndices.size=${current.imageIndices.size}")
+                        val imgLocalIdx = meta.localIdx
+                        if (imgLocalIdx in current.imageIndices.indices) {
+                            val rawEntryIdx = current.imageIndices[imgLocalIdx]
+                            android.util.Log.d(TAG, "loadPage z: rawEntryIdx=$rawEntryIdx cacheKey=${cacheKey.takeLast(30)}")
+                            val key = "$treeStr|${meta.index}"
+                            cacheGet(key)?.let { return it }
+                            val rawData = com.mangareader.native.NativeEngine.readZipEntry(cacheKey, rawEntryIdx)
+                            android.util.Log.d(TAG, "loadPage z: readZipEntry returned ${rawData?.size ?: "null"} bytes")
+                            if (rawData != null) {
+                                val bmp = decodeBitmap(rawData)
+                                if (bmp != null) { cachePut(key, bmp); return bmp }
+                            }
+                        } else {
+                            android.util.Log.e(TAG, "loadPage z: imgLocalIdx $imgLocalIdx out of range (0..${current.imageIndices.indices.last})")
+                        }
+                    }
+                } catch (e: Exception) { android.util.Log.e(TAG, "loadPage z: exception: ${e.message}") }
+                return null
+            }
+            try {
+                val p = parsePath(treeStr)
+                if (p != null) {
+                    val tree = makeTree(p.auth, p.tree)
+                    val uri = DocumentsContract.buildDocumentUriUsingTree(tree, p.doc)
+                    val key = "$treeStr|${meta.index}|0"
+                    cacheGet(key)?.let { return it }
+                    val rawData = loadFromZip(uri, meta.localIdx, treeStr)
+                    if (rawData != null) {
+                        val bmp = decodeBitmap(rawData)
+                        if (bmp != null) { cachePut(key, bmp); return bmp }
+                    }
+                }
+            } catch (_: Exception) {}
+            return null
+        }
+        // For RAR/7Z/TAR: use loadFromRar/loadFrom7z/loadFromTar (libarchive)
+        if (treeStr.isNotEmpty() && meta.source in listOf("rar", "7z", "tar")) {
+            try {
+                val p = parsePath(treeStr)
+                if (p != null) {
+                    val tree = makeTree(p.auth, p.tree)
+                    val uri = DocumentsContract.buildDocumentUriUsingTree(tree, p.doc)
+                    val key = "$treeStr|${meta.index}"
+                    cacheGet(key)?.let { return it }
+                    val rawData = when (meta.source) {
+                        "rar" -> loadFromRar(uri, meta.localIdx)
+                        "7z" -> loadFrom7z(uri, meta.localIdx)
+                        "tar" -> loadFromTar(uri, meta.localIdx)
+                        else -> null
+                    }
+                    if (rawData != null) {
+                        val bmp = decodeBitmap(rawData)
+                        if (bmp != null) { cachePut(key, bmp); return bmp }
+                    }
+                }
+            } catch (_: Exception) {}
+            return null
+        }
+        // MOBI/AZW/PDB/PRC: libmobi (fd-based, cached handle)
+        if (treeStr.isNotEmpty() && meta.source in listOf("mobi", "azw", "azw3", "pdb", "prc")) {
+            try {
+                val p = parsePath(treeStr) ?: return null
+                val tree = makeTree(p.auth, p.tree)
+                val uri = DocumentsContract.buildDocumentUriUsingTree(tree, p.doc)
+                val cacheKey = uri.toString()
+                Log.d(TAG, "MOBI loadPage: idx=${meta.localIdx} cacheKey=${cacheKey.takeLast(30)}")
+                // get fd from URI, pass to libmobi
+                ctx.contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
+                    val fd = pfd.detachFd()
+                    Log.d(TAG, "MOBI loadPage: fd=$fd, calling openMobiWithFd")
+                    try {
+                        com.mangareader.native.NativeEngine.openMobiWithFd(cacheKey, fd)
+                    } catch (_: Exception) {}
+                    val rawData = com.mangareader.native.NativeEngine.readMobiPage(cacheKey, meta.localIdx)
+                    Log.d(TAG, "MOBI loadPage: readMobiPage returned ${rawData?.size ?: "null"} bytes")
+                    if (rawData != null) {
+                        val bmp = decodeBitmap(rawData)
+                        if (bmp != null) return bmp
+                    }
+                }
+                // fallback: Java两遍扫描
+                Log.d(TAG, "MOBI loadPage: falling back to Java loadMobiPage")
+                val bmp = loadMobiPage(uri, meta.localIdx)?.let { decodeBitmap(it) }
+                if (bmp != null) return bmp
+            } catch (e: Exception) { Log.e(TAG, "MOBI error: ${e.message}") }
+            return null
+        }
+        // PDF/dir/其他: Java路径（保留Java缓存）
+        val key = "$treeStr|${meta.index}|${meta.splitSide}"
+        cacheGet(key)?.let { return it }
+        return try {
+            val p = parsePath(treeStr) ?: return null
+            val tree = makeTree(p.auth, p.tree)
+            val bmp = when (meta.source) {
+                "dir" -> loadDirPage(tree, meta, treeStr)
+                "pdf" -> {
+                    val uri = DocumentsContract.buildDocumentUriUsingTree(tree, meta.ext)
+                    loadPdfPage(uri, meta.localIdx)
+                }
+                else -> null
+            }
+            val result = if (bmp != null && meta.splitSide != 0 && bmp.width > bmp.height * 1.2f) {
+                val halfWidth = bmp.width / 2
+                val startX = if (meta.splitSide == 1) 0 else halfWidth
+                Bitmap.createBitmap(bmp, startX, 0, halfWidth, bmp.height)
+            } else bmp
+            result?.let { cachePut(key, it) }
+            result
+        } catch (e: Exception) { Log.e(TAG, "loadPage: ${e.message}", e); null }
+    }
+
+    private fun calculateSampleSize(width: Int, height: Int, maxDim: Int): Int {
+        var sampleSize = 1
+        while (width / sampleSize > maxDim || height / sampleSize > maxDim) {
+            sampleSize *= 2
+        }
+        return sampleSize
+    }
+
+    private fun loadDirPage(tree: Uri, meta: PageMeta, treeStr: String): Bitmap? {
+        val uri = DocumentsContract.buildDocumentUriUsingTree(tree, meta.ext)
+        d(TAG, "dir loadPage idx=${meta.index} docId=${meta.ext.substringAfterLast("/")} uri=${uri}")
+        val screenMax = (maxOf(ctx.resources.displayMetrics.widthPixels, ctx.resources.displayMetrics.heightPixels) * 1.2f).toInt()
+        val hasManageStorage = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R && android.os.Environment.isExternalStorageManager()
+        if (hasManageStorage) {
+            val realFile = getRealFile(uri)
+            if (realFile != null && realFile.exists() && realFile.length() > 0) {
+                val boundsOpts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeFile(realFile.absolutePath, boundsOpts)
+                val sampleSize = if (boundsOpts.outWidth > 0 && boundsOpts.outHeight > 0) {
+                    calculateSampleSize(boundsOpts.outWidth, boundsOpts.outHeight, screenMax)
+                } else 1
+                val decodeOpts = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+                return BitmapFactory.decodeFile(realFile.absolutePath, decodeOpts)
+            }
+        }
+        // fallback: SAF URI
+        val boundsOpts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        try { ctx.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, boundsOpts) } } catch (_: Exception) {}
+        val sampleSize = if (boundsOpts.outWidth > 0 && boundsOpts.outHeight > 0) {
+            calculateSampleSize(boundsOpts.outWidth, boundsOpts.outHeight, screenMax)
+        } else 1
+        val decodeOpts = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+        return try { ctx.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, decodeOpts) } } catch (_: Exception) { null }
+    }
+
+    fun getPageFileUri(meta: PageMeta, treeStr: String): String? {
+        if (meta.source != "dir") return null
+        return try {
+            val p = parsePath(treeStr) ?: return null
+            val tree = makeTree(p.auth, p.tree)
+            val uri = DocumentsContract.buildDocumentUriUsingTree(tree, meta.ext)
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R && android.os.Environment.isExternalStorageManager()) {
+                val realFile = getRealFile(uri)
+                if (realFile != null && realFile.exists() && realFile.length() > 0) {
+                    return "file://${realFile.absolutePath}"
+                }
+            }
+            uri.toString()
+        } catch (_: Exception) { null }
+    }
+
+    fun decodeBitmap(data: ByteArray): Bitmap? {
+        return try {
+            // 全尺寸解码，不降采样，保持原始清晰度（SSIV 通过 tile 机制高效显示大图）
+            BitmapFactory.decodeByteArray(data, 0, data.size)
+        } catch (e: OutOfMemoryError) {
+            System.gc()
+            try {
+                BitmapFactory.decodeByteArray(data, 0, data.size, BitmapFactory.Options().apply { inSampleSize = 2 })
+            } catch (_: Exception) { null }
+        } catch (e: Exception) {
+            Log.e(TAG, "decode: ${e.message}")
+            try { BitmapFactory.decodeByteArray(data, 0, data.size) } catch (_: Exception) { null }
+        }
+    }
+
+    private fun decodeCoverBitmap(data: ByteArray): Bitmap? {
+        if (data.isEmpty()) return null
+        return try {
+            com.mangareader.native.NativeEngine.decodeRaw(data, maxCoverSize, maxCoverSize)
+                ?: BitmapFactory.decodeByteArray(data, 0, data.size, BitmapFactory.Options().apply {
+                    inJustDecodeBounds = true
+                }.let { opts ->
+                    var s = 1
+                    while (opts.outWidth / s > maxCoverSize || opts.outHeight / s > maxCoverSize) s *= 2
+                    BitmapFactory.Options().apply { inSampleSize = s }
+                })
+        } catch (e: OutOfMemoryError) {
+            System.gc()
+            try {
+                BitmapFactory.decodeByteArray(data, 0, data.size, BitmapFactory.Options().apply { inSampleSize = 4 })
+            } catch (_: Exception) { null }
+        } catch (e: Exception) {
+            Log.e(TAG, "decodeCover: ${e.message}")
+            null
+        }
+    }
+
+    fun children(path: String): List<Item> {
+        return try {
+            if (path.startsWith("z:")) {
+                android.util.Log.d(TAG, "children z: path=$path")
+                val inner = path.removePrefix("z:")
+                val sepIdx = inner.indexOf("//")
+                android.util.Log.d(TAG, "children sepIdx=$sepIdx inner=$inner")
+                if (sepIdx < 0) return emptyList()
+                var archivePath = inner.substring(0, sepIdx)
+                if (!archivePath.startsWith("a:") && !archivePath.startsWith("d:")) {
+                    archivePath = "a:$archivePath"
+                }
+                val subPath = inner.substring(sepIdx + 2)
+                android.util.Log.d(TAG, "children archivePath=$archivePath subPath=$subPath")
+                val result = listZipDirs(archivePath, subPath.ifEmpty { null })
+                android.util.Log.d(TAG, "children result.size=${result.size}")
+                result
+            } else {
+                val p = parsePath(path) ?: return emptyList()
+                val tree = makeTree(p.auth, p.tree)
+                listDir(tree, p.doc, p.auth, p.tree)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "children: ${e.message}", e)
+            emptyList()
+        }
+    }
+
+    fun collectAllImages(path: String): List<PageMeta> {
+        val allPages = mutableListOf<PageMeta>()
+        try {
+            val p = parsePath(path) ?: return emptyList()
+            val tree = makeTree(p.auth, p.tree)
+            collectImagesRecursive(tree, p.doc, p.auth, p.tree, allPages)
+            allPages.sortBy { it.ext }
+            Log.d(TAG, "collectAllImages: found ${allPages.size} total images")
+        } catch (e: Exception) {
+            Log.e(TAG, "collectAllImages: ${e.message}", e)
+        }
+        return allPages
+    }
+
+    private fun collectImagesRecursive(tree: Uri, doc: String, auth: String, treeId: String, pages: MutableList<PageMeta>) {
+        try {
+            val child = DocumentsContract.buildChildDocumentsUriUsingTree(tree, doc)
+            ctx.contentResolver.query(child, null, null, null, null)?.use { c ->
+                val ni = c.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+                val ii = c.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+                val mi = c.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE)
+                val imgs = mutableListOf<Pair<String, String>>()
+                val subDirs = mutableListOf<String>()
+                val arcs = mutableListOf<Pair<String, String>>()
+                
+                while (c.moveToNext()) {
+                    val n = c.getString(ni) ?: continue
+                    val id = c.getString(ii) ?: continue
+                    val mime = if (mi >= 0) c.getString(mi) ?: "" else ""
+                    val isDir = mime == DocumentsContract.Document.MIME_TYPE_DIR
+                    
+                    if (isDir) {
+                        subDirs.add(id)
+                    } else if (isImg(n)) {
+                        imgs.add(n to id)
+                    } else if (isComic(n)) {
+                        arcs.add(n to id)
+                    }
+                }
+                
+                d(TAG, "collectImages: ${imgs.size} imgs sorted: ${imgs.sortedWith(Comparator<Pair<String, String>> { a, b -> com.mangareader.zip.CommonsZipHelper.compareNatural(a.first, b.first) }).take(8).map { it.first }}")
+                imgs.sortedWith(Comparator<Pair<String, String>> { a, b -> com.mangareader.zip.CommonsZipHelper.compareNatural(a.first, b.first) }).forEach { (_, id) ->
+                    pages.add(PageMeta(pages.size, "dir", id))
+                }
+                d(TAG, "collectImages: after sort, first 5 pages: ${pages.take(5).map { it.index }}")
+
+                arcs.sortedWith(Comparator<Pair<String, String>> { a, b -> com.mangareader.zip.CommonsZipHelper.compareNatural(a.first, b.first) }).forEach { (name, id) ->
+                    val ext = name.substringAfterLast(".").lowercase()
+                    when (ext) {
+                        "cbz", "zip", "epub" -> {
+                            val arcUri = DocumentsContract.buildDocumentUriUsingTree(tree, id)
+                            val count = try { listZipPages(arcUri).size } catch (e: Exception) { Log.e(TAG, "collectImages listZipPages: ${e.message}"); 0 }
+                            for (i in 0 until count) pages.add(PageMeta(pages.size, "zip", id, i))
+                        }
+                        "pdf" -> {
+                            val arcUri = DocumentsContract.buildDocumentUriUsingTree(tree, id)
+                            val count = try { countPdfPages(arcUri) } catch (e: Exception) { 0 }
+                            for (i in 0 until count) pages.add(PageMeta(pages.size, "pdf", id, i))
+                        }
+                        "mobi", "azw", "azw3" -> {
+                            val arcUri = DocumentsContract.buildDocumentUriUsingTree(tree, id)
+                            val count = try { scanMobi(arcUri, id).size } catch (e: Exception) { 0 }
+                            for (i in 0 until count) pages.add(PageMeta(pages.size, "mobi", id, i))
+                        }
+                    }
+                }
+                
+                subDirs.forEach { subId ->
+                    collectImagesRecursive(tree, subId, auth, treeId, pages)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "collectImagesRecursive: ${e.message}", e)
+        }
+    }
+
+    fun loadCover(cover: String): Bitmap? {
+        if (!cover.startsWith("cv:")) return null
+        synchronized(coverCache) { coverCache[cover]?.let { return it } }
+        val diskCached = loadCoverFromDisk(cover)
+        if (diskCached != null) {
+            synchronized(coverCache) { coverCache[cover] = diskCached }
+            return diskCached
+        }
+        try {
+            val parts = cover.removePrefix("cv:").split("|")
+            if (parts.size < 3) { Log.w(TAG, "loadCover: invalid parts($${parts.size}) for $cover"); return null }
+            val auth = parts[0]
+            val treeStr = parts[1]
+            val docId = parts[2]
+            val fileName = if (parts.size >= 4 && parts[3].isNotEmpty()) parts[3] else docId.substringAfterLast("/")
+            val tree = makeTree(auth, treeStr)
+            val logMsg = "loadCover: auth=$auth tree=$treeStr doc=$docId file=$fileName"
+            Log.d(TAG, logMsg)
+            debugLogBuffer.appendLine("${System.currentTimeMillis()} $logMsg")
+
+            if (fileName.endsWith(".cbz") || fileName.endsWith(".zip") || fileName.endsWith(".epub")) {
+                val bmp = loadArchiveCover(auth, treeStr, docId, tree, cover)
+                if (bmp != null) { flushLog(ctx); return bmp }
+                Log.w(TAG, "loadCover: all archive fallbacks failed for $cover")
+                debugLogBuffer.appendLine("${System.currentTimeMillis()} W loadCover: ALL archive fallbacks failed")
+            } else if (fileName.endsWith(".mobi") || fileName.endsWith(".azw") || fileName.endsWith(".azw3")) {
+                val bmp = loadMobiCover(auth, treeStr, docId, tree, cover)
+                if (bmp != null) { flushLog(ctx); return bmp }
+                Log.w(TAG, "loadCover: all mobi fallbacks failed for $cover")
+                debugLogBuffer.appendLine("${System.currentTimeMillis()} W loadCover: ALL mobi fallbacks failed")
+            } else if (fileName.endsWith(".cbr") || fileName.endsWith(".rar") ||
+                       fileName.endsWith(".cb7") || fileName.endsWith(".7z") ||
+                       fileName.endsWith(".tar") || fileName.endsWith(".cbt") ||
+                       fileName.endsWith(".tgz") || fileName.endsWith(".tbz2") || fileName.endsWith(".txz")) {
+                val uri = DocumentsContract.buildDocumentUriUsingTree(tree, docId)
+                val bmp = try {
+                    val rawData = when {
+                        fileName.endsWith(".cbr") || fileName.endsWith(".rar") -> loadFromRar(uri, 0)
+                        fileName.endsWith(".tar") || fileName.endsWith(".cbt") ||
+                        fileName.endsWith(".tgz") || fileName.endsWith(".tbz2") || fileName.endsWith(".txz") -> loadFromTar(uri, 0)
+                        else -> loadFrom7z(uri, 0)
+                    }
+                    rawData?.let { decodeBitmap(it) }
+                } catch (_: Exception) { null }
+                if (bmp != null) { saveCoverToDisk(cover, bmp); synchronized(coverCache) { coverCache[cover] = bmp }; flushLog(ctx); return bmp }
+            } else if (fileName.endsWith(".pdf")) {
+                val uri = DocumentsContract.buildDocumentUriUsingTree(tree, docId)
+                val bmp = try { loadPdfPage(uri, 0) } catch (_: Exception) { null }
+                if (bmp != null) { saveCoverToDisk(cover, bmp); synchronized(coverCache) { coverCache[cover] = bmp }; flushLog(ctx); return bmp }
+            } else if (isImg(fileName)) {
+                val uri = DocumentsContract.buildDocumentUriUsingTree(tree, docId)
+                val data = try { ctx.contentResolver.openInputStream(uri)?.use { it.readBytes() } } catch (ex: Exception) { Log.e(TAG, "loadCover img: ${ex.message}"); null }
+                val bmp = safeDecodeCover(data)
+                if (bmp != null) { saveCoverToDisk(cover, bmp); synchronized(coverCache) { coverCache[cover] = bmp }; flushLog(ctx); return bmp }
+            } else {
+                Log.w(TAG, "loadCover: unknown extension for $fileName in $cover")
+            }
+        } catch (e: Exception) { Log.e(TAG, "loadCover: ${e.message}", e) }
+        flushLog(ctx)
+        return null
+    }
+
+    private fun loadArchiveCover(auth: String, treeStr: String, docId: String, tree: Uri, coverKey: String): Bitmap? {
+        val uri = DocumentsContract.buildDocumentUriUsingTree(tree, docId)
+        Log.d(TAG, "loadArchiveCover: uri=$uri")
+        debugLogBuffer.appendLine("${System.currentTimeMillis()} loadArchiveCover: uri=$uri")
+
+        // EPUB专用：用OPF manifest的properties="cover-image"找封面
+        if (coverKey.contains(".epub", ignoreCase = true)) {
+            try {
+                val epubResult = com.mangareader.zip.EpubParser.parse(ctx, uri)
+                if (epubResult != null && epubResult.coverHref != null) {
+                    Log.d(TAG, "loadArchiveCover: EPUB cover via OPF: ${epubResult.coverHref}")
+                    // 通过spine索引找到封面在图片列表中的位置
+                    val coverIdx = epubResult.spineItems.indexOfFirst { it.href == epubResult.coverHref }
+                    if (coverIdx >= 0) {
+                        val data = loadFromZip(uri, coverIdx)
+                        if (data != null) {
+                            val bmp = safeDecodeCover(data)
+                            if (bmp != null) {
+                                saveCoverToDisk(coverKey, bmp)
+                                synchronized(coverCache) { coverCache[coverKey] = bmp }
+                                Log.d(TAG, "loadArchiveCover: OK via OPF cover-image")
+                                return bmp
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) { Log.d(TAG, "loadArchiveCover EPUB OPF: ${e.message}") }
+        }
+
+        // 第一步：直接从FD读取（不复制整个ZIP）
+        try {
+            val data = loadFromZip(uri, 0)
+            if (data != null) {
+                val bmp = safeDecodeCover(data)
+                if (bmp != null) {
+                    saveCoverToDisk(coverKey, bmp)
+                    synchronized(coverCache) { coverCache[coverKey] = bmp }
+                    Log.d(TAG, "loadArchiveCover: OK via FD direct read")
+                    debugLogBuffer.appendLine("${System.currentTimeMillis()} loadArchiveCover: OK via FD direct read")
+                    flushLog(ctx)
+                    return bmp
+                }
+            }
+        } catch (e: Exception) {
+            Log.d(TAG, "loadArchiveCover FD: ${e.message}")
+            debugLogBuffer.appendLine("${System.currentTimeMillis()} loadArchiveCover FD ERR: ${e.message}")
+        }
+
+        // 第二步：getRealFile直接读
+        val realFile = getRealFile(uri)
+        if (realFile != null) {
+            try {
+                java.util.zip.ZipFile(realFile).use { zf ->
+                    val entries = zf.entries().asSequence()
+                        .filter { !it.isDirectory && isImg(it.name) }
+                        .sortedWith(compareBy<java.util.zip.ZipEntry> { it.name.count { c -> c == '/' || c == '\\' } }
+                            .thenComparing { a, b -> com.mangareader.zip.CommonsZipHelper.compareNatural(a.name, b.name) })
+                        .toList()
+                    if (entries.isNotEmpty()) {
+                        val data = zf.getInputStream(entries[0]).use { it.readBytes() }
+                        val bmp = safeDecodeCover(data)
+                        if (bmp != null) {
+                            saveCoverToDisk(coverKey, bmp)
+                            synchronized(coverCache) { coverCache[coverKey] = bmp }
+                            Log.d(TAG, "loadArchiveCover: OK via realFile")
+                            debugLogBuffer.appendLine("${System.currentTimeMillis()} loadArchiveCover: OK via realFile")
+                            flushLog(ctx)
+                            return bmp
+                        }
+                    }
+                }
+            } catch (e: Exception) { Log.d(TAG, "loadArchiveCover realFile: ${e.message}") }
+        }
+
+        Log.w(TAG, "loadArchiveCover: ALL fallbacks failed for $coverKey")
+        debugLogBuffer.appendLine("${System.currentTimeMillis()} loadArchiveCover: ALL FAILED for $coverKey")
+        flushLog(ctx)
+        return null
+    }
+
+    private fun loadMobiCover(auth: String, treeStr: String, docId: String, tree: Uri, coverKey: String): Bitmap? {
+        val uri = DocumentsContract.buildDocumentUriUsingTree(tree, docId)
+        val cacheKey = uri.toString()
+        // fd-based opening, same key as scanMobi/loadPage
+        try {
+            val pfd = ctx.contentResolver.openFileDescriptor(uri, "r")
+            if (pfd != null) {
+                try {
+                    val fd = pfd.detachFd()
+                    try {
+                        com.mangareader.native.NativeEngine.openMobiWithFd(cacheKey, fd)
+                    } catch (_: Exception) {}
+                    val nativeData = com.mangareader.native.NativeEngine.readMobiCover(cacheKey)
+                    if (nativeData != null) {
+                        val bmp = safeDecodeCover(nativeData)
+                        if (bmp != null) { saveCoverToDisk(coverKey, bmp); synchronized(coverCache) { coverCache[coverKey] = bmp }; return bmp }
+                    }
+                } finally { try { pfd.close() } catch (_: Exception) {} }
+            }
+        } catch (e: Exception) { Log.d(TAG, "loadMobiCover native: ${e.message}") }
+        try {
+            val data = loadMobiPage(uri, 0)
+            val bmp = safeDecodeCover(data)
+            if (bmp != null) { saveCoverToDisk(coverKey, bmp); synchronized(coverCache) { coverCache[coverKey] = bmp }; return bmp }
+        } catch (e: Exception) { Log.d(TAG, "loadMobiCover page: ${e.message}") }
+        return null
+    }
+
+    private fun safeDecodeCover(data: ByteArray?): Bitmap? {
+        if (data == null || data.isEmpty()) return null
+        return try {
+            decodeCoverBitmap(data)
+        } catch (e: OutOfMemoryError) {
+            System.gc()
+            try { decodeCoverBitmap(data) } catch (_: Exception) { null }
+        }
+    }
+
+    private fun loadZipDirCover(item: Item): Bitmap? {
+        try {
+            val archivePath = "a:${item.auth}|${item.tree}|${item.doc}"
+            val result = getZipAllNames(archivePath) ?: return null
+            val (cacheKey, allNames) = result
+            val root = zipTreeCache.getOrPut(cacheKey) { buildZipTree(allNames.toList()) }
+            var current = root
+            val pathParts = item.subPath.split('/').filter { it.isNotEmpty() }
+            for (part in pathParts) {
+                val child = current.children.find { it.name == part && it.isDir }
+                if (child != null) current = child
+                else return null
+            }
+            val coverNames = listOf("cover.jpg", "cover.jpeg", "cover.png", "cover.webp", "cover.bmp")
+            for (imgIdx in current.imageIndices) {
+                if (imgIdx < allNames.size) {
+                    val name = allNames[imgIdx].substringAfterLast('/').lowercase()
+                    if (name in coverNames) {
+                        val rawData = com.mangareader.native.NativeEngine.readZipEntry(cacheKey, imgIdx)
+                        if (rawData != null) return decodeCoverBitmap(rawData)
+                    }
+                }
+            }
+            if (current.imageIndices.isNotEmpty()) {
+                val firstIdx = current.imageIndices[0]
+                if (firstIdx < allNames.size) {
+                    val rawData = com.mangareader.native.NativeEngine.readZipEntry(cacheKey, firstIdx)
+                    if (rawData != null) return decodeCoverBitmap(rawData)
+                }
+            }
+        } catch (_: Exception) {}
+        return null
+    }
+
+    fun loadCoverForItem(item: Item): Bitmap? {
+        val coverKey = "item:${item.auth}|${item.tree}|${item.doc}|${item.subPath}"
+        val cached = loadCoverFromDisk(coverKey)
+        if (cached != null) return cached
+
+        val tree = makeTree(item.auth, item.tree)
+
+        if (item.dir) {
+            val child = DocumentsContract.buildChildDocumentsUriUsingTree(tree, item.doc)
+            var found = false
+            ctx.contentResolver.query(child, null, null, null, null)?.use { c ->
+                val ni = c.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+                val ii = c.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+                while (c.moveToNext()) {
+                    val n = c.getString(ni) ?: continue
+                    val id = c.getString(ii) ?: continue
+                    if (isImg(n)) {
+                        found = true
+                        val imgUri = DocumentsContract.buildDocumentUriUsingTree(tree, id)
+                        val data = try { ctx.contentResolver.openInputStream(imgUri)?.use { it.readBytes() } } catch (_: Exception) { null }
+                        if (data != null) {
+                            val bmp = decodeCoverBitmap(data)
+                            if (bmp != null) {
+                                saveCoverToDisk(coverKey, bmp)
+                                return bmp
+                            }
+                        }
+                    }
+                    if (isComic(n)) {
+                        found = true
+                        val arcUri = DocumentsContract.buildDocumentUriUsingTree(tree, id)
+                        val data = try { loadFromZip(arcUri, 0) } catch (_: Exception) { null }
+                        if (data != null) {
+                            val bmp = decodeCoverBitmap(data)
+                            if (bmp != null) {
+                                saveCoverToDisk(coverKey, bmp)
+                                return bmp
+                            }
+                        }
+                    }
+                }
+            }
+            if (!found) {
+                if (item.subPath.isNotEmpty()) {
+                    val coverData = loadZipDirCover(item)
+                    if (coverData != null) {
+                        saveCoverToDisk(coverKey, coverData)
+                        return coverData
+                    }
+                }
+                val uri = DocumentsContract.buildDocumentUriUsingTree(tree, item.doc)
+                val data = try { loadFromZip(uri, 0) } catch (_: Exception) { null }
+                if (data != null) {
+                    val bmp = decodeCoverBitmap(data)
+                    if (bmp != null) {
+                        saveCoverToDisk(coverKey, bmp)
+                        return bmp
+                    }
+                }
+            }
+            return null
+        }
+
+        val uri = DocumentsContract.buildDocumentUriUsingTree(tree, item.doc)
+        if (isImg(item.name)) {
+            val data = try {
+                ctx.contentResolver.openInputStream(uri)?.use { s ->
+                    val buf = ByteArray(10 * 1024 * 1024)
+                    val out = java.io.ByteArrayOutputStream()
+                    var n: Int
+                    var total = 0
+                    while (s.read(buf).also { n = it } != -1) {
+                        total += n
+                        if (total > 5 * 1024 * 1024) { out.close(); return@use null }
+                        out.write(buf, 0, n)
+                    }
+                    out.toByteArray()
+                }
+            } catch (_: Exception) { null }
+            if (data != null) {
+                val bmp = decodeCoverBitmap(data)
+                if (bmp != null) {
+                    saveCoverToDisk(coverKey, bmp)
+                    return bmp
+                }
+            }
+        }
+        if (isComic(item.name)) {
+            val data = try { loadFromZip(uri, 0) } catch (_: Exception) { null }
+            if (data != null) {
+                val bmp = decodeCoverBitmap(data)
+                if (bmp != null) {
+                    saveCoverToDisk(coverKey, bmp)
+                    return bmp
+                }
+            }
+            if (item.name.lowercase().endsWith(".pdf")) {
+                val bmp = try { loadPdfPage(uri, 0) } catch (_: Exception) { null }
+                if (bmp != null) {
+                    saveCoverToDisk(coverKey, bmp)
+                    return bmp
+                }
+            }
+            if (item.name.lowercase().endsWith(".mobi") || item.name.lowercase().endsWith(".azw") || item.name.lowercase().endsWith(".azw3")) {
+                val realFile = getRealFile(uri)
+                if (realFile != null) {
+                    val headerData = try { loadMobiCoverFromHeader(realFile) } catch (_: Exception) { null }
+                    if (headerData != null) {
+                        val bmp = decodeCoverBitmap(headerData)
+                        if (bmp != null) {
+                            saveCoverToDisk(coverKey, bmp)
+                            return bmp
+                        }
+                    }
+                }
+                val data = try { loadMobiPage(uri, 0) } catch (_: Exception) { null }
+                if (data != null) {
+                    val bmp = decodeCoverBitmap(data)
+                    if (bmp != null) {
+                        saveCoverToDisk(coverKey, bmp)
+                        return bmp
+                    }
+                }
+            }
+        }
+        return null
+    }
+
+    private fun scanDir(tree: Uri, doc: String): List<PageMeta> {
+        val pages = mutableListOf<PageMeta>()
+        try {
+            val child = DocumentsContract.buildChildDocumentsUriUsingTree(tree, doc)
+            ctx.contentResolver.query(child, null, null, null, null)?.use { c ->
+                val ni = c.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+                val ii = c.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+                val imgs = mutableListOf<Pair<String, String>>()
+                val arcs = mutableListOf<Pair<String, String>>()
+                while (c.moveToNext()) {
+                    val n = c.getString(ni) ?: continue
+                    val id = c.getString(ii) ?: continue
+                    if (isImg(n)) imgs.add(n to id)
+                    else if (isComic(n)) arcs.add(n to id)
+                }
+                d(TAG, "scanDir query returned ${imgs.size + arcs.size} items, allNames=${(imgs + arcs).take(10).map { it.first }}")
+                if (imgs.isNotEmpty()) {
+                    val sorted = imgs.sortedWith(Comparator<Pair<String, String>> { a, b -> com.mangareader.zip.CommonsZipHelper.compareNatural(a.first, b.first) })
+                    d(TAG, "scanDir sorted: ${sorted.take(20).map { it.first }}")
+                    sorted.forEachIndexed { i, (_, id) ->
+                        pages.add(PageMeta(i, "dir", id))
+                    }
+                } else {
+                    arcs.sortedWith(Comparator<Pair<String, String>> { a, b -> com.mangareader.zip.CommonsZipHelper.compareNatural(a.first, b.first) }).forEach { (name, id) ->
+                        val ext = name.substringAfterLast(".").lowercase()
+                        when (ext) {
+                            "cbz", "zip", "epub" -> {
+                                val arcUri = DocumentsContract.buildDocumentUriUsingTree(tree, id)
+                                val count = try { listZipPages(arcUri).size } catch (_: Exception) { 0 }
+                                for (localI in 0 until count) pages.add(PageMeta(pages.size, "zip", id, localI))
+                            }
+                            "pdf" -> {
+                                val arcUri = DocumentsContract.buildDocumentUriUsingTree(tree, id)
+                                val count = try { countPdfPages(arcUri) } catch (_: Exception) { 0 }
+                                for (localI in 0 until count) pages.add(PageMeta(pages.size, "pdf", id, localI))
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) { Log.e(TAG, "scanDir: ${e.message}", e) }
+        return pages
+    }
+
+    private val realFileCache2 = mutableMapOf<String, java.io.File>()
+
+    private fun scanFile(tree: Uri, doc: String, ext: String, name: String): List<PageMeta> {
+        val uri = DocumentsContract.buildDocumentUriUsingTree(tree, doc)
+        val pages = mutableListOf<PageMeta>()
+        return when {
+            ext == "cbz" || ext == "zip" || ext == "epub" -> {
+                val cacheKey = uri.toString()
+                if (!com.mangareader.native.NativeEngine.isOpenZip(cacheKey)) {
+                    val realFile = getRealFile(uri)
+                    val realPath = realFile?.absolutePath ?: ""
+                    val pfd = ctx.contentResolver.openFileDescriptor(uri, "r")
+                    if (pfd != null) {
+                        val fd = pfd.detachFd()
+                        pfdKeepAlive[cacheKey] = pfd
+                        try { com.mangareader.native.NativeEngine.openZipWithFd(cacheKey, fd, realPath) } catch (_: Exception) {}
+                    }
+                }
+                val names = com.mangareader.native.NativeEngine.getZipEntryNames(cacheKey)
+                if (names != null) {
+                    val imgNames = names.indices.filter { isImg(names[it]) }.map { names[it] }
+                    Log.d(TAG, "scanFile ZIP: total entries=${names.size}, imgEntries=${imgNames.size}, beforeSort first10=${imgNames.take(10).map { it.substringAfterLast("/") }}")
+                    val sortedNames = imgNames.sortedWith(Comparator { a, b ->
+                        val depthA = a.count { c -> c == '/' || c == '\\' }
+                        val depthB = b.count { c -> c == '/' || c == '\\' }
+                        if (depthA != depthB) depthA - depthB
+                        else com.mangareader.util.ComicSortUtil.fileNameComparator.compare(a, b)
+                    })
+                    Log.d(TAG, "scanFile ZIP: afterSort first10=${sortedNames.take(10).map { it.substringAfterLast("/") }}")
+                    synchronized(sortedImageNamesCache) { sortedImageNamesCache[cacheKey] = sortedNames }
+                    sortedNames.mapIndexed { idx, n -> PageMeta(idx, "zip", doc, idx, name = n.substringAfterLast("/").substringBeforeLast(".")) }
+                } else {
+                    val fallbackCount = listZipPages(uri).size
+                    (0 until fallbackCount).map { PageMeta(it, "zip", doc, it) }
+                }
+            }
+            ext == "cbr" || ext == "rar" -> {
+                return scanRar(tree, doc)
+            }
+            ext == "cb7" || ext == "7z" -> {
+                return scan7z(tree, doc)
+            }
+            ext == "tar" || ext == "cbt" || ext == "tgz" || ext == "tbz2" || ext == "txz" -> {
+                return scanTar(tree, doc)
+            }
+            ext == "pdf" -> {
+                val count = countPdfPages(uri)
+                for (i in 0 until count) pages.add(PageMeta(i, "pdf", doc, i))
+                pages
+            }
+            else -> emptyList()
+        }
+    }
+
+    private fun scanEpub(tree: Uri, doc: String): List<PageMeta> {
+        val uri = DocumentsContract.buildDocumentUriUsingTree(tree, doc)
+        val cacheKey = uri.toString()
+        // 检查缓存
+        synchronized(sortedImageNamesCache) {
+            sortedImageNamesCache[cacheKey]?.let { sortedNames ->
+                return sortedNames.mapIndexed { idx, name -> PageMeta(idx, "zip", doc, idx, name = name.substringAfterLast("/").substringBeforeLast(".")) }
+            }
+        }
+        // 打开 ZIP
+        if (!com.mangareader.native.NativeEngine.isOpenZip(cacheKey)) {
+            val realFile = getRealFile(uri)
+            val realPath = realFile?.absolutePath ?: ""
+            val pfd = ctx.contentResolver.openFileDescriptor(uri, "r")
+            if (pfd != null) {
+                val fd = pfd.detachFd()
+                pfdKeepAlive[cacheKey] = pfd
+                try { com.mangareader.native.NativeEngine.openZipWithFd(cacheKey, fd, realPath) } catch (_: Exception) {}
+            }
+        }
+
+        // 解析 EPUB spine
+        try {
+            val epubResult = com.mangareader.zip.EpubParser.parse(ctx, uri)
+            if (epubResult != null && epubResult.spineItems.isNotEmpty()) {
+                // 检查 spine items 是图片还是 HTML
+                val firstHref = epubResult.spineItems.first().href
+                val isImageSpine = firstHref.lowercase().let {
+                    it.endsWith(".jpg") || it.endsWith(".jpeg") || it.endsWith(".png") ||
+                    it.endsWith(".webp") || it.endsWith(".gif") || it.endsWith(".bmp")
+                }
+
+                if (isImageSpine) {
+                    // spine 直接是图片：用现有的 sortedNames + spine 映射
+                    val names = com.mangareader.native.NativeEngine.getZipEntryNames(cacheKey)
+                    if (names != null) {
+                        val sortedNames = names.indices
+                            .filter { isImg(names[it]) }
+                            .sortedWith(Comparator { a, b ->
+                                val depthA = names[a].count { c -> c == '/' || c == '\\' }
+                                val depthB = names[b].count { c -> c == '/' || c == '\\' }
+                                if (depthA != depthB) depthA - depthB
+                                else com.mangareader.util.ComicSortUtil.fileNameComparator.compare(names[a], names[b])
+                            })
+                            .map { names[it] }
+                            .toMutableList()
+
+                        val spineOrderedNames = mutableListOf<String>()
+                        val spineToSorted = mutableListOf<Int>()
+                        for (item in epubResult.spineItems) {
+                            val matchIdx = sortedNames.indexOfFirst {
+                                it.endsWith("/${item.href}") || it == item.href ||
+                                it.substringAfterLast("/") == item.href.substringAfterLast("/")
+                            }
+                            if (matchIdx >= 0) {
+                                spineOrderedNames.add(sortedNames[matchIdx])
+                                spineToSorted.add(matchIdx)
+                            }
+                        }
+                        if (spineOrderedNames.isNotEmpty()) {
+                            synchronized(epubSpineCache) { epubSpineCache[cacheKey] = spineToSorted.toList() }
+                            sortedNames.clear()
+                            sortedNames.addAll(spineOrderedNames)
+                        }
+                        synchronized(sortedImageNamesCache) { sortedImageNamesCache[cacheKey] = sortedNames }
+                        Log.d(TAG, "scanEpub: spine image order, ${sortedNames.size} pages, first5=${sortedNames.take(5).map { it.substringAfterLast("/") }}")
+                        return sortedNames.mapIndexed { idx, n -> PageMeta(idx, "zip", doc, idx, name = n.substringAfterLast("/").substringBeforeLast(".")) }
+                    }
+                } else {
+                    // spine 是 HTML：解析 HTML 提取图片路径
+                    val htmlToImgMap = com.mangareader.zip.EpubParser.resolveImageHrefs(ctx, uri, epubResult.opfDir, epubResult.spineItems)
+                    Log.d(TAG, "scanEpub: htmlToImgMap size=${htmlToImgMap.size}, spineItems=${epubResult.spineItems.size}")
+                    if (htmlToImgMap.isNotEmpty()) {
+                        val names = com.mangareader.native.NativeEngine.getZipEntryNames(cacheKey)
+                        val allNames = names?.toList() ?: emptyList()
+
+                        // 构建 HashMap 加速匹配：O(1) per spine item（替代 O(N) linear scan）
+                        val nameByPath = HashMap<String, String>(allNames.size * 2)
+                        for (n in allNames) {
+                            nameByPath[n] = n
+                            val suffix = n.substringAfterLast("/")
+                            if (suffix.isNotEmpty()) nameByPath[suffix] = n
+                        }
+
+                        val spineOrderedNames = mutableListOf<String>()
+                        var matchCount = 0
+                        var missCount = 0
+                        for ((spineIdx, spineItem) in epubResult.spineItems.withIndex()) {
+                            val htmlHref = com.mangareader.zip.EpubParser.resolveHref(epubResult.opfDir, spineItem.href)
+                            val imgSrc = htmlToImgMap[htmlHref] ?: htmlToImgMap[htmlHref.substringAfterLast("/")]
+                            if (imgSrc != null) {
+                                var normalizedImg: String = imgSrc!!
+                                while (normalizedImg.startsWith("../") || normalizedImg.startsWith("./")) {
+                                    normalizedImg = if (normalizedImg.startsWith("../")) normalizedImg.substring(3) else normalizedImg.substring(2)
+                                }
+                                if (normalizedImg.startsWith("/")) normalizedImg = normalizedImg.substring(1)
+                                // O(1) HashMap 查找
+                                val match = nameByPath[normalizedImg] ?: nameByPath[normalizedImg.substringAfterLast("/")]
+                                if (match != null) {
+                                    spineOrderedNames.add(match)
+                                    matchCount++
+                                } else {
+                                    missCount++
+                                    if (missCount <= 5) Log.d(TAG, "scanEpub: MISS spine[$spineIdx] href=$htmlHref imgSrc=$normalizedImg not in allNames(${allNames.size})")
+                                }
+                            } else {
+                                missCount++
+                                if (missCount <= 5) Log.d(TAG, "scanEpub: MISS spine[$spineIdx] href=$htmlHref not in htmlToImgMap")
+                            }
+                        }
+                        Log.d(TAG, "scanEpub: spine match result: $matchCount match, $missCount miss out of ${epubResult.spineItems.size}")
+
+                        if (spineOrderedNames.isNotEmpty()) {
+                            synchronized(sortedImageNamesCache) { sortedImageNamesCache[cacheKey] = spineOrderedNames }
+                            Log.d(TAG, "scanEpub: spine HTML→image order, ${spineOrderedNames.size} pages, first5=${spineOrderedNames.take(5).map { it.substringAfterLast("/") }}")
+                            return spineOrderedNames.mapIndexed { idx, n -> PageMeta(idx, "zip", doc, idx, name = n.substringAfterLast("/").substringBeforeLast(".")) }
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "scanEpub spine parse failed: ${e.message}")
+        }
+
+        // 回退：文件名排序
+        val names = com.mangareader.native.NativeEngine.getZipEntryNames(cacheKey)
+        if (names != null) {
+            val sortedNames = names.indices
+                .filter { isImg(names[it]) }
+                .sortedWith(Comparator { a, b ->
+                    val depthA = names[a].count { c -> c == '/' || c == '\\' }
+                    val depthB = names[b].count { c -> c == '/' || c == '\\' }
+                    if (depthA != depthB) depthA - depthB
+                    else com.mangareader.util.ComicSortUtil.fileNameComparator.compare(names[a], names[b])
+                })
+                .map { names[it] }
+            synchronized(sortedImageNamesCache) { sortedImageNamesCache[cacheKey] = sortedNames }
+            return sortedNames.mapIndexed { idx, n -> PageMeta(idx, "zip", doc, idx, name = n.substringAfterLast("/").substringBeforeLast(".")) }
+        }
+        return emptyList()
+    }
+
+    private fun scanMobi(tree: Uri, doc: String): List<PageMeta> {
+        val pages = mutableListOf<PageMeta>()
+        val uri = DocumentsContract.buildDocumentUriUsingTree(tree, doc)
+        val t0 = android.os.SystemClock.elapsedRealtime()
+        val cacheKey = uri.toString()
+        try {
+            // fd-based opening
+            ctx.contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
+                val fd = pfd.detachFd()
+                try {
+                    com.mangareader.native.NativeEngine.openMobiWithFd(cacheKey, fd)
+                } catch (_: Exception) {}
+                val nativeCount = com.mangareader.native.NativeEngine.countMobiPages(cacheKey)
+                if (nativeCount > 0) {
+                    for (i in 0 until nativeCount) pages.add(PageMeta(i, "mobi", doc, i))
+                    Log.d(TAG, "scanMobi (native): found $nativeCount images in ${android.os.SystemClock.elapsedRealtime() - t0}ms")
+                    return pages
+                }
+            }
+            // Fallback: stream scan
+            ctx.contentResolver.openInputStream(uri)?.use { s ->
+                val bis = java.io.BufferedInputStream(s, 65536)
+                var idx = 0
+                var b0 = 0; var b1 = bis.read(); var b2 = bis.read(); var b3 = bis.read()
+                while (b3 != -1) {
+                    if (b0 == 0xFF && b1 == 0xD8) {
+                        pages.add(PageMeta(idx, "mobi", doc, idx)); idx++
+                    } else if (b0 == 0x89 && b1 == 0x50 && b2 == 0x4E && b3 == 0x47) {
+                        pages.add(PageMeta(idx, "mobi", doc, idx)); idx++
+                    }
+                    b0 = b1; b1 = b2; b2 = b3; b3 = bis.read()
+                }
+                Log.d(TAG, "scanMobi: found $idx images in ${android.os.SystemClock.elapsedRealtime() - t0}ms")
+            }
+        } catch (e: Exception) { Log.e(TAG, "scanMobi: ${e.message}") }
+        return pages
+    }
+
+    private fun loadMobiPage(uri: Uri, pageIndex: Int): ByteArray? {
+        val t0 = android.os.SystemClock.elapsedRealtime()
+        Log.d(TAG, "loadMobiPage: start pageIndex=$pageIndex thread=${Thread.currentThread().name}")
+        try {
+            // Try to get real file path first for direct random access
+            val realFile = getRealFile(uri)
+            if (realFile != null) {
+                // For cover (page 0), limit scan to 2MB for speed
+                val scanLimit = if (pageIndex == 0) 2L * 1024 * 1024 else 0L
+                val result = loadMobiPageFromFile(realFile, pageIndex, scanLimit)
+                if (result != null) {
+                    Log.d(TAG, "loadMobiPage: OK via realFile page=$pageIndex size=${result.size} total=${android.os.SystemClock.elapsedRealtime() - t0}ms")
+                    return result
+                }
+            }
+            
+            // Fallback: copy to tmp file and scan
+            ctx.contentResolver.openInputStream(uri)?.use { input ->
+                val t1 = android.os.SystemClock.elapsedRealtime()
+                val tmpFile = File(ctx.cacheDir, "tmp_mobi_${System.currentTimeMillis()}.mobi")
+                FileOutputStream(tmpFile).use { out ->
+                    val buf = ByteArray(8192)
+                    var n: Int
+                    while (input.read(buf).also { n = it } != -1) {
+                        out.write(buf, 0, n)
+                    }
+                }
+                val t2 = android.os.SystemClock.elapsedRealtime()
+                Log.d(TAG, "loadMobiPage: tmpFile=${tmpFile.length()} bytes, write=${t2 - t1}ms")
+                try {
+                    val result = loadMobiPageFromFile(tmpFile, pageIndex)
+                    Log.d(TAG, "loadMobiPage: OK via tmpFile page=$pageIndex total=${android.os.SystemClock.elapsedRealtime() - t0}ms")
+                    return result
+                } finally { tmpFile.delete() }
+            }
+        } catch (e: Throwable) { Log.e(TAG, "loadMobiPage: ${e.message} (${android.os.SystemClock.elapsedRealtime() - t0}ms) thread=${Thread.currentThread().name}", e) }
+        return null
+    }
+    
+    private fun loadMobiPageFromFile(file: File, pageIndex: Int, scanLimit: Long = 0L): ByteArray? {
+        try {
+            java.io.RandomAccessFile(file, "r").use { raf ->
+                val fileLen = raf.length()
+                val limit = if (scanLimit > 0) minOf(scanLimit, fileLen) else fileLen
+                var idx = 0
+                var pos = 0L
+                val buf = ByteArray(65536)
+                
+                // First pass: find all image offsets (with optional scan limit)
+                val imageOffsets = mutableListOf<Long>()
+                while (pos < limit - 3) {
+                    raf.seek(pos)
+                    val bytesRead = raf.read(buf, 0, minOf(buf.size.toLong(), limit - pos).toInt())
+                    if (bytesRead <= 0) break
+                    var i = 0
+                    while (i < bytesRead - 3) {
+                        val isJpeg = buf[i] == 0xFF.toByte() && buf[i + 1] == 0xD8.toByte()
+                        val isPng = buf[i] == 0x89.toByte() && buf[i + 1] == 0x50.toByte() && buf[i + 2] == 0x4E.toByte() && buf[i + 3] == 0x47.toByte()
+                        if (isJpeg || isPng) {
+                            imageOffsets.add(pos + i)
+                        }
+                        i++
+                    }
+                    pos += bytesRead
+                }
+                
+                if (pageIndex >= imageOffsets.size) {
+                    Log.w(TAG, "loadMobiPage: page $pageIndex not found (found ${imageOffsets.size} images)")
+                    return null
+                }
+                
+                // Second pass: extract the target image
+                val imgStart = imageOffsets[pageIndex]
+                val imgEnd = if (pageIndex + 1 < imageOffsets.size) imageOffsets[pageIndex + 1] else fileLen
+                val imgSize = (imgEnd - imgStart).toInt().coerceAtMost(10 * 1024 * 1024) // Max 10MB per image
+                
+                raf.seek(imgStart)
+                val imgData = ByteArray(imgSize)
+                raf.readFully(imgData)
+                
+                // Find the actual end of the image
+                var end = 2
+                if (imgData.size > 1 && imgData[0] == 0xFF.toByte() && imgData[1] == 0xD8.toByte()) {
+                    // JPEG: find FF D9 marker
+                    while (end < imgData.size - 1) {
+                        if (imgData[end] == 0xFF.toByte() && imgData[end + 1] == 0xD9.toByte()) { end += 2; break }
+                        end++
+                    }
+                } else if (imgData.size > 7 && imgData[0] == 0x89.toByte() && imgData[1] == 0x50.toByte()) {
+                    // PNG: find IEND chunk
+                    end = 8
+                    while (end < imgData.size - 8) {
+                        if (imgData[end] == 0x49.toByte() && imgData[end + 1] == 0x45.toByte() && imgData[end + 2] == 0x4E.toByte() && imgData[end + 3] == 0x44.toByte() &&
+                            imgData[end + 4] == 0x00.toByte() && imgData[end + 5] == 0x00.toByte() && imgData[end + 6] == 0x00.toByte() && imgData[end + 7] == 0x00.toByte()) {
+                            end += 8; break
+                        }
+                        end++
+                    }
+                }
+                
+                return if (end <= imgData.size) imgData.copyOfRange(0, end) else imgData
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "loadMobiPageFromFile: ${e.message}")
+        }
+        return null
+    }
+    private fun loadMobiCoverFromHeader(file: File): ByteArray? {
+        try {
+            java.io.RandomAccessFile(file, "r").use { raf ->
+                if (raf.length() < 80) return null
+                val buf = ByteArray(76)
+                raf.seek(0)
+                raf.readFully(buf)
+                val recordCount = ((buf[4].toInt() and 0xFF) shl 24) or
+                        ((buf[5].toInt() and 0xFF) shl 16) or
+                        ((buf[6].toInt() and 0xFF) shl 8) or
+                        (buf[7].toInt() and 0xFF)
+                val recordSize = ((buf[8].toInt() and 0xFF) shl 24) or
+                        ((buf[9].toInt() and 0xFF) shl 16) or
+                        ((buf[10].toInt() and 0xFF) shl 8) or
+                        (buf[11].toInt() and 0xFF)
+                if (recordCount <= 0 || recordSize <= 0) return null
+                val headerSize = 76 + (recordCount + 1) * 4
+                for (recIdx in 1 until minOf(recordCount, 10)) {
+                    val offset = headerSize + recIdx * recordSize
+                    if (offset + 4 > raf.length()) break
+                    raf.seek(offset.toLong())
+                    val hdr = ByteArray(4)
+                    raf.read(hdr)
+                    val isJpeg = hdr[0] == 0xFF.toByte() && hdr[1] == 0xD8.toByte()
+                    val isPng = hdr[0] == 0x89.toByte() && hdr[1] == 0x50.toByte() && hdr[2] == 0x4E.toByte() && hdr[3] == 0x47.toByte()
+                    if (isJpeg || isPng) {
+                        val imgSize = minOf(recordSize.toLong(), raf.length() - offset, 10 * 1024 * 1024).toInt()
+                        val imgData = ByteArray(imgSize)
+                        raf.seek(offset.toLong())
+                        raf.readFully(imgData)
+                        var end = 4
+                        if (isJpeg) {
+                            while (end < imgData.size - 1) {
+                                if (imgData[end] == 0xFF.toByte() && imgData[end + 1] == 0xD9.toByte()) { end += 2; break }
+                                end++
+                            }
+                        } else {
+                            end = 8
+                            while (end < imgData.size - 8) {
+                                if (imgData[end] == 0x49.toByte() && imgData[end + 1] == 0x45.toByte() &&
+                                    imgData[end + 2] == 0x4E.toByte() && imgData[end + 3] == 0x44.toByte() &&
+                                    imgData[end + 4] == 0x00.toByte() && imgData[end + 5] == 0x00.toByte() &&
+                                    imgData[end + 6] == 0x00.toByte() && imgData[end + 7] == 0x00.toByte()) {
+                                    end += 8; break
+                                }
+                                end++
+                            }
+                        }
+                        return if (end <= imgData.size) imgData.copyOfRange(0, end) else imgData
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "loadMobiCoverFromHeader: ${e.message}")
+        }
+        return null
+    }
+
+    fun getRealFileForPath(filePath: String): String {
+        try {
+            // 1. 先查SharedPreferences缓存
+            val prefs = ctx.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE)
+            val cached = prefs.getString("realpath_$filePath", null)
+            if (cached != null) {
+                val f = File(cached)
+                if (f.exists() && f.length() > 0) return cached
+            }
+            // 2. SAF解析并缓存
+            val p = parsePath(filePath) ?: return ""
+            val tree = makeTree(p.auth, p.tree)
+            val uri = DocumentsContract.buildDocumentUriUsingTree(tree, p.doc)
+            val f = getRealFile(uri)
+            if (f != null) {
+                prefs.edit().putString("realpath_$filePath", f.absolutePath).apply()
+                return f.absolutePath
+            }
+        } catch (_: Exception) {}
+        return ""
+    }
+
+    private val realFileCache = object : LinkedHashMap<String, File?>(128, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, File?>?) = size > 256
+    }
+
+    private fun getRealFile(uri: Uri): File? {
+        val key = uri.toString()
+        synchronized(realFileCache) { realFileCache[key]?.let { return it } }
+        // SAF查询（直接查，不遍历SP）
+        try {
+            ctx.contentResolver.query(uri, arrayOf("_data"), null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val idx = cursor.getColumnIndex("_data")
+                    if (idx >= 0) {
+                        val path = cursor.getString(idx)
+                        if (path != null) {
+                            val f = File(path)
+                            if (f.exists() && f.isFile && f.length() > 0) {
+                                synchronized(realFileCache) { realFileCache[key] = f }
+                                return f
+                            }
+                            // 如果返回的是目录，在目录内搜索匹配的压缩文件
+                            if (f.exists() && f.isDirectory) {
+                                val docId = DocumentsContract.getDocumentId(uri)
+                                val fileName = docId.substringAfterLast("/")
+                                // 先尝试精确匹配文件名
+                                if (fileName.isNotEmpty()) {
+                                    val childFile = File(f, fileName)
+                                    if (childFile.exists() && childFile.isFile && childFile.length() > 0) {
+                                        synchronized(realFileCache) { realFileCache[key] = childFile }
+                                        return childFile
+                                    }
+                                }
+                                // 尝试在目录内找匹配的压缩文件
+                                val cbzFile = f.listFiles()?.firstOrNull {
+                                    it.isFile && it.length() > 0 && (
+                                        it.name.endsWith(".cbz", true) ||
+                                        it.name.endsWith(".zip", true) ||
+                                        it.name.endsWith(".epub", true) ||
+                                        it.name.endsWith(".cbr", true) ||
+                                        it.name.endsWith(".rar", true) ||
+                                        it.name.endsWith(".pdf", true) ||
+                                        it.name.endsWith(".mobi", true)
+                                    )
+                                }
+                                if (cbzFile != null) {
+                                    synchronized(realFileCache) { realFileCache[key] = cbzFile }
+                                    return cbzFile
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+        // Fallback: construct path from document ID (for external storage URIs)
+        try {
+            val docId = DocumentsContract.getDocumentId(uri)
+            if (docId.startsWith("primary:")) {
+                val relPath = docId.removePrefix("primary:")
+                val f = File("/storage/emulated/0/$relPath")
+                if (f.exists() && f.length() > 0) {
+                    synchronized(realFileCache) { realFileCache[key] = f }
+                    Log.d(TAG, "getRealFile fallback: ${f.absolutePath}")
+                    return f
+                }
+            }
+        } catch (_: Exception) {}
+        return null
+    }
+
+    private fun listZipPages(uri: Uri): List<PageMeta> {
+        val pages = mutableListOf<PageMeta>()
+        try {
+            val realFile = getRealFile(uri)
+            if (realFile != null) {
+                try {
+                    java.util.zip.ZipFile(realFile).use { zf ->
+                        val cacheKey = "zip:${realFile.absolutePath}"
+                        val entries = getSortedZipEntries(zf, cacheKey)
+                        for (i in entries.indices) pages.add(PageMeta(i, "", ""))
+                    }
+                } catch (_: Exception) {}
+            }
+
+            if (pages.isEmpty()) {
+                val commonsResults = CommonsZipHelper.listImageEntries(ctx, uri)
+                commonsResults.forEach { (idx, _) -> pages.add(PageMeta(idx, "", "")) }
+            }
+
+            if (pages.isEmpty()) {
+                try {
+                    ctx.contentResolver.openInputStream(uri)?.use { s ->
+                        ZipInputStream(s).use { z ->
+                            var idx = 0
+                            var e = try { z.nextEntry } catch (_: Exception) { null }
+                            while (e != null) {
+                                if (!e.isDirectory && isImg(e.name)) {
+                                    pages.add(PageMeta(idx, "", ""))
+                                    idx++
+                                }
+                                e = try { z.nextEntry } catch (_: Exception) { null }
+                            }
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
+        } catch (e: Exception) { Log.e(TAG, "listZipPages: ${e.message}") }
+        return pages
+    }
+
+    private fun countPdfPages(uri: Uri): Int {
+        try {
+            // 优先使用 pdfium
+            val key = uri.toString()
+            if (!com.mangareader.native.NativeEngine.pdfIsOpen(key)) {
+                ctx.contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
+                    val fd = pfd.detachFd()
+                    try {
+                        com.mangareader.native.NativeEngine.pdfOpen(key, fd)
+                    } catch (_: Exception) {}
+                }
+            }
+            val count = com.mangareader.native.NativeEngine.pdfGetPageCount(key)
+            if (count > 0) return count
+            // 降级到 PdfRenderer
+            ctx.contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
+                PdfRenderer(pfd).use { r -> return r.pageCount }
+            }
+        } catch (e: Exception) { Log.e(TAG, "countPdfPages: ${e.message}", e) }
+        return 0
+    }
+
+    private val pfdKeepAlive = object : LinkedHashMap<String, android.os.ParcelFileDescriptor>(50, 0.75f, false) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, android.os.ParcelFileDescriptor>?): Boolean {
+            if (size > 50) { eldest?.value?.close(); return true }
+            return false
+        }
+    }
+
+    private fun loadFromZip(uri: Uri, targetIndex: Int, treeStr: String = ""): ByteArray? {
+        try {
+            val cacheKey = uri.toString()
+            debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: START target=$targetIndex key=${cacheKey.takeLast(40)}")
+            if (!com.mangareader.native.NativeEngine.isOpenZip(cacheKey)) {
+                debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: zip not open, opening...")
+                flushLog(ctx)
+                val realFile = getRealFile(uri)
+                val realPath = realFile?.absolutePath ?: ""
+                val pfd = ctx.contentResolver.openFileDescriptor(uri, "r")
+                if (pfd != null) {
+                    val fd = pfd.detachFd()
+                    debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: fd=$fd realPath=$realPath")
+                    flushLog(ctx)
+                    pfdKeepAlive[cacheKey] = pfd
+                    try {
+                        com.mangareader.native.NativeEngine.openZipWithFd(cacheKey, fd, realPath)
+                        debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: openZipWithFd OK")
+                    } catch (e: Exception) {
+                        debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: openZipWithFd FAILED: ${e.message}")
+                    }
+                } else {
+                    debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: pfd is null!")
+                }
+            } else {
+                debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: zip already open")
+            }
+            // 优先用 sortedImageNamesCache 中的 spine 顺序直接查找（避免 Kotlin/C++ 排序不一致）
+            var zipIdx = -1
+            synchronized(sortedImageNamesCache) {
+                sortedImageNamesCache[cacheKey]?.let { spineNames ->
+                    if (targetIndex in spineNames.indices) {
+                        val imgName = spineNames[targetIndex]
+                        val shortName = imgName.substringAfterLast("/")
+                        zipIdx = com.mangareader.native.NativeEngine.findZipEntryByName(cacheKey, imgName)
+                        if (zipIdx < 0) zipIdx = com.mangareader.native.NativeEngine.findZipEntryByName(cacheKey, shortName)
+                        if (zipIdx >= 0) Log.d(TAG, "loadFromZip: spine name lookup OK, target=$targetIndex name=$shortName zipIdx=$zipIdx")
+                    }
+                }
+            }
+            // 回退：用 findZipImageEntry（可能因排序不一致导致顺序错误）
+            if (zipIdx < 0) {
+                zipIdx = com.mangareader.native.NativeEngine.findZipImageEntry(cacheKey, targetIndex)
+            }
+            debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: targetIndex=$targetIndex zipIdx=$zipIdx")
+            flushLog(ctx)
+            if (zipIdx < 0) {
+                val entryCount = com.mangareader.native.NativeEngine.getZipEntryCount(cacheKey)
+                debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: entryCount=$entryCount")
+                if (entryCount > 0) {
+                    val allNames = com.mangareader.native.NativeEngine.getZipEntryNames(cacheKey)
+                    val preview = allNames?.take(10)?.joinToString(", ") ?: "null"
+                    debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: first10=$preview")
+                }
+                flushLog(ctx)
+            }
+            if (zipIdx >= 0) {
+                val raw = com.mangareader.native.NativeEngine.readZipEntry(cacheKey, zipIdx)
+                debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: readZipEntry ${raw?.size ?: 0} bytes")
+                if (raw != null && raw.isNotEmpty()) { flushLog(ctx); return raw }
+            } else {
+                debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: findZipImageEntry=-1, trying fallbacks")
+            }
+
+            val commonsResult = CommonsZipHelper.readImageEntry(ctx, uri, targetIndex)
+            debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: commonsResult=${commonsResult?.size ?: "null"}")
+            flushLog(ctx)
+            if (commonsResult != null) { flushLog(ctx); return commonsResult }
+
+            val realFile = realFileCache2[cacheKey] ?: getRealFile(uri)
+            debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: realFile=${realFile?.absolutePath ?: "null"} isFile=${realFile?.isFile}")
+            flushLog(ctx)
+            if (realFile != null && realFile.isFile) {
+                try {
+                    java.io.FileInputStream(realFile).use { fis ->
+                        java.util.zip.ZipInputStream(fis).use { zis ->
+                            var idx = 0
+                            var entry = zis.nextEntry
+                            while (entry != null) {
+                                if (!entry.isDirectory && isImg(entry.name)) {
+                                    if (idx == targetIndex) {
+                                        val data = zis.readBytes()
+                                        debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: realFile read ${data.size} bytes for idx=$idx")
+                                        if (data.isNotEmpty()) { flushLog(ctx); return data }
+                                    }
+                                    idx++
+                                }
+                                entry = zis.nextEntry
+                            }
+                        }
+                    }
+                } catch (e: Exception) { Log.e(TAG, "loadFromZip: realFile error: ${e.message}") }
+            }
+
+            try {
+                var targetData: ByteArray? = null
+                var idx = 0
+                ctx.contentResolver.openInputStream(uri)?.use { s ->
+                    ZipInputStream(s).use { z ->
+                        var e = try { z.nextEntry } catch (_: Exception) { null }
+                        while (e != null) {
+                            if (!e.isDirectory && isImg(e.name)) {
+                                if (idx == targetIndex) {
+                                    targetData = try { z.readBytes() } catch (_: Exception) { null }
+                                    break
+                                }
+                                idx++
+                            }
+                            e = try { z.nextEntry } catch (_: Exception) { null }
+                        }
+                    }
+                }
+                if (targetData != null) { flushLog(ctx); return targetData }
+            } catch (_: Exception) {}
+        } catch (e: Exception) { debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip EXCEPTION: ${e.message}") }
+        debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: ALL FAILED for target=$targetIndex")
+        flushLog(ctx)
+        return null
+    }
+
+
+
+    private fun loadPdfPage(uri: Uri, pageIndex: Int): Bitmap? {
+        try {
+            val cacheKey = "$uri|$pageIndex"
+            val sharedKey = "pdf:$uri|$pageIndex"
+            getCachedBitmap(sharedKey)?.let { return it }
+            val docKey = uri.toString()
+            val isOpen = com.mangareader.native.NativeEngine.pdfIsOpen(docKey)
+            Log.d(TAG, "loadPdfPage: pdfIsOpen=$isOpen key=${docKey.takeLast(30)}")
+            if (!isOpen) {
+                val pfd = ctx.contentResolver.openFileDescriptor(uri, "r")
+                if (pfd != null) {
+                    try {
+                        val fd = pfd.detachFd()
+                        try {
+                            com.mangareader.native.NativeEngine.pdfOpen(docKey, fd)
+                            Log.d(TAG, "loadPdfPage: pdfOpen success")
+                        } catch (e: Exception) {
+                            Log.e(TAG, "pdfOpen failed: ${e.message}", e)
+                        }
+                    } finally { try { pfd.close() } catch (_: Exception) {} }
+                } else {
+                    Log.e(TAG, "pdfOpen: failed to get ParcelFileDescriptor for $uri")
+                }
+            }
+            val pageCount = com.mangareader.native.NativeEngine.pdfGetPageCount(docKey)
+            if (pageIndex < 0 || pageIndex >= pageCount) {
+                Log.e(TAG, "loadPdfPage: invalid pageIndex $pageIndex (pageCount=$pageCount)")
+                return null
+            }
+            val pageSize = com.mangareader.native.NativeEngine.pdfGetPageSize(docKey, pageIndex)
+            val pageWidth = pageSize?.get(0)?.toFloat() ?: 100f
+            val pageHeight = pageSize?.get(1)?.toFloat() ?: 100f
+            // PDF渲染质量：由pdfQuality控制输出分辨率
+            // 低配设备降至1x(72DPI)省内存，高配升至5x(360DPI)提清晰度
+            // 默认3x(216DPI)手机够用，不会超过PDF原版质量
+            // 注意：pdfium dpi参数是死代码，实际分辨率由w/h控制
+            val config = com.mangareader.data.ReaderConfig.load(ctx)
+            val dpi = (config.pdfQuality * 72f).toInt().coerceIn(72, 360)
+            val screenMax = maxOf(ctx.resources.displayMetrics.widthPixels, ctx.resources.displayMetrics.heightPixels)
+            var w = (dpi.toFloat() * pageWidth / 72f).toInt().coerceAtLeast(1)
+            var h = (dpi.toFloat() * pageHeight / 72f).toInt().coerceAtLeast(1)
+            if (w > screenMax || h > screenMax) {
+                val scale = screenMax.toFloat() / maxOf(w, h)
+                w = (w * scale).toInt().coerceAtLeast(1)
+                h = (h * scale).toInt().coerceAtLeast(1)
+            }
+            val bmp = com.mangareader.native.NativeEngine.pdfRenderPageBitmap(docKey, pageIndex, w, h, dpi)
+            if (bmp != null) {
+                Log.d(TAG, "loadPdfPage: pageIndex=$pageIndex ${w}x${h} dpi=$dpi")
+                putCachedBitmap(sharedKey, bmp)
+                return bmp
+            }
+            // 重试一次
+            Log.w(TAG, "loadPdfPage: pdfium render failed for page $pageIndex, retrying")
+            val bmp2 = com.mangareader.native.NativeEngine.pdfRenderPageBitmap(docKey, pageIndex, w, h, dpi)
+            if (bmp2 != null) {
+                putCachedBitmap(sharedKey, bmp2)
+                return bmp2
+            }
+            Log.w(TAG, "loadPdfPage: pdfium render failed again, falling back to PdfRenderer")
+            val fallback = loadPdfPageFallback(uri, pageIndex, w, h)
+            if (fallback != null) putCachedBitmap(sharedKey, fallback)
+            return fallback
+        } catch (e: Exception) {
+            Log.e(TAG, "loadPdfPage: ${e.message}", e)
+        }
+        return null
+    }
+
+    private fun loadPdfPageFallback(uri: Uri, pageIndex: Int, w: Int, h: Int): Bitmap? {
+        ctx.contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
+            PdfRenderer(pfd).use { r ->
+                if (pageIndex < r.pageCount) {
+                    val pg = r.openPage(pageIndex)
+                    try {
+                        val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+                        bmp.eraseColor(android.graphics.Color.WHITE)
+                        pg.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                        return bmp
+                    } finally { pg.close() }
+                }
+            }
+        }
+        return null
+    }
+
+    private fun listDir(tree: Uri, doc: String, auth: String, treeId: String): List<Item> {
+        val items = mutableListOf<Item>()
+        try {
+            val child = DocumentsContract.buildChildDocumentsUriUsingTree(tree, doc)
+            ctx.contentResolver.query(child, null, null, null, null)?.use { c ->
+                val ni = c.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+                val ii = c.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+                val mi = c.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE)
+                while (c.moveToNext()) {
+                    val n = c.getString(ni) ?: continue
+                    val id = c.getString(ii) ?: continue
+                    val mime = if (mi >= 0) c.getString(mi) ?: "" else ""
+                    val isDir = mime == DocumentsContract.Document.MIME_TYPE_DIR
+                    if (isDir || isComic(n)) items.add(Item(n, auth, treeId, id, isDir))
+                }
+            }
+        } catch (e: Exception) { Log.e(TAG, "listDir: ${e.message}", e) }
+        return items.sortedWith(compareByDescending<Item> { it.dir }.thenComparing({ it.name }, NaturalComparator))
+    }
+
+    private fun parsePath(path: String): PathInfo? {
+        val (tag, rest) = when {
+            path.startsWith("d:") -> "d" to path.removePrefix("d:")
+            path.startsWith("a:") -> "a" to path.removePrefix("a:")
+            else -> return null
+        }
+        val parts = rest.split("|", limit = 4)
+        if (parts.size < 3) return null
+        return PathInfo(tag, parts[0], parts[1], parts[2], parts.getOrElse(3) { "" })
+    }
+
+    private data class PathInfo(val tag: String, val auth: String, val tree: String, val doc: String, val ext: String)
+
+    fun parsePathForMobi(path: String): Triple<String, String, String>? {
+        val p = parsePath(path) ?: return null
+        return Triple(p.auth, p.tree, p.doc)
+    }
+
+    fun getPdfSharedKey(treePath: String, pageIndex: Int): String? {
+        val p = parsePath(treePath) ?: return null
+        val tree = makeTree(p.auth, p.tree)
+        val uri = DocumentsContract.buildDocumentUriUsingTree(tree, p.doc)
+        return "pdf:$uri|$pageIndex"
+    }
+
+    private fun makeTree(auth: String, tree: String) =
+        Uri.parse("content://$auth/tree/${Uri.encode(tree)}")
+
+    private fun scanRar(tree: Uri, doc: String): List<PageMeta> {
+        val pages = mutableListOf<PageMeta>()
+        val uri = DocumentsContract.buildDocumentUriUsingTree(tree, doc)
+        try {
+            try {
+                val pfd = ctx.contentResolver.openFileDescriptor(uri, "r")
+                if (pfd != null) {
+                    val fd = pfd.detachFd()
+                    try {
+                        val readHandle = me.zhanghai.android.libarchive.Archive.readNew()
+                        try {
+                            me.zhanghai.android.libarchive.Archive.setCharset(readHandle, "UTF-8".toByteArray())
+                            me.zhanghai.android.libarchive.Archive.readSupportFilterAll(readHandle)
+                            me.zhanghai.android.libarchive.Archive.readSupportFormatAll(readHandle)
+                            me.zhanghai.android.libarchive.Archive.readOpenFd(readHandle, fd, 10240L)
+                            var idx = 0
+                            var header = me.zhanghai.android.libarchive.Archive.readNextHeader(readHandle)
+                            while (header != 0L) {
+                                val nameBytes = me.zhanghai.android.libarchive.ArchiveEntry.pathname(header)
+                                val name = nameBytes?.let { String(it) }
+                                val fileType = me.zhanghai.android.libarchive.ArchiveEntry.filetype(header)
+                                val isDir = fileType == me.zhanghai.android.libarchive.ArchiveEntry.AE_IFDIR
+                                if (name != null && !isDir && isImg(name)) {
+                                    pages.add(PageMeta(idx, "rar", doc, idx))
+                                    idx++
+                                }
+                                header = me.zhanghai.android.libarchive.Archive.readNextHeader(readHandle)
+                            }
+                            me.zhanghai.android.libarchive.Archive.free(readHandle)
+                            pfd.close()
+                            if (pages.isNotEmpty()) return pages
+                        } catch (e: Exception) {
+                            try { me.zhanghai.android.libarchive.Archive.free(readHandle) } catch (_: Exception) {}
+                            throw e
+                        }
+                    } catch (e: Exception) { try { pfd.close() } catch (_: Exception) {} }
+                }
+            } catch (_: Exception) {}
+            val realFile = getRealFile(uri)
+            if (realFile != null) {
+                val rar = RarArchive(realFile)
+                try {
+                    var idx = 0
+                    rar.fileHeaders.filter { !it.isDirectory }
+                        .sortedWith(Comparator { a, b ->
+                            val depthA = com.mangareader.util.ComicSortUtil.getPathDepth(a.fileName)
+                            val depthB = com.mangareader.util.ComicSortUtil.getPathDepth(b.fileName)
+                            if (depthA != depthB) depthA - depthB
+                            else com.mangareader.zip.CommonsZipHelper.compareNatural(a.fileName, b.fileName)
+                        })
+                        .forEach { fh ->
+                            if (isImg(fh.fileName)) {
+                                pages.add(PageMeta(idx, "rar", doc, idx))
+                                idx++
+                            }
+                        }
+                    return pages
+                } finally {
+                    try { rar.close() } catch (_: Exception) {}
+                }
+            }
+            ctx.contentResolver.openInputStream(uri)?.use { input ->
+                val tmpFile = File(ctx.cacheDir, "tmp_rar_${System.currentTimeMillis()}.rar")
+                tmpFile.outputStream().use { out -> input.copyTo(out) }
+                try {
+                    val rar = RarArchive(tmpFile)
+                    try {
+                        var idx = 0
+                        rar.fileHeaders.filter { !it.isDirectory }
+                            .sortedWith(Comparator { a, b ->
+                                val depthA = com.mangareader.util.ComicSortUtil.getPathDepth(a.fileName)
+                                val depthB = com.mangareader.util.ComicSortUtil.getPathDepth(b.fileName)
+                                if (depthA != depthB) depthA - depthB
+                                else com.mangareader.zip.CommonsZipHelper.compareNatural(a.fileName, b.fileName)
+                            })
+                            .forEach { fh ->
+                                if (isImg(fh.fileName)) {
+                                    pages.add(PageMeta(idx, "rar", doc, idx))
+                                    idx++
+                                }
+                            }
+                    } finally {
+                        try { rar.close() } catch (_: Exception) {}
+                    }
+                } finally { tmpFile.delete() }
+            }
+        } catch (_: Exception) {}
+        return pages
+    }
+
+    private fun scan7z(tree: Uri, doc: String): List<PageMeta> {
+        val pages = mutableListOf<PageMeta>()
+        val uri = DocumentsContract.buildDocumentUriUsingTree(tree, doc)
+        try {
+            // Try zhanghai libarchive with SAF fd
+            try {
+                val pfd = ctx.contentResolver.openFileDescriptor(uri, "r")
+                if (pfd != null) {
+                    try {
+                        val fd = pfd.detachFd()
+                        val readHandle = me.zhanghai.android.libarchive.Archive.readNew()
+                        try {
+                            me.zhanghai.android.libarchive.Archive.setCharset(readHandle, "UTF-8".toByteArray())
+                            me.zhanghai.android.libarchive.Archive.readSupportFilterAll(readHandle)
+                            me.zhanghai.android.libarchive.Archive.readSupportFormatAll(readHandle)
+                            me.zhanghai.android.libarchive.Archive.readOpenFd(readHandle, fd, 10240L)
+                            var idx = 0
+                            var header = me.zhanghai.android.libarchive.Archive.readNextHeader(readHandle)
+                            while (header != 0L) {
+                                val nameBytes = me.zhanghai.android.libarchive.ArchiveEntry.pathname(header)
+                                val name = nameBytes?.let { String(it) }
+                                val fileType = me.zhanghai.android.libarchive.ArchiveEntry.filetype(header)
+                                val isDir = fileType == me.zhanghai.android.libarchive.ArchiveEntry.AE_IFDIR
+                                if (name != null && !isDir && isImg(name)) {
+                                    pages.add(PageMeta(idx, "7z", doc, idx))
+                                    idx++
+                                }
+                                header = me.zhanghai.android.libarchive.Archive.readNextHeader(readHandle)
+                            }
+                            me.zhanghai.android.libarchive.Archive.free(readHandle)
+                            pfd.close()
+                            if (pages.isNotEmpty()) return pages
+                        } catch (e: Exception) {
+                            try { me.zhanghai.android.libarchive.Archive.free(readHandle) } catch (_: Exception) {}
+                            throw e
+                        }
+                    } catch (_: Exception) { try { pfd.close() } catch (_: Exception) {} }
+                }
+            } catch (_: Exception) {}
+            // Fallback to Java commons-compress with real file
+            val realFile = getRealFile(uri)
+            if (realFile != null) {
+                val sz = SevenZFile(realFile)
+                var idx = 0
+                var entry = sz.nextEntry
+                while (entry != null) {
+                    if (!entry.isDirectory && isImg(entry.name)) {
+                        pages.add(PageMeta(idx, "7z", doc, idx))
+                        idx++
+                    }
+                    entry = sz.nextEntry
+                }
+                sz.close()
+                return pages
+            }
+            ctx.contentResolver.openInputStream(uri)?.use { input ->
+                val tmpFile = File(ctx.cacheDir, "tmp_7z_${System.currentTimeMillis()}.7z")
+                tmpFile.outputStream().use { out -> input.copyTo(out) }
+                try {
+                    val sz = SevenZFile(tmpFile)
+                    var idx = 0
+                    var entry = sz.nextEntry
+                    while (entry != null) {
+                        if (!entry.isDirectory && isImg(entry.name)) {
+                            pages.add(PageMeta(idx, "7z", doc, idx))
+                            idx++
+                        }
+                        entry = sz.nextEntry
+                    }
+                    sz.close()
+                } finally { tmpFile.delete() }
+            }
+        } catch (e: Exception) { Log.e(TAG, "scan7z: ${e.message}") }
+        return pages
+    }
+
+    private fun scanTar(tree: Uri, doc: String): List<PageMeta> {
+        val pages = mutableListOf<PageMeta>()
+        val uri = DocumentsContract.buildDocumentUriUsingTree(tree, doc)
+        try {
+            val pfd = ctx.contentResolver.openFileDescriptor(uri, "r")
+            if (pfd != null) {
+                val fd = pfd.detachFd()
+                try {
+                    val readHandle = me.zhanghai.android.libarchive.Archive.readNew()
+                    try {
+                        me.zhanghai.android.libarchive.Archive.setCharset(readHandle, "UTF-8".toByteArray())
+                        me.zhanghai.android.libarchive.Archive.readSupportFilterAll(readHandle)
+                        me.zhanghai.android.libarchive.Archive.readSupportFormatAll(readHandle)
+                        me.zhanghai.android.libarchive.Archive.readOpenFd(readHandle, fd, 10240L)
+                        var idx = 0
+                        var header = me.zhanghai.android.libarchive.Archive.readNextHeader(readHandle)
+                        while (header != 0L) {
+                            val nameBytes = me.zhanghai.android.libarchive.ArchiveEntry.pathname(header)
+                            val name = nameBytes?.let { String(it) }
+                            val fileType = me.zhanghai.android.libarchive.ArchiveEntry.filetype(header)
+                            val isDir = fileType == me.zhanghai.android.libarchive.ArchiveEntry.AE_IFDIR
+                            if (name != null && !isDir && isImg(name)) {
+                                pages.add(PageMeta(idx, "tar", doc, idx))
+                                idx++
+                            }
+                            header = me.zhanghai.android.libarchive.Archive.readNextHeader(readHandle)
+                        }
+                        me.zhanghai.android.libarchive.Archive.free(readHandle)
+                        pfd.close()
+                        if (pages.isNotEmpty()) return pages
+                    } catch (e: Exception) {
+                        try { me.zhanghai.android.libarchive.Archive.free(readHandle) } catch (_: Exception) {}
+                        throw e
+                    }
+                } catch (_: Exception) { try { pfd.close() } catch (_: Exception) {} }
+            }
+        } catch (_: Exception) {}
+        return pages
+    }
+
+    private fun loadFromTar(uri: Uri, targetIndex: Int): ByteArray? {
+        try {
+            val pfd = ctx.contentResolver.openFileDescriptor(uri, "r")
+            if (pfd != null) {
+                val fd = pfd.detachFd()
+                try {
+                    val data = readArchiveEntryViaFd(fd, targetIndex)
+                    pfd.close()
+                    if (data != null) return data
+                } catch (_: Exception) { try { pfd.close() } catch (_: Exception) {} }
+            }
+        } catch (_: Exception) {}
+        return null
+    }
+
+    private fun loadFromRar(uri: Uri, targetIndex: Int): ByteArray? {
+        try {
+            // Try zhanghai libarchive with SAF fd (works for 123云盘 local files)
+            try {
+                val pfd = ctx.contentResolver.openFileDescriptor(uri, "r")
+                if (pfd != null) {
+                    try {
+                        val fd = pfd.detachFd()
+                        val data = readArchiveEntryViaFd(fd, targetIndex)
+                        pfd.close()
+                        if (data != null) return data
+                    } catch (_: Exception) { try { pfd.close() } catch (_: Exception) {} }
+                }
+            } catch (_: Exception) {}
+            // Fallback to Java junrar with real file
+            val realFile = getRealFile(uri)
+            if (realFile != null) {
+                try {
+                    val rar = RarArchive(realFile)
+                    var idx = 0
+                    rar.fileHeaders.filter { !it.isDirectory }
+                        .sortedWith(rarSortComparator)
+                        .forEach { fh ->
+                        if (isImg(fh.fileName)) {
+                            if (idx == targetIndex) {
+                                val data = rar.getInputStream(fh).use { it.readBytes() }
+                                rar.close()
+                                return data
+                            }
+                            idx++
+                        }
+                    }
+                    rar.close()
+                } catch (_: Exception) {}
+            }
+            // Fallback to SAF stream → tmpFile → junrar
+            ctx.contentResolver.openInputStream(uri)?.use { input ->
+                val tmpFile = File(ctx.cacheDir, "tmp_rar_${System.currentTimeMillis()}.rar")
+                tmpFile.outputStream().use { out -> input.copyTo(out) }
+                try {
+                    val rar = RarArchive(tmpFile)
+                    var idx = 0
+                    rar.fileHeaders.filter { !it.isDirectory }
+                        .sortedWith(rarSortComparator)
+                        .forEach { fh ->
+                        if (isImg(fh.fileName)) {
+                            if (idx == targetIndex) {
+                                val data = rar.getInputStream(fh).use { it.readBytes() }
+                                rar.close()
+                                tmpFile.delete()
+                                return data
+                            }
+                            idx++
+                        }
+                    }
+                    rar.close()
+                } finally { tmpFile.delete() }
+            }
+        } catch (_: Exception) {}
+        return null
+    }
+
+    private fun readArchiveEntryViaFd(fd: Int, targetIndex: Int): ByteArray? {
+        try {
+            val readHandle = me.zhanghai.android.libarchive.Archive.readNew()
+            try {
+                me.zhanghai.android.libarchive.Archive.setCharset(readHandle, "UTF-8".toByteArray())
+                me.zhanghai.android.libarchive.Archive.readSupportFilterAll(readHandle)
+                me.zhanghai.android.libarchive.Archive.readSupportFormatAll(readHandle)
+                me.zhanghai.android.libarchive.Archive.readOpenFd(readHandle, fd, 10240L)
+                var idx = 0
+                var header = me.zhanghai.android.libarchive.Archive.readNextHeader(readHandle)
+                while (header != 0L) {
+                    val nameBytes = me.zhanghai.android.libarchive.ArchiveEntry.pathname(header)
+                    val name = nameBytes?.let { String(it) }
+                    val fileType = me.zhanghai.android.libarchive.ArchiveEntry.filetype(header)
+                    val isDir = fileType == me.zhanghai.android.libarchive.ArchiveEntry.AE_IFDIR
+                    if (name != null && !isDir && isImg(name)) {
+                        if (idx == targetIndex) {
+                            val entrySize = me.zhanghai.android.libarchive.ArchiveEntry.size(header)
+                            val buf = java.nio.ByteBuffer.allocateDirect(entrySize.toInt())
+                            me.zhanghai.android.libarchive.Archive.readData(readHandle, buf)
+                            val data = ByteArray(entrySize.toInt())
+                            buf.position(0)
+                            buf.get(data)
+                            me.zhanghai.android.libarchive.Archive.free(readHandle)
+                            return data
+                        }
+                        idx++
+                    }
+                    header = me.zhanghai.android.libarchive.Archive.readNextHeader(readHandle)
+                }
+                me.zhanghai.android.libarchive.Archive.free(readHandle)
+            } catch (e: Exception) {
+                try { me.zhanghai.android.libarchive.Archive.free(readHandle) } catch (_: Exception) {}
+                throw e
+            }
+        } catch (_: Exception) {}
+        return null
+    }
+
+    private fun loadFrom7z(uri: Uri, targetIndex: Int): ByteArray? {
+        try {
+            // Try zhanghai libarchive with SAF fd (works for 123云盘 local files)
+            try {
+                val pfd = ctx.contentResolver.openFileDescriptor(uri, "r")
+                if (pfd != null) {
+                    try {
+                        val fd = pfd.detachFd()
+                        val data = readArchiveEntryViaFd(fd, targetIndex)
+                        pfd.close()
+                        if (data != null) return data
+                    } catch (_: Exception) { try { pfd.close() } catch (_: Exception) {} }
+                }
+            } catch (_: Exception) {}
+            // Fallback to Java SevenZFile with real file
+            val realFile = getRealFile(uri)
+            // Fallback to Java commons-compress
+            if (realFile != null) {
+                try {
+                    val sz = SevenZFile(realFile)
+                    var idx = 0
+                    var entry = sz.nextEntry
+                    while (entry != null) {
+                        if (!entry.isDirectory && isImg(entry.name)) {
+                            if (idx == targetIndex) {
+                                val bos = ByteArrayOutputStream()
+                                val buf = ByteArray(8192)
+                                var n: Int
+                                while (sz.read(buf).also { n = it } != -1) bos.write(buf, 0, n)
+                                sz.close()
+                                return bos.toByteArray()
+                            }
+                            idx++
+                        }
+                        entry = sz.nextEntry
+                    }
+                    sz.close()
+                } catch (_: Exception) {}
+            }
+            ctx.contentResolver.openInputStream(uri)?.use { input ->
+                val tmpFile = File(ctx.cacheDir, "tmp_7z_${System.currentTimeMillis()}.7z")
+                tmpFile.outputStream().use { out -> input.copyTo(out) }
+                try {
+                    val sz = SevenZFile(tmpFile)
+                    var idx = 0
+                    var entry = sz.nextEntry
+                    while (entry != null) {
+                        if (!entry.isDirectory && isImg(entry.name)) {
+                            if (idx == targetIndex) {
+                                val bos = ByteArrayOutputStream()
+                                val buf = ByteArray(8192)
+                                var n: Int
+                                while (sz.read(buf).also { n = it } != -1) bos.write(buf, 0, n)
+                                sz.close()
+                                tmpFile.delete()
+                                return bos.toByteArray()
+                            }
+                            idx++
+                        }
+                        entry = sz.nextEntry
+                    }
+                    sz.close()
+                } finally { tmpFile.delete() }
+            }
+        } catch (_: Exception) {}
+        return null
+    }
+
+    private fun listRarPages(uri: Uri): List<PageMeta> {
+        val pages = mutableListOf<PageMeta>()
+        try {
+            ctx.contentResolver.openInputStream(uri)?.use { input ->
+                val tmpFile = File(ctx.cacheDir, "tmp_rar_scan_${System.currentTimeMillis()}.rar")
+                tmpFile.outputStream().use { out -> input.copyTo(out) }
+                try {
+                    val rar = RarArchive(tmpFile)
+                    var idx = 0
+                    rar.fileHeaders.filter { !it.isDirectory }
+                        .sortedWith(rarSortComparator)
+                        .forEach { fh ->
+                        if (isImg(fh.fileName)) { pages.add(PageMeta(idx, "", "")); idx++ }
+                    }
+                    rar.close()
+                } finally { tmpFile.delete() }
+            }
+        } catch (e: Exception) { Log.e(TAG, "listRarPages: ${e.message}") }
+        return pages
+    }
+
+    private fun list7zPages(uri: Uri): List<PageMeta> {
+        val pages = mutableListOf<PageMeta>()
+        try {
+            ctx.contentResolver.openInputStream(uri)?.use { input ->
+                val tmpFile = File(ctx.cacheDir, "tmp_7z_scan_${System.currentTimeMillis()}.7z")
+                tmpFile.outputStream().use { out -> input.copyTo(out) }
+                try {
+                    val sz = SevenZFile(tmpFile)
+                    var idx = 0
+                    var entry = sz.nextEntry
+                    while (entry != null) {
+                        if (!entry.isDirectory && isImg(entry.name)) { pages.add(PageMeta(idx, "", "")); idx++ }
+                        entry = sz.nextEntry
+                    }
+                    sz.close()
+                } finally { tmpFile.delete() }
+            }
+        } catch (e: Exception) { Log.e(TAG, "list7zPages: ${e.message}") }
+        return pages
+    }
+
+    fun listZipContents(uri: Uri): List<String> {
+        val names = mutableListOf<String>()
+        try {
+            ctx.contentResolver.openInputStream(uri)?.use { s ->
+                ZipInputStream(s).use { z ->
+                    var e = try { z.nextEntry } catch (_: Exception) { null }
+                    while (e != null) {
+                        if (!e.isDirectory) names.add(e.name)
+                        e = try { z.nextEntry } catch (_: Exception) { null }
+                    }
+                }
+            }
+        } catch (e: Exception) { Log.e(TAG, "listZipContents: ${e.message}") }
+        return names
+    }
+
+    private fun saveDebugLog(tag: String, content: String) {
+        try {
+            val dir = File(ctx.getExternalFilesDir(null), "debug_logs")
+            if (!dir.exists()) dir.mkdirs()
+            val file = File(dir, "${tag}_${System.currentTimeMillis()}.txt")
+            file.writeText(content)
+            Log.d(TAG, "Debug log saved: ${file.absolutePath}")
+        } catch (e: Exception) {
+            Log.e(TAG, "saveDebugLog: ${e.message}")
+        }
+    }
+
+    private fun isImg(n: String) = n.lowercase().let {
+        it.endsWith(".jpg") || it.endsWith(".jpeg") || it.endsWith(".png") ||
+                it.endsWith(".webp") || it.endsWith(".gif") || it.endsWith(".bmp") ||
+                it.endsWith(".tiff") || it.endsWith(".tif") || it.endsWith(".heic") ||
+                it.endsWith(".heif") || it.endsWith(".avif")
+    }
+
+    private fun isComic(n: String) = n.lowercase().let {
+        it.endsWith(".cbz") || it.endsWith(".zip") || it.endsWith(".pdf") || it.endsWith(".epub") ||
+                it.endsWith(".cbr") || it.endsWith(".rar") || it.endsWith(".cb7") || it.endsWith(".7z") ||
+                it.endsWith(".mobi") || it.endsWith(".azw") || it.endsWith(".azw3") ||
+                it.endsWith(".tar") || it.endsWith(".cbt") || it.endsWith(".tgz") || it.endsWith(".tbz2") || it.endsWith(".txz")
+    }
+
+    // ==================== ZIP目录导航 ====================
+
+    private val zipTreeCache = java.util.concurrent.ConcurrentHashMap<String, ZipDirNode>()
+
+    private fun buildZipTree(entryNames: List<String>): ZipDirNode {
+        val root = ZipDirNode("", "", true)
+        val sorted = entryNames.sortedBy { name -> name.count { it == '/' || it == '\\' } }
+        for (name in sorted) {
+            val isDir = name.endsWith('/')
+            val parts = name.split('/').filter { it.isNotEmpty() }
+            if (parts.isEmpty()) continue
+            var current = root
+            for (i in 0 until parts.size - 1) {
+                val sub = current.children.find { it.name == parts[i] }
+                if (sub != null) {
+                    current = sub
+                } else {
+                    val newNode = ZipDirNode(parts[i], parts.subList(0, i + 1).joinToString("/") + "/", true)
+                    current.children.add(newNode)
+                    current = newNode
+                }
+            }
+            val leafName = parts.last()
+            if (isDir) {
+                val existing = current.children.find { it.name == leafName }
+                if (existing == null) {
+                    current.children.add(ZipDirNode(leafName, name, true))
+                }
+            } else if (isImg(name)) {
+                current.imageIndices.add(entryNames.indexOf(name))
+            }
+        }
+        // 对每个节点的 imageIndices 按文件名自然排序
+        sortImageIndices(root, entryNames)
+        return root
+    }
+
+    private fun sortImageIndices(node: ZipDirNode, allNames: List<String>) {
+        if (node.imageIndices.isNotEmpty()) {
+            node.imageIndices.sortWith(Comparator { a, b ->
+                val nameA = if (a in allNames.indices) allNames[a] else ""
+                val nameB = if (b in allNames.indices) allNames[b] else ""
+                NaturalComparator.compare(nameA, nameB)
+            })
+        }
+        for (child in node.children) {
+            if (child.isDir) sortImageIndices(child, allNames)
+        }
+    }
+
+    private fun isFlatZip(root: ZipDirNode): Boolean {
+        return root.children.isEmpty() || root.children.all { !it.isDir }
+    }
+
+    fun hasZipSubDirs(path: String): Boolean {
+        android.util.Log.d(TAG, "hasZipSubDirs path=$path")
+        val p = parsePath(path) ?: return false
+        val tree = makeTree(p.auth, p.tree)
+        val uri = DocumentsContract.buildDocumentUriUsingTree(tree, p.doc)
+        val cacheKey = uri.toString()
+        if (!com.mangareader.native.NativeEngine.isOpenZip(cacheKey)) {
+            val realFile = getRealFile(uri)
+            val realPath = realFile?.absolutePath ?: ""
+            val pfd = ctx.contentResolver.openFileDescriptor(uri, "r") ?: return false
+            val fd = pfd.detachFd()
+            pfdKeepAlive[cacheKey] = pfd
+            try { com.mangareader.native.NativeEngine.openZipWithFd(cacheKey, fd, realPath) } catch (_: Exception) {}
+        }
+        val allNames = try { com.mangareader.native.NativeEngine.getZipEntryNames(cacheKey) } catch (_: Exception) { null }
+            ?: return false
+        android.util.Log.d(TAG, "hasZipSubDirs totalEntries=${allNames.size}")
+        val result = allNames.toList().any { name ->
+            val parts = name.split('/').filter { it.isNotEmpty() }
+            parts.size > 1
+        }
+        android.util.Log.d(TAG, "hasZipSubDirs result=$result")
+        return result
+    }
+
+    /**
+     * §37 误判修正：zip/cbz 是否真的是漫画 —— 入口条目是否含至少一张图。
+     *   Scanner 对 .zip/.cbz 文件不再纯靠后缀识别（用户报告"纳*save.zip 这种非漫画被收进书架"）。
+     *   本方法用与 hasZipSubDirs 同一套 native zip 句柄，遍历 entry 名，含任何 isImg 后缀即视为漫画。
+     *   开打不开 / 列名为空 → 返回 false（不收）。RAR/7z/epub 等不在此修，因扫漫画用例极罕见且 native 接口不同。
+     */
+    fun hasZipImages(path: String): Boolean {
+        android.util.Log.d(TAG, "hasZipImages path=$path")
+        val namesPair = getZipAllNames(path) ?: run {
+            android.util.Log.d(TAG, "hasZipImages: open/list 失败 → false")
+            return false
+        }
+        val (_, allNames) = namesPair
+        for (n in allNames) {
+            if (isImg(n)) {
+                android.util.Log.d(TAG, "hasZipImages: OK 命中图 $n → true")
+                return true
+            }
+        }
+        android.util.Log.d(TAG, "hasZipImages: totalEntries=${allNames.size} 无图 → false")
+        return false
+    }
+
+    private fun getZipAllNames(filePath: String): Pair<String, Array<String>>? {
+        val p = parsePath(filePath) ?: return null
+        val tree = makeTree(p.auth, p.tree)
+        val uri = DocumentsContract.buildDocumentUriUsingTree(tree, p.doc)
+        val cacheKey = uri.toString()
+        if (!com.mangareader.native.NativeEngine.isOpenZip(cacheKey)) {
+            val realFile = getRealFile(uri)
+            val realPath = realFile?.absolutePath ?: ""
+            val pfd = ctx.contentResolver.openFileDescriptor(uri, "r") ?: return null
+            val fd = pfd.detachFd()
+            pfdKeepAlive[cacheKey] = pfd
+            try { com.mangareader.native.NativeEngine.openZipWithFd(cacheKey, fd, realPath) } catch (_: Exception) {}
+        }
+        val allNames = try { com.mangareader.native.NativeEngine.getZipEntryNames(cacheKey) } catch (_: Exception) { null }
+            ?: return null
+        return cacheKey to allNames
+    }
+
+    fun listZipDirs(filePath: String, subPath: String?): List<Item> {
+        val p = parsePath(filePath) ?: return emptyList()
+        val result = getZipAllNames(filePath) ?: return emptyList()
+        val (cacheKey, allNames) = result
+        val root = zipTreeCache.getOrPut(cacheKey) { buildZipTree(allNames.toList()) }
+        if (isFlatZip(root)) return emptyList()
+        var current = root
+        if (!subPath.isNullOrEmpty()) {
+            val pathParts = subPath.split('/').filter { it.isNotEmpty() }
+            for (part in pathParts) {
+                val child = current.children.find { it.name == part && it.isDir }
+                if (child != null) current = child
+                else return emptyList()
+            }
+        }
+        if (current.children.all { !it.isDir } && current.imageIndices.isEmpty()) return emptyList()
+        if (current.children.all { !it.isDir }) return emptyList()
+        val items = mutableListOf<Item>()
+        val baseSubPath = subPath ?: ""
+        for (child in current.children.filter { it.isDir }) {
+            val childSubPath = if (baseSubPath.isEmpty()) "${child.name}/" else "$baseSubPath${child.name}/"
+            items.add(Item(child.name, p.auth, p.tree, p.doc, true, childSubPath))
+        }
+        for (imgIdx in current.imageIndices) {
+            if (imgIdx < allNames.size) {
+                val imgName = allNames[imgIdx].substringAfterLast('/')
+                items.add(Item(imgName, p.auth, p.tree, p.doc, false))
+            }
+        }
+        return items
+    }
+
+    private fun listZipSubDirPages(archivePath: String, subPath: String): List<PageMeta> {
+        val p = parsePath(archivePath) ?: return emptyList()
+        val result = getZipAllNames(archivePath) ?: return emptyList()
+        val (cacheKey, allNames) = result
+        val root = zipTreeCache.getOrPut(cacheKey) { buildZipTree(allNames.toList()) }
+        var current = root
+        val pathParts = subPath.split('/').filter { it.isNotEmpty() }
+        for (part in pathParts) {
+            val child = current.children.find { it.name == part && it.isDir }
+            if (child != null) current = child
+            else return emptyList()
+        }
+        val pageMetas = mutableListOf<PageMeta>()
+        var localIdx = 0
+        fun collectImages(node: ZipDirNode) {
+            for (imgIdx in node.imageIndices) {
+                if (imgIdx < allNames.size) {
+                    pageMetas.add(PageMeta(pageMetas.size, "zip", p.doc, localIdx))
+                    localIdx++
+                }
+            }
+            for (child in node.children) {
+                if (child.isDir) collectImages(child)
+            }
+        }
+        collectImages(current)
+        return pageMetas
+    }
+}
+
+internal object NaturalComparator : Comparator<String> {
+    override fun compare(a: String, b: String): Int = com.mangareader.zip.CommonsZipHelper.compareNatural(a, b)
+}
