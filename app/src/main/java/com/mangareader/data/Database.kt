@@ -233,11 +233,14 @@ interface MangaDao {
     @Query("UPDATE manga_books SET isHidden = :hidden")
     suspend fun setHiddenAll(hidden: Boolean)
 
-    @Query("SELECT * FROM manga_books WHERE filePath LIKE 'a:' || :auth || '|' || :treeDocId || '|%' OR filePath LIKE 'd:' || :auth || '|' || :treeDocId || '%' OR filePath LIKE 'z:a:' || :auth || '|' || :treeDocId || '|%'")
-    suspend fun getBooksByFolderParams(auth: String, treeDocId: String): List<Book>
+    // ★ C8 修复：前缀由 Kotlin 侧拼好作为单参传入（旧写法右侧非常量表达式使 filePath 索引失效，
+    //   rescan 高频全表扫）。前缀逐字符复刻旧拼接：a/z 带尾 '|'，d 不带。
+    //   SAF authority/treeDocId 不含 %/_ 通配符，直接 LIKE 安全。
+    @Query("SELECT * FROM manga_books WHERE filePath LIKE :aPrefix OR filePath LIKE :dPrefix OR filePath LIKE :zPrefix")
+    suspend fun getBooksByFolderParams(aPrefix: String, dPrefix: String, zPrefix: String): List<Book>
 
-    @Query("UPDATE manga_books SET isHidden = :hidden WHERE filePath LIKE 'a:' || :auth || '|' || :treeDocId || '|%' OR filePath LIKE 'd:' || :auth || '|' || :treeDocId || '%' OR filePath LIKE 'z:a:' || :auth || '|' || :treeDocId || '|%'")
-    suspend fun setHiddenByFolderParams(auth: String, treeDocId: String, hidden: Boolean)
+    @Query("UPDATE manga_books SET isHidden = :hidden WHERE filePath LIKE :aPrefix OR filePath LIKE :dPrefix OR filePath LIKE :zPrefix")
+    suspend fun setHiddenByFolderParams(aPrefix: String, dPrefix: String, zPrefix: String, hidden: Boolean)
 
     @Query("SELECT * FROM manga_books WHERE filePath = :path LIMIT 1")
     suspend fun getBookByPath(path: String): Book?
@@ -249,11 +252,11 @@ interface MangaDao {
     @Query("DELETE FROM manga_books WHERE filePath LIKE '%' || :treeUriStr || '%'")
     suspend fun deleteBooksByFolder(treeUriStr: String)
 
-    @Query("DELETE FROM manga_books WHERE (filePath LIKE 'a:' || :auth || '|' || :treeDocId || '|%' OR filePath LIKE 'd:' || :auth || '|' || :treeDocId || '%' OR filePath LIKE 'z:a:' || :auth || '|' || :treeDocId || '|%')")
-    suspend fun deleteBooksByFolderParams(auth: String, treeDocId: String)
+    @Query("DELETE FROM manga_books WHERE filePath LIKE :aPrefix OR filePath LIKE :dPrefix OR filePath LIKE :zPrefix")
+    suspend fun deleteBooksByFolderParams(aPrefix: String, dPrefix: String, zPrefix: String)
 
-    @Query("SELECT COUNT(*) FROM manga_books WHERE (filePath LIKE 'a:' || :auth || '|' || :treeDocId || '|%' OR filePath LIKE 'd:' || :auth || '|' || :treeDocId || '%' OR filePath LIKE 'z:a:' || :auth || '|' || :treeDocId || '|%')")
-    suspend fun countBooksByFolder(auth: String, treeDocId: String): Int
+    @Query("SELECT COUNT(*) FROM manga_books WHERE filePath LIKE :aPrefix OR filePath LIKE :dPrefix OR filePath LIKE :zPrefix")
+    suspend fun countBooksByFolder(aPrefix: String, dPrefix: String, zPrefix: String): Int
 
     @Query("SELECT * FROM manga_books WHERE totalPages > 0 AND readPages >= totalPages ORDER BY lastReadAt DESC")
     fun getFinishedBooks(): Flow<List<Book>>
@@ -470,6 +473,12 @@ interface MangaDao {
     """)
     suspend fun preinsertProgressIfAbsent(bookId: Long, path: String)
 
+    /** ★ C6 修复：整书叶子卷占位行打包单事务（旧逐条各自事务 fsync N 次） */
+    @Transaction
+    suspend fun preinsertProgressForBook(bookId: Long, paths: List<String>) {
+        for (p in paths) preinsertProgressIfAbsent(bookId, p)
+    }
+
     // ★ 决策 3：动图对话框选择独立写路径
     @Query("UPDATE reading_progress SET anim_dialog_choice = :choice WHERE bookId = :bookId AND path = :path")
     suspend fun setAnimDialogChoice(bookId: Long, path: String, choice: Int)
@@ -513,7 +522,11 @@ interface MangaDao {
      */
     @Transaction
     suspend fun rescanFolderReplace(auth: String, treeDocId: String, newBooks: List<Book>) {
-        val oldBooks = getBooksByFolderParams(auth, treeDocId)
+        // ★ C8：前缀 Kotlin 侧拼好（a/z 带尾 '|'，d 不带——逐字符复刻旧 LIKE 拼接）
+        val aPrefix = "a:$auth|$treeDocId|%"
+        val dPrefix = "d:$auth|$treeDocId%"
+        val zPrefix = "z:a:$auth|$treeDocId|%"
+        val oldBooks = getBooksByFolderParams(aPrefix, dPrefix, zPrefix)
         if (oldBooks.isEmpty()) {
             insertBooksBatch(newBooks)
             return
@@ -524,7 +537,7 @@ interface MangaDao {
         val shelfSnap = getShelfItemsForBooks(oldIds)
         val tagSnap = getTagLinksForBooks(oldIds)
 
-        deleteBooksByFolderParams(auth, treeDocId)
+        deleteBooksByFolderParams(aPrefix, dPrefix, zPrefix)
         val newIds = insertBooksBatch(newBooks)
 
         val newIdByPath = HashMap<String, Long>(newBooks.size * 2)

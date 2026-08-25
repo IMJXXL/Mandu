@@ -17,11 +17,6 @@ import java.io.File
 import java.io.FileOutputStream
 import java.security.MessageDigest
 import java.util.zip.ZipInputStream
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.launch
-
 /**
  * ★ §24 P3：动图类型枚举（GIF / WebP / APNG / NONE）
  * - 由 [com.mangareader.viewer.ArchiveEngine.peekAnimKind] 推断
@@ -32,18 +27,14 @@ enum class AnimKind { NONE, GIF, WEBP, APNG }
 class ArchiveEngine(private val ctx: Context) {
     companion object {
         private const val TAG = "ArchiveEngine"
-        private const val CACHE_SIZE = 30
         private var debugLogBuffer = StringBuilder()
         private var debugLogFile: File? = null
-
-        // 统一排序比较器：路径深度优先与自然排序
-        private val imageSortComparator = Comparator<java.util.zip.ZipEntry> { a, b ->
-            val depthA = com.mangareader.util.ComicSortUtil.getPathDepth(a.name)
-            val depthB = com.mangareader.util.ComicSortUtil.getPathDepth(b.name)
-            if (depthA != depthB) depthA - depthB
-            else com.mangareader.zip.CommonsZipHelper.compareNatural(a.name, b.name)
-        }
+        // ★ B7：落盘节流——buffer 未满 8KB 且距上次落盘 <3s 时攒着，热路径不再每次 open/write/close
+        private const val DEBUG_FLUSH_MIN_INTERVAL_MS = 3000L
+        private const val DEBUG_FLUSH_MIN_BYTES = 8 * 1024
+        @Volatile private var lastFlushAt = 0L
         private val rarSortComparator = Comparator<com.github.junrar.rarfile.FileHeader> { a, b ->
+
             val depthA = com.mangareader.util.ComicSortUtil.getPathDepth(a.fileName)
             val depthB = com.mangareader.util.ComicSortUtil.getPathDepth(b.fileName)
             if (depthA != depthB) depthA - depthB
@@ -52,18 +43,25 @@ class ArchiveEngine(private val ctx: Context) {
 
         fun flushLog(ctx: Context) {
             try {
-                if (debugLogBuffer.isEmpty()) return
-                if (debugLogFile == null) {
-                    debugLogFile = File(ctx.filesDir, "cover_debug.log")
+                val now = System.currentTimeMillis()
+                synchronized(debugLogBuffer) {
+                    if (debugLogBuffer.isEmpty()) return
+                    // ★ B7 节流：小且近的日志攒着下次一起落
+                    if (debugLogBuffer.length < DEBUG_FLUSH_MIN_BYTES &&
+                        now - lastFlushAt < DEBUG_FLUSH_MIN_INTERVAL_MS) return
+                    if (debugLogFile == null) {
+                        debugLogFile = File(ctx.filesDir, "cover_debug.log")
+                    }
+                    val f = debugLogFile ?: return
+                    synchronized(f) {
+                        f.appendText(debugLogBuffer.toString())
+                    }
+                    debugLogBuffer.clear()
+                    lastFlushAt = now
                 }
-                val f = debugLogFile ?: return
-                synchronized(f) {
-                    f.appendText(debugLogBuffer.toString())
-                }
-                debugLogBuffer.clear()
             } catch (e: Exception) {
                 Log.e(TAG, "flushLog failed: ${e.message}")
-                debugLogBuffer.clear()
+                synchronized(debugLogBuffer) { debugLogBuffer.clear() }
             }
         }
 
@@ -101,7 +99,6 @@ class ArchiveEngine(private val ctx: Context) {
         }
     }
 
-    private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO + kotlinx.coroutines.SupervisorJob())
     private val config by lazy { com.mangareader.data.ReaderConfig.load(ctx) }
 
     private val isEink by lazy { config.isEinkMode }
@@ -159,49 +156,9 @@ class ArchiveEngine(private val ctx: Context) {
 
     fun putCachedBitmap(key: String, bmp: Bitmap) { sharedBitmapCache.put(key, bmp) }
 
-    private fun loadPageFromDisk(key: String): Bitmap? {
-        try {
-            val file = File(pageCacheDir, "${md5(key)}.page")
-            if (file.exists() && System.currentTimeMillis() - file.lastModified() < 7 * 24 * 60 * 60 * 1000L) {
-                return BitmapFactory.decodeFile(file.absolutePath)
-            }
-        } catch (_: Exception) {}
-        return null
-    }
-
-    private fun savePageToDisk(key: String, bmp: Bitmap) {
-        try {
-            val file = File(pageCacheDir, "${md5(key)}.page")
-            file.outputStream().use { bmp.compress(Bitmap.CompressFormat.JPEG, 85, it) }
-        } catch (_: Exception) {}
-    }
-
-    private val nativeArchives = object : LinkedHashMap<Long, com.mangareader.native.NativeEngine.Archive>(5, 0.75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Long, com.mangareader.native.NativeEngine.Archive>?) = size > 5
-    }
-
-    private fun getNativeArchive(treeStr: String): com.mangareader.native.NativeEngine.Archive? {
-        val p = parsePath(treeStr) ?: return null
-        if (p.ext !in listOf("cbz", "zip", "epub")) return null
-        val uri = DocumentsContract.buildDocumentUriUsingTree(makeTree(p.auth, p.tree), p.doc)
-        val realFile = getRealFile(uri) ?: return null
-        val path = realFile.absolutePath
-        val key = path.hashCode().toLong()
-        synchronized(nativeArchives) {
-            nativeArchives[key]?.let { return it }
-        }
-        val archive = com.mangareader.native.NativeEngine.openArchive(path) ?: return null
-        synchronized(nativeArchives) { nativeArchives[key] = archive }
-        return archive
-    }
-
     fun clearNativeCache() {
         com.mangareader.native.NativeEngine.clearCache()
         com.mangareader.native.NativeEngine.clearMobiCache()
-        synchronized(nativeArchives) {
-            nativeArchives.values.forEach { it.close() }
-            nativeArchives.clear()
-        }
         // ★ B1：换书/清缓存时释放 RAR/7z/TAR 的 fd 缓存与预读 LRU
         clearRarFdCache()
     }
@@ -336,53 +293,6 @@ class ArchiveEngine(private val ctx: Context) {
         } catch (e: Exception) {
             Log.e(TAG, "listPages: ${e.message}", e)
             emptyList()
-        }
-    }
-
-    fun expandWidePages(pages: List<PageMeta>, treeStr: String): List<PageMeta> {
-        val result = mutableListOf<PageMeta>()
-        for (meta in pages) {
-            val key = "$treeStr|${meta.index}"
-            var bmp = cacheGet(key)
-            if (bmp == null) {
-                // Try to load from disk cache first (fast)
-                val diskKey = md5(key)
-                val diskFile = File(coverDir, "${diskKey}.page")
-                if (diskFile.exists()) {
-                    try { bmp = BitmapFactory.decodeFile(diskFile.absolutePath) } catch (_: Exception) {}
-                }
-                // If not cached, skip expensive decode on first open
-                // The page will be decoded when actually viewed
-                if (bmp == null) {
-                    result.add(meta)
-                    continue
-                }
-            }
-            if (bmp != null) {
-                if (bmp.width > bmp.height * 1.2f) {
-                    result.add(meta.copy(splitSide = 1))
-                    result.add(meta.copy(splitSide = 2))
-                } else {
-                    result.add(meta)
-                }
-            } else {
-                result.add(meta)
-            }
-        }
-        return result
-    }
-
-    fun preFetch(pages: List<PageMeta>, treeStr: String, currentIdx: Int, count: Int = if (isEink) 1 else 3) {
-        for (i in 1..count) {
-            val idx = currentIdx + i
-            if (idx < pages.size) {
-                val key = "$treeStr|$idx"
-                if (cacheGet(key) == null) {
-                    try {
-                        loadPage(pages[idx], treeStr)
-                    } catch (_: Exception) {}
-                }
-            }
         }
     }
 
@@ -880,8 +790,10 @@ class ArchiveEngine(private val ctx: Context) {
                     }
                 }
                 
-                d(TAG, "collectImages: ${imgs.size} imgs sorted: ${imgs.sortedWith(Comparator<Pair<String, String>> { a, b -> com.mangareader.zip.CommonsZipHelper.compareNatural(a.first, b.first) }).take(8).map { it.first }}")
-                imgs.sortedWith(Comparator<Pair<String, String>> { a, b -> com.mangareader.zip.CommonsZipHelper.compareNatural(a.first, b.first) }).forEach { (_, id) ->
+                // ★ B9：排序一次存变量复用（旧写法日志行与实际处理各排一遍）
+                val sortedImgs = imgs.sortedWith(Comparator<Pair<String, String>> { a, b -> com.mangareader.zip.CommonsZipHelper.compareNatural(a.first, b.first) })
+                d(TAG, "collectImages: ${sortedImgs.size} imgs sorted: ${sortedImgs.take(8).map { it.first }}")
+                sortedImgs.forEach { (_, id) ->
                     pages.add(PageMeta(pages.size, "dir", id))
                 }
                 d(TAG, "collectImages: after sort, first 5 pages: ${pages.take(5).map { it.index }}")
@@ -1197,7 +1109,8 @@ class ArchiveEngine(private val ctx: Context) {
         if (isImg(item.name)) {
             val data = try {
                 ctx.contentResolver.openInputStream(uri)?.use { s ->
-                    val buf = ByteArray(10 * 1024 * 1024)
+                    // ★ B11：10MB 一次性分配改 64KB 循环缓冲（每张封面省 ~10MB 峰值分配）
+                    val buf = ByteArray(64 * 1024)
                     val out = java.io.ByteArrayOutputStream()
                     var n: Int
                     var total = 0
@@ -1874,6 +1787,8 @@ class ArchiveEngine(private val ctx: Context) {
         return 0
     }
 
+    // ★ B8 澄清：此处存的是 detachFd() 后的"空壳 pfd"（fd 已移交 native），removeEldestEntry 的
+    //   close() 只关空壳无副作用；本 map 实际仅作句柄占位防 GC 语义混淆，非 fd 所有权载体。
     private val pfdKeepAlive = object : LinkedHashMap<String, android.os.ParcelFileDescriptor>(50, 0.75f, false) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, android.os.ParcelFileDescriptor>?): Boolean {
             if (size > 50) { eldest?.value?.close(); return true }
@@ -1950,7 +1865,8 @@ class ArchiveEngine(private val ctx: Context) {
             flushLog(ctx)
             if (commonsResult != null) { flushLog(ctx); return commonsResult }
 
-            val realFile = realFileCache2[cacheKey] ?: getRealFile(uri)
+            // ★ B12：补 put——原"只 get 不 put"假缓存永远 miss；null 不缓存（与原语义一致）
+            val realFile = realFileCache2[cacheKey] ?: getRealFile(uri)?.also { realFileCache2[cacheKey] = it }
             debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: realFile=${realFile?.absolutePath ?: "null"} isFile=${realFile?.isFile}")
             flushLog(ctx)
             if (realFile != null && realFile.isFile) {
@@ -2515,48 +2431,6 @@ class ArchiveEngine(private val ctx: Context) {
         return null
     }
 
-    private fun listRarPages(uri: Uri): List<PageMeta> {
-        val pages = mutableListOf<PageMeta>()
-        try {
-            ctx.contentResolver.openInputStream(uri)?.use { input ->
-                val tmpFile = File(ctx.cacheDir, "tmp_rar_scan_${System.currentTimeMillis()}.rar")
-                tmpFile.outputStream().use { out -> input.copyTo(out) }
-                try {
-                    val rar = RarArchive(tmpFile)
-                    var idx = 0
-                    rar.fileHeaders.filter { !it.isDirectory }
-                        .sortedWith(rarSortComparator)
-                        .forEach { fh ->
-                        if (isImg(fh.fileName)) { pages.add(PageMeta(idx, "", "")); idx++ }
-                    }
-                    rar.close()
-                } finally { tmpFile.delete() }
-            }
-        } catch (e: Exception) { Log.e(TAG, "listRarPages: ${e.message}") }
-        return pages
-    }
-
-    private fun list7zPages(uri: Uri): List<PageMeta> {
-        val pages = mutableListOf<PageMeta>()
-        try {
-            ctx.contentResolver.openInputStream(uri)?.use { input ->
-                val tmpFile = File(ctx.cacheDir, "tmp_7z_scan_${System.currentTimeMillis()}.7z")
-                tmpFile.outputStream().use { out -> input.copyTo(out) }
-                try {
-                    val sz = SevenZFile(tmpFile)
-                    var idx = 0
-                    var entry = sz.nextEntry
-                    while (entry != null) {
-                        if (!entry.isDirectory && isImg(entry.name)) { pages.add(PageMeta(idx, "", "")); idx++ }
-                        entry = sz.nextEntry
-                    }
-                    sz.close()
-                } finally { tmpFile.delete() }
-            }
-        } catch (e: Exception) { Log.e(TAG, "list7zPages: ${e.message}") }
-        return pages
-    }
-
     fun listZipContents(uri: Uri): List<String> {
         val names = mutableListOf<String>()
         try {
@@ -2571,18 +2445,6 @@ class ArchiveEngine(private val ctx: Context) {
             }
         } catch (e: Exception) { Log.e(TAG, "listZipContents: ${e.message}") }
         return names
-    }
-
-    private fun saveDebugLog(tag: String, content: String) {
-        try {
-            val dir = File(ctx.getExternalFilesDir(null), "debug_logs")
-            if (!dir.exists()) dir.mkdirs()
-            val file = File(dir, "${tag}_${System.currentTimeMillis()}.txt")
-            file.writeText(content)
-            Log.d(TAG, "Debug log saved: ${file.absolutePath}")
-        } catch (e: Exception) {
-            Log.e(TAG, "saveDebugLog: ${e.message}")
-        }
     }
 
     private fun isImg(n: String) = n.lowercase().let {

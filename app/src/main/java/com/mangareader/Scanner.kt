@@ -19,7 +19,6 @@ import java.security.MessageDigest
 class Scanner(private val ctx: Context, private val dao: MangaDao) {
     companion object {
         private const val TAG = "Scanner"
-        private val UNSUPPORTED_STREAMING_EXTS = setOf("cbr", "rar", "cb7", "7z", "mobi", "azw", "azw3", "pdb", "prc")
     }
 
     suspend fun scan(uri: Uri, onProgress: ((Int) -> Unit)? = null): Int = withContext(Dispatchers.IO) {
@@ -44,18 +43,18 @@ class Scanner(private val ctx: Context, private val dao: MangaDao) {
                 //   - d: 父书：递归 children 拿所有"叶子卷"的 chPath，逐个 preinsert
                 //   - z: 父书：调 children 拿内层子目录的 z: 路径，逐个 preinsert
                 //   扫描本身已在后台协程（Dispatchers.IO），不阻 UI；递归只在批插后跑一次。
-                //   ★ 重要：insertBooksBatch 用 @Insert 不回填 id 到原对象 (b.id 还是 0)，
-                //     必须先按 b.filePath 查回真实 id（getBookByPath 返 Book 含 aiutoGenerate 出的 id）。
+                //   ★ C6 修复：insertBooksBatch 已返回新 id（顺序=输入序），不再逐本 getBookByPath 回查；
+                //     每本书的全部占位行走 preinsertProgressForBook 单事务（原每叶子各自事务 fsync N 次）
                 try {
                     val engine = com.mangareader.viewer.ArchiveEngine(ctx)
-                    for (b in books) {
+                    val newIds = dao.insertBooksBatch(books)
+                    for ((i, b) in books.withIndex()) {
                         try {
-                            val bookId = dao.getBookByPath(b.filePath)?.id ?: continue
+                            val bookId = newIds.getOrNull(i) ?: continue
+                            if (bookId == -1L) continue
                             val leaves = collectLeafChPathsForBook(engine, b)
                             if (leaves.isNotEmpty()) {
-                                for (lp in leaves) {
-                                    dao.preinsertProgressIfAbsent(bookId, lp)
-                                }
+                                dao.preinsertProgressForBook(bookId, leaves)
                                 Log.d(TAG, "preinsertProgress: bookId=$bookId path=${b.filePath.takeLast(30)} leaves=${leaves.size}")
                             }
                         } catch (e: Exception) {
@@ -295,32 +294,6 @@ class Scanner(private val ctx: Context, private val dao: MangaDao) {
         if (changed) editor.apply()
     }
 
-    private fun preDecodeFirstPages(books: List<Book>) {
-        val decodeCount = 5
-        for (b in books) {
-            val filePath = b.filePath
-            if (!filePath.startsWith("a:")) continue
-            try {
-                val parts = filePath.removePrefix("a:").split("|", limit = 4)
-                if (parts.size < 3) continue
-                val ext = parts.getOrElse(3) { "" }
-                if (ext !in listOf("cbz", "zip", "cbr", "rar", "cb7", "7z")) continue
-                val realFile = getRealFileForPath(parts[0], parts[1], parts[2]) ?: continue
-                val archive = com.mangareader.native.NativeEngine.openArchive(realFile.absolutePath) ?: continue
-                val screenMax = maxOf(ctx.resources.displayMetrics.widthPixels, ctx.resources.displayMetrics.heightPixels)
-                val count = minOf(decodeCount, archive.pageCount)
-                for (i in 0 until count) {
-                    try {
-                        val raw = com.mangareader.native.NativeEngine.readPageRaw(archive, i) ?: continue
-                        val bmp = com.mangareader.native.NativeEngine.decodeRaw(raw, screenMax, screenMax) ?: continue
-                        try { com.mangareader.native.NativeEngine.cacheDecodedBitmap(archive, i, bmp) } catch (_: Throwable) {}
-                    } catch (_: Exception) {}
-                }
-                archive.close()
-            } catch (_: Exception) {}
-        }
-    }
-
     private fun getRealFileForPath(auth: String, treeDocId: String, docId: String): File? {
         try {
             val treeUri = Uri.parse("content://$auth/tree/${Uri.encode(treeDocId)}")
@@ -384,7 +357,8 @@ class Scanner(private val ctx: Context, private val dao: MangaDao) {
             val uri = Uri.parse(f.treeUri)
             val docId = DocumentsContract.getTreeDocumentId(uri)
             val auth = uri.authority ?: ""
-            val oldCount = dao.countBooksByFolder(auth, docId)
+            // ★ C8：前缀 Kotlin 侧拼好（a/z 带尾 '|'，d 不带），LIKE 走 filePath 索引
+            val oldCount = dao.countBooksByFolder("a:$auth|$docId|%", "d:$auth|$docId%", "z:a:$auth|$docId|%")
             val child = DocumentsContract.buildChildDocumentsUriUsingTree(uri, docId)
 
             val books = mutableListOf<Book>()
@@ -432,6 +406,9 @@ class Scanner(private val ctx: Context, private val dao: MangaDao) {
             }
 
             var found = 0
+            // ★ C7：单 engine 复用——hasZipImages/hasZipSubDirs 共用同一 libzip 句柄，
+            //   每 zip 只解析一遍中央目录（原每处各自 new engine 重复打开）
+            val sharedEngine = com.mangareader.viewer.ArchiveEngine(ctx)
             ctx.contentResolver.query(childUri, null, null, null, null)?.use { c ->
                 val ni = c.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
                 val ii = c.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
@@ -469,7 +446,7 @@ class Scanner(private val ctx: Context, private val dao: MangaDao) {
                         //   先清书架再删 Book——顺序敏感：删了 Book 后 id 就拿不到了。
                         if (verifyZipContent && (ext == "cbz" || ext == "zip")) {
                             try {
-                                val hasImg = com.mangareader.viewer.ArchiveEngine(ctx).hasZipImages(path)
+                                val hasImg = sharedEngine.hasZipImages(path)
                                 if (hasImg) {
                                     // 走正常分支收新书
                                 } else {
@@ -500,7 +477,7 @@ class Scanner(private val ctx: Context, private val dao: MangaDao) {
                         if (skipDedup || !isPathDuplicate(path)) {
                             val title = name.substringBeforeLast(".").replace(Regex("[._-]"), " ").trim()
                             val coverPath = "cv:$docId|$name"
-                            if ((ext == "cbz" || ext == "zip") && com.mangareader.viewer.ArchiveEngine(ctx).hasZipSubDirs("a:$docId|$ext")) {
+                            if ((ext == "cbz" || ext == "zip") && sharedEngine.hasZipSubDirs("a:$docId|$ext")) {
                                 books.add(Book(title = title, filePath = "z:a:$docId|$ext//", fileType = ext, coverPath = coverPath))
                             } else {
                                 books.add(Book(title = title, filePath = path, fileType = ext, coverPath = coverPath))

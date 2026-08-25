@@ -129,7 +129,9 @@ fun SettingsScreen(onBack: () -> Unit) {
                             val treeUri = Uri.parse(f.treeUri)
                             val docId = treeUri.lastPathSegment ?: ""
                             val auth = treeUri.authority ?: ""
-                            dao.deleteBooksByFolderParams(auth, docId.removePrefix("tree:"))
+                            // ★ C8：前缀 Kotlin 侧拼好（a/z 带尾 '|'，d 不带）
+                            val td = docId.removePrefix("tree:")
+                            dao.deleteBooksByFolderParams("a:$auth|$td|%", "d:$auth|$td%", "z:a:$auth|$td|%")
                             dao.deleteFolder(f)
                         }
                         showDeleteFolder = null
@@ -407,7 +409,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                                         val treeUri = android.net.Uri.parse(f.treeUri)
                                         val auth = treeUri.authority ?: ""
                                         val treeDocId = android.net.Uri.decode(treeUri.lastPathSegment ?: "").removePrefix("tree:")
-                                        dao.getBooksByFolderParams(auth, treeDocId).any { it.isHidden }
+                                        dao.getBooksByFolderParams("a:$auth|$treeDocId|%", "d:$auth|$treeDocId%", "z:a:$auth|$treeDocId|%").any { it.isHidden }
                                     }
                                     state.value = hidden
                                 }
@@ -423,7 +425,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                                     val treeUri = android.net.Uri.parse(f.treeUri)
                                     val auth = treeUri.authority ?: ""
                                     val treeDocId = android.net.Uri.decode(treeUri.lastPathSegment ?: "").removePrefix("tree:")
-                                    dao.setHiddenByFolderParams(auth, treeDocId, !show)
+                                    dao.setHiddenByFolderParams("a:$auth|$treeDocId|%", "d:$auth|$treeDocId%", "z:a:$auth|$treeDocId|%", !show)
                                 }
                                 withContext(Dispatchers.IO) { totalBooks = dao.countAll() }
                                 Toast.makeText(ctx, if (show) "已显示「${f.displayName}」的漫画" else "已隐藏「${f.displayName}」的漫画", Toast.LENGTH_SHORT).show()
