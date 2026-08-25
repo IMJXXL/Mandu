@@ -111,10 +111,6 @@ class ArchiveEngine(private val ctx: Context) {
         (dpi * 1.5f).toInt().coerceIn(480, 2048)
     }
 
-    private val optimalCacheSize: Int by lazy {
-        if (isEink) 10 else 60
-    }
-
     data class PageMeta(val index: Int, val source: String, val ext: String, val localIdx: Int = 0, val splitSide: Int = 0, val name: String = "")
     data class Item(val name: String, val auth: String, val tree: String, val doc: String, val dir: Boolean, val subPath: String = "")
     data class ZipDirNode(
@@ -125,15 +121,14 @@ class ArchiveEngine(private val ctx: Context) {
         val imageIndices: MutableList<Int> = mutableListOf()
     )
 
-    private val bitmapCache = object : LinkedHashMap<String, Bitmap>(64, 0.75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Bitmap>?): Boolean {
-            return size > optimalCacheSize
-        }
+    // ★ B3 修复：位图缓存由"按张数限容"改为 android.util.LruCache 按 byteCount 计重。
+    //   旧 LinkedHashMap(60/100 张) 在 4K 大图场景可达数 GB（60×33MB）OOM；
+    //   LruCache 内部自带同步，sizeOf 返回 byteCount，上限取保守字节值。
+    private val bitmapCache = object : android.util.LruCache<String, Bitmap>(96 * 1024 * 1024) {
+        override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
     }
-    private val sharedBitmapCache = object : LinkedHashMap<String, Bitmap>(100, 0.75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Bitmap>?): Boolean {
-            return size > 100
-        }
+    private val sharedBitmapCache = object : android.util.LruCache<String, Bitmap>(64 * 1024 * 1024) {
+        override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
     }
     private val epubSpineCache = object : LinkedHashMap<String, List<Int>>(10, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<Int>>?): Boolean = size > 10
@@ -156,13 +151,13 @@ class ArchiveEngine(private val ctx: Context) {
         File(ctx.filesDir, "page_cache").also { if (!it.exists()) it.mkdirs() }
     }
 
-    fun cacheGet(key: String): Bitmap? = synchronized(bitmapCache) { bitmapCache[key] }
+    fun cacheGet(key: String): Bitmap? = bitmapCache.get(key)
 
-    private fun cachePut(key: String, bmp: Bitmap) { synchronized(bitmapCache) { bitmapCache[key] = bmp } }
+    private fun cachePut(key: String, bmp: Bitmap) { bitmapCache.put(key, bmp) }
 
-    fun getCachedBitmap(key: String): Bitmap? = synchronized(sharedBitmapCache) { sharedBitmapCache[key] }
+    fun getCachedBitmap(key: String): Bitmap? = sharedBitmapCache.get(key)
 
-    fun putCachedBitmap(key: String, bmp: Bitmap) { synchronized(sharedBitmapCache) { sharedBitmapCache[key] = bmp } }
+    fun putCachedBitmap(key: String, bmp: Bitmap) { sharedBitmapCache.put(key, bmp) }
 
     private fun loadPageFromDisk(key: String): Bitmap? {
         try {
@@ -207,12 +202,12 @@ class ArchiveEngine(private val ctx: Context) {
             nativeArchives.values.forEach { it.close() }
             nativeArchives.clear()
         }
+        // ★ B1：换书/清缓存时释放 RAR/7z/TAR 的 fd 缓存与预读 LRU
+        clearRarFdCache()
     }
 
     fun clearCache() {
-        synchronized(bitmapCache) {
-            bitmapCache.clear()
-        }
+        bitmapCache.evictAll()
         synchronized(coverCache) {
             coverCache.clear()
         }
@@ -619,7 +614,8 @@ class ArchiveEngine(private val ctx: Context) {
                         if (imgLocalIdx in current.imageIndices.indices) {
                             val rawEntryIdx = current.imageIndices[imgLocalIdx]
                             android.util.Log.d(TAG, "loadPage z: rawEntryIdx=$rawEntryIdx cacheKey=${cacheKey.takeLast(30)}")
-                            val key = "$treeStr|${meta.index}"
+                            // ★ B3 统一 key：四分支一律 "treeStr|index|splitSide"（旧 z:/rar/7z/tar 缺 splitSide 段）
+                            val key = "$treeStr|${meta.index}|${meta.splitSide}"
                             cacheGet(key)?.let { return it }
                             val rawData = com.mangareader.native.NativeEngine.readZipEntry(cacheKey, rawEntryIdx)
                             android.util.Log.d(TAG, "loadPage z: readZipEntry returned ${rawData?.size ?: "null"} bytes")
@@ -639,7 +635,8 @@ class ArchiveEngine(private val ctx: Context) {
                 if (p != null) {
                     val tree = makeTree(p.auth, p.tree)
                     val uri = DocumentsContract.buildDocumentUriUsingTree(tree, p.doc)
-                    val key = "$treeStr|${meta.index}|0"
+                    // ★ B3 统一 key
+                    val key = "$treeStr|${meta.index}|${meta.splitSide}"
                     cacheGet(key)?.let { return it }
                     val rawData = loadFromZip(uri, meta.localIdx, treeStr)
                     if (rawData != null) {
@@ -657,7 +654,8 @@ class ArchiveEngine(private val ctx: Context) {
                 if (p != null) {
                     val tree = makeTree(p.auth, p.tree)
                     val uri = DocumentsContract.buildDocumentUriUsingTree(tree, p.doc)
-                    val key = "$treeStr|${meta.index}"
+                    // ★ B3 统一 key
+                    val key = "$treeStr|${meta.index}|${meta.splitSide}"
                     cacheGet(key)?.let { return it }
                     val rawData = when (meta.source) {
                         "rar" -> loadFromRar(uri, meta.localIdx)
@@ -2124,40 +2122,14 @@ class ArchiveEngine(private val ctx: Context) {
         val pages = mutableListOf<PageMeta>()
         val uri = DocumentsContract.buildDocumentUriUsingTree(tree, doc)
         try {
-            try {
-                val pfd = ctx.contentResolver.openFileDescriptor(uri, "r")
-                if (pfd != null) {
-                    val fd = pfd.detachFd()
-                    try {
-                        val readHandle = me.zhanghai.android.libarchive.Archive.readNew()
-                        try {
-                            me.zhanghai.android.libarchive.Archive.setCharset(readHandle, "UTF-8".toByteArray())
-                            me.zhanghai.android.libarchive.Archive.readSupportFilterAll(readHandle)
-                            me.zhanghai.android.libarchive.Archive.readSupportFormatAll(readHandle)
-                            me.zhanghai.android.libarchive.Archive.readOpenFd(readHandle, fd, 10240L)
-                            var idx = 0
-                            var header = me.zhanghai.android.libarchive.Archive.readNextHeader(readHandle)
-                            while (header != 0L) {
-                                val nameBytes = me.zhanghai.android.libarchive.ArchiveEntry.pathname(header)
-                                val name = nameBytes?.let { String(it) }
-                                val fileType = me.zhanghai.android.libarchive.ArchiveEntry.filetype(header)
-                                val isDir = fileType == me.zhanghai.android.libarchive.ArchiveEntry.AE_IFDIR
-                                if (name != null && !isDir && isImg(name)) {
-                                    pages.add(PageMeta(idx, "rar", doc, idx))
-                                    idx++
-                                }
-                                header = me.zhanghai.android.libarchive.Archive.readNextHeader(readHandle)
-                            }
-                            me.zhanghai.android.libarchive.Archive.free(readHandle)
-                            pfd.close()
-                            if (pages.isNotEmpty()) return pages
-                        } catch (e: Exception) {
-                            try { me.zhanghai.android.libarchive.Archive.free(readHandle) } catch (_: Exception) {}
-                            throw e
-                        }
-                    } catch (e: Exception) { try { pfd.close() } catch (_: Exception) {} }
+            // ★ B1：借 fd 缓存列页（不再 detach 泄漏）；失败落下方 junrar 兜底链
+            val fdEntry = getOrCreateFdEntry(uri.toString(), uri)
+            if (fdEntry != null) {
+                val listed = synchronized(fdEntry.lock) {
+                    try { listArchiveMetaViaFd(fdEntry.pfd.fd, "rar", doc) } catch (_: Exception) { emptyList() }
                 }
-            } catch (_: Exception) {}
+                if (listed.isNotEmpty()) return listed
+            }
             val realFile = getRealFile(uri)
             if (realFile != null) {
                 val rar = RarArchive(realFile)
@@ -2214,41 +2186,14 @@ class ArchiveEngine(private val ctx: Context) {
         val pages = mutableListOf<PageMeta>()
         val uri = DocumentsContract.buildDocumentUriUsingTree(tree, doc)
         try {
-            // Try zhanghai libarchive with SAF fd
-            try {
-                val pfd = ctx.contentResolver.openFileDescriptor(uri, "r")
-                if (pfd != null) {
-                    try {
-                        val fd = pfd.detachFd()
-                        val readHandle = me.zhanghai.android.libarchive.Archive.readNew()
-                        try {
-                            me.zhanghai.android.libarchive.Archive.setCharset(readHandle, "UTF-8".toByteArray())
-                            me.zhanghai.android.libarchive.Archive.readSupportFilterAll(readHandle)
-                            me.zhanghai.android.libarchive.Archive.readSupportFormatAll(readHandle)
-                            me.zhanghai.android.libarchive.Archive.readOpenFd(readHandle, fd, 10240L)
-                            var idx = 0
-                            var header = me.zhanghai.android.libarchive.Archive.readNextHeader(readHandle)
-                            while (header != 0L) {
-                                val nameBytes = me.zhanghai.android.libarchive.ArchiveEntry.pathname(header)
-                                val name = nameBytes?.let { String(it) }
-                                val fileType = me.zhanghai.android.libarchive.ArchiveEntry.filetype(header)
-                                val isDir = fileType == me.zhanghai.android.libarchive.ArchiveEntry.AE_IFDIR
-                                if (name != null && !isDir && isImg(name)) {
-                                    pages.add(PageMeta(idx, "7z", doc, idx))
-                                    idx++
-                                }
-                                header = me.zhanghai.android.libarchive.Archive.readNextHeader(readHandle)
-                            }
-                            me.zhanghai.android.libarchive.Archive.free(readHandle)
-                            pfd.close()
-                            if (pages.isNotEmpty()) return pages
-                        } catch (e: Exception) {
-                            try { me.zhanghai.android.libarchive.Archive.free(readHandle) } catch (_: Exception) {}
-                            throw e
-                        }
-                    } catch (_: Exception) { try { pfd.close() } catch (_: Exception) {} }
+            // ★ B1：借 fd 缓存列页（不再 detach 泄漏）；失败落下方 commons-compress 兜底链
+            val fdEntry = getOrCreateFdEntry(uri.toString(), uri)
+            if (fdEntry != null) {
+                val listed = synchronized(fdEntry.lock) {
+                    try { listArchiveMetaViaFd(fdEntry.pfd.fd, "7z", doc) } catch (_: Exception) { emptyList() }
                 }
-            } catch (_: Exception) {}
+                if (listed.isNotEmpty()) return listed
+            }
             // Fallback to Java commons-compress with real file
             val realFile = getRealFile(uri)
             if (realFile != null) {
@@ -2290,37 +2235,13 @@ class ArchiveEngine(private val ctx: Context) {
         val pages = mutableListOf<PageMeta>()
         val uri = DocumentsContract.buildDocumentUriUsingTree(tree, doc)
         try {
-            val pfd = ctx.contentResolver.openFileDescriptor(uri, "r")
-            if (pfd != null) {
-                val fd = pfd.detachFd()
-                try {
-                    val readHandle = me.zhanghai.android.libarchive.Archive.readNew()
-                    try {
-                        me.zhanghai.android.libarchive.Archive.setCharset(readHandle, "UTF-8".toByteArray())
-                        me.zhanghai.android.libarchive.Archive.readSupportFilterAll(readHandle)
-                        me.zhanghai.android.libarchive.Archive.readSupportFormatAll(readHandle)
-                        me.zhanghai.android.libarchive.Archive.readOpenFd(readHandle, fd, 10240L)
-                        var idx = 0
-                        var header = me.zhanghai.android.libarchive.Archive.readNextHeader(readHandle)
-                        while (header != 0L) {
-                            val nameBytes = me.zhanghai.android.libarchive.ArchiveEntry.pathname(header)
-                            val name = nameBytes?.let { String(it) }
-                            val fileType = me.zhanghai.android.libarchive.ArchiveEntry.filetype(header)
-                            val isDir = fileType == me.zhanghai.android.libarchive.ArchiveEntry.AE_IFDIR
-                            if (name != null && !isDir && isImg(name)) {
-                                pages.add(PageMeta(idx, "tar", doc, idx))
-                                idx++
-                            }
-                            header = me.zhanghai.android.libarchive.Archive.readNextHeader(readHandle)
-                        }
-                        me.zhanghai.android.libarchive.Archive.free(readHandle)
-                        pfd.close()
-                        if (pages.isNotEmpty()) return pages
-                    } catch (e: Exception) {
-                        try { me.zhanghai.android.libarchive.Archive.free(readHandle) } catch (_: Exception) {}
-                        throw e
-                    }
-                } catch (_: Exception) { try { pfd.close() } catch (_: Exception) {} }
+            // ★ B1：借 fd 缓存列页（不再 detach 泄漏）
+            val fdEntry = getOrCreateFdEntry(uri.toString(), uri)
+            if (fdEntry != null) {
+                val listed = synchronized(fdEntry.lock) {
+                    try { listArchiveMetaViaFd(fdEntry.pfd.fd, "tar", doc) } catch (_: Exception) { emptyList() }
+                }
+                if (listed.isNotEmpty()) return listed
             }
         } catch (_: Exception) {}
         return pages
@@ -2328,34 +2249,16 @@ class ArchiveEngine(private val ctx: Context) {
 
     private fun loadFromTar(uri: Uri, targetIndex: Int): ByteArray? {
         try {
-            val pfd = ctx.contentResolver.openFileDescriptor(uri, "r")
-            if (pfd != null) {
-                val fd = pfd.detachFd()
-                try {
-                    val data = readArchiveEntryViaFd(fd, targetIndex)
-                    pfd.close()
-                    if (data != null) return data
-                } catch (_: Exception) { try { pfd.close() } catch (_: Exception) {} }
-            }
+            // ★ B1：fd 缓存 + 相邻页预读（替代每页 detach 泄漏 + O(N²) 遍历）；失败落下方兜底
+            loadArchiveEntryViaFdCache(uri, targetIndex)?.let { return it }
         } catch (_: Exception) {}
         return null
     }
 
     private fun loadFromRar(uri: Uri, targetIndex: Int): ByteArray? {
         try {
-            // Try zhanghai libarchive with SAF fd (works for 123云盘 local files)
-            try {
-                val pfd = ctx.contentResolver.openFileDescriptor(uri, "r")
-                if (pfd != null) {
-                    try {
-                        val fd = pfd.detachFd()
-                        val data = readArchiveEntryViaFd(fd, targetIndex)
-                        pfd.close()
-                        if (data != null) return data
-                    } catch (_: Exception) { try { pfd.close() } catch (_: Exception) {} }
-                }
-            } catch (_: Exception) {}
-            // Fallback to Java junrar with real file
+            // ★ B1：fd 缓存 + 相邻页预读；失败自然落下方 junrar 兜底链
+            loadArchiveEntryViaFdCache(uri, targetIndex)?.let { return it }
             val realFile = getRealFile(uri)
             if (realFile != null) {
                 try {
@@ -2399,63 +2302,146 @@ class ArchiveEngine(private val ctx: Context) {
                     rar.close()
                 } finally { tmpFile.delete() }
             }
+            return null
         } catch (_: Exception) {}
         return null
     }
 
-    private fun readArchiveEntryViaFd(fd: Int, targetIndex: Int): ByteArray? {
+    // ==================== ★ B1 修复：RAR/7z/TAR fd 缓存 + 相邻页预读 ====================
+    // 旧路径每次读页/列页都 openFileDescriptor+detachFd，之后无人关 fd（detach 后 pfd.close() 无效；
+    // libarchive C 层 file_close 与 zhanghai JNI 封装均不接管 fd 所有权），每处理一页泄一个裸 fd；
+    // 且每页都从文件头顺流遍历到目标位，翻页 IO O(N²)。
+    // 现方案：pfd 对象入小 LRU（所有权归缓存，逐出 close() 一了百了），读取仅借用 pfd.fd；
+    // 同一 fd 的文件偏移被所有 readHandle 共享——per-entry 锁串行化防互踩；
+    // 顺流遍历时顺手收集 target..target+2 页入 32MB 字节 LRU，向后翻页近乎零额外 IO。
+    private class FdCacheEntry(val pfd: android.os.ParcelFileDescriptor) { val lock = Any() }
+
+    private val rarFdCache = object : LinkedHashMap<String, FdCacheEntry>(8, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, FdCacheEntry>?): Boolean {
+            if (size > 4) { try { eldest?.value?.pfd?.close() } catch (_: Exception) {} ; return true }
+            return false
+        }
+    }
+
+    private val adjacentPrereadCache = object : android.util.LruCache<String, ByteArray>(32 * 1024 * 1024) {
+        override fun sizeOf(key: String, value: ByteArray): Int = value.size
+    }
+
+    private fun getOrCreateFdEntry(cacheKey: String, uri: Uri): FdCacheEntry? {
+        synchronized(rarFdCache) { rarFdCache[cacheKey]?.let { return it } }
+        val pfd = try { ctx.contentResolver.openFileDescriptor(uri, "r") } catch (_: Exception) { null } ?: return null
+        synchronized(rarFdCache) {
+            rarFdCache[cacheKey]?.let { runCatching { pfd.close() }; return it }
+            val entry = FdCacheEntry(pfd)
+            rarFdCache[cacheKey] = entry
+            return entry
+        }
+    }
+
+    /** 单次顺流遍历收集 wanted 中出现的图片页数据；全部收齐即提前终止。异常向上抛由调用方兜底。 */
+    private fun readArchiveEntriesViaFd(fd: Int, wanted: Set<Int>): Map<Int, ByteArray> {
+        val got = HashMap<Int, ByteArray>()
+        if (wanted.isEmpty()) return got
+        val readHandle = me.zhanghai.android.libarchive.Archive.readNew()
         try {
-            val readHandle = me.zhanghai.android.libarchive.Archive.readNew()
-            try {
-                me.zhanghai.android.libarchive.Archive.setCharset(readHandle, "UTF-8".toByteArray())
-                me.zhanghai.android.libarchive.Archive.readSupportFilterAll(readHandle)
-                me.zhanghai.android.libarchive.Archive.readSupportFormatAll(readHandle)
-                me.zhanghai.android.libarchive.Archive.readOpenFd(readHandle, fd, 10240L)
-                var idx = 0
-                var header = me.zhanghai.android.libarchive.Archive.readNextHeader(readHandle)
-                while (header != 0L) {
-                    val nameBytes = me.zhanghai.android.libarchive.ArchiveEntry.pathname(header)
-                    val name = nameBytes?.let { String(it) }
-                    val fileType = me.zhanghai.android.libarchive.ArchiveEntry.filetype(header)
-                    val isDir = fileType == me.zhanghai.android.libarchive.ArchiveEntry.AE_IFDIR
-                    if (name != null && !isDir && isImg(name)) {
-                        if (idx == targetIndex) {
-                            val entrySize = me.zhanghai.android.libarchive.ArchiveEntry.size(header)
+            me.zhanghai.android.libarchive.Archive.setCharset(readHandle, "UTF-8".toByteArray())
+            me.zhanghai.android.libarchive.Archive.readSupportFilterAll(readHandle)
+            me.zhanghai.android.libarchive.Archive.readSupportFormatAll(readHandle)
+            me.zhanghai.android.libarchive.Archive.readOpenFd(readHandle, fd, 10240L)
+            var idx = 0
+            var header = me.zhanghai.android.libarchive.Archive.readNextHeader(readHandle)
+            while (header != 0L) {
+                val nameBytes = me.zhanghai.android.libarchive.ArchiveEntry.pathname(header)
+                val name = nameBytes?.let { String(it) }
+                val fileType = me.zhanghai.android.libarchive.ArchiveEntry.filetype(header)
+                val isDir = fileType == me.zhanghai.android.libarchive.ArchiveEntry.AE_IFDIR
+                if (name != null && !isDir && isImg(name)) {
+                    if (idx in wanted && !got.containsKey(idx)) {
+                        val entrySize = me.zhanghai.android.libarchive.ArchiveEntry.size(header)
+                        if (entrySize in 1..(64L * 1024 * 1024)) {
                             val buf = java.nio.ByteBuffer.allocateDirect(entrySize.toInt())
                             me.zhanghai.android.libarchive.Archive.readData(readHandle, buf)
                             val data = ByteArray(entrySize.toInt())
                             buf.position(0)
                             buf.get(data)
-                            me.zhanghai.android.libarchive.Archive.free(readHandle)
-                            return data
+                            got[idx] = data
                         }
-                        idx++
+                        if (got.size == wanted.size) break
                     }
-                    header = me.zhanghai.android.libarchive.Archive.readNextHeader(readHandle)
+                    idx++
                 }
-                me.zhanghai.android.libarchive.Archive.free(readHandle)
-            } catch (e: Exception) {
-                try { me.zhanghai.android.libarchive.Archive.free(readHandle) } catch (_: Exception) {}
-                throw e
+                header = me.zhanghai.android.libarchive.Archive.readNextHeader(readHandle)
             }
-        } catch (_: Exception) {}
-        return null
+            me.zhanghai.android.libarchive.Archive.free(readHandle)
+        } catch (e: Exception) {
+            try { me.zhanghai.android.libarchive.Archive.free(readHandle) } catch (_: Exception) {}
+            throw e
+        }
+        return got
+    }
+
+    /** 列页版：单次顺流遍历产出 PageMeta（物理序 isImg 计数，与旧实现一致）。 */
+    private fun listArchiveMetaViaFd(fd: Int, source: String, doc: String): List<PageMeta> {
+        val pages = mutableListOf<PageMeta>()
+        val readHandle = me.zhanghai.android.libarchive.Archive.readNew()
+        try {
+            me.zhanghai.android.libarchive.Archive.setCharset(readHandle, "UTF-8".toByteArray())
+            me.zhanghai.android.libarchive.Archive.readSupportFilterAll(readHandle)
+            me.zhanghai.android.libarchive.Archive.readSupportFormatAll(readHandle)
+            me.zhanghai.android.libarchive.Archive.readOpenFd(readHandle, fd, 10240L)
+            var idx = 0
+            var header = me.zhanghai.android.libarchive.Archive.readNextHeader(readHandle)
+            while (header != 0L) {
+                val nameBytes = me.zhanghai.android.libarchive.ArchiveEntry.pathname(header)
+                val name = nameBytes?.let { String(it) }
+                val fileType = me.zhanghai.android.libarchive.ArchiveEntry.filetype(header)
+                val isDir = fileType == me.zhanghai.android.libarchive.ArchiveEntry.AE_IFDIR
+                if (name != null && !isDir && isImg(name)) {
+                    pages.add(PageMeta(idx, source, doc, idx))
+                    idx++
+                }
+                header = me.zhanghai.android.libarchive.Archive.readNextHeader(readHandle)
+            }
+            me.zhanghai.android.libarchive.Archive.free(readHandle)
+        } catch (e: Exception) {
+            try { me.zhanghai.android.libarchive.Archive.free(readHandle) } catch (_: Exception) {}
+            throw e
+        }
+        return pages
+    }
+
+    /** 读页统一入口：预读 LRU → fd 缓存借用 → 单次遍历收 target..target+2 页。失败返回 null，调用方落原有兜底链。 */
+    private fun loadArchiveEntryViaFdCache(uri: Uri, targetIndex: Int): ByteArray? {
+        val cacheKey = uri.toString()
+        adjacentPrereadCache.get("$cacheKey|p$targetIndex")?.let { return it }
+        val entry = getOrCreateFdEntry(cacheKey, uri) ?: return null
+        return try {
+            synchronized(entry.lock) {
+                adjacentPrereadCache.get("$cacheKey|p$targetIndex")?.let { return it }
+                val want = HashSet<Int>()
+                repeat(3) { want.add(targetIndex + it) }
+                val got = readArchiveEntriesViaFd(entry.pfd.fd, want)
+                for ((i, data) in got) adjacentPrereadCache.put("$cacheKey|p$i", data)
+                got[targetIndex]
+            }
+        } catch (e: Exception) {
+            Log.d(TAG, "B1 loadArchiveEntryViaFdCache fail idx=$targetIndex: ${e.message}")
+            null
+        }
+    }
+
+    private fun clearRarFdCache() {
+        synchronized(rarFdCache) {
+            rarFdCache.values.forEach { try { it.pfd.close() } catch (_: Exception) {} }
+            rarFdCache.clear()
+        }
+        adjacentPrereadCache.evictAll()
     }
 
     private fun loadFrom7z(uri: Uri, targetIndex: Int): ByteArray? {
         try {
-            // Try zhanghai libarchive with SAF fd (works for 123云盘 local files)
-            try {
-                val pfd = ctx.contentResolver.openFileDescriptor(uri, "r")
-                if (pfd != null) {
-                    try {
-                        val fd = pfd.detachFd()
-                        val data = readArchiveEntryViaFd(fd, targetIndex)
-                        pfd.close()
-                        if (data != null) return data
-                    } catch (_: Exception) { try { pfd.close() } catch (_: Exception) {} }
-                }
-            } catch (_: Exception) {}
+            // ★ B1：fd 缓存 + 相邻页预读；失败自然落下方 commons-compress 兜底链
+            loadArchiveEntryViaFdCache(uri, targetIndex)?.let { return it }
             // Fallback to Java SevenZFile with real file
             val realFile = getRealFile(uri)
             // Fallback to Java commons-compress
