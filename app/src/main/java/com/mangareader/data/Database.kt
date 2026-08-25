@@ -92,6 +92,17 @@ data class ReadingHistory(
     val zoomLevel: Float = 1.0f
 )
 
+/** ★ F 历史记录页行：JOIN 书信息 + 该书最新在读卷路径（点击续读用） */
+data class HistoryRow(
+    val histId: Long,
+    val bookId: Long,
+    val bookTitle: String?,
+    val coverPath: String?,
+    val pagesRead: Int,
+    val timestamp: Long,
+    val lastPath: String?
+)
+
 /**
  * §23 阅读记忆方案 — 卷级阅读进度（mihon chapters.last_page_read 对应物）
  * 按 (bookId, path) 联合唯一：同一本书的不同子路径独立记忆。
@@ -285,6 +296,24 @@ interface MangaDao {
 
     @Insert
     suspend fun insertHistory(history: ReadingHistory)
+
+    // ==================== ★ F 历史记录页 ====================
+
+    /** 分页倒序：LEFT JOIN 书信息（history 无外键，书被删后记录仍在，标题显示"已删除书籍"）；
+     *  子查询取该书最新在读卷 path（updatedAt>0 过滤 Scanner 占位行），点击续读 jump 用 */
+    @Query("""
+        SELECT h.id AS histId, h.bookId AS bookId, b.title AS bookTitle, b.coverPath AS coverPath,
+               h.pagesRead AS pagesRead, h.timestamp AS timestamp,
+               (SELECT p.path FROM reading_progress p WHERE p.bookId = h.bookId AND p.updatedAt > 0 ORDER BY p.updatedAt DESC LIMIT 1) AS lastPath
+        FROM reading_history h LEFT JOIN manga_books b ON b.id = h.bookId
+        ORDER BY h.timestamp DESC
+        LIMIT :limit OFFSET :offset
+    """)
+    suspend fun getHistoryPage(limit: Int, offset: Int): List<HistoryRow>
+
+    /** ★ F：清空全部阅读历史（历史页顶栏清空按钮，需用户二次确认；不做自动清理） */
+    @Query("DELETE FROM reading_history")
+    suspend fun clearAllHistory()
 
     @Query("SELECT * FROM reading_history WHERE bookId = :bookId ORDER BY timestamp DESC LIMIT 10")
     fun getBookHistory(bookId: Long): Flow<List<ReadingHistory>>

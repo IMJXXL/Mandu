@@ -65,7 +65,7 @@ enum class LayoutMode(val cols: Int, val label: String) { GRID2(2, "2列"), GRID
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettings: () -> Unit = {}) {
+fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettings: () -> Unit = {}, onOpenHistory: () -> Unit = {}) {
     val ctx = LocalContext.current
     val app = ctx.applicationContext as App
     val dao = app.db.mangaDao()
@@ -405,6 +405,8 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                         Icon(when (layoutMode) { LayoutMode.LIST -> Icons.Default.ViewList; LayoutMode.GRID2 -> Icons.Default.ViewModule; LayoutMode.GRID3 -> Icons.Default.GridView; LayoutMode.GRID4 -> Icons.Default.Dashboard; LayoutMode.GRID5 -> Icons.Default.Apps }, "布局")
                     }
                     IconButton(onClick = { showSearch = !showSearch }) { Icon(if (showSearch) Icons.Filled.Close else Icons.Default.Search, "搜索") }
+                    // ★ F 历史记录页入口
+                    IconButton(onClick = onOpenHistory) { Icon(Icons.Default.History, "阅读历史") }
                     IconButton(onClick = onSettings) { Icon(Icons.Default.Settings, "设置") }
                     DropdownMenu(expanded = showSort, onDismissRequest = { showSort = false }) {
                         SortMode.entries.forEach { s -> DropdownMenuItem(text = { Text(s.label) }, onClick = {

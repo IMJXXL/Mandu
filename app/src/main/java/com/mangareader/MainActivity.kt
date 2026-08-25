@@ -20,6 +20,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.mangareader.ui.HistoryScreen
 import androidx.navigation.navOptions
 import com.mangareader.ui.Library
 import com.mangareader.ui.Reader
@@ -63,7 +64,19 @@ class MainActivity : ComponentActivity() {
                                 prefs.edit().putString("dark_mode", newMode).apply()
                                 (this@MainActivity).recreate()
                             },
-                            { nav.navigate("settings") }
+                            { nav.navigate("settings") },
+                            { nav.navigate("history") }
+                        )
+                    }
+                    composable("history") {
+                        HistoryScreen(
+                            onBack = { nav.popBackStack() },
+                            onOpen = { id, jump ->
+                                nav.navigate(
+                                    if (jump != null) "reader/$id?jump=${android.net.Uri.encode(jump)}" else "reader/$id",
+                                    navOptions { launchSingleTop = true }
+                                )
+                            }
                         )
                     }
                     composable("reader/{id}?jump={jump}", listOf(
