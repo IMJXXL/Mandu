@@ -92,7 +92,7 @@ data class ReadingHistory(
     val zoomLevel: Float = 1.0f
 )
 
-/** ★ F 历史记录页行：JOIN 书信息 + 该书最新在读卷路径（点击续读用） */
+/** ★ F 历史记录页行：JOIN 书信息 + 该书最新在读卷路径/页码（点击续读与"读到 X/Y 页"展示用） */
 data class HistoryRow(
     val histId: Long,
     val bookId: Long,
@@ -100,7 +100,9 @@ data class HistoryRow(
     val coverPath: String?,
     val pagesRead: Int,
     val timestamp: Long,
-    val lastPath: String?
+    val lastPath: String?,
+    val lastPage: Int?,
+    val totalPages: Int?
 )
 
 /**
@@ -184,6 +186,10 @@ interface MangaDao {
 
     @Query("SELECT * FROM manga_books WHERE isHidden = 0 ORDER BY lastReadAt DESC")
     suspend fun getAllBooksList(): List<Book>
+
+    /** ★ C1 补丁：含隐藏书的全量清单——扫描查重数据源必须覆盖隐藏书，否则重复导入 */
+    @Query("SELECT * FROM manga_books")
+    suspend fun getAllBooksAnyHidden(): List<Book>
 
     @Query("SELECT DISTINCT fileType FROM manga_books WHERE isHidden = 0")
     suspend fun getAllFileTypes(): List<String>
@@ -303,11 +309,13 @@ interface MangaDao {
     // ==================== ★ F 历史记录页 ====================
 
     /** 分页倒序：LEFT JOIN 书信息（history 无外键，书被删后记录仍在，标题显示"已删除书籍"）；
-     *  子查询取该书最新在读卷 path（updatedAt>0 过滤 Scanner 占位行），点击续读 jump 用 */
+     *  子查询取该书最新在读卷 path 与页码（updatedAt>0 过滤 Scanner 占位行），点击续读 jump 用 */
     @Query("""
         SELECT h.id AS histId, h.bookId AS bookId, b.title AS bookTitle, b.coverPath AS coverPath,
                h.pagesRead AS pagesRead, h.timestamp AS timestamp,
-               (SELECT p.path FROM reading_progress p WHERE p.bookId = h.bookId AND p.updatedAt > 0 ORDER BY p.updatedAt DESC LIMIT 1) AS lastPath
+               (SELECT p.path FROM reading_progress p WHERE p.bookId = h.bookId AND p.updatedAt > 0 ORDER BY p.updatedAt DESC LIMIT 1) AS lastPath,
+               (SELECT p.lastPage FROM reading_progress p WHERE p.bookId = h.bookId AND p.updatedAt > 0 ORDER BY p.updatedAt DESC LIMIT 1) AS lastPage,
+               b.totalPages AS totalPages
         FROM reading_history h LEFT JOIN manga_books b ON b.id = h.bookId
         ORDER BY h.timestamp DESC
         LIMIT :limit OFFSET :offset
@@ -479,6 +487,18 @@ interface MangaDao {
         for (p in paths) preinsertProgressIfAbsent(bookId, p)
     }
 
+    // ★ C1 补丁（2026-08-25 实机回归）：reading_history/bookshelf_items 无 Book 外键，
+    //   删书后旧引用行永久残留——回填前必须显式清掉，否则每次重扫 history 成倍堆积
+    @Query("DELETE FROM reading_history WHERE bookId IN (:bookIds)")
+    suspend fun deleteHistoryForBookIds(bookIds: List<Long>)
+
+    /** ★ F：单条历史移除（历史页长按删除，支持一次删同书聚合的全部行） */
+    @Query("DELETE FROM reading_history WHERE id IN (:ids)")
+    suspend fun deleteHistoryByIds(ids: List<Long>)
+
+    @Query("DELETE FROM bookshelf_items WHERE bookId IN (:bookIds)")
+    suspend fun deleteShelfItemsForBookIds(bookIds: List<Long>)
+
     // ★ 决策 3：动图对话框选择独立写路径
     @Query("UPDATE reading_progress SET anim_dialog_choice = :choice WHERE bookId = :bookId AND path = :path")
     suspend fun setAnimDialogChoice(bookId: Long, path: String, choice: Int)
@@ -538,10 +558,26 @@ interface MangaDao {
         val tagSnap = getTagLinksForBooks(oldIds)
 
         deleteBooksByFolderParams(aPrefix, dPrefix, zPrefix)
-        val newIds = insertBooksBatch(newBooks)
 
-        val newIdByPath = HashMap<String, Long>(newBooks.size * 2)
-        newBooks.forEachIndexed { i, b ->
+        // ★ C1 补丁：新书继承旧书的阅读元数据。readPages/lastReadAt 是书架三态徽章与
+        //   "继续阅读"FAB 的数据源，totalPages/isFavorite/isHidden/addedAt 同属用户资产，
+        //   删书重插若不继承则"阅读中"全部消失
+        val oldByPath = HashMap<String, Book>(oldBooks.size * 2)
+        for (ob in oldBooks) oldByPath[ob.filePath] = ob
+        val mergedNew = newBooks.map { nb ->
+            oldByPath[nb.filePath]?.let { ob ->
+                nb.copy(
+                    readPages = ob.readPages, lastReadAt = ob.lastReadAt,
+                    totalPages = ob.totalPages, isFavorite = ob.isFavorite,
+                    isHidden = ob.isHidden, addedAt = ob.addedAt
+                )
+            } ?: nb
+        }
+
+        val newIds = insertBooksBatch(mergedNew)
+
+        val newIdByPath = HashMap<String, Long>(mergedNew.size * 2)
+        mergedNew.forEachIndexed { i, b ->
             newIds.getOrNull(i)?.takeIf { it != -1L }?.let { newIdByPath[b.filePath] = it }
         }
         if (newIdByPath.isEmpty()) return
@@ -549,6 +585,11 @@ interface MangaDao {
         val newIdByOldId = HashMap<Long, Long>(oldBooks.size * 2)
         for (ob in oldBooks) newIdByPath[ob.filePath]?.let { newIdByOldId[ob.id] = it }
         if (newIdByOldId.isNotEmpty()) {
+            // ★ C1 补丁：无外键表先清旧 bookId 引用再重插映射行，防悬空堆积。
+            //   仅在确有映射时清理——映射失败时保留旧行（历史页显示"已删除书籍"优于丢数据）
+            deleteHistoryForBookIds(oldIds)
+            deleteShelfItemsForBookIds(oldIds)
+
             // progress 回填：内存按 (newId,path) 合并，同 key 保留 updatedAt 最新一条后 IGNORE 插入
             val progMerged = HashMap<Pair<Long, String>, ReadingProgress>()
             for (p in progSnap) {

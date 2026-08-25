@@ -1,8 +1,10 @@
 package com.mangareader.ui
 
 import android.content.Context
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -38,7 +40,10 @@ private data class HistorySession(
     val coverPath: String?,
     val lastPath: String?,
     val pagesRead: Int,
-    val latestTimestamp: Long
+    val latestTimestamp: Long,
+    val histIds: List<Long>,
+    val lastPage: Int?,
+    val totalPages: Int?
 )
 
 /**
@@ -129,7 +134,15 @@ fun HistoryScreen(onBack: () -> Unit, onOpen: (Long, String?) -> Unit) {
                         }
                     }
                     item(key = "s_${s.bookId}_${s.latestTimestamp}_$i") {
-                        HistoryItemRow(s) { onOpen(s.bookId, s.lastPath) }
+                        HistoryItemRow(
+                            s,
+                            onDelete = {
+                                scope.launch {
+                                    try { dao.deleteHistoryByIds(s.histIds) } catch (_: Exception) {}
+                                    sessions = sessions.filterNot { it === s }
+                                }
+                            }
+                        ) { onOpen(s.bookId, s.lastPath) }
                     }
                 }
             }
@@ -137,24 +150,24 @@ fun HistoryScreen(onBack: () -> Unit, onOpen: (Long, String?) -> Unit) {
     }
 }
 
-/** ②同书相邻 <30min 记录聚合为会话；行已按 timestamp 倒序 */
+/** 同一本书只聚合成一条：时间取最近一次，路径/页码取最新在读卷，histIds 收齐供移除 */
 private fun aggregateSessions(rows: List<HistoryRow>): List<HistorySession> {
-    val out = mutableListOf<HistorySession>()
-    val sessionGapMs = 30L * 60 * 1000
-    for (r in rows) {
-        val last = out.lastOrNull()
-        if (last != null && last.bookId == r.bookId &&
-            last.latestTimestamp - r.timestamp < sessionGapMs) {
-            out[out.size - 1] = last.copy(
-                pagesRead = last.pagesRead + r.pagesRead,
-                latestTimestamp = maxOf(last.latestTimestamp, r.timestamp),
-                lastPath = last.lastPath ?: r.lastPath
-            )
-        } else {
-            out.add(HistorySession(r.bookId, r.bookTitle, r.coverPath, r.lastPath, r.pagesRead, r.timestamp))
-        }
+    val byBook = LinkedHashMap<Long, MutableList<HistoryRow>>()
+    for (r in rows) byBook.getOrPut(r.bookId) { mutableListOf() }.add(r)
+    return byBook.values.map { list ->
+        val latest = list.maxByOrNull { it.timestamp } ?: list.first()
+        HistorySession(
+            bookId = latest.bookId,
+            title = list.firstNotNullOfOrNull { it.bookTitle } ?: latest.bookTitle,
+            coverPath = list.firstNotNullOfOrNull { it.coverPath } ?: latest.coverPath,
+            lastPath = latest.lastPath ?: list.firstNotNullOfOrNull { it.lastPath },
+            pagesRead = latest.pagesRead,
+            latestTimestamp = latest.timestamp,
+            histIds = list.map { it.histId },
+            lastPage = latest.lastPage,
+            totalPages = latest.totalPages
+        )
     }
-    return out
 }
 
 // —— 时间分桶 ——
@@ -182,13 +195,26 @@ private fun bucketLabel(bucket: Int): String = when (bucket) {
     else -> "更早"
 }
 
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
-private fun HistoryItemRow(s: HistorySession, onClick: () -> Unit) {
+private fun HistoryItemRow(s: HistorySession, onDelete: () -> Unit, onClick: () -> Unit) {
+    var showDelete by remember { mutableStateOf(false) }
+    if (showDelete) {
+        AlertDialog(
+            onDismissRequest = { showDelete = false },
+            title = { Text("移除这条记录") },
+            text = { Text("将从阅读历史中移除「${s.title ?: "已删除书籍"}」的这条会话记录。") },
+            confirmButton = {
+                TextButton(onClick = { showDelete = false; onDelete() }) { Text("移除", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { showDelete = false }) { Text("取消") } }
+        )
+    }
     Row(
         Modifier.fillMaxWidth()
             .clip(RoundedCornerShape(10.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
-            .clickable(onClick = onClick)
+            .combinedClickable(onClick = onClick, onLongClick = { showDelete = true })
             .padding(10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -206,7 +232,17 @@ private fun HistoryItemRow(s: HistorySession, onClick: () -> Unit) {
                 )
             }
             Text(
-                "读 ${s.pagesRead} 页 · ${relativeTime(s.latestTimestamp)}",
+                buildString {
+                    append("读 ")
+                    if (s.lastPage != null && s.lastPage >= 0) {
+                        val total = s.totalPages
+                        if (total != null && total > 0) append("第 ${s.lastPage + 1}/$total 页")
+                        else append("第 ${s.lastPage + 1} 页")
+                    } else {
+                        append("${s.pagesRead} 页")
+                    }
+                    append(" · ${relativeTime(s.latestTimestamp)}")
+                },
                 fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }

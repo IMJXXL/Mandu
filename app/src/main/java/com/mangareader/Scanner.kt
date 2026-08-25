@@ -11,6 +11,7 @@ import com.mangareader.data.MangaDao
 import com.mangareader.zip.CommonsZipHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.withLock
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.FileOutputStream
@@ -19,9 +20,14 @@ import java.security.MessageDigest
 class Scanner(private val ctx: Context, private val dao: MangaDao) {
     companion object {
         private const val TAG = "Scanner"
+
+        // ★ C1 补丁：scan/rescan 全局互斥——并发双跑会双双读到旧 existingPaths 绕过查重，
+        //   同批书插两遍（实机回归"导入后全部两份"的根源）
+        private val scanMutex = kotlinx.coroutines.sync.Mutex()
     }
 
     suspend fun scan(uri: Uri, onProgress: ((Int) -> Unit)? = null): Int = withContext(Dispatchers.IO) {
+        scanMutex.withLock {
         var count = 0
         try {
             val treeStr = uri.toString()
@@ -34,7 +40,7 @@ class Scanner(private val ctx: Context, private val dao: MangaDao) {
             scanDirFast(auth, treeStr, docId, child, books) { found -> onProgress?.invoke(found) }
 
             if (books.isNotEmpty()) {
-                dao.insertBooksBatch(books)
+                val newIds = dao.insertBooksBatch(books)
                 count = books.size
                 cacheRealPaths(books)
                 // ★ 综合方案 D：Scanner 批插书行后，给每个 d:/z: 父书预写 progress 行。
@@ -47,7 +53,6 @@ class Scanner(private val ctx: Context, private val dao: MangaDao) {
                 //     每本书的全部占位行走 preinsertProgressForBook 单事务（原每叶子各自事务 fsync N 次）
                 try {
                     val engine = com.mangareader.viewer.ArchiveEngine(ctx)
-                    val newIds = dao.insertBooksBatch(books)
                     for ((i, b) in books.withIndex()) {
                         try {
                             val bookId = newIds.getOrNull(i) ?: continue
@@ -72,6 +77,7 @@ class Scanner(private val ctx: Context, private val dao: MangaDao) {
             Log.d(TAG, "scan: $count from $name (${System.currentTimeMillis()}ms)")
         } catch (e: Exception) { Log.e(TAG, "scan: ${e.message}", e) }
         count
+        }
     }
 
     fun preloadCovers(books: List<Book>, onProgress: ((loaded: Int, total: Int) -> Unit)? = null) {
@@ -352,6 +358,7 @@ class Scanner(private val ctx: Context, private val dao: MangaDao) {
     }
 
     suspend fun rescan(f: Folder): Int = withContext(Dispatchers.IO) {
+        scanMutex.withLock {
         var count = 0
         try {
             val uri = Uri.parse(f.treeUri)
@@ -375,6 +382,7 @@ class Scanner(private val ctx: Context, private val dao: MangaDao) {
             dao.updateFolder(f.copy(lastScanAt = System.currentTimeMillis()))
         } catch (e: Exception) { Log.e(TAG, "rescan: ${e.message}") }
         count
+        }
     }
 
     private suspend fun scanDirFast(auth: String, treeStr: String, treeDocId: String, childUri: Uri, books: MutableList<Book>, skipDedup: Boolean = false, onFound: ((Int) -> Unit)? = null) {
@@ -388,8 +396,9 @@ class Scanner(private val ctx: Context, private val dao: MangaDao) {
             } catch (_: Exception) { false }
             val existingPaths = mutableSetOf<String>()
             try {
-                val existingBooks = dao.getAllBooksList()
-                existingBooks.forEach { existingPaths.add(it.filePath) }
+                // ★ C1 补丁：查重数据源改全量（含隐藏书）——旧 getAllBooksList 只查未隐藏，
+                //   隐藏过的文件夹重新导入会绕过查重产生重复
+                dao.getAllBooksAnyHidden().forEach { existingPaths.add(it.filePath) }
             } catch (_: Exception) {}
 
             fun isPathDuplicate(newPath: String): Boolean {

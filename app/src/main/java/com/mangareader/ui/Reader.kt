@@ -249,17 +249,23 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit) {
      *
      *   函数定义在 save() 之前——Kotlin 局部函数不支持前向引用。
      */
-    suspend fun syncBookStatusFromProgress(b: com.mangareader.data.Book, now: Long) {
+    suspend fun syncBookStatusFromProgress(b: com.mangareader.data.Book, now: Long, totalHint: Int = -1) {
         val allProgress = dao.getAllProgressForBook(b.id)
         if (allProgress.isEmpty()) return  // 全无进度 → 保持"未读"，不写 Book
 
         // ★ 单卷书（a:）：保留传统页数累加 → readPages = sum(completed 卷的 lastPage+1)
         //   多卷父书走下面的子卷计数路径。
+        //   ★ v1.12 修复（MOBI/EPUB 一翻页即"已读完"实锤）：旧逻辑 newReadPages 只累加
+        //     completed 行——未读完时恒 0；totalPages 又因 enterReader 只写 DB 未同步内存
+        //     state 而为 0 → 双兜底 totalPages=1/readPages=1 → Library isFinished 误判徽章绿。
+        //   现改为：readPages 取最新进度行 lastPage+1；totalPages 用 max(totalHint, b.totalPages)。
         if (b.filePath.startsWith("a:")) {
-            val newReadPages = allProgress.filter { it.completed }.sumOf { (it.lastPage + 1).coerceAtLeast(0) }
-            if (newReadPages > 0 || allProgress.any { it.lastPage > 0 }) {
-                val newTotal = if (b.totalPages > 0) b.totalPages else newReadPages.coerceAtLeast(1)
-                dao.updateBook(b.copy(totalPages = newTotal, readPages = newReadPages.coerceAtLeast(1), lastReadAt = now))
+            val latest = allProgress.maxByOrNull { it.updatedAt }
+            val realTotal = listOf(totalHint, b.totalPages).filter { it > 0 }.maxOrNull()
+                ?: ((latest?.lastPage ?: 0) + 1)
+            if (latest != null && (latest.lastPage > 0 || latest.completed)) {
+                val rp = if (latest.completed) realTotal else (latest.lastPage + 1).coerceIn(1, realTotal)
+                dao.updateBook(b.copy(totalPages = realTotal, readPages = rp, lastReadAt = now))
             } else {
                 dao.updateBook(b.copy(lastReadAt = now))
             }
@@ -369,7 +375,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit) {
                         withContext(Dispatchers.IO) {
                             dao.saveReaderProgressBatch(b.id, curSnap + 1, now, chPathSnap, curSnap, done, history)
                         }
-                        syncBookStatusFromProgress(b, now)
+                        syncBookStatusFromProgress(b, now, pageListSnap.size)
                     } catch (_: Exception) {}
                 }
             }
@@ -408,7 +414,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit) {
                 withContext(Dispatchers.IO) {
                     dao.saveReaderProgressBatch(b.id, curSnap + 1, now, chPathSnap, curSnap, done, history)
                 }
-                syncBookStatusFromProgress(b, now)
+                syncBookStatusFromProgress(b, now, pageListSnap.size)
             } catch (_: Exception) {
                 // CrashHandler 杀进程防护：catch 全部 Exception 不传
             }
@@ -858,7 +864,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit) {
                 }
                 // ★ §37(14) 父书状态聚合：按子卷 completed 计数判定阅读中/已读完/未读
                 //   单卷书（a: 类型无子卷）保留原 readPages>=totalPages 语义
-                syncBookStatusFromProgress(b, now)
+                syncBookStatusFromProgress(b, now, curPageCount)
             } catch (_: Exception) {}
         }
     }
@@ -1311,7 +1317,20 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit) {
     if (showErrorDialog) {
         AlertDialog(onDismissRequest = { showErrorDialog = false }, title = { Text("源文件丢失") },
             text = { Text("该漫画的源文件已不存在或无法访问。\n\n是否从书架中移除？") },
-            confirmButton = { TextButton(onClick = { scope.launch { book?.let { dao.deleteBook(it) } }; showErrorDialog = false; try { back() } catch (_: Exception) {} }) { Text("移除", color = MaterialTheme.colorScheme.error) } },
+            confirmButton = { TextButton(onClick = { scope.launch {
+                // ★ v1.12 补丁：book==null（历史页点了"已删除书籍"的悬空记录进来的场景）
+                //   也要清掉该 bookId 的残留进度与历史，否则点移除毫无效果
+                val b0 = book
+                if (b0 != null) {
+                    dao.deleteBook(b0)
+                } else {
+                    try { withContext(Dispatchers.IO) {
+                        dao.clearProgress(bookId)
+                        dao.deleteHistoryForBookIds(listOf(bookId))
+                    } } catch (_: Exception) {}
+                }
+                showErrorDialog = false; try { back() } catch (_: Exception) {}
+            } }) { Text("移除", color = MaterialTheme.colorScheme.error) } },
             dismissButton = { TextButton(onClick = { showErrorDialog = false }) { Text("保留") } })
     }
 
