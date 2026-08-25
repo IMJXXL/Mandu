@@ -1379,7 +1379,8 @@ class ArchiveEngine(private val ctx: Context) {
 
         // 解析 EPUB spine
         try {
-            val epubResult = com.mangareader.zip.EpubParser.parse(ctx, uri)
+            // ★ A 提速：cacheKey 此时句柄已开（上方 openZipWithFd），走 libzip 按名直读快路径
+            val epubResult = com.mangareader.zip.EpubParser.parse(ctx, uri, cacheKey)
             if (epubResult != null && epubResult.spineItems.isNotEmpty()) {
                 // 检查 spine items 是图片还是 HTML
                 val firstHref = epubResult.spineItems.first().href
@@ -1405,12 +1406,30 @@ class ArchiveEngine(private val ctx: Context) {
 
                         val spineOrderedNames = mutableListOf<String>()
                         val spineToSorted = mutableListOf<Int>()
-                        for (item in epubResult.spineItems) {
-                            val matchIdx = sortedNames.indexOfFirst {
-                                it.endsWith("/${item.href}") || it == item.href ||
-                                it.substringAfterLast("/") == item.href.substringAfterLast("/")
+                        // ★ A 修复③：双索引替代 indexOfFirst O(N²)。
+                        //   suffixIdx 注册 n 本身及每个 '/' 边界后缀 → 命中 (n==href || endsWith("/"+href))
+                        //   的最小 index；baseIdx 命中 basename 相等的最小 index；两者取 min
+                        //   数学等价于旧"首个满足任一条件的元素"
+                        val suffixIdx = HashMap<String, Int>(sortedNames.size * 4)
+                        val baseIdx = HashMap<String, Int>(sortedNames.size * 2)
+                        sortedNames.forEachIndexed { si, n ->
+                            val b = n.substringAfterLast("/")
+                            if (!baseIdx.containsKey(b)) baseIdx[b] = si
+                            if (!suffixIdx.containsKey(n)) suffixIdx[n] = si
+                            var from = n.indexOf('/')
+                            while (from >= 0) {
+                                val suf = n.substring(from + 1)
+                                if (!suffixIdx.containsKey(suf)) suffixIdx[suf] = si
+                                from = n.indexOf('/', from + 1)
                             }
-                            if (matchIdx >= 0) {
+                        }
+                        for (item in epubResult.spineItems) {
+                            val h = item.href
+                            val matchIdx = minOf(
+                                suffixIdx[h] ?: Int.MAX_VALUE,
+                                baseIdx[h.substringAfterLast("/")] ?: Int.MAX_VALUE
+                            )
+                            if (matchIdx != Int.MAX_VALUE) {
                                 spineOrderedNames.add(sortedNames[matchIdx])
                                 spineToSorted.add(matchIdx)
                             }
@@ -1426,7 +1445,7 @@ class ArchiveEngine(private val ctx: Context) {
                     }
                 } else {
                     // spine 是 HTML：解析 HTML 提取图片路径
-                    val htmlToImgMap = com.mangareader.zip.EpubParser.resolveImageHrefs(ctx, uri, epubResult.opfDir, epubResult.spineItems)
+                    val htmlToImgMap = com.mangareader.zip.EpubParser.resolveImageHrefs(ctx, uri, epubResult.opfDir, epubResult.spineItems, cacheKey)
                     Log.d(TAG, "scanEpub: htmlToImgMap size=${htmlToImgMap.size}, spineItems=${epubResult.spineItems.size}")
                     if (htmlToImgMap.isNotEmpty()) {
                         val names = com.mangareader.native.NativeEngine.getZipEntryNames(cacheKey)
