@@ -119,7 +119,11 @@ class AnimPagerReaderView(context: Context) : FrameLayout(context), ReaderViewDe
         engine: ArchiveEngine, treePath: String, pages: List<ArchiveEngine.PageMeta>,
         startPage: Int, vertical: Boolean, clickFlip: Int, rtl: Boolean, verticalPager: Boolean
     ) {
-        val pagesChanged = this.pageList.size != pages.size || this.treePath != treePath
+        // ★ v1.13 C-1：release 会置 pagerAdapter=null，而本视图被 remember 单例复用——
+        //   动图视图内切模式（useAnimPager 下任意 mode 切换）会触发"自 release 再 setup"，
+        //   若仅按 size/treePath 判定则同卷恒 false → adapter 空、整视图永久空白。加 null 判定强制重建
+        val pagesChanged = pagerAdapter == null ||
+                this.pageList.size != pages.size || this.treePath != treePath
         val rtlChanged = this.isRtl != rtl
         val orientationChanged = this.verticalPager != verticalPager
         this.engine = engine; this.treePath = treePath; this.pageList = pages; this.isRtl = rtl; this.verticalPager = verticalPager

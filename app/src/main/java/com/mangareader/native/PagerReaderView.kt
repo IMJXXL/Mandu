@@ -540,7 +540,9 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             val pos = if (doublePageMode) startPage / 2 else (if (isRtl) pages.size - 1 - startPage else startPage)
             viewPager.setCurrentItem(pos.coerceIn(0, pagerAdapter?.itemCount?.minus(1) ?: 0), false)
         }
-        if (pagesChanged || engineChanged) preloadAround(startPage)
+        // ★ v1.13 C-1：无条件补载（loadPageAsync 自带 cache-miss 幂等守卫，代价近零）——
+        //   双保险：即使未来某路径 release 未清身份字段，也不会再出现"轻量分支零补载"死局
+        preloadAround(startPage)
     }
 
     fun setNavigationMode(mode: Int) {
@@ -805,6 +807,10 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         nativeArchivePath = ""
         bitmapCache.values.forEach { try { it.recycle() } catch (_: Exception) {} }
         bitmapCache.clear()
+        // ★ v1.13 C-1：身份字段随缓存一并作废——下次 setup 必命中 pagesChanged=true 走全量重建
+        //   （重建 adapter + setCurrentItem + preloadAround 补载），根治模式切换白屏
+        pageList = emptyList()
+        treePath = ""
     }
 
     override fun trimMemory(level: Int) {

@@ -556,15 +556,23 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
                                         //   （PagerReaderView 至少 release 里有 recycle）→ 独立严重缺陷
         archive?.close(); archive = null; archivePath = ""
         try {
-            val e = engine ?: return
-            val p = e.getRealFileForPath(treePath)
-            if (p.isNotEmpty()) {
-                val tree = android.net.Uri.parse("content://${treePath.substringAfter("a:").substringBefore("|")}/tree/${android.net.Uri.encode(treePath.substringAfter("|").substringBefore("|"))}")
-                val docId = treePath.substringAfterLast("|").substringBeforeLast(".")
-                val uri = android.provider.DocumentsContract.buildDocumentUriUsingTree(tree, docId)
-                com.mangareader.native.NativeEngine.pdfClose(uri.toString())
+            // ★ v1.13 C-1：消除提前 return（engine==null 会跳过尾部清身份字段）——改 if 包裹
+            val e = engine
+            if (e != null) {
+                val p = e.getRealFileForPath(treePath)
+                if (p.isNotEmpty()) {
+                    val tree = android.net.Uri.parse("content://${treePath.substringAfter("a:").substringBefore("|")}/tree/${android.net.Uri.encode(treePath.substringAfter("|").substringBefore("|"))}")
+                    val docId = treePath.substringAfterLast("|").substringBeforeLast(".")
+                    val uri = android.provider.DocumentsContract.buildDocumentUriUsingTree(tree, docId)
+                    com.mangareader.native.NativeEngine.pdfClose(uri.toString())
+                }
             }
         } catch (_: Exception) {}
+        // ★ v1.13 C-1：身份字段随缓存一并作废——下次 setup 必命中 changed=true 走全量重建
+        //   （notifyDataSetChanged + doScrollAndFinalize 重锚定 + preloadAround 补载），
+        //   根治"模式切换自 release 后重 setup 落入轻量分支、可见 VH 持已 recycle bitmap"的白屏
+        pageList = emptyList()
+        treePath = ""
     }
 
     override fun trimMemory(level: Int) {
