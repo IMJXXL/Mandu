@@ -78,7 +78,9 @@ fun NativeReaderScreen(
     modifier: Modifier = Modifier,
     onPageChanged: (Int) -> Unit = {},
     onToggleUi: () -> Unit = {},
-    onViewReady: (webtoonView: View, pagerView: View) -> Unit = { _, _ -> }
+    onViewReady: (webtoonView: View, pagerView: View) -> Unit = { _, _ -> },
+    /** ★ v1.13 C-2：把内容容器暴露给上层做切换前同步截图（无感模式切换遮罩的数据源） */
+    onContainerReady: (FrameLayout) -> Unit = {}
 ) {
     val ctx = LocalContext.current
     var savedPage by remember { mutableIntStateOf(startPage) }
@@ -191,6 +193,8 @@ fun NativeReaderScreen(
             //   都是 PagerReaderView 专属，动图卷下不显示时挂上无副作用；useAnimPager 切回 false 时立即生效。
             //   AnimPagerReaderView 不需要这些 hook（其内部状态自洽）。
             onViewReady(webtoonView, pagerView)
+            // ★ v1.13 C-2：容器就绪回调（截图用；draw(container) 只画 VISIBLE 子树，GONE 自动排除）
+            onContainerReady(container)
             container
         },
         update = { container ->

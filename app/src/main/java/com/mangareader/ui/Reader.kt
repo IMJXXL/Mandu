@@ -7,7 +7,9 @@ import android.content.SharedPreferences
 import android.graphics.Bitmap
 import android.util.Log
 import android.view.View
+import android.widget.FrameLayout
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
@@ -165,6 +167,12 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit) {
     var missingFilePath by remember { mutableStateOf("") }
     var showToc by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
+    // ★ v1.13 C-2 无感切换遮罩：提交 mode 前同步 view.draw 截当前画面，盖住
+    //   "旧 delegate release → 新 delegate 全量重建+解码"的占位空窗；500ms 兜底撤除。
+    //   动图弹窗路径（useAnimPager 直设）不经 onModeChange，一期无遮罩降级（C-1 已保不白屏）
+    var switchMaskBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var switchMaskVisible by remember { mutableStateOf(false) }
+    var readerContainerRef by remember { mutableStateOf<FrameLayout?>(null) }
     // ★ §34.3：VERT_PAGER 是竖向翻页（不是条漫），不归入 isVerticalMode（条漫连续滚动）。
     //   isVerticalMode 只覆盖真正连续滚动的条漫（VERT / WEBTOON_GAP）。
     val isVerticalMode = mode == Mode.VERT || mode == Mode.WEBTOON_GAP
@@ -1066,6 +1074,36 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit) {
         }
     }
 
+    // ★ v1.13 C-2：遮罩截取/撤除（定义在 bgColor 之后——局部函数不支持前向引用）
+    fun showSwitchMask() {
+        if (switchMaskVisible) return
+        val c = readerContainerRef ?: return
+        val w = c.width; val h = c.height
+        if (w <= 0 || h <= 0) return
+        try {
+            val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+            val canvas = android.graphics.Canvas(bmp)
+            canvas.drawColor(bgColor.toArgb())
+            c.draw(canvas)
+            switchMaskBitmap = bmp
+            switchMaskVisible = true
+        } catch (_: Throwable) { }
+    }
+
+    fun hideSwitchMask() {
+        switchMaskVisible = false
+        switchMaskBitmap?.recycle()
+        switchMaskBitmap = null
+    }
+
+    // 500ms 兜底撤除；退出阅读立即清理
+    LaunchedEffect(switchMaskVisible) {
+        if (switchMaskVisible) { delay(500); hideSwitchMask() }
+    }
+    LaunchedEffect(viewing) {
+        if (!viewing && switchMaskVisible) hideSwitchMask()
+    }
+
     // Live-sync flip animation and side padding to pager/webtoon views
     LaunchedEffect(configVersion) {
         activePagerRef?.flipAnimationEnabled = config.isFlipAnimation
@@ -1185,6 +1223,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit) {
                             verticalPager = verticalPagerEffective,
                             useAnimPager = useAnimPager,
                             modifier = Modifier.fillMaxSize(),
+                            onContainerReady = { readerContainerRef = it },
                             onPageChanged = { newCur ->
                                 // ★ Bug C 修复：onPageChanged 可能在 setup 滚到位前被触发（webtoon RV layout 过程 / pager setCurrentItem 同步），
                                 //   首个 visible item != sp，会把 currentPage 重写为错的页码 → 冲掉 lastPage 并 save 持久化。
@@ -1249,6 +1288,14 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit) {
                                 }
                             }
                         )
+                        // ★ v1.13 C-2 无感切换遮罩：截取的旧画面盖在内容区顶，500ms 兜底撤除
+                        if (switchMaskVisible && switchMaskBitmap != null) {
+                            Image(
+                                bitmap = switchMaskBitmap!!.asImageBitmap(),
+                                contentDescription = null,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
                         // ★ 1.001 沉浸式锁定按钮
                         //   命中区：ui 显示 或 锁定态才挂（开锁+UI 隐时完全无 pointerInput → 不挡 native 翻页）
                         //   视觉：仅 ui 显示 或 锁图标弹出才渲染（锁定沉浸态锁按钮也隐藏，画面完全干净）
@@ -1444,6 +1491,9 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit) {
                 configVersion++
             },
             onModeChange = { newMode ->
+                // ★ v1.13 C-2：mode state 提交【前】同步截图——此刻旧 delegate 还在屏上，
+                //   拿到的是切换前的真实画面（Compose 重组在下一帧，同步 draw 零竞态）
+                showSwitchMask()
                 mode = newMode
                 prefs.edit().putInt("read_mode_$bookId", newMode.ordinal).apply()
                 configVersion++
