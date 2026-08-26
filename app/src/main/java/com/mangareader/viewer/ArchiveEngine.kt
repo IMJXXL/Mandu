@@ -464,6 +464,38 @@ class ArchiveEngine(private val ctx: Context) {
      *   注意：仍要读全文件——APNG 需遍历整文件找 acTL chunk（§25 B2 修订）。
      *   bind 时单页调，不会卷级联阻塞翻页 IO（旧版本是整章串行预读）。
      */
+    /**
+     * ★ v1.13 动图提速：从已读字节判定动图类型（配合 AnimPager rawCache 单次读取复用，
+     *   消除 peek/load 各自全文件读的重复 IO）。逻辑与 peekAnimKind 一致。
+     */
+    fun peekAnimKindFromRaw(raw: ByteArray): AnimKind {
+        if (raw.size < 8) return AnimKind.NONE
+        // GIF: 47 49 46 38 (GIF8)
+        if (raw[0] == 0x47.toByte() && raw[1] == 0x49.toByte() && raw[2] == 0x46.toByte() && raw[3] == 0x38.toByte()) {
+            val r = com.github.penfeizhou.animation.io.ByteBufferReader(java.nio.ByteBuffer.wrap(raw))
+            return try {
+                if (com.github.penfeizhou.animation.gif.decode.GifParser.isGif(r)) AnimKind.GIF else AnimKind.NONE
+            } catch (_: Exception) { AnimKind.NONE }
+        }
+        // PNG: 89 50 4E 47 → 可能 APNG
+        if (raw[0] == 0x89.toByte() && raw[1] == 0x50.toByte() && raw[2] == 0x4E.toByte() && raw[3] == 0x47.toByte()) {
+            val r = com.github.penfeizhou.animation.io.ByteBufferReader(java.nio.ByteBuffer.wrap(raw))
+            return try {
+                if (com.github.penfeizhou.animation.apng.decode.APNGParser.isAPNG(r)) AnimKind.APNG else AnimKind.NONE
+            } catch (_: Exception) { AnimKind.NONE }
+        }
+        // WEBP: RIFF....WEBP
+        if (raw.size >= 12 && raw[0] == 0x52.toByte() && raw[1] == 0x49.toByte() && raw[2] == 0x46.toByte() && raw[3] == 0x46.toByte()
+            && raw[8] == 0x57.toByte() && raw[9] == 0x45.toByte() && raw[10] == 0x42.toByte() && raw[11] == 0x50.toByte()
+        ) {
+            val r = com.github.penfeizhou.animation.io.ByteBufferReader(java.nio.ByteBuffer.wrap(raw))
+            return try {
+                if (com.github.penfeizhou.animation.webp.decode.WebPParser.isAWebP(r)) AnimKind.WEBP else AnimKind.NONE
+            } catch (_: Exception) { AnimKind.NONE }
+        }
+        return AnimKind.NONE
+    }
+
     suspend fun peekAnimKind(treeStr: String, meta: PageMeta): AnimKind {
         val raw = try { loadPageRaw(meta, treeStr) } catch (_: Exception) { null } ?: return AnimKind.NONE
         if (raw.size < 8) {

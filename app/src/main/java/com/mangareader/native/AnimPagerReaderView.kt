@@ -63,6 +63,26 @@ class AnimPagerReaderView(context: Context) : FrameLayout(context), ReaderViewDe
     private var loadScope: CoroutineScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     /** IO inflight 守卫：避免 onBind 同 idx 触发多次 load + 同 holder 二次重设 */
     private val inflightLoads = java.util.Collections.synchronizedSet(HashSet<Int>())
+    // ★ v1.13 动图提速：raw 单次读取复用缓存（LRU≤6，peek/构造 drawable 共用，消除重复全文件读）
+    private val rawCache = object : LinkedHashMap<Int, ByteArray>(6, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Int, ByteArray>?): Boolean = size > 6
+    }
+    private val rawCacheLock = Any()
+
+    /** ★ v1.13 动图提速：后台预读 raw 入缓存（setup 时对当前页预热，首帧 IO 提前开始） */
+    fun warmRaw(idx: Int) {
+        val e = engine ?: return
+        val meta = pageList.getOrNull(idx) ?: return
+        synchronized(rawCacheLock) { if (rawCache.containsKey(idx)) return }
+        loadScope.launch {
+            try {
+                val raw = withContext(Dispatchers.IO) {
+                    try { e.loadPageRaw(meta, treePath) } catch (_: Exception) { null }
+                } ?: return@launch
+                synchronized(rawCacheLock) { rawCache[idx] = raw }
+            } catch (_: Exception) {}
+        }
+    }
 
     override var onPageChanged: ((Int) -> Unit)? = null
     override var onToggleUi: (() -> Unit)? = null
@@ -152,6 +172,10 @@ class AnimPagerReaderView(context: Context) : FrameLayout(context), ReaderViewDe
         } else {
             this.currentPage = startPage
         }
+        // ★ v1.13 动图提速：setup 即后台预热当前页 raw（首帧三段 IO 提前开始，用户感知等待大幅缩短）
+        if (pagesChanged && pageList.isNotEmpty()) {
+            warmRaw(startPage.coerceIn(0, pageList.size - 1))
+        }
     }
 
     override fun isCurrentPageReady(): Boolean = pagerAdapter != null
@@ -216,20 +240,19 @@ class AnimPagerReaderView(context: Context) : FrameLayout(context), ReaderViewDe
         }
         loadScope.launch {
             try {
-                // 1. peek kind（IO 线程）
-                val kind = withContext(Dispatchers.IO) { peekAnimKindSuspend(idx) }
+                // ★ v1.13 动图提速：raw 单次读取（缓存命中免 IO），kind 从同一份 raw 判定——
+                //   消除原"peek 全读 + load 再全读"的双倍 IO
+                val cached = synchronized(rawCacheLock) { rawCache[idx] }
+                val raw = cached ?: withContext(Dispatchers.IO) {
+                    try { e.loadPageRaw(meta, treePath) } catch (_: Exception) { null }
+                } ?: return@launch
+                if (cached == null) synchronized(rawCacheLock) { rawCache[idx] = raw }
+                val kind = e.peekAnimKindFromRaw(raw)
                 if (kind == AnimKind.NONE) {
-                    // ★ §34.5 静图 placeholder 空白（理论上 Reader.kt 已分流：纯动图卷才用本视图）
+                    // ★ §34.5 静图占位（理论上 Reader.kt 已分流：纯动图卷才用本视图）
                     return@launch
                 }
-                // 2. load raw
-                val raw = withContext(Dispatchers.IO) {
-                    try { e.loadPageRaw(meta, treePath) } catch (_: Exception) {
-                        null
-                    }
-                }
-                if (raw == null) return@launch
-                // 3. 构造 drawable
+                // 构造 drawable
                 val drawable = withContext(Dispatchers.IO) {
                     try { makeAnimDrawable(raw, kind) } catch (_: Exception) { null }
                 }
