@@ -543,6 +543,15 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
         }
     }
 
+    /** ★ v1.13：当前页是否已出图 */
+    override fun isCurrentPageReady(): Boolean {
+        val lm = recycler.layoutManager as? androidx.recyclerview.widget.LinearLayoutManager ?: return false
+        val pos = lm.findFirstVisibleItemPosition()
+        if (pos < 0) return false
+        val vh = recycler.findViewHolderForAdapterPosition(pos) as? PageVH ?: return false
+        return vh.iv.drawable != null
+    }
+
     override fun release() {
         // ★ v1.11 P0：清掉挂起的 settleWindow 与 pending 释放机制（view 销毁/切视图后不再执行）
         cancelPendingRelease()

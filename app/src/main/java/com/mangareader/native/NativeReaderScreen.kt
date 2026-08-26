@@ -28,6 +28,8 @@ interface ReaderViewDelegate {
     fun trimMemory(level: Int)
     var onPageChanged: ((Int) -> Unit)?
     var onToggleUi: (() -> Unit)?
+    /** ★ v1.13：当前页是否已渲染出内容（无感切换遮罩的就绪信号；mihon 式"数据就绪才可见"） */
+    fun isCurrentPageReady(): Boolean
 }
 
 private fun getCombinedPaint(grayscale: Boolean, invertedColors: Boolean): Paint? {

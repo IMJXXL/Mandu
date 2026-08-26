@@ -613,6 +613,13 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         }
     }
 
+    /** ★ v1.13：当前页是否已出图（遮罩撤除信号） */
+    override fun isCurrentPageReady(): Boolean {
+        val rv = viewPager.getChildAt(0) as? androidx.recyclerview.widget.RecyclerView ?: return false
+        val vh = rv.findViewHolderForAdapterPosition(viewPager.currentItem) as? PagerViewHolder ?: return false
+        vh.ssiv?.let { s -> if (s.visibility == android.view.View.VISIBLE && s.hasImage()) return true }
+        return vh.iv?.drawable != null
+    }
     fun setPageLayout(layout: Int) {
         this.pageLayoutMode = layout
     }
@@ -1008,7 +1015,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     inner class PagerViewHolder(itemView: android.view.View) : androidx.recyclerview.widget.RecyclerView.ViewHolder(itemView) {
         private var heldBitmap: Bitmap? = null
         internal var ssiv: PagerSSIV? = itemView.findViewById(com.mangareader.R.id.ssiv_pager)
-        private val iv: ImageView? = itemView.findViewById(android.R.id.content)
+        internal val iv: ImageView? = itemView.findViewById(android.R.id.content)
         /** §24 二代动图槽：setAnimDrawable 时存入，clear 时 stop+释放
          *  ★ 改 Coil AnimatedImageDecoder 后类型从 FrameAnimationDrawable<*> → 普通 Drawable */
         internal var heldAnimDrawable: Drawable? = null

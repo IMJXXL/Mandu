@@ -1113,9 +1113,21 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit) {
         switchMaskBitmap = null
     }
 
-    // 500ms 兜底撤除；退出阅读立即清理
+    // ★ v1.13 就绪轮询撤除（mihon 式"数据就绪才可见"）：60ms 步进探测当前页是否出图，
+    //   出图立即撤除遮罩；1.5s 兜底防卡死。退出阅读立即清理
     LaunchedEffect(switchMaskVisible) {
-        if (switchMaskVisible) { delay(500); hideSwitchMask() }
+        if (!switchMaskVisible) return@LaunchedEffect
+        var waited = 0L
+        while (waited < 1500L) {
+            delay(60); waited += 60
+            val ready = when {
+                useAnimPager -> true
+                isVerticalMode -> activeWebtoonRef?.isCurrentPageReady() == true
+                else -> activePagerRef?.isCurrentPageReady() == true
+            }
+            if (ready) break
+        }
+        hideSwitchMask()
     }
     LaunchedEffect(viewing) {
         if (!viewing && switchMaskVisible) hideSwitchMask()
@@ -1214,6 +1226,12 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit) {
                     //   非 useAnimPager 时维持 §34.3 语义（仅 VERT_PAGER true）
                     val verticalPagerEffective = isVerticalPagerMode || (useAnimPager && (mode == Mode.VERT || mode == Mode.WEBTOON_GAP))
                     Box(Modifier.fillMaxSize()) {
+                        // ★ v1.13 C-3（mihon 同构）：模式五元组作 key——变化时 NativeReaderScreen 连同
+                        //   三个 View 实例整体销毁重建。此前 C-1 是"同实例软重置"，实测证明内部复杂状态机
+                        //   （settleWindow/动图map/inflight/transformer定时器）必有残留 → 切换后翻页异常。
+                        //   页码已提升在 Reader 层 cur（startPage 传参回填），重建零成本恢复位置；
+                        //   旧实例由原 DisposableEffect.onDispose 正常 release（bitmap 回收不泄漏）
+                        key(navStack.lastOrNull(), vertical, isRtl, verticalPagerEffective, useAnimPager) {
                         com.mangareader.native.NativeReaderScreen(
                             engine = engine,
                             treePath = navStack.lastOrNull() ?: book?.filePath ?: "",
@@ -1305,6 +1323,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit) {
                                 }
                             }
                         )
+                        } // ★ v1.13 C-3 key(navStack, vertical, isRtl, verticalPager, useAnimPager) end
                         // ★ v1.13 C-2 无感切换遮罩：截取的旧画面盖在内容区顶，500ms 兜底撤除
                         if (switchMaskVisible && switchMaskBitmap != null) {
                             Image(

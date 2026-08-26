@@ -154,6 +154,8 @@ class AnimPagerReaderView(context: Context) : FrameLayout(context), ReaderViewDe
         }
     }
 
+    override fun isCurrentPageReady(): Boolean = pagerAdapter != null
+
     override fun goToPage(page: Int) {
         if (page < 0 || page >= pageList.size) return
         val pos = if (isRtl) pageList.size - 1 - page else page
