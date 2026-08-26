@@ -16,6 +16,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -205,7 +207,7 @@ private fun HistoryItemRow(s: HistorySession, onDelete: () -> Unit, onClick: () 
             .padding(10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        CoverThumb(s.coverPath)
+        CoverThumb(s.coverPath, s.chPath)
         Column(Modifier.weight(1f).padding(start = 12.dp)) {
             Text(
                 s.title ?: "已删除书籍",
@@ -226,21 +228,27 @@ private fun HistoryItemRow(s: HistorySession, onDelete: () -> Unit, onClick: () 
                 fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        Text("继续读", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
     }
     Spacer(Modifier.height(8.dp))
 }
 
 @Composable
-private fun CoverThumb(coverPath: String?) {
+private fun CoverThumb(coverPath: String?, chPath: String? = null) {
     val ctx = LocalContext.current
-    val model = remember(coverPath) {
-        coverPath?.let { cp ->
+    // ★ v1.13 回退重做：优先卷级封面（Reader enterReader 后台生成的 md5(chPath).thumb），无则退书架封面
+    var model by remember(coverPath, chPath) { mutableStateOf<Any?>(null) }
+    LaunchedEffect(coverPath, chPath) {
+        withContext(Dispatchers.IO) {
+            fun keyOf(s: String): String = MessageDigest.getInstance("MD5").digest(s.toByteArray())
+                .joinToString("") { "%02x".format(it) }
             try {
-                val key = MessageDigest.getInstance("MD5").digest(cp.toByteArray())
-                    .joinToString("") { "%02x".format(it) }
-                File(ctx.filesDir, "covers/$key.thumb")
-            } catch (_: Exception) { null }
+                val chapterThumb = chPath?.let { File(ctx.filesDir, "covers/${keyOf(it)}.thumb") }
+                model = when {
+                    chapterThumb != null && chapterThumb.exists() -> chapterThumb
+                    coverPath != null -> File(ctx.filesDir, "covers/${keyOf(coverPath)}.thumb")
+                    else -> null
+                }
+            } catch (_: Exception) {}
         }
     }
     AsyncImage(

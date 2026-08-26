@@ -500,6 +500,21 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit) {
         // ★ §24 P9c：本卷动图对话框的选择（0=未答/1=切条漫/2=保持现状）——
         //   setup 末尾 webtoon onAnimDetected 触发 P9 弹窗时读这个标志决定是否弹
         animDialogChoiceForChapter = withContext(Dispatchers.IO) { dao.getAnimDialogChoice(b.id, path) ?: 0 }
+        // ★ v1.13 用户需求：卷级封面后台生成（阅读历史显示各卷自己的封面而非书架总封面）
+        //   写 covers/md5(卷path).thumb；HistoryScreen CoverThumb 双键查找时命中
+        if (pages.isNotEmpty()) {
+            scope.launch(Dispatchers.IO) {
+                try {
+                    val key = java.security.MessageDigest.getInstance("MD5")
+                        .digest(path.toByteArray()).joinToString("") { "%02x".format(it) }
+                    val f = java.io.File(ctx.filesDir, "covers/$key.thumb")
+                    if (!f.exists()) {
+                        val bmp = engine.loadPage(pages[0], path) ?: return@launch
+                        f.outputStream().use { bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, it) }
+                    }
+                } catch (_: Exception) {}
+            }
+        }
         // ★ §34.5：切卷时先重置 useAnimPager——避免上一卷的 useAnimPager=true 残留到"用户已答 choice==4 不再弹"的本卷。
         //   真欲进动图视图的卷会在下面 choice==3 分支里重置为 true。
         //   同时重置 showAnimSwitchDialog/animSuggestedCount/animPeeking 防止跨卷串扰
@@ -555,9 +570,11 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit) {
         //   choice 已为 4 → 上次同卷拒绝过 → 不弹
         //   ★ 时机：choice 服务于"用户已答"语义；choice==3 持久化后下次同卷直进动图视图，省一次弹窗；
         //     choice==4 持久化后下次同卷仍走普通 pager（看 workaround 动图 fallback）。
+        // ★ v1.13 T10（用户裁定）：仅 choice==3（已进过动图视图）不再询问；
+        //   其余情况（含历史 choice=4）每次打开都询问——普通模式已支持静态首帧显示
         if (animDialogChoiceForChapter == 3) {
             useAnimPager = true
-        } else if (animDialogChoiceForChapter != 4 && pages.isNotEmpty()) {
+        } else if (pages.isNotEmpty()) {
             animPeeking = true
             scope.launch {
                 try {
@@ -1460,19 +1477,9 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit) {
                     }) { Text("进入动图视图") }
             },
             dismissButton = {
-                // ★ "保持普通" → choice=4 → mode/useAnimPager 都不动；不再弹此对话
+                // ★ v1.13 T10（用户裁定）："保持普通"不再持久化 choice=4——每次打开该卷仍会询问
                 TextButton(onClick = {
-                    val chPath = navStack.lastOrNull() ?: book?.filePath ?: ""
                     animDialogChoiceForChapter = 4
-                    scope.launch {
-                        try {
-                            book?.let { b ->
-                                // ★ v1.11：同上，改 INSERT OR IGNORE 占位，不覆盖已有进度
-                                dao.preinsertProgressIfAbsent(b.id, chPath)
-                                dao.setAnimDialogChoice(b.id, chPath, 4)
-                            }
-                        } catch (_: Exception) {}
-                    }
                     showAnimSwitchDialog = false
                     }) { Text("保持普通") }
             }

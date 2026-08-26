@@ -964,14 +964,10 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 }
             } else {
                 val realIdx = if (isRtl) pageList.size - 1 - position else position
-                // ★ §24 二代：动图判定——动图页走 ImageView + Drawable 路径（不走 SSIV，不用 BitmapFactory，全质量）
-                val animFlag = pageAnimFlags.firstOrNull { it.pageIdx == realIdx }
-                if (animFlag != null && animFlag.kind != AnimKind.NONE) {
-                    // 已判为动图：走动图路径
-                    holder.clearStatic()
-                    if (!isScrolling) loadAnimPageAsync(realIdx, holder)
-                    return
-                }
+                // ★ v1.13 T10（用户裁定）：普通翻页视图下动图页一律走静图路径（显示静态首帧）。
+                //   旧 workaround（ImageView+APNG4Android Drawable 播放）实机体验为负——白屏/闪白/卡顿；
+                //   动画播放职责完全归动图专属视图 AnimPagerReaderView。
+                //   pageAnimFlags 保留仅供 enterReader 采样判定与 AnimPager 使用，本视图不再消费。
                 val bmp = bitmapCache[realIdx]
                 if (bmp != null && !bmp.isRecycled) {
                     // 双页裁剪：全图加载到SSIV，视口定位显示左/右半边
