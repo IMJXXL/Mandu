@@ -10,14 +10,24 @@ import com.mangareader.data.Folder
 import com.mangareader.data.MangaDao
 import com.mangareader.zip.CommonsZipHelper
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.security.MessageDigest
 
 class Scanner(private val ctx: Context, private val dao: MangaDao) {
+    // ★ v1.13 扫描优化：封面后台补齐专用域（独立 SupervisorJob，不阻塞扫描返回）
+    private val coverScope = kotlinx.coroutines.CoroutineScope(
+        kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO
+    )
     companion object {
         private const val TAG = "Scanner"
 
@@ -80,45 +90,62 @@ class Scanner(private val ctx: Context, private val dao: MangaDao) {
         }
     }
 
-    fun preloadCovers(books: List<Book>, onProgress: ((loaded: Int, total: Int) -> Unit)? = null) {
+    /**
+     * ★ v1.13 扫描优化：封面预载并行化（4 路并发）。
+     *   原为纯串行 for 循环——每本 SAF 打开+解压+JPEG 落盘 100~500ms，几百本要数分钟；
+     *   并发后吞吐约 ×4。各书之间零共享状态（独立 thumb 文件），SAF ContentResolver 线程安全。
+     *   skip 幂等逻辑保留：已有 thumb 直接跳过，重入安全。
+     */
+    suspend fun preloadCovers(books: List<Book>, onProgress: ((loaded: Int, total: Int) -> Unit)? = null) {
         val coverDir = File(ctx.filesDir, "covers")
         if (!coverDir.exists()) coverDir.mkdirs()
-        var ok = 0; var fail = 0; var skip = 0; var noPath = 0
+        val ok = java.util.concurrent.atomic.AtomicInteger()
+        val fail = java.util.concurrent.atomic.AtomicInteger()
+        val skip = java.util.concurrent.atomic.AtomicInteger()
+        val noPath = java.util.concurrent.atomic.AtomicInteger()
+        val done = java.util.concurrent.atomic.AtomicInteger()
         val total = books.size
-        for ((idx, b) in books.withIndex()) {
-            val coverPath = b.coverPath
-            if (coverPath == null) { noPath++; continue }
-            if (!coverPath.startsWith("cv:")) { noPath++; continue }
-            try {
-                val key = md5(coverPath)
-                val file = File(coverDir, "$key.thumb")
-                if (file.exists()) { skip++; continue }
+        val sem = kotlinx.coroutines.sync.Semaphore(4)
+        val jobs = mutableListOf<kotlinx.coroutines.Deferred<Unit>>()
+        coroutineScope {
+            for (b in books) {
+                jobs.add(async(Dispatchers.IO) {
+                    sem.withPermit {
+                        val coverPath = b.coverPath
+                        if (coverPath == null || !coverPath.startsWith("cv:")) { noPath.incrementAndGet(); return@withPermit }
+                        try {
+                            val key = md5(coverPath)
+                            val file = File(coverDir, "$key.thumb")
+                            if (file.exists()) { skip.incrementAndGet(); return@withPermit }
 
-                val parts = coverPath.removePrefix("cv:").split("|")
-                if (parts.size < 3) { fail++; continue }
-                val auth = parts[0]
-                val treeDocId = parts[1]
-                val docId = parts[2]
-                val treeUri = Uri.parse("content://$auth/tree/${Uri.encode(treeDocId)}")
-                val docUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, docId)
+                            val parts = coverPath.removePrefix("cv:").split("|")
+                            if (parts.size < 3) { fail.incrementAndGet(); return@withPermit }
+                            val auth = parts[0]
+                            val treeDocId = parts[1]
+                            val docId = parts[2]
+                            val treeUri = Uri.parse("content://$auth/tree/${Uri.encode(treeDocId)}")
+                            val docUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, docId)
 
-                val ext = docId.substringAfterLast(".").lowercase()
-                Log.d(TAG, "preloadCovers: docId=$docId ext=$ext")
-                if (ext in listOf("cbz", "zip", "epub")) {
-                    preloadZipCover(coverPath, docUri, file)
-                } else if (ext in listOf("mobi", "azw", "azw3")) {
-                    preloadMobiCover(coverPath, docUri, file)
-                } else if (ext in listOf("jpg", "jpeg", "png", "webp", "gif", "bmp")) {
-                    preloadImageCover(coverPath, docUri, file)
-                }
-                if (file.exists()) ok++ else fail++
-            } catch (e: Exception) {
-                Log.e(TAG, "preloadCover failed: ${e.message}")
-                fail++
+                            val ext = docId.substringAfterLast(".").lowercase()
+                            if (ext in listOf("cbz", "zip", "epub")) {
+                                preloadZipCover(coverPath, docUri, file)
+                            } else if (ext in listOf("mobi", "azw", "azw3")) {
+                                preloadMobiCover(coverPath, docUri, file)
+                            } else if (ext in listOf("jpg", "jpeg", "png", "webp", "gif", "bmp")) {
+                                preloadImageCover(coverPath, docUri, file)
+                            }
+                            if (file.exists()) ok.incrementAndGet() else fail.incrementAndGet()
+                        } catch (e: Exception) {
+                            Log.e(TAG, "preloadCover failed: ${e.message}")
+                            fail.incrementAndGet()
+                        }
+                        onProgress?.invoke(done.incrementAndGet(), total)
+                    }
+                })
             }
-            onProgress?.invoke(idx + 1, total)
+            jobs.joinAll()
         }
-        Log.d(TAG, "preloadCovers done: ok=$ok fail=$fail skip=$skip")
+        Log.d(TAG, "preloadCovers done: ok=${ok.get()} fail=${fail.get()} skip=${skip.get()} noPath=${noPath.get()}")
     }
 
     private fun preloadZipCover(coverPath: String, docUri: Uri, file: File) {
@@ -375,7 +402,8 @@ class Scanner(private val ctx: Context, private val dao: MangaDao) {
                 //   SAF 扫描在事务外，纯 DB 操作由 DAO @Transaction 打包防长事务锁库
                 dao.rescanFolderReplace(auth, docId, books)
                 cacheRealPaths(books)
-                preloadCovers(books)
+                // ★ v1.13 扫描优化：先出列表（书已入库即完成），封面转后台 4 路并行补齐
+                coverScope.launch { preloadCovers(books) }
                 count = books.size - oldCount
             }
             // 扫描为空时不删除旧数据，避免临时故障导致书架清空
