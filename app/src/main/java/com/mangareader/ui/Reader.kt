@@ -65,7 +65,10 @@ import kotlinx.coroutines.withContext
 
 /** ★ §24 P9 调节点：动图数量阈值 —— 默认 3 张动图才弹"切条漫"对话框 */
 object ReaderParams {
-    const val ANIM_PROMPT_THRESHOLD: Int = 3
+    // ★ 动图打开提速（2026-08-27）：采样页数 5→3、绝对门限 3→2。动图卷第 1 页常为静态封面，
+    //   3 页里 ≥2 张动图（比例 ≥60% 不变）既保判定又砍 40% 采样 IO。Webtoon/Pager 的
+    //   onAnimDetected 累计路径也共用此常量，语义仍成立（≥2 张即提示）。
+    const val ANIM_PROMPT_THRESHOLD: Int = 2
 }
 
     enum class Mode(val label: String) {
@@ -578,13 +581,11 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit) {
             animPeeking = true
             scope.launch {
                 try {
-                    // ★ §34.5 性能优化：只采前 5 页而不是全 peek。
-                    //   peekAnimKind 内部 loadPageRaw 读整个文件（动图 WebP ~18MB），全 peek 11 页要 2.14s。
-                    //   动图卷的动图页占比极高（>=95%），采 5 页就足以判定；5 页里 ≥3 张动图即弹。
-                    //   静图卷 5 页里 0 张动图 → 不弹；混合卷 5 页里 ≤2 张 → 不弹（用户继续普通翻页即可）。
-                    //   采样策略保守——这是性能与覆盖的权衡：若卷动图集中靠后段（罕见），可能漏弹；
-                    //   但漏弹无损，用户仍在普通视图里看（PagerReaderView 有 workaround 动图）。
-                    val sampleSize = minOf(5, pages.size)
+                    // ★ 动图打开提速（2026-08-27）：采样 5→3 页。动图卷动图占比极高，3 页足够判定；
+                    //   第 1 页常为静态封面 → 门限 3→2（比例 ≥60% 不变）。漏弹无损（普通视图有静图兜底）。
+                    //   ★ ANIMT 探针：tag=ANIMT 计时采样全程，装进正式包用于实测定位剩余瓶颈。
+                    val t0 = android.os.SystemClock.elapsedRealtime()
+                    val sampleSize = minOf(3, pages.size)
                     val sampleIndices = (0 until sampleSize).toList()
                     var animCount = 0
                     // 并发 peek 但限制并发度 4（避免磁盘 IO 暴冲）
@@ -592,19 +593,24 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit) {
                     val jobs = sampleIndices.map { idx ->
                         async(Dispatchers.IO) {
                             sem.withPermit {
-                                try { engine.peekAnimKind(path, pages[idx]) } catch (_: Exception) { com.mangareader.viewer.AnimKind.NONE }
+                                try {
+                                    val t1 = android.os.SystemClock.elapsedRealtime()
+                                    val k = engine.peekAnimKindFast(path, pages[idx])
+                                    android.util.Log.i("ANIMT", "peekFast idx=$idx kind=$k ${android.os.SystemClock.elapsedRealtime() - t1}ms bytes=${engine.lastPeekBytes}")
+                                    k
+                                } catch (_: Exception) { com.mangareader.viewer.AnimKind.NONE }
                             }
                         }
                     }
                     val kinds = jobs.awaitAll()
                     for (k in kinds) if (k != com.mangareader.viewer.AnimKind.NONE) animCount++
                     val sampleRatio = if (sampleIndices.isNotEmpty()) animCount.toFloat() / sampleIndices.size else 0f
-                    // ★ 阈值：采样 ≥3 张动图 且 比例 ≥60%（采 5 页时即 ≥3/5）
-                    //   ANIM_PROMPT_THRESHOLD=3 仍是绝对门限；比例门限提到 60% 配合 5 页采样
+                    // ★ 阈值：门限 2（ANIM_PROMPT_THRESHOLD）+ 比例 ≥60%（采 3 页时即 ≥2/3）
                     if (animCount >= com.mangareader.ui.ReaderParams.ANIM_PROMPT_THRESHOLD && sampleRatio >= 0.60f) {
                         animSuggestedCount = animCount
                         showAnimSwitchDialog = true
                     }
+                    android.util.Log.i("ANIMT", "sample done total=${android.os.SystemClock.elapsedRealtime() - t0}ms animCount=$animCount/$sampleSize")
                 } catch (t: Throwable) {
                 } finally {
                     animPeeking = false

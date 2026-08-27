@@ -174,6 +174,7 @@ class AnimPagerReaderView(context: Context) : FrameLayout(context), ReaderViewDe
         }
         // ★ v1.13 动图提速：setup 即后台预热当前页 raw（首帧三段 IO 提前开始，用户感知等待大幅缩短）
         if (pagesChanged && pageList.isNotEmpty()) {
+            android.util.Log.i("ANIMT", "setup warmRaw startPage=$startPage")
             warmRaw(startPage.coerceIn(0, pageList.size - 1))
         }
     }
@@ -239,6 +240,8 @@ class AnimPagerReaderView(context: Context) : FrameLayout(context), ReaderViewDe
             return
         }
         loadScope.launch {
+            // ★ ANIMT 探针：单页三段（IO 读 raw → 构造 drawable → 主线程上屏）总耗时
+            val t0 = android.os.SystemClock.elapsedRealtime()
             try {
                 // ★ v1.13 动图提速：raw 单次读取（缓存命中免 IO），kind 从同一份 raw 判定——
                 //   消除原"peek 全读 + load 再全读"的双倍 IO
@@ -264,6 +267,7 @@ class AnimPagerReaderView(context: Context) : FrameLayout(context), ReaderViewDe
                             && (if (isRtl) pageList.size - 1 - pos else pos) == idx
                     if (fresh) {
                         holder.setDrawable(idx, drawable)
+                        android.util.Log.i("ANIMT", "page ready idx=$idx total=${android.os.SystemClock.elapsedRealtime() - t0}ms rawBytes=${raw.size}")
                     }
                 }
             } finally {

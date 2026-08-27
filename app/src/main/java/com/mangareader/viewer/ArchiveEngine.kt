@@ -464,6 +464,103 @@ class ArchiveEngine(private val ctx: Context) {
      *   注意：仍要读全文件——APNG 需遍历整文件找 acTL chunk（§25 B2 修订）。
      *   bind 时单页调，不会卷级联阻塞翻页 IO（旧版本是整章串行预读）。
      */
+    /** ★ 动图打开提速（2026-08-27）：进卷采样判定专用——只读文件头部而非全文件。
+     *   GIF 头部 magic 即可判；动态 WEBP 的 VP8X Animation bit 在文件头 ~30 字节内；
+     *   APNG 的 acTL 在 IDAT 前（通常 <64KB）。头部窗口内判不出再按格式语义收场。
+     *   zip/rar/7z 源的 native 接口按 entry 全量读，头部截读需 JNI 改造（待 ANIMT 实测确认后再立项）；
+     *   本期仅 dir 源走流式头读，其余源回退全文件读。 */
+    @Volatile var lastPeekBytes: Int = 0
+        private set
+
+    suspend fun peekAnimKindFast(treeStr: String, meta: PageMeta): AnimKind {
+        // dir 源：ContentResolver 流式读头部（不落全文件）
+        if (meta.source == "dir") {
+            try {
+                val p = parsePath(treeStr) ?: return peekAnimKindFallback(treeStr, meta)
+                val tree = makeTree(p.auth, p.tree)
+                val docUri = if (meta.ext.isNotEmpty()) {
+                    DocumentsContract.buildDocumentUriUsingTree(tree, meta.ext)
+                } else {
+                    DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
+                }
+                val head = ByteArray(64 * 1024)
+                var off = 0
+                ctx.contentResolver.openInputStream(docUri)?.use { ins ->
+                    while (off < head.size) {
+                        val n = ins.read(head, off, head.size - off)
+                        if (n <= 0) break
+                        off += n
+                        val k = animKindFromHead(head, off)
+                        if (k != null) { lastPeekBytes = off; return k }
+                    }
+                }
+                lastPeekBytes = off
+                return AnimKind.NONE
+            } catch (_: Exception) {
+                return peekAnimKindFallback(treeStr, meta)
+            }
+        }
+        // 其他源：暂走全文件读（与旧 peekAnimKind 同速），ANIMT 实测后再决定是否做 native 头部截读
+        return peekAnimKindFallback(treeStr, meta)
+    }
+
+    private suspend fun peekAnimKindFallback(treeStr: String, meta: PageMeta): AnimKind {
+        val raw = try { loadPageRaw(meta, treeStr) } catch (_: Exception) { null } ?: run { lastPeekBytes = 0; return AnimKind.NONE }
+        lastPeekBytes = raw.size
+        return peekAnimKindFromRaw(raw)
+    }
+
+    /** 从头部字节判动图；返回 null 表示头部信息尚不足（需继续读） */
+    private fun animKindFromHead(head: ByteArray, len: Int): AnimKind? {
+        if (len < 12) return null
+        // GIF：magic 即动图格式（GIF 必然可播；静止单帧 GIF 漫画场景罕见，与旧全文件判定一致性可接受）
+        if (head[0] == 0x47.toByte() && head[1] == 0x49.toByte() && head[2] == 0x46.toByte() && head[3] == 0x38.toByte()) {
+            return AnimKind.GIF
+        }
+        // PNG：扫 chunk 找 acTL（APNG 标志）；遇 IDAT 仍无 acTL 即静图；IEND 终局
+        if (head[0] == 0x89.toByte() && head[1] == 0x50.toByte() && head[2] == 0x4E.toByte() && head[3] == 0x47.toByte()) {
+            var pos = 8
+            var sawIdat = false
+            while (pos + 8 <= len) {
+                val type = String(head, pos + 4, 4, Charsets.US_ASCII)
+                if (type == "acTL") return AnimKind.APNG
+                if (type == "IDAT") sawIdat = true
+                if (type == "IEND") return AnimKind.NONE
+                val size = ((head[pos].toInt() and 0xFF) shl 24) or ((head[pos + 1].toInt() and 0xFF) shl 16) or
+                        ((head[pos + 2].toInt() and 0xFF) shl 8) or (head[pos + 3].toInt() and 0xFF)
+                if (size < 0) break
+                pos += 12 + size
+            }
+            // 头部窗口内没扫到结论：已见 IDAT 无 acTL → 静图；否则继续读（返回 null 驱动外层续流）
+            return if (sawIdat) AnimKind.NONE else null
+        }
+        // WEBP(RIFF....WEBP)：VP8X 块 flags bit1 = Animation
+        if (head[0] == 0x52.toByte() && head[1] == 0x49.toByte() && head[2] == 0x46.toByte() && head[3] == 0x46.toByte()
+            && head[8] == 0x57.toByte() && head[9] == 0x45.toByte() && head[10] == 0x42.toByte() && head[11] == 0x50.toByte()
+        ) {
+            var pos = 12
+            while (pos + 8 <= len) {
+                val tag = String(head, pos, 4, Charsets.US_ASCII)
+                val size = (head[pos + 4].toInt() and 0xFF) or ((head[pos + 5].toInt() and 0xFF) shl 8) or
+                        ((head[pos + 6].toInt() and 0xFF) shl 16) or ((head[pos + 7].toInt() and 0xFF) shl 24)
+                when (tag) {
+                    "VP8X" -> {
+                        if (pos + 8 >= len) return null
+                        val flags = head[pos + 8].toInt()
+                        return if (flags and 0x02 != 0) AnimKind.WEBP else AnimKind.NONE
+                    }
+                    "VP8 ", "VP8L" -> return AnimKind.NONE  // 无 VP8X 的简单图必是静图
+                    "ANIM" -> return AnimKind.WEBP          // 老式动画块直判
+                }
+                if (size <= 0) break
+                pos += 8 + size + (size and 1)
+            }
+            return null
+        }
+        // JPEG 等其他格式：头部即可判非动图
+        return AnimKind.NONE
+    }
+
     /**
      * ★ v1.13 动图提速：从已读字节判定动图类型（配合 AnimPager rawCache 单次读取复用，
      *   消除 peek/load 各自全文件读的重复 IO）。逻辑与 peekAnimKind 一致。
