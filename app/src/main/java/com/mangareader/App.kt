@@ -65,6 +65,19 @@ class App : Application() {
         crashHandler.init()
         crashHandler.clearOldCrashLogs()
         startAnrWatchdog()
+        preloadGifDecoder()
+    }
+
+    // ★ GIF 闪退防御（2026-08-27 红米 diag）：gif native 库在 GifFrame 类初化时按需加载，
+    //   一旦失败 UnsatisfiedLinkError 会在后台解码线程直接炸沉进程。
+    //   提前在主线程预热：加载失败只落日志；后续若仍触发 GifFrame 初化失败，
+    //   APNG4Android 走 Drawable 构造 try-catch → 动图页空白降级而非闪退。
+    private fun preloadGifDecoder() {
+        try {
+            System.loadLibrary("animation-decoder-gif")
+        } catch (t: Throwable) {
+            android.util.Log.e("App", "preload animation-decoder-gif failed", t)
+        }
     }
 
     private fun startBackgroundVerify() {
