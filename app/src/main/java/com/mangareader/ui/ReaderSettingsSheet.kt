@@ -309,7 +309,7 @@ private fun GeneralTab(config: ReaderConfig, onConfigChange: (ReaderConfig) -> U
     CheckboxItem("沉浸式模式（重进生效）", config.isImmersiveMode) { onConfigChange(config.copy(isImmersiveMode = it)) }
     CheckboxItem("保持屏幕常亮", config.isKeepScreenOn) { onConfigChange(config.copy(isKeepScreenOn = it)) }
     CheckboxItem("始终显示章节间的过渡页面", config.chapterTransition) { onConfigChange(config.copy(chapterTransition = it)) }
-    CheckboxItem("翻页时闪烁", config.isFlipFlashEnabled) { onConfigChange(config.copy(isFlipFlashEnabled = it)) }
+    CheckboxItem("翻页时闪烁（开启后可降低墨水屏残影）", config.isFlipFlashEnabled) { onConfigChange(config.copy(isFlipFlashEnabled = it)) }
     if (config.isFlipFlashEnabled) {
         SliderItem("持续时间", config.flipFlashDuration.toFloat(), 50f..1500f, 14, "${config.flipFlashDuration}ms") {
             onConfigChange(config.copy(flipFlashDuration = it.toInt()))
