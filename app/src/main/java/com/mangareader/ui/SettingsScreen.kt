@@ -90,31 +90,26 @@ fun SettingsScreen(onBack: () -> Unit) {
             scope.launch {
                 try { ctx.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION) } catch (_: Exception) {}
                 scanning = true; scanTarget = "扫描中..."; scanCount = 0
-                val n = withContext(Dispatchers.IO) { scanner.scan(uri) { count -> scanCount = count } }
+                val n = withContext(Dispatchers.IO) { scanner.scanAndCommit(uri) { count -> scanCount = count } }
                 scanning = false
-                withContext(Dispatchers.IO) { totalBooks = dao.countAll() }
-                Toast.makeText(ctx, if (n > 0) "导入完成，共 $n 本漫画" else "未找到漫画文件", Toast.LENGTH_SHORT).show()
+                Toast.makeText(ctx, if (n > 0) "导入成功，共 $n 本漫画，封面后台加载中" else "未找到漫画文件", Toast.LENGTH_SHORT).show()
                 if (n > 0) {
-                    // 检查.nomedia（立即执行，不等封面预加载）
                     try {
                         val hasNomedia = withContext(Dispatchers.IO) { scanner.checkNomedia(uri) }
                         if (!hasNomedia) {
                             showNomediaDialog = uri
                         }
                     } catch (_: Exception) {}
-                    withContext(Dispatchers.IO) {
-                        val books = dao.getAllBooksList()
-                        scanner.preloadCovers(books)
-                        totalBooks = dao.countAll()
-                    }
                 }
             }
         }
     }
 
     LaunchedEffect(Unit) {
-        withContext(Dispatchers.IO) { totalBooks = dao.countAll(); readBooks = dao.countReadBooks() }
+        withContext(Dispatchers.IO) { readBooks = dao.countReadBooks() }
     }
+    // ★ 漫画总数改为 Room Flow 观察——后台导入入库后自动更新，删除/导入全程实时
+    LaunchedEffect(Unit) { dao.observeTotalBooks().collect { totalBooks = it } }
     LaunchedEffect(Unit) { dao.getAllFolders().collect { folders = it } }
     LaunchedEffect(Unit) { dao.getAllBookshelves().collect { bookshelves = it } }
 
@@ -135,7 +130,6 @@ fun SettingsScreen(onBack: () -> Unit) {
                             dao.deleteFolder(f)
                         }
                         showDeleteFolder = null
-                        withContext(Dispatchers.IO) { totalBooks = dao.countAll() }
                         Toast.makeText(ctx, "已删除", Toast.LENGTH_SHORT).show()
                     }
                 }) { Text("确定", color = MaterialTheme.colorScheme.error) }
@@ -367,13 +361,14 @@ fun SettingsScreen(onBack: () -> Unit) {
                             scanning = true; scanTarget = "一键扫描所有文件夹..."; scanCount = 0
                             var total = 0
                             withContext(Dispatchers.IO) {
-                                folders.forEach { f -> total += scanner.rescan(f) }
+                                folders.forEach { f -> total += scanner.rescanAndCommit(f) { count -> scanCount = count } }
                             }
                             scanCount = total
                             scanning = false
-                            withContext(Dispatchers.IO) { totalBooks = dao.countAll() }
-                            val msg = if (total > 0) "扫描完成，新增 $total 本漫画" else "扫描完成，没有新漫画"
+                            val msg = if (total > 0) "扫描成功，共 $total 本漫画，封面后台加载中" else "扫描完成，没有新漫画"
                             Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show()
+                            // 自动关闭扫描弹窗
+                            scanning = false
                         }
                     }, modifier = Modifier.fillMaxWidth()) {
                         Icon(Icons.Default.Refresh, null)
@@ -393,12 +388,12 @@ fun SettingsScreen(onBack: () -> Unit) {
                         TextButton(onClick = {
                             scope.launch {
                                 scanning = true; scanTarget = "正在扫描「${f.displayName}」..."; scanCount = 0
-                                val c = withContext(Dispatchers.IO) { scanner.rescan(f) }
+                                val c = withContext(Dispatchers.IO) { scanner.rescanAndCommit(f) { count -> scanCount = count } }
                                 scanCount = c
                                 scanning = false
-                                withContext(Dispatchers.IO) { totalBooks = dao.countAll() }
-                                val msg = if (c > 0) "刷新完成，新增 $c 本漫画" else "刷新完成，没有新漫画"
+                                val msg = if (c > 0) "刷新成功，新增 $c 本漫画，封面后台加载中" else "刷新完成，没有新漫画"
                                 Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show()
+                                scanning = false
                             }
                         }) { Text("刷新") }
                         // 隐藏/显示开关：切换该文件夹下所有书的isHidden
@@ -427,7 +422,6 @@ fun SettingsScreen(onBack: () -> Unit) {
                                     val treeDocId = android.net.Uri.decode(treeUri.lastPathSegment ?: "").removePrefix("tree:")
                                     dao.setHiddenByFolderParams("a:$auth|$treeDocId|%", "d:$auth|$treeDocId%", "z:a:$auth|$treeDocId|%", !show)
                                 }
-                                withContext(Dispatchers.IO) { totalBooks = dao.countAll() }
                                 Toast.makeText(ctx, if (show) "已显示「${f.displayName}」的漫画" else "已隐藏「${f.displayName}」的漫画", Toast.LENGTH_SHORT).show()
                             }
                         })

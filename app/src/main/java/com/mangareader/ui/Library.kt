@@ -104,7 +104,6 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
         when { widthDp > 900 -> 5; widthDp > 600 -> 4; else -> 3 }
     }
     var layoutMode by remember { mutableStateOf(LayoutMode.entries.first { it.cols == screenCols }) }
-    var scanning by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
     var debouncedQuery by remember { mutableStateOf("") }
 
@@ -131,8 +130,6 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
 
     var selectedShelfId by remember { mutableStateOf<Long?>(null) }
     var selectedShelfName by remember { mutableStateOf("") }
-
-    var coverLoadVersion by remember { mutableIntStateOf(0) }
 
     var lastReading by remember { mutableStateOf<ReadingProgress?>(null) }
 
@@ -169,7 +166,6 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                     val file = java.io.File(ctx.filesDir, "covers/$key.thumb")
                     if (file.exists()) return@launch
                     try { engine.loadCover(book.coverPath!!) } catch (_: Exception) {}
-                    withContext(Dispatchers.Main) { coverLoadVersion++ }
                 }
             }
             jobs.forEach { it.join() }
@@ -535,7 +531,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                         val onTap = remember(b.id, isMultiSelect) { { if (isMultiSelect) { selectedBooks = if (b.id in selectedBooks) selectedBooks - b.id else selectedBooks + b.id } else openBookThrottled(b.id, null) } }
                         val onLongClick = remember(b.id) { { showBookInfo = b } }
                         val onDelete = remember(b.id) { { deleteTarget = b } }
-                        BookCard(b, engine, isMultiSelect, b.id in selectedBooks, coverLoadVersion,
+                        BookCard(b, engine, isMultiSelect, b.id in selectedBooks,
                             onToggleSelect = onToggleSelect,
                             onTap = onTap,
                             onLongClick = onLongClick,
@@ -549,7 +545,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun BookCard(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, isSelected: Boolean, coverLoadVersion: Int, onToggleSelect: () -> Unit, onTap: () -> Unit, onLongClick: () -> Unit, onDelete: () -> Unit) {
+private fun BookCard(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, isSelected: Boolean, onToggleSelect: () -> Unit, onTap: () -> Unit, onLongClick: () -> Unit, onDelete: () -> Unit) {
     val ctx = LocalContext.current
     val key = remember(b.coverPath) {
         b.coverPath?.let { path ->
@@ -557,11 +553,16 @@ private fun BookCard(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, isS
         }
     }
     val coverFile = remember(key) { key?.let { java.io.File(ctx.filesDir, "covers/$it.thumb") } }
-    var coverReady by remember(b.id, coverLoadVersion) { mutableStateOf(false) }
+    var coverReady by remember(b.id) { mutableStateOf(false) }
 
-    LaunchedEffect(b.id, coverLoadVersion) {
-        if (!coverReady && withContext(Dispatchers.IO) { coverFile?.exists() == true }) {
-            coverReady = true
+    LaunchedEffect(b.id) {
+        if (coverFile == null) return@LaunchedEffect
+        while (!coverReady) {
+            if (withContext(Dispatchers.IO) { coverFile.exists() }) {
+                coverReady = true
+            } else {
+                delay(800)
+            }
         }
     }
 

@@ -413,6 +413,102 @@ class Scanner(private val ctx: Context, private val dao: MangaDao) {
         }
     }
 
+    /**
+     * Phase 1: 仅元数据扫描（不入库、不加载封面），极速返回 Book 列表供 UI 立即提示成功。
+     */
+    suspend fun scanMetaOnly(uri: Uri, onProgress: ((Int) -> Unit)? = null): List<Book> = withContext(Dispatchers.IO) {
+        scanMutex.withLock {
+            val books = mutableListOf<Book>()
+            val treeStr = uri.toString()
+            val docId = DocumentsContract.getTreeDocumentId(uri)
+            val auth = uri.authority ?: ""
+            val child = DocumentsContract.buildChildDocumentsUriUsingTree(uri, docId)
+            scanDirFast(auth, treeStr, docId, child, books) { found -> onProgress?.invoke(found) }
+            books
+        }
+    }
+
+    /**
+     * Phase 2: 入库 + 后台封面补齐（复用现有 coverScope）。
+     */
+    private suspend fun commitScanResults(books: List<Book>, treeStr: String, auth: String, docId: String) {
+        // ★ 回归修复：两阶段改造后此函数漏了 Folder 登记，导入的文件夹不进"已导入文件夹"列表，
+        //   刷新/一键扫描入口缺失。照抄老 scan() 的 upsert（本次没扫到书也要登记）
+        val name = docId.substringAfterLast("/").replace("%20", " ")
+        val ex = dao.getFolderByUri(treeStr)
+        if (ex != null) dao.updateFolder(ex.copy(lastScanAt = System.currentTimeMillis(), displayName = name))
+        else dao.insertFolder(Folder(treeUri = treeStr, displayName = name, lastScanAt = System.currentTimeMillis()))
+        if (books.isEmpty()) return
+        val newIds = dao.insertBooksBatch(books)
+        cacheRealPaths(books)
+        try {
+            val engine = com.mangareader.viewer.ArchiveEngine(ctx)
+            for ((i, b) in books.withIndex()) {
+                try {
+                    val bookId = newIds.getOrNull(i) ?: continue
+                    if (bookId == -1L) continue
+                    val leaves = collectLeafChPathsForBook(engine, b)
+                    if (leaves.isNotEmpty()) {
+                        dao.preinsertProgressForBook(bookId, leaves)
+                        Log.d(TAG, "preinsertProgress: bookId=$bookId path=${b.filePath.takeLast(30)} leaves=${leaves.size}")
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "preinsertProgress for book ${b.filePath}: ${e.message}")
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "preinsertProgress batch: ${e.message}")
+        }
+        coverScope.launch { preloadCovers(books) }
+    }
+
+    /** 导入通用：Phase 1 极速扫元数据（回调进度）→ 立即返回 count；Phase 2 后台火并忘入库+封面。 */
+    suspend fun scanAndCommit(uri: Uri, onProgress: ((Int) -> Unit)? = null): Int = withContext(Dispatchers.IO) {
+        val books = scanMetaOnly(uri, onProgress)
+        val count = books.size
+        val treeStr = uri.toString()
+        val docId = DocumentsContract.getTreeDocumentId(uri)
+        val auth = uri.authority ?: ""
+        coverScope.launch { commitScanResults(books, treeStr, auth, docId) }
+        count
+    }
+
+    /** Phase 1: 仅元数据扫描（不入库、不加载封面），极速返回 Book 列表供 UI 立即提示成功。 */
+    suspend fun rescanMetaOnly(f: Folder, onProgress: ((Int) -> Unit)? = null): List<Book> = withContext(Dispatchers.IO) {
+        scanMutex.withLock {
+            val books = mutableListOf<Book>()
+            val uri = Uri.parse(f.treeUri)
+            val docId = DocumentsContract.getTreeDocumentId(uri)
+            val auth = uri.authority ?: ""
+            val child = DocumentsContract.buildChildDocumentsUriUsingTree(uri, docId)
+            scanDirFast(auth, f.treeUri, docId, child, books, skipDedup = true) { found -> onProgress?.invoke(found) }
+            books
+        }
+    }
+
+    /** Phase 2: 删旧入新 + 后台封面补齐。 */
+    private suspend fun commitRescanResults(f: Folder, books: List<Book>): Int {
+        if (books.isEmpty()) return 0
+        val uri = Uri.parse(f.treeUri)
+        val docId = DocumentsContract.getTreeDocumentId(uri)
+        val auth = uri.authority ?: ""
+        val oldCount = dao.countBooksByFolder("a:$auth|$docId|%", "d:$auth|$docId%", "z:a:$auth|$docId|%")
+        dao.rescanFolderReplace(auth, docId, books)
+        cacheRealPaths(books)
+        coverScope.launch { preloadCovers(books) }
+        dao.updateFolder(f.copy(lastScanAt = System.currentTimeMillis()))
+        return books.size - oldCount
+    }
+
+    /** 刷新通用：Phase 1 极速扫元数据（回调进度）→ 立即返回 count；Phase 2 后台火并忘入库+封面。 */
+    suspend fun rescanAndCommit(f: Folder, onProgress: ((Int) -> Unit)? = null): Int = withContext(Dispatchers.IO) {
+        val books = rescanMetaOnly(f, onProgress)
+        val count = books.size
+        // Phase 2 火并忘：入库 + 后台封面
+        coverScope.launch { commitRescanResults(f, books) }
+        count
+    }
+
     private suspend fun scanDirFast(auth: String, treeStr: String, treeDocId: String, childUri: Uri, books: MutableList<Book>, skipDedup: Boolean = false, onFound: ((Int) -> Unit)? = null) {
         try {
             // ★ §37 扫描校验压缩包内容开关 —— 默认【关】（宁滥勿缺原则：宁可书架上多放几本非漫画

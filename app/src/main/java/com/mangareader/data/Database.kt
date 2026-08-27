@@ -301,6 +301,10 @@ interface MangaDao {
     @Query("SELECT COUNT(*) FROM manga_books")
     suspend fun countAll(): Int
 
+    // ★ 后台导入实时统计：入库每完成一批 Flow 自动重发，设置页总数无需手动刷新
+    @Query("SELECT COUNT(*) FROM manga_books")
+    fun observeTotalBooks(): kotlinx.coroutines.flow.Flow<Int>
+
     @Query("SELECT COALESCE(SUM(totalPages), 0) FROM manga_books")
     suspend fun countTotalPages(): Int
 
