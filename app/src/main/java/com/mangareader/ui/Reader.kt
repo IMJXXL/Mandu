@@ -1263,9 +1263,6 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit) {
                             doublePageSplit = config.doublePageSplit,
                             verticalPager = verticalPagerEffective,
                             useAnimPager = useAnimPager,
-                            // ★ 翻页特效一期：仿真卷页（GL）。SP 直读（同 globalHide 模式），设置页改完返回即生效；
-                            //   激活排他（动图/条漫/竖翻/双页）在 NES curlActive 收敛
-                            flipCurl = prefs.getInt("flip_effect", 0) == 1,
                             modifier = Modifier.fillMaxSize(),
                             onContainerReady = { readerContainerRef = it },
                             onPageChanged = { newCur ->

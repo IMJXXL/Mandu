@@ -32,7 +32,6 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
         } else it
     }) }
     var autoRefresh by remember { mutableStateOf(prefs.getBoolean("auto_refresh", false)) }
-    var flipEffect by remember { mutableStateOf(prefs.getInt("flip_effect", 0)) }
 
     Scaffold(
         topBar = {
@@ -52,44 +51,6 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp)
         ) {
-            // ★ 翻页特效一期（移植自悠长假期逆向）：仿真卷页（GL 卷曲）。默认关=完全旧行为。
-            //   排他：动图卷/条漫/竖向翻页/双页布局自动回普通翻页；特效视图内不支持捏合缩放与白边裁剪
-            Text("翻页效果", fontSize = 16.sp, fontWeight = FontWeight.Medium)
-            Spacer(Modifier.height(8.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf("默认" to 0, "仿真卷页" to 1).forEach { (label, value) ->
-                    val isSelected = flipEffect == value
-                    Surface(
-                        modifier = Modifier.weight(1f).clickable {
-                            prefs.edit().putInt("flip_effect", value).apply()
-                            flipEffect = value
-                        },
-                        shape = MaterialTheme.shapes.medium,
-                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                        tonalElevation = if (isSelected) 4.dp else 0.dp
-                    ) {
-                        Box(Modifier.padding(12.dp), contentAlignment = Alignment.Center) {
-                            Text(label, fontSize = 14.sp, color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface)
-                        }
-                    }
-                }
-                // 二期 3D 翻页占位（置灰）
-                Surface(
-                    modifier = Modifier.weight(1f),
-                    shape = MaterialTheme.shapes.medium,
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                ) {
-                    Box(Modifier.padding(12.dp), contentAlignment = Alignment.Center) {
-                        Text("3D翻页(开发中)", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-            }
-            Text(
-                "仿真卷页：拖拽跟手卷曲翻页（仅横向翻页模式生效）\n动图卷/条漫/竖向翻页/双页布局自动使用默认翻页",
-                fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, lineHeight = 14.sp
-            )
-            Spacer(Modifier.height(16.dp))
-
             // 背景颜色（全局）
             Text("背景颜色", fontSize = 16.sp, fontWeight = FontWeight.Medium)
             Spacer(Modifier.height(8.dp))
