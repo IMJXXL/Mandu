@@ -77,6 +77,9 @@ fun NativeReaderScreen(
      *  Reader.kt 进卷批量 peek 后判定为动图卷，弹对话框让用户选；选"进入动图视图"后置 true 走本视图。
      *  与 vertical 不冲突：条漫卷下 peek 到动图也会弹窗，弹窗确认后也用 animPager（animPager 自身支持 verticalPager） */
     useAnimPager: Boolean = false,
+    /** ★ 翻页特效一期：仿真卷页（GL）。true 且横向/非动图/非竖翻/单页布局时路由 CurlPagerView；
+     *  其余场景一律不激活（等价旧行为）。动图/条漫/VERT_PAGER/双页排他见方案 §6.3 */
+    flipCurl: Boolean = false,
     modifier: Modifier = Modifier,
     onPageChanged: (Int) -> Unit = {},
     onToggleUi: () -> Unit = {},
@@ -93,6 +96,11 @@ fun NativeReaderScreen(
     val pagerView = remember { PagerReaderView(ctx).apply { layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT) } }
     // ★ §34.5：动图卷专用视图——与 pagerView 并存，但渲染时二选一（useAnimPager 决定哪个加进 container）
     val animPagerView = remember { AnimPagerReaderView(ctx).apply { layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT) } }
+    // ★ 翻页特效一期：仿真卷页视图（GLSurfaceView，纯增量）。不满足激活条件时永远 GONE，零行为差异
+    val curlView = remember { com.mangareader.native.curl.CurlPagerView(ctx).apply { layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT) } }
+
+    // ★ 特效激活条件收敛一处：竖向条漫/动图/竖向翻页/双页布局全部排他（方案 §6.3 硬性规则）
+    val curlActive = flipCurl && !isVertical && !useAnimPager && !verticalPager && pageLayout == 0
 
     // ★ §34.5：isVertical（条漫）走 webtoonView；useAnimPager（动图卷）走 animPagerView；其余走 pagerView。
     //   useAnimPager 优先 —— 动图卷不论是条漫还是翻页模式，确认进动图视图后统一走 animPagerView
@@ -100,12 +108,13 @@ fun NativeReaderScreen(
     fun activeDelegate(isVerticalNow: Boolean, useAnimPagerNow: Boolean): ReaderViewDelegate =
         if (isVerticalNow && !useAnimPagerNow) webtoonView
         else if (useAnimPagerNow) animPagerView
+        else if (curlActive) curlView
         else pagerView
 
     // Track last released delegate to avoid double release
     var lastReleasedDelegate by remember { mutableStateOf<ReaderViewDelegate?>(null) }
 
-    DisposableEffect(treePath, isVertical, isRtl, verticalPager, useAnimPager) {
+    DisposableEffect(treePath, isVertical, isRtl, verticalPager, useAnimPager, curlActive) {
         if (firstComposition) {
             savedPage = startPage
             firstComposition = false
@@ -123,6 +132,7 @@ fun NativeReaderScreen(
         if (delegate is PagerReaderView) delegate.pageBgColor = pageBgColor
         if (delegate is AnimPagerReaderView) delegate.pageBgColor = pageBgColor
         if (delegate is WebtoonReaderView) delegate.pageBgColor = pageBgColor
+        if (delegate is com.mangareader.native.curl.CurlPagerView) delegate.pageBgColor = pageBgColor
         // ★ §34.3：verticalPager 传给 pagerView.setup（webtoon 走默认 false 无影响）
         delegate.setup(engine, treePath, pages, savedPage, isVertical, 0, isRtl, verticalPager)
         // Apply new config parameters to the delegate
@@ -183,10 +193,12 @@ fun NativeReaderScreen(
             container.addView(webtoonView)
             container.addView(pagerView)
             container.addView(animPagerView)  // ★ §34.5 第三条路由
+            container.addView(curlView)       // ★ 翻页特效一期 第四条路由（child3）
             fun syncVis() {
                 webtoonView.visibility = if (isVertical && !useAnimPager) View.VISIBLE else View.GONE
-                pagerView.visibility = if (!isVertical && !useAnimPager) View.VISIBLE else View.GONE
+                pagerView.visibility = if (!isVertical && !useAnimPager && !curlActive) View.VISIBLE else View.GONE
                 animPagerView.visibility = if (useAnimPager) View.VISIBLE else View.GONE
+                curlView.visibility = if (curlActive) View.VISIBLE else View.GONE
             }
             syncVis()
             containerRef = container
@@ -200,11 +212,12 @@ fun NativeReaderScreen(
             container
         },
         update = { container ->
-            // ★ §34.5 三视图按状态切显隐
-            //   child0=webtoonView, child1=pagerView, child2=animPagerView
+            // ★ §34.5 三视图按状态切显隐；★ 特效一期第四视图 curlView（child3）
+            //   child0=webtoonView, child1=pagerView, child2=animPagerView, child3=curlView
             container.getChildAt(0).visibility = if (isVertical && !useAnimPager) View.VISIBLE else View.GONE
-            container.getChildAt(1).visibility = if (!isVertical && !useAnimPager) View.VISIBLE else View.GONE
+            container.getChildAt(1).visibility = if (!isVertical && !useAnimPager && !curlActive) View.VISIBLE else View.GONE
             container.getChildAt(2).visibility = if (useAnimPager) View.VISIBLE else View.GONE
+            container.getChildAt(3).visibility = if (curlActive) View.VISIBLE else View.GONE
         },
         modifier = modifier
     )
