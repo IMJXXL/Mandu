@@ -66,6 +66,8 @@ class App : Application() {
         crashHandler.clearOldCrashLogs()
         startAnrWatchdog()
         preloadGifDecoder()
+        // 超分子系统初始化（引擎/缓存/队列；模型解包在后台进行，不阻塞启动）
+        try { com.mangareader.sr.SrCore.init(this) } catch (_: Throwable) {}
     }
 
     // ★ GIF 闪退防御（2026-08-27 红米 diag）：gif native 库在 GifFrame 类初化时按需加载，

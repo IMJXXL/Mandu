@@ -44,6 +44,8 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
 
     private var engine: ArchiveEngine? = null
     private var treePath: String = ""
+    // 超分：渐进替换事件订阅（release/setup 重建时取消）
+    private var srEventJob: kotlinx.coroutines.Job? = null
     private var pageList: List<ArchiveEngine.PageMeta> = emptyList()
     private var currentPage = 0
     private var isRtl = false
@@ -498,6 +500,17 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         val rtlChanged = this.isRtl != rtl
         val engineChanged = this.engine != engine
         this.engine = engine; this.treePath = treePath; this.pageList = pages; this.isRtl = rtl
+        // 超分渐进替换：订阅引擎完成事件，命中当前章节即原位替换
+        srEventJob?.cancel()
+        srEventJob = try {
+            com.mangareader.sr.SrCore.scope.launch(kotlinx.coroutines.Dispatchers.Default) {
+                com.mangareader.sr.SrCore.readyEvents.collect { ev ->
+                    if (ev.chapterId == com.mangareader.sr.SrPipeline.sessionChapterId && ev.pageIndex in pageList.indices) {
+                        injectUpscaledBitmap(ev.pageIndex, ev.bitmap)
+                    }
+                }
+            }
+        } catch (_: Exception) { null }
         if (pagesChanged || engineChanged) {
             // 页数或引擎变化：完全重建
             this.currentPage = startPage
@@ -738,6 +751,11 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 } catch (_: Exception) {}
             }
             if (bmp != null && !bmp.isRecycled) {
+                // 超分：命中缓存直接换成超分图；未命中先显示原图、后台异步超分（完成走订阅→injectUpscaledBitmap）
+                try {
+                    val srHit = com.mangareader.sr.SrPipeline.attachOrSchedule(idx, bmp)
+                    if (srHit != null && !srHit.isRecycled) bmp = srHit
+                } catch (_: Exception) {}
                 bitmapCache[idx] = bmp
                 withContext(Dispatchers.Main) {
                     // Convert page index to adapter position
@@ -756,6 +774,8 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
 
     private fun preloadAround(centerIdx: Int) {
         if (isScrolling) return
+        // 超分联动：报当前页；只有"整本"作用域下才前后预载
+        try { com.mangareader.sr.SrPipeline.onPageChanged(centerIdx, pageList.size) } catch (_: Exception) {}
         if (doublePageMode) {
             // In double page mode, load both pages of current spread and adjacent spreads
             val leftIdx = centerIdx - (centerIdx % 2)
@@ -801,6 +821,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     }
 
     override fun release() {
+        srEventJob?.cancel(); srEventJob = null
         // ★ §24 二代释放动图 Drawable（停 + 清 map），防 View 销毁后 decoder 跑漏内存
         pageAnimDrawables.values.forEach { try { if (it is Animatable && it.isRunning) it.stop() } catch (_: Throwable) {} }
         pageAnimDrawables.clear()

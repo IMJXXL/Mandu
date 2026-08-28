@@ -1,0 +1,256 @@
+package com.mangareader.sr
+
+import android.content.Context
+import android.graphics.Bitmap
+import android.util.Log
+import java.io.File
+import java.util.LinkedHashMap
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
+
+/**
+ * 超分引擎管理器（移植自 mihon-super-resolution，日志改为 android.util.Log）。
+ * 单例语义由 SrCore 保证。所有 process 走 mutex 串行（GPU 独占）。
+ */
+class SuperResolutionManager(
+    private val context: Context,
+) {
+    private val mutex = Mutex()
+    private val cacheLock = Any()
+    private val maxCacheSize = 32
+
+    private val srCache = object : LinkedHashMap<String, Bitmap>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Bitmap>): Boolean {
+            return size > maxCacheSize
+        }
+    }
+
+    private var currentProcessor: SuperResolutionProcessor? = null
+    private var currentModel: SRModel? = null
+    private var currentScale: Int = 2
+    private var currentDenoiseLevel: DenoiseLevel = DenoiseLevel.LIGHT
+
+    @Volatile
+    var currentBwConfig: MangaBWPostProcessConfig? = null
+        private set
+
+    /** 熔断：native 崩溃过一次后强制 CPU，直到用户手动恢复 GPU */
+    @Volatile
+    var forceCpu: Boolean = false
+
+    private var processingJobs = mutableListOf<Job>()
+    private val jobsMutex = Any()
+
+    @Volatile
+    private var modelVersion: Long = 0
+
+    @Volatile
+    private var pendingModelKey: String? = null
+
+    var onModelSwitching: (() -> Unit)? = null
+
+    val isReady: Boolean
+        get() = currentProcessor?.isReady == true
+
+    val activeModel: SRModel?
+        get() = currentModel
+
+    val activeScale: Int
+        get() = currentScale
+
+    val activeDenoiseLevel: DenoiseLevel
+        get() = currentDenoiseLevel
+
+    val isVulkanAvailable: Boolean by lazy {
+        VulkanHelper.isVulkanSupported(context) && VulkanHelper.gpuCount > 0
+    }
+
+    fun getCacheUsage(): Pair<Int, Long> = synchronized(cacheLock) {
+        srCache.size to srCache.values.sumOf { it.allocationByteCount.toLong() }
+    }
+
+    fun getCachedResult(cacheKey: String): Bitmap? = synchronized(cacheLock) { srCache[cacheKey] }
+
+    fun putCachedResult(cacheKey: String, bitmap: Bitmap) = synchronized(cacheLock) {
+        srCache[cacheKey] = bitmap
+    }
+
+    fun removeCachedResult(cacheKey: String) = synchronized(cacheLock) {
+        srCache.remove(cacheKey)
+    }
+
+    fun clearSrCache() = synchronized(cacheLock) {
+        srCache.clear()
+    }
+
+    fun registerProcessingJob(job: Job) {
+        synchronized(jobsMutex) { processingJobs.add(job) }
+        job.invokeOnCompletion {
+            synchronized(jobsMutex) { processingJobs.remove(job) }
+        }
+    }
+
+    fun cancelProcessingJobs() {
+        synchronized(jobsMutex) {
+            processingJobs.forEach { it.cancel() }
+            processingJobs.clear()
+        }
+    }
+
+    suspend fun switchModel(
+        model: SRModel,
+        scale: Int = 2,
+        denoiseLevel: DenoiseLevel = DenoiseLevel.LIGHT,
+        bwConfig: MangaBWPostProcessConfig? = null,
+    ) = mutex.withLock {
+        Log.i(TAG, "SR: switchModel model=${model.key}, scale=$scale, denoise=$denoiseLevel")
+
+        if (currentModel == model && currentScale == scale && currentProcessor?.isReady == true) {
+            // 引擎不变，仅更新降噪/黑白配置（实时生效，无需重新加载模型）
+            currentDenoiseLevel = denoiseLevel
+            currentBwConfig = bwConfig
+            return@withLock
+        }
+
+        pendingModelKey = model.key
+        cancelProcessingJobs()
+        onModelSwitching?.invoke()
+        currentProcessor?.release()
+        currentProcessor = null
+        currentModel = model
+        currentDenoiseLevel = denoiseLevel
+        currentBwConfig = bwConfig
+        currentScale = scale
+        clearSrCache()
+        modelVersion++
+    }
+
+    private val loadMutex = Mutex()
+
+    suspend fun ensureModelLoaded() {
+        if (pendingModelKey != null && currentProcessor == null) {
+            loadMutex.withLock {
+                if (pendingModelKey != null && currentProcessor == null) {
+                    loadPendingModel()
+                }
+            }
+        }
+    }
+
+    private suspend fun loadPendingModel() {
+        val model = SRModel.fromKey(pendingModelKey!!)
+        val processor = createProcessor(model)
+        withContext(Dispatchers.IO) {
+            // 幂等保底：模型文件未解包时先解包再加载（首次启动如果 applySettings 先于后台解包也能用）
+            try { ensureModelsExtracted() } catch (_: Exception) {}
+            val modelPath = getModelPath(model)
+            try {
+                // 规则：用户没手动开 GPU 就用 CPU（默认更安全）；崩溃防护已加 forceCpu 逻辑
+                val useGpu = com.mangareader.sr.SrCore.settings.enableGpu && isVulkanAvailable && model.requiresVulkan
+                val gpuid = if (!forceCpu && useGpu) 0 else -1
+                val loadStart = System.currentTimeMillis()
+                processor.initialize(modelPath, gpuid)
+                currentProcessor = processor
+                currentModel = model
+                Log.i(TAG, "SR: ${model.key} loaded in ${System.currentTimeMillis() - loadStart}ms, ready=${processor.isReady}, gpu=${gpuid})")
+            } catch (e: Exception) {
+                Log.e(TAG, "SR: init ${model.key} failed, fallback NoOp: ${e.message}")
+                try { processor.release() } catch (_: Exception) {}
+                currentProcessor = NoOpProcessor()
+                currentModel = model
+            }
+        }
+        pendingModelKey = null
+    }
+
+    suspend fun process(input: Bitmap, versionAtStart: Long, bwForceOff: Boolean = false): Bitmap = mutex.withLock {
+        ensureModelLoaded()
+
+        val processor = currentProcessor
+        if (processor == null || !processor.isReady) {
+            return input
+        }
+        if (versionAtStart != modelVersion) {
+            return input
+        }
+
+        withContext(Dispatchers.IO) {
+            try {
+                withTimeout(120_000) {
+                    val denoiseStrength = when (currentDenoiseLevel) {
+                        DenoiseLevel.OFF -> 0f
+                        DenoiseLevel.LIGHT -> 0.5f
+                        DenoiseLevel.STRONG -> 1.0f
+                    }
+                    // 黑白优化逐页生效：彩色页强制关闭黑白后处理
+                    val bwForThisCall = if (bwForceOff) MangaBWPostProcessConfig(0, false) else currentBwConfig
+                    // 看门狗标记（覆盖所有调用路径：阅读器/批量/自动评测）
+                    try { SrCore.markInferenceStart() } catch (_: Throwable) {}
+                    val result = processor.process(
+                        input, currentScale,
+                        currentDenoiseLevel, denoiseStrength, bwForThisCall,
+                    )
+                    try { SrCore.markInferenceEnd() } catch (_: Throwable) {}
+                    if (versionAtStart != modelVersion) {
+                        return@withTimeout input
+                    }
+                    result
+                }
+            } catch (e: TimeoutCancellationException) {
+                Log.w(TAG, "SR: processing timeout after 120s")
+                input
+            } catch (e: CancellationException) {
+                input
+            } catch (e: Exception) {
+                Log.e(TAG, "SR processing failed: ${e.message}")
+                input
+            }
+        }
+    }
+
+    fun currentModelVersion(): Long = modelVersion
+
+    fun release() {
+        cancelProcessingJobs()
+        currentProcessor?.release()
+        currentProcessor = null
+        currentModel = null
+        modelVersion++
+        clearSrCache()
+    }
+
+    private fun createProcessor(model: SRModel): SuperResolutionProcessor {
+        return try {
+            RealESRGANProcessor(model)
+        } catch (e: Throwable) {
+            Log.w(TAG, "SR: cannot create processor ${model.key}: ${e.message}")
+            NoOpProcessor()
+        }
+    }
+
+    private fun getModelPath(model: SRModel): String {
+        return File(context.filesDir, "models/${model.modelDirName}").absolutePath
+    }
+
+    fun buildCacheKey(chapterId: Long, pageIndex: Int): String {
+        val modelKey = activeModel?.key ?: "unknown"
+        val bw = currentBwConfig
+        val bwPart = if (bw != null) "_bw${bw.grayLevels}${if (bw.densityCorrection) "d" else ""}" else ""
+        val denoise = currentDenoiseLevel.key
+        return "page_${chapterId}_${pageIndex}_${modelKey}_${activeScale}_${denoise}$bwPart"
+    }
+
+    fun ensureModelsExtracted() {
+        ModelManager.getInstance(context).ensureModelsExtracted()
+    }
+
+    companion object {
+        private const val TAG = "SrManager"
+    }
+}

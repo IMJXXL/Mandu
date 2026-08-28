@@ -37,6 +37,8 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
     }
     private var engine: ArchiveEngine? = null
     private var treePath = ""
+    // 超分：渐进替换事件订阅（release/setup 重建时取消）
+    private var srEventJob: kotlinx.coroutines.Job? = null
     private var pageList: List<ArchiveEngine.PageMeta> = emptyList()
     private var currentPage = 0
     private val loadScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
@@ -274,6 +276,17 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
     override fun setup(engine: ArchiveEngine, treePath: String, pages: List<ArchiveEngine.PageMeta>, startPage: Int, vertical: Boolean, clickFlip: Int, rtl: Boolean, verticalPager: Boolean) {
         val changed = this.pageList.size != pages.size || this.treePath != treePath
         this.engine = engine; this.treePath = treePath; this.pageList = pages; this.currentPage = startPage
+        // 超分渐进替换：订阅引擎完成事件，命中当前章节即原位替换
+        srEventJob?.cancel()
+        srEventJob = try {
+            com.mangareader.sr.SrCore.scope.launch(kotlinx.coroutines.Dispatchers.Default) {
+                com.mangareader.sr.SrCore.readyEvents.collect { ev ->
+                    if (ev.chapterId == com.mangareader.sr.SrPipeline.sessionChapterId && ev.pageIndex in pageList.indices) {
+                        injectUpscaledBitmap(ev.pageIndex, ev.bitmap)
+                    }
+                }
+            }
+        } catch (_: Exception) { null }
         if (changed) {
             loadScope.coroutineContext.cancelChildren()
             clearBitmapCacheRecycling()  // ★ ⑧ 最小修复：切章先 recycle 再 clear
@@ -451,8 +464,13 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
                 }
                 result
             }
-            val processed = processBitmap(bmp)
+            var processed = processBitmap(bmp)
             if (processed != null) {
+                // 超分：命中缓存直接换成超分图；未命中先显示原图、后台异步超分（完成走订阅→injectUpscaledBitmap）
+                try {
+                    val srHit = com.mangareader.sr.SrPipeline.attachOrSchedule(idx, processed)
+                    if (srHit != null && !srHit.isRecycled) processed = srHit
+                } catch (_: Exception) {}
                 synchronized(bitmapCache) { bitmapCache[idx] = processed }
                 recycler.post { adapter?.notifyItemChanged(idx, "ld") }
             }
@@ -484,6 +502,8 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
     }
 
     private fun preloadAround(center: Int, jump: Boolean = false) {
+        // 超分联动：报当前页；只有"整本"作用域下才前后预载
+        try { com.mangareader.sr.SrPipeline.onPageChanged(center, pageList.size) } catch (_: Exception) {}
         val lm = recycler.layoutManager as? LinearLayoutManager ?: return
         val firstVisible = lm.findFirstVisibleItemPosition()
         val lastVisible = lm.findLastVisibleItemPosition()
@@ -553,6 +573,7 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
     }
 
     override fun release() {
+        srEventJob?.cancel(); srEventJob = null
         // ★ v1.11 P0：清掉挂起的 settleWindow 与 pending 释放机制（view 销毁/切视图后不再执行）
         cancelPendingRelease()
         // ★ §24 二代：释放信号状态（条漫下只检测不播，无 Drawable 需 stop；清计数防跨卷泄漏）

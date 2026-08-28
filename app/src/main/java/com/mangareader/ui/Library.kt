@@ -376,6 +376,21 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                 title = { Text("已选 ${selectedBooks.size} 本") },
                 navigationIcon = { IconButton(onClick = { isMultiSelect = false; selectedBooks = emptySet() }) { Icon(Icons.Default.Close, "取消选择") } },
                 actions = {
+                    // 批量离线超分：把选中的书全部加入后台超分队列
+                    IconButton(onClick = {
+                        val targets = books.filter { it.id in selectedBooks }
+                        // 异步入队（大书 IO 不卡主线程），完成后主线程 Toast
+                        com.mangareader.sr.SrBatchRunner.enqueueBooks(ctx, targets.map { it.id to it.title }) { n ->
+                            (ctx as? android.app.Activity)?.runOnUiThread {
+                                android.widget.Toast.makeText(
+                                    ctx,
+                                    if (n > 0) "已加入批量超分队列（$n 章），通知栏可看进度\n（安卓13+ 需先允许通知权限）" else "所选书籍已在队列中",
+                                    android.widget.Toast.LENGTH_LONG,
+                                ).show()
+                            }
+                        }
+                        isMultiSelect = false; selectedBooks = emptySet()
+                    }) { Icon(Icons.Default.AutoFixHigh, "批量超分") }
                     IconButton(onClick = { selectedBooks = if (selectedBooks.isEmpty()) books.map { it.id }.toSet() else emptySet() }) {
                         Icon(Icons.Default.SelectAll, if (selectedBooks.isEmpty()) "全选" else "取消全选")
                     }

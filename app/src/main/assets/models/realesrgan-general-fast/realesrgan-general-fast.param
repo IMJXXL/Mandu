@@ -1,0 +1,73 @@
+7767517
+71 72
+Input                    data_layer               0 1 data
+Convolution conv_0 1 1 data conv2d 0=64 1=3 2=1 3=1 4=1 5=1 6=1728
+PReLU prelu_1 1 1 conv2d prelu 0=64
+Convolution conv_2 1 1 prelu conv2d_1 0=64 1=3 2=1 3=1 4=1 5=1 6=36864
+PReLU prelu_3 1 1 conv2d_1 prelu_1 0=64
+Convolution conv_4 1 1 prelu_1 conv2d_2 0=64 1=3 2=1 3=1 4=1 5=1 6=36864
+PReLU prelu_5 1 1 conv2d_2 prelu_2 0=64
+Convolution conv_6 1 1 prelu_2 conv2d_3 0=64 1=3 2=1 3=1 4=1 5=1 6=36864
+PReLU prelu_7 1 1 conv2d_3 prelu_3 0=64
+Convolution conv_8 1 1 prelu_3 conv2d_4 0=64 1=3 2=1 3=1 4=1 5=1 6=36864
+PReLU prelu_9 1 1 conv2d_4 prelu_4 0=64
+Convolution conv_10 1 1 prelu_4 conv2d_5 0=64 1=3 2=1 3=1 4=1 5=1 6=36864
+PReLU prelu_11 1 1 conv2d_5 prelu_5 0=64
+Convolution conv_12 1 1 prelu_5 conv2d_6 0=64 1=3 2=1 3=1 4=1 5=1 6=36864
+PReLU prelu_13 1 1 conv2d_6 prelu_6 0=64
+Convolution conv_14 1 1 prelu_6 conv2d_7 0=64 1=3 2=1 3=1 4=1 5=1 6=36864
+PReLU prelu_15 1 1 conv2d_7 prelu_7 0=64
+Convolution conv_16 1 1 prelu_7 conv2d_8 0=64 1=3 2=1 3=1 4=1 5=1 6=36864
+PReLU prelu_17 1 1 conv2d_8 prelu_8 0=64
+Convolution conv_18 1 1 prelu_8 conv2d_9 0=64 1=3 2=1 3=1 4=1 5=1 6=36864
+PReLU prelu_19 1 1 conv2d_9 prelu_9 0=64
+Convolution conv_20 1 1 prelu_9 conv2d_10 0=64 1=3 2=1 3=1 4=1 5=1 6=36864
+PReLU prelu_21 1 1 conv2d_10 prelu_10 0=64
+Convolution conv_22 1 1 prelu_10 conv2d_11 0=64 1=3 2=1 3=1 4=1 5=1 6=36864
+PReLU prelu_23 1 1 conv2d_11 prelu_11 0=64
+Convolution conv_24 1 1 prelu_11 conv2d_12 0=64 1=3 2=1 3=1 4=1 5=1 6=36864
+PReLU prelu_25 1 1 conv2d_12 prelu_12 0=64
+Convolution conv_26 1 1 prelu_12 conv2d_13 0=64 1=3 2=1 3=1 4=1 5=1 6=36864
+PReLU prelu_27 1 1 conv2d_13 prelu_13 0=64
+Convolution conv_28 1 1 prelu_13 conv2d_14 0=64 1=3 2=1 3=1 4=1 5=1 6=36864
+PReLU prelu_29 1 1 conv2d_14 prelu_14 0=64
+Convolution conv_30 1 1 prelu_14 conv2d_15 0=64 1=3 2=1 3=1 4=1 5=1 6=36864
+PReLU prelu_31 1 1 conv2d_15 prelu_15 0=64
+Convolution conv_32 1 1 prelu_15 conv2d_16 0=64 1=3 2=1 3=1 4=1 5=1 6=36864
+PReLU prelu_33 1 1 conv2d_16 prelu_16 0=64
+Convolution conv_34 1 1 prelu_16 conv2d_17 0=64 1=3 2=1 3=1 4=1 5=1 6=36864
+PReLU prelu_35 1 1 conv2d_17 prelu_17 0=64
+Convolution conv_36 1 1 prelu_17 conv2d_18 0=64 1=3 2=1 3=1 4=1 5=1 6=36864
+PReLU prelu_37 1 1 conv2d_18 prelu_18 0=64
+Convolution conv_38 1 1 prelu_18 conv2d_19 0=64 1=3 2=1 3=1 4=1 5=1 6=36864
+PReLU prelu_39 1 1 conv2d_19 prelu_19 0=64
+Convolution conv_40 1 1 prelu_19 conv2d_20 0=64 1=3 2=1 3=1 4=1 5=1 6=36864
+PReLU prelu_41 1 1 conv2d_20 prelu_20 0=64
+Convolution conv_42 1 1 prelu_20 conv2d_21 0=64 1=3 2=1 3=1 4=1 5=1 6=36864
+PReLU prelu_43 1 1 conv2d_21 prelu_21 0=64
+Convolution conv_44 1 1 prelu_21 conv2d_22 0=64 1=3 2=1 3=1 4=1 5=1 6=36864
+PReLU prelu_45 1 1 conv2d_22 prelu_22 0=64
+Convolution conv_46 1 1 prelu_22 conv2d_23 0=64 1=3 2=1 3=1 4=1 5=1 6=36864
+PReLU prelu_47 1 1 conv2d_23 prelu_23 0=64
+Convolution conv_48 1 1 prelu_23 conv2d_24 0=64 1=3 2=1 3=1 4=1 5=1 6=36864
+PReLU prelu_49 1 1 conv2d_24 prelu_24 0=64
+Convolution conv_50 1 1 prelu_24 conv2d_25 0=64 1=3 2=1 3=1 4=1 5=1 6=36864
+PReLU prelu_51 1 1 conv2d_25 prelu_25 0=64
+Convolution conv_52 1 1 prelu_25 conv2d_26 0=64 1=3 2=1 3=1 4=1 5=1 6=36864
+PReLU prelu_53 1 1 conv2d_26 prelu_26 0=64
+Convolution conv_54 1 1 prelu_26 conv2d_27 0=64 1=3 2=1 3=1 4=1 5=1 6=36864
+PReLU prelu_55 1 1 conv2d_27 prelu_27 0=64
+Convolution conv_56 1 1 prelu_27 conv2d_28 0=64 1=3 2=1 3=1 4=1 5=1 6=36864
+PReLU prelu_57 1 1 conv2d_28 prelu_28 0=64
+Convolution conv_58 1 1 prelu_28 conv2d_29 0=64 1=3 2=1 3=1 4=1 5=1 6=36864
+PReLU prelu_59 1 1 conv2d_29 prelu_29 0=64
+Convolution conv_60 1 1 prelu_29 conv2d_30 0=64 1=3 2=1 3=1 4=1 5=1 6=36864
+PReLU prelu_61 1 1 conv2d_30 prelu_30 0=64
+Convolution conv_62 1 1 prelu_30 conv2d_31 0=64 1=3 2=1 3=1 4=1 5=1 6=36864
+PReLU prelu_63 1 1 conv2d_31 prelu_31 0=64
+Convolution conv_64 1 1 prelu_31 conv2d_32 0=64 1=3 2=1 3=1 4=1 5=1 6=36864
+PReLU prelu_65 1 1 conv2d_32 prelu_32 0=64
+Convolution conv_66 1 1 prelu_32 conv2d_33 0=48 1=3 2=1 3=1 4=1 5=1 6=27648
+PixelShuffle pixelshuffle_67 1 1 conv2d_33 pixel_shuffle 0=4
+Interp interp_68 1 1 data upsample_nearest2d 0=1 1=4.000000e+00 2=4.000000e+00
+BinaryOp add_69 2 1 pixel_shuffle upsample_nearest2d output 0=0

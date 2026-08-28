@@ -86,7 +86,17 @@ class MainActivity : ComponentActivity() {
                         val readerId = it.arguments?.getLong("id") ?: return@composable
                         Reader(readerId, it.arguments?.getString("jump")) { nav.popBackStack() }
                     }
-                    composable("settings") { SettingsScreen({ nav.popBackStack() }) }
+                    composable("settings") {
+                        SettingsScreen(
+                            onBack = { nav.popBackStack() },
+                            onOpenBook = { bookId, path ->
+                                nav.navigate(
+                                    "reader/$bookId?jump=${android.net.Uri.encode(path)}",
+                                    navOptions { launchSingleTop = true },
+                                )
+                            },
+                        )
+                    }
                 }
 
                 // 仅安装后首次打开弹出
@@ -102,7 +112,7 @@ class MainActivity : ComponentActivity() {
                                 Spacer(Modifier.height(8.dp))
                                 Text("    每个人的使用偏好各不相同，漫读未必适合所有人，大家可以多体验几款软件，总能找到心仪的那一款。")
                                 Spacer(Modifier.height(8.dp))
-                                Text("    项目全程利用业余碎片时间开发，前后耗时三周左右。原本计划加入 SMB 文件读取以及图片无损放大功能，空余精力有限，相关逻辑始终没能调试完善，最后只能忍痛舍弃这两项功能。")
+                                Text("    项目全程利用业余碎片时间开发，前后耗时三周左右。原本计划加入 SMB 文件读取以及图片无损放大功能，空余精力有限，SMB 最后只能忍痛舍弃；而图片无损放大（超分）已在后续版本补回——入口在漫画阅读器底部工具栏的【超分】。")
                                 Text("    受自身技术水平局限，成品距离标杆软件还有不小差距，程序内仍存在不少待修复 bug，好在主体功能均可正常使用，便先行定稿发布。")
                                 Text("    整个项目前后推倒重写三次，反复迭代优化；还有一处兼容问题始终没能解决，高版本安卓系统下，滑动动画流畅度反而不及低版本，暂时没能找到问题根源。")
                                 Spacer(Modifier.height(8.dp))

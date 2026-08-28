@@ -1,3 +1,5 @@
+import java.io.File
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -21,6 +23,16 @@ versionName = "1.12"
                 cppFlags += ""
                 arguments += "-DANDROID_STL=c++_shared"
                 arguments += "-DCMAKE_BUILD_PARALLEL_LEVEL=1"
+                // QNN SDK 路径（可选；不存在则编译无 NPU 的 sr_engine）
+                val qnnCandidates = listOfNotNull(
+                    properties["QNN_SDK_DIR"] as? String,
+                    System.getenv("QNN_SDK_DIR"),
+                    "X:/115/manduAAAAAAA/v2.49.0.260730/qairt/2.49.0.260730",
+                )
+                val qnnRoot = qnnCandidates.firstOrNull { File("$it/include/QNN/QnnInterface.h").exists() }
+                if (qnnRoot != null) {
+                    arguments += "-DQNN_SDK_DIR=$qnnRoot"
+                }
             }
         }
         ndk {

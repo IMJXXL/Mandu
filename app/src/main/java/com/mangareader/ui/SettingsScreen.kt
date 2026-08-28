@@ -58,7 +58,7 @@ import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(onBack: () -> Unit) {
+fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = null) {
     val ctx = LocalContext.current
     val app = ctx.applicationContext as App
     val dao = remember { app.db.mangaDao() }
@@ -84,6 +84,8 @@ fun SettingsScreen(onBack: () -> Unit) {
     var showScrollModeDialog by remember { mutableStateOf(false) }
     var showClickFlipDialog by remember { mutableStateOf(false) }
     var showReadingSettings by remember { mutableStateOf(false) }
+    // 超分队列页（全屏页，不嵌在滚动 Column 里渲染）
+    var showSrQueue by remember { mutableStateOf(false) }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
         if (r.resultCode == Activity.RESULT_OK) r.data?.data?.let { uri ->
@@ -600,6 +602,18 @@ fun SettingsScreen(onBack: () -> Unit) {
                     Icon(Icons.Default.ChevronRight, null)
                 }
             }
+            // 超分队列（批量离线超分进度与产物管理；超分主开关在阅读器底栏，不在阅读设置）
+            Card(Modifier.fillMaxWidth().clickable { showSrQueue = true }) {
+                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.AutoFixHigh, null, modifier = Modifier.size(24.dp))
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("超分队列", fontSize = 16.sp)
+                        Text("批量离线超分进度、已完成产物与缓存管理", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Icon(Icons.Default.ChevronRight, null)
+                }
+            }
 
             HorizontalDivider()
             Spacer(Modifier.height(12.dp))
@@ -623,7 +637,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                         Text("    最开始做漫读，不过是想打造一款贴合自身习惯的本地漫画阅读工具。iOS 平台的可达阅读器堪称标杆，我一直十分推崇；安卓端其实也有不少成熟优质的阅读软件，只是都不太契合我的使用习惯，于是决定从零独立开发。", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text("    每个人的使用偏好各不相同，漫读未必适合所有人，大家可以多体验几款软件，总能找到心仪的那一款。", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Spacer(Modifier.height(4.dp))
-                        Text("    项目全程利用业余碎片时间开发，前后耗时三周左右。原本计划加入 SMB 文件读取以及图片无损放大功能，空余精力有限，相关逻辑始终没能调试完善，最后只能忍痛舍弃这两项功能。", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("    项目全程利用业余碎片时间开发，前后耗时三周左右。原本计划加入 SMB 文件读取以及图片无损放大功能，空余精力有限，相关逻辑始终没能调试完善， SMB 最后只能忍痛舍弃。而图片无损放大（超分）已在后续版本补回：AI 实时放大、批量离线超分、预加载、渐进式替换与黑白漫画优化均已可用，入口在漫画阅读器底部工具栏的【超分】。", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text("    受自身技术水平局限，成品距离标杆软件还有不小差距，程序内仍存在不少待修复 bug，好在主体功能均可正常使用，便先行定稿发布。", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text("    整个项目前后推倒重写三次，反复迭代优化；还有一处兼容问题始终没能解决，高版本安卓系统下，滑动动画流畅度反而不及低版本，暂时没能找到问题根源。", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Spacer(Modifier.height(4.dp))
@@ -691,6 +705,24 @@ fun SettingsScreen(onBack: () -> Unit) {
                             } else {
                                 Text("64位系统，可使用全部功能", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
                             }
+                            Spacer(Modifier.height(8.dp))
+                            Text("超分（无损放大）兼容性", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                            val srLibOk = try { com.mangareader.sr.NativeLibraryStatus.isRealESRGANAvailable } catch (_: Throwable) { false }
+                            val vulkanOk = try { com.mangareader.sr.VulkanHelper.isVulkanSupported(ctx) } catch (_: Throwable) { false }
+                            val vulkanDetail = try { com.mangareader.sr.VulkanHelper.describe(ctx) } catch (_: Throwable) { "检测失败" }
+                            if (srLibOk && vulkanOk) {
+                                Text("✓ 本设备支持超分（Vulkan GPU 加速）", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+                            } else {
+                                Text("✗ 本设备不可用超分：${if (!vulkanOk) "缺少 Vulkan 图形加速" else "超分组件加载失败"}", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+                            }
+                            Text(vulkanDetail, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            if (sdk >= android.os.Build.VERSION_CODES.S) {
+                                val soc = try { android.os.Build.SOC_MODEL } catch (_: Throwable) { "" }
+                                Text("NPU 加速：Android 12+ 满足；芯片 $soc（骁龙8+ Gen1 及以上将在后续版本启用 NPU）", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            } else {
+                                Text("NPU 加速不可用：需要 Android 12 及以上（当前 API $sdk），且需骁龙8+以上芯片", fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
+                            }
+                            Text("超分缓存：${if (sdk >= android.os.Build.VERSION_CODES.R) "WEBP 高质量存储" else "JPEG 存储（系统限制，画质略低）"}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Spacer(Modifier.height(12.dp))
                             HorizontalDivider()
                             Spacer(Modifier.height(12.dp))
@@ -721,6 +753,15 @@ fun SettingsScreen(onBack: () -> Unit) {
                 )
             }
         }
+    }
+
+    if (showSrQueue) {
+        com.mangareader.ui.SrQueueScreen(
+            onBack = { showSrQueue = false },
+            onOpenBook = { id, path ->
+                if (onOpenBook != null) onOpenBook(id, path)
+            },
+        )
     }
 
     if (showReadingSettings) {

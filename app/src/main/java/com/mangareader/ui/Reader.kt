@@ -170,6 +170,9 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit) {
     var missingFilePath by remember { mutableStateOf("") }
     var showToc by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
+    var showSrPanel by remember { mutableStateOf(false) }
+    var showSrQueue by remember { mutableStateOf(false) }
+    var srReadyTick by remember { mutableStateOf(0) }
     // ★ v1.13 C-2 无感切换遮罩：提交 mode 前同步 view.draw 截当前画面，盖住
     //   "旧 delegate release → 新 delegate 全量重建+解码"的占位空窗；500ms 兜底撤除。
     //   动图弹窗路径（useAnimPager 直设）不经 onModeChange，一期无遮罩降级（C-1 已保不白屏）
@@ -1190,6 +1193,13 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit) {
                 Column(Modifier.fillMaxWidth()) {
                     ReaderBottomBar(actions = buildList {
                         add(BottomBarAction(Icons.Default.Menu, "目录") { showToc = !showToc })
+                        add(BottomBarAction(Icons.Default.AutoFixHigh, "超分") { showSrPanel = true })
+                        // 超分作用域已开启 → 右侧出现"对比"按钮；开/关两种状态实时切换
+                        if (com.mangareader.sr.SrUiState.scope.intValue > 0) {
+                            add(BottomBarAction(Icons.Default.CompareArrows, if (com.mangareader.sr.SrUiState.compareActive.value) "退出对比" else "对比") {
+                                com.mangareader.sr.SrUiState.compareActive.value = !com.mangareader.sr.SrUiState.compareActive.value
+                            })
+                        }
                         add(BottomBarAction(Icons.Default.Settings, "设置") { showSettings = true })
                     }, bgColor = bgColor)
                     // 进度条放在底部（横竖都一样）
@@ -1237,6 +1247,25 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit) {
                         //   （settleWindow/动图map/inflight/transformer定时器）必有残留 → 切换后翻页异常。
                         //   页码已提升在 Reader 层 cur（startPage 传参回填），重建零成本恢复位置；
                         //   旧实例由原 DisposableEffect.onDispose 正常 release（bitmap 回收不泄漏）
+                        // 超分：阅读会话挂接（进书/切章/换源时刷新会话，退出阅读销毁）
+                        val srTreeStr = navStack.lastOrNull() ?: book?.filePath ?: ""
+                        LaunchedEffect(srTreeStr, book?.id, viewing) {
+                            if (viewing && srTreeStr.isNotEmpty()) {
+                                com.mangareader.sr.SrPipeline.beginSession(ctx, srTreeStr, book?.id ?: -1L, book?.title ?: "", displayPages)
+                            } else {
+                                com.mangareader.sr.SrPipeline.endSession()
+                            }
+                        }
+                        // 超分完成事件 → 仅对比模式开着才驱动刷新（平时零重组开销，防卡顿）
+                        LaunchedEffect(Unit) {
+                            try {
+                                if (com.mangareader.sr.SrCore.initialized) {
+                                    com.mangareader.sr.SrCore.readyEvents.collect {
+                                        if (com.mangareader.sr.SrUiState.compareActive.value) srReadyTick++
+                                    }
+                                }
+                            } catch (_: Throwable) {}
+                        }
                         key(navStack.lastOrNull(), vertical, isRtl, verticalPagerEffective, useAnimPager) {
                         com.mangareader.native.NativeReaderScreen(
                             engine = engine,
@@ -1330,6 +1359,14 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit) {
                             }
                         )
                         } // ★ v1.13 C-3 key(navStack, vertical, isRtl, verticalPager, useAnimPager) end
+                        // 超分前后对比叠层（底栏"对比"按钮开启后显示，拖动分割线看原图/超分图）
+                        if (viewing) {
+                            SrCompareOverlay(
+                                pageIndex = cur,
+                                tick = srReadyTick,
+                                onClose = { com.mangareader.sr.SrUiState.compareActive.value = false },
+                            )
+                        }
                         // ★ v1.13 C-2 无感切换遮罩：截取的旧画面盖在内容区顶，500ms 兜底撤除
                         if (switchMaskVisible && switchMaskBitmap != null) {
                             Image(
@@ -1345,6 +1382,38 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit) {
                             val lum = bgColor.red * 0.299f + bgColor.green * 0.587f + bgColor.blue * 0.114f
                             val iconColor = if (lum > 0.5f) Color.Black else Color.White
                             // 是否绘制视觉：UI 显示（开锁态，跟顶/底栏一起显）或 锁图标弹出（锁定+点过锁位置唤出）
+                            // 超分运行状态指示灯（右上角）：当前页的在算什么一看就知道
+                            if (com.mangareader.sr.SrUiState.scope.intValue > 0) {
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .padding(top = 80.dp, end = 4.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(Color(0x88000000))
+                                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        val computing = com.mangareader.sr.SrPipeline.computing(cur)
+                                        val done = !computing && com.mangareader.sr.SrPipeline.peekSr(cur) != null
+                                        when {
+                                            computing -> {
+                                                CircularProgressIndicator(
+                                                    modifier = Modifier.size(12.dp),
+                                                    color = Color.White,
+                                                    strokeWidth = 1.5.dp,
+                                                )
+                                                Text("超分计算中", color = Color.White, fontSize = 11.sp)
+                                            }
+                                            done -> {
+                                                Icon(Icons.Default.Check, null, tint = Color(0xFF66BB6A), modifier = Modifier.size(12.dp))
+                                                Text("超分完成", color = Color.White, fontSize = 11.sp)
+                                            }
+                                            else -> Text("未启动", color = Color(0xFFFFA726), fontSize = 11.sp)
+                                        }
+                                    }
+                                }
+                            }
+
                             val showVisual = ui || showLockIcon
                             Box(
                                 modifier = Modifier
@@ -1509,6 +1578,22 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit) {
                     }) { Text("保持普通") }
             }
         )
+    }
+
+    if (showSrPanel) {
+        com.mangareader.ui.SrPanel(
+            bookId = book?.id ?: -1L,
+            bookTitle = book?.title ?: "",
+            onOpenQueue = {
+                showSrPanel = false
+                showSrQueue = true
+            },
+            onDismiss = { showSrPanel = false },
+        )
+    }
+
+    if (showSrQueue) {
+        com.mangareader.ui.SrQueueScreen(onBack = { showSrQueue = false })
     }
 
     if (showSettings) {
