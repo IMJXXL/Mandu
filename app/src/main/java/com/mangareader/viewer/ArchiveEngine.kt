@@ -2182,11 +2182,13 @@ class ArchiveEngine(private val ctx: Context) {
                     val id = c.getString(ii) ?: continue
                     val mime = if (mi >= 0) c.getString(mi) ?: "" else ""
                     val isDir = mime == DocumentsContract.Document.MIME_TYPE_DIR
-                    // ★ F2.2：d: 目录项赋予稳定身份 subPath = 完整 d: 路径（与 openItem 入栈格式一致）。
-                    //   原来恒空导致 TOC 点击静默关闭、switchToNext/Previous 恒认第 1 卷、当前卷永不高亮。
-                    //   ★ 212958 日志补充：文件夹书里的【漫画文件】同样是可读章节（如 epmobi/ 下的 mobi+epub），
-                    //   必须一并编身份，否则"下一章"在文件间失效、跌落到文件夹级切到隔壁书。
-                    val itemSubPath = "d:$auth|$treeId|$id"
+                    // ★ F2.2 章节身份（与 openItem 实际压栈格式严格一致）：
+                    //   - 文件夹章 → d:auth|tree|doc（openItem 对 dir 压的就是它）
+                    //   - 文件章   → a:auth|tree|doc|ext（openItem 对 file 压的就是它，enterReader/listPages 均已支持）
+                    //   原来恒空导致：TOC 点击静默关闭、switchToNext/Previous 找不到当前章
+                    //   （ blind 跳第 2 项 / 跌落文件夹级切到隔壁书）、当前章永不高亮。
+                    val itemSubPath = if (isDir) "d:$auth|$treeId|$id"
+                        else "a:$auth|$treeId|$id|${n.substringAfterLast(".").lowercase()}"
                     if (isDir || isComic(n)) items.add(Item(n, auth, treeId, id, isDir, itemSubPath))
                 }
             }

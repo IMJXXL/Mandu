@@ -771,8 +771,9 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
 
     fun extractSubPathFromNav(): String {
         val last = navStack.lastOrNull() ?: return ""
-        // ★ F2.2：d: 书的章节身份 = 完整 d: 路径（与 openItem 入栈格式一致），直接作为 tocItems 匹配键
-        if (last.startsWith("d:")) return last
+        // ★ F2.2 章节身份（与 openItem 压栈格式一致，tocItems.subPath 同格式即可互查）：
+        //   d: 书内的文件夹章 = 完整 d: 路径；文件章 = 完整 a: 路径；z: 卷 = 相对子路径
+        if (last.startsWith("d:") || last.startsWith("a:")) return last
         if (!last.startsWith("z:")) return ""
         val inner = last.removePrefix("z:")
         val sep = inner.indexOf("//")
