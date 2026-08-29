@@ -22,10 +22,13 @@ namespace {
 struct GParams { int radius; float eps; };
 
 GParams gparamsFor(int strength) {
+    // ★ eps 是"局部对比度保留度"的倒数域，不是去噪量：取值必须在 ~0.002-0.02，
+    //   大了会整体压缩局部对比度（整页发灰蒙雾）。平坦噪点 var≈(8/255)^2≈0.001，
+    //   eps=0.008 时 a≈0.11 平坦区平滑；线条边缘 var≈0.15 → a≈0.95 对比保留。
     switch (strength) {
-        case 1:  return {2, 0.05f};  // 轻
-        case 2:  return {8, 0.15f};  // 强
-        default: return {4, 0.10f};  // 中
+        case 1:  return {2, 0.002f};  // 轻
+        case 2:  return {8, 0.02f};   // 强（大半径补偿去噪量）
+        default: return {4, 0.008f};  // 中
     }
 }
 
