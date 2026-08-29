@@ -375,8 +375,8 @@ fun SrPanel(bookId: Long, bookTitle: String, onOpenQueue: () -> Unit, onDismiss:
             HorizontalDivider()
             Spacer(Modifier.height(8.dp))
 
-            // ── 档位说明（从快到慢，帮助用户直白理解选哪个）──
-            Text("档位说明（从快到慢）", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+            // ── 档位说明（帮助用户直白理解选哪个）──
+            Text("档位说明", fontSize = 14.sp, fontWeight = FontWeight.Medium)
             Spacer(Modifier.height(4.dp))
             Text(
                 "⚡ 快速优化 1x：不放大。毫秒级去掉噪点脏斑、拉锐线条。图够大、只想要干净时选它。\n" +

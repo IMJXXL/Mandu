@@ -9,13 +9,11 @@
 #   纯 Java 接口会被改名。此处整包冻结类名，动图三件套（gif/apng/awebp 模块）全覆盖。
 -keep class com.github.penfeizhou.animation.** { *; }
 
-# 移除调试日志（release 构建，debug 不受影响）
--assumenosideeffects class android.util.Log {
-    public static *** d(...);
-    public static *** v(...);
-    public static *** i(...);
-    public static *** w(...);
-}
+# ★ 不剥离日志（2026-08-29 哑火事件定论）：
+#   此前这里用 -assumenosideeffects 移除 Log.d/v/i/w，同源码下 release 超分全哑
+#   （关掉该规则的诊断版立刻恢复正常），实锤该剥离优化触发了 R8 问题。
+#   永久保留 release 日志：体积代价可忽略（~0），且线上问题可用"关于-导出诊断日志"远程排障。
+#   注意：将来若重新引入此规则，必须整包真机冒烟验证超分。
 
 # 保留行号（崩溃日志定位用）
 -keepattributes SourceFile,LineNumberTable
