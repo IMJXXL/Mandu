@@ -7,11 +7,13 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Surface
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -51,17 +53,31 @@ fun SrCompareOverlay(pageIndex: Int, tick: Int, onClose: () -> Unit, bgColor: In
         if (original != null && enhanced != null && !original.isRecycled && !enhanced.isRecycled) {
             var fraction by remember(pageIndex) { mutableFloatStateOf(0.5f) }
             var panY by remember(pageIndex) { mutableFloatStateOf(0f) }
+            // ★ 锁定（默认）= 拖动只移动分割线，画面纹丝不动；解锁 = 拖动上下平移长页（条漫用）
+            var panLocked by remember(pageIndex) { mutableStateOf(true) }
             val oImg = original.asImageBitmap()
             val eImg = enhanced.asImageBitmap()
+
+            Surface(
+                color = Color(0x99000000),
+                shape = MaterialTheme.shapes.extraSmall,
+                modifier = Modifier.align(Alignment.TopEnd).padding(top = 8.dp, end = 8.dp),
+            ) {
+                TextButton(onClick = { panLocked = !panLocked }) {
+                    Text(if (panLocked) "🔒 锁定（拖=分割线）" else "🔓 已解锁（拖=上下平移）", fontSize = 12.sp, color = Color.White)
+                }
+            }
 
             Canvas(
                 Modifier
                     .fillMaxSize()
-                    .pointerInput(Unit) {
-                        // 横向拖 = 分割线；纵向拖 = 长页上下平移（条漫长页按宽适配后超出屏幕）
+                    .pointerInput(Unit, panLocked) {
                         detectDragGestures { change, _ ->
-                            fraction = (fraction + change.positionChange().x / size.width).coerceIn(0.02f, 0.98f)
-                            panY += change.positionChange().y
+                            if (panLocked) {
+                                fraction = (fraction + change.positionChange().x / size.width).coerceIn(0.02f, 0.98f)
+                            } else {
+                                panY += change.positionChange().y
+                            }
                             change.consume()
                         }
                     }
