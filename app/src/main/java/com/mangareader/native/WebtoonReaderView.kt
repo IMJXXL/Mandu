@@ -5,6 +5,7 @@ import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.util.Log
 import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
@@ -39,8 +40,16 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
     private var treePath = ""
     // 超分：渐进替换事件订阅（release/setup 重建时取消）
     private var srEventJob: kotlinx.coroutines.Job? = null
+
+    /** ★ P1-1-lite：同页在途加载去重 + 僵尸坑超时（白屏工单任务3）：
+     *  idx → 入坑时间戳；同页 5s 内已在加载→复用在途任务；坑龄≥5s 视为挂死残留，覆盖放行自愈。
+     *  值仍等于自己那次时间戳才 remove（防误删后来者的坑）。 */
+    private val inflightLoads = java.util.concurrent.ConcurrentHashMap<Int, Long>()
     private var pageList: List<ArchiveEngine.PageMeta> = emptyList()
     private var currentPage = 0
+
+    /** 只读暴露当前页（遮罩超时重载等外部只读场景用；写入仍走内部流程/ goToPage） */
+    val currentPageForKick: Int get() = currentPage
     private val loadScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private val archiveMutex = Mutex()
     private var archive: com.mangareader.native.NativeEngine.Archive? = null
@@ -140,6 +149,8 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
     //   (load/render/trim) 都已 synchronized 制度约束，helper 内同样包 synchronized 与之对齐。
     private fun clearBitmapCacheRecycling() {
         synchronized(bitmapCache) {
+            // ★ 白屏工单任务2附属：指认"谁在清缓存"（C4 定位用：size + 视图实例 hash）
+            Log.w("Recycle", "webtoon clearBitmapCacheRecycling n=${bitmapCache.size} view=${System.identityHashCode(this)}")
             bitmapCache.values.forEach { try { if (!it.isRecycled) it.recycle() } catch (_: Exception) {} }
             bitmapCache.clear()
         }
@@ -430,15 +441,63 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
 
     fun injectUpscaledBitmap(pageIndex: Int, bitmap: Bitmap) {
         synchronized(bitmapCache) { bitmapCache[pageIndex] = bitmap }
+        android.util.Log.i("WebtoonRV", "srInject p=$pageIndex bmp=${bitmap.width}x${bitmap.height}")
         recycler.post {
             adapter?.notifyItemChanged(pageIndex, "ld")
         }
     }
 
+    /** ★ P0-2 模式切换位图交接：把活着的位图从缓存"取走"（release 不再回收），
+     *  交给新视图 adoptBitmaps，切换零重解码（治"切换瞬间当前±1 页白屏"）。 */
+    override fun drainLiveBitmaps(): Map<Int, Bitmap> = synchronized(bitmapCache) {
+        val out = LinkedHashMap<Int, Bitmap>()
+        val it = bitmapCache.entries.iterator()
+        while (it.hasNext()) {
+            val e = it.next()
+            if (!e.value.isRecycled) out[e.key] = e.value
+            it.remove()
+        }
+        Log.d("P02", "drain size=${out.size} keys=${out.keys}")
+        out
+    }
+
+    /** ★ P0-2：接管旧视图移交的位图（首次绑定即命中，不再走解码回传链） */
+    override fun adoptBitmaps(map: Map<Int, Bitmap>) {
+        Log.d("P02", "adopt size=${map.size} keys=${map.keys}")
+        synchronized(bitmapCache) {
+            for ((k, v) in map) if (!v.isRecycled) bitmapCache[k] = v
+        }
+    }
+
     private fun loadPageAsync(idx: Int, onResult: ((Bitmap?) -> Unit)? = null) {
         if (idx < 0 || idx >= pageList.size) { onResult?.invoke(null); return }
-        synchronized(bitmapCache) { bitmapCache[idx]?.let { onResult?.invoke(it); return } }
+        val cached = synchronized(bitmapCache) { bitmapCache[idx] }
+        if (cached != null && !cached.isRecycled) {
+            // 缓存自愈：注入事件可能丢失导致一直存的是原图；若超分结果已就绪，趁本次绑定直接换超分图
+            try {
+                val srHit = com.mangareader.sr.SrPipeline.attachOrSchedule(idx, cached)
+                if (srHit != null && !srHit.isRecycled && srHit !== cached) {
+                    synchronized(bitmapCache) { bitmapCache[idx] = srHit }
+                    recycler.post { adapter?.notifyItemChanged(idx, "ld") }
+                }
+            } catch (_: Exception) {}
+            onResult?.invoke(cached)
+            return
+        }
         val meta = pageList[idx]
+        // ★ P1-1-lite：同页在途去重（无回调调用方）；坑龄≥5s 视为挂死残留，覆盖放行（白屏工单任务3）
+        val trackInflight = onResult == null
+        var myPitTs = -1L
+        if (trackInflight) {
+            val pitTs = inflightLoads[idx]
+            val nowTs = android.os.SystemClock.uptimeMillis()
+            if (pitTs != null && nowTs - pitTs < 5000L) {
+                ArchiveEngine.d("Dedup", "drop idx=$idx age=${nowTs - pitTs}ms")
+                return
+            }
+            inflightLoads[idx] = nowTs
+            myPitTs = nowTs
+        }
         if (meta.source == "pdf" && treePath.isNotEmpty()) {
             try {
                 val sharedKey = engine?.getPdfSharedKey(treePath, meta.index)
@@ -453,6 +512,7 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
         }
         val sm = maxOf(width, height).coerceAtLeast(1)
         loadScope.launch {
+            try {
             val bmp = withContext(Dispatchers.IO) {
                 var result: Bitmap? = null
                 if (meta.source in listOf("mobi", "azw", "azw3", "pdb", "prc")) {
@@ -466,15 +526,25 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
             }
             var processed = processBitmap(bmp)
             if (processed != null) {
-                // 超分：命中缓存直接换成超分图；未命中先显示原图、后台异步超分（完成走订阅→injectUpscaledBitmap）
+                // 超分：命中缓存直接换成超分图；未命中先显示原图、后台异步超分
+                // （完成走订阅→injectUpscaledBitmap；另有 pollForResult 轮询兜底防事件丢失）
                 try {
                     val srHit = com.mangareader.sr.SrPipeline.attachOrSchedule(idx, processed)
-                    if (srHit != null && !srHit.isRecycled) processed = srHit
+                    if (srHit != null && !srHit.isRecycled) {
+                        processed = srHit
+                    } else {
+                        com.mangareader.sr.SrPipeline.pollForResult(idx) { b -> injectUpscaledBitmap(idx, b) }
+                    }
                 } catch (_: Exception) {}
                 synchronized(bitmapCache) { bitmapCache[idx] = processed }
+                // ★ 白屏工单任务1：补 webtoon 成功路径观测（与 pager 对齐，消除盲区）
+                ArchiveEngine.d("WebtoonRV", "loaded idx=$idx bmp=${processed.width}x${processed.height}")
                 recycler.post { adapter?.notifyItemChanged(idx, "ld") }
             }
             onResult?.invoke(processed)
+            } finally {
+                if (myPitTs != -1L && inflightLoads[idx] == myPitTs) inflightLoads.remove(idx)
+            }
         }
     }
 
@@ -582,6 +652,7 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
         onAnimDetected = null
 
         loadScope.coroutineContext.cancelChildren()
+        inflightLoads.clear() // ★ 白屏工单任务3
         clearBitmapCacheRecycling()  // ★ ⑧ 修复硬伤：WebtoonReaderView.release() 原本完全不 recycle 任何 bitmap
                                         //   （PagerReaderView 至少 release 里有 recycle）→ 独立严重缺陷
         archive?.close(); archive = null; archivePath = ""
@@ -606,24 +677,23 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
     }
 
     override fun trimMemory(level: Int) {
-        when {
-            level >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL -> {
-                loadScope.coroutineContext.cancelChildren()
-                clearBitmapCacheRecycling()  // ★ ⑧ 最小修复
-            }
-            level >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW -> {
-                loadScope.coroutineContext.cancelChildren()
-                synchronized(bitmapCache) {
-                    // ★ ⑧ 最小修复：retainAll 移除的 bitmap 必须先 recycle
-                    val keep = currentPage
-                    val it = bitmapCache.entries.iterator()
-                    while (it.hasNext()) {
-                        val e = it.next()
-                        if (e.key != keep) {
-                            try { if (!e.value.isRecycled) e.value.recycle() } catch (_: Exception) {}
-                            it.remove()
-                        }
-                    }
+        // ★ 分级治理（白屏工单任务2）：UI_HIDDEN(20)/COMPLETE(40)/RUNNING_MODERATE(5) 一律忽略——
+        //   旧写法 level>=LOW 的大口子把"退后台/销毁"也当全清处理，切后台即清光缓存（白屏主凶）。
+        //   LOW/CRITICAL：保留 currentPage±2 阅读窗口，只回收窗外；绝不取消在途加载。
+        when (level) {
+            android.content.ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN,
+            android.content.ComponentCallbacks2.TRIM_MEMORY_COMPLETE,
+            android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_MODERATE -> return
+        }
+        if (level < android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) return
+        synchronized(bitmapCache) {
+            val keep = currentPage
+            val it = bitmapCache.entries.iterator()
+            while (it.hasNext()) {
+                val e = it.next()
+                if (kotlin.math.abs(e.key - keep) > 2) {
+                    try { if (!e.value.isRecycled) e.value.recycle() } catch (_: Exception) {}
+                    it.remove()
                 }
             }
         }
@@ -651,8 +721,12 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
         override fun onBindViewHolder(h: PageVH, pos: Int, payloads: MutableList<Any>) {
             if (payloads.contains("ld")) {
                 val cached = synchronized(bitmapCache) { bitmapCache[pos] }
-                if (cached != null && !cached.isRecycled && h.isBound) {
-                    h.set(cached)
+                if (cached != null && !cached.isRecycled) {
+                    if (h.isBound) h.set(cached)
+                } else {
+                    // ★ P1-2 自愈：通知到了但缓存没图（回传链曾断裂/缓存被清）——不再静默放过，立即重载。
+                    //   缓存命中分支不再重发通知，不会无限循环；解码失败本身就不发通知。
+                    loadPageAsync(pos)
                 }
                 return
             }

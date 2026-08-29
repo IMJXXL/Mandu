@@ -7,6 +7,7 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.PointF
 import android.graphics.RectF
+import android.util.Log
 import android.graphics.drawable.Animatable
 import android.graphics.drawable.Drawable
 import android.view.GestureDetector
@@ -46,8 +47,16 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     private var treePath: String = ""
     // 超分：渐进替换事件订阅（release/setup 重建时取消）
     private var srEventJob: kotlinx.coroutines.Job? = null
+
+    /** ★ P1-1-lite：同页在途加载去重 + 僵尸坑超时（白屏工单任务3）：
+     *  idx → 入坑时间戳；同页 5s 内已在加载→复用在途任务；坑龄≥5s 视为挂死残留，覆盖放行自愈。
+     *  值仍等于自己那次时间戳才 remove（防误删后来者的坑）。 */
+    private val inflightLoads = java.util.concurrent.ConcurrentHashMap<Int, Long>()
     private var pageList: List<ArchiveEngine.PageMeta> = emptyList()
     private var currentPage = 0
+
+    /** 只读暴露当前页（遮罩超时重载等外部只读场景用；写入仍走内部流程/ goToPage） */
+    val currentPageForKick: Int get() = currentPage
     private var isRtl = false
     @Volatile private var isScrolling = false
     private var doublePageMode = false
@@ -324,6 +333,8 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     //   造成的内存泄漏（无 LRU 上限下尤其明显）。Pager 是 ConcurrentHashMap 无需额外同步。
     //   ★ release() 不改：原版 recycle + clear 已对，不引入 helper 避免行为差异。
     private fun clearBitmapCacheRecycling() {
+        // ★ 白屏工单任务2附属：指认"谁在清缓存"（C4 定位用：size + 视图实例 hash）
+        Log.w("Recycle", "pager clearBitmapCacheRecycling n=${bitmapCache.size} view=${System.identityHashCode(this)}")
         val it = bitmapCache.entries.iterator()
         while (it.hasNext()) {
             val e = it.next()
@@ -535,6 +546,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             //     理论上旧协程仍可能在 clear 后 setAnimDrawable 塞错 holder——根治需要 generation token。
             //     但此 race 在修复前就同样存在，本改动不引入新 race。
             inflightAnimLoads.clear()
+            inflightLoads.clear() // ★ 白屏工单任务3：切章清加载坑（对齐 inflightAnimLoads 现有处理）
             synchronized(animRawCache) { animRawCache.clear() }
             viewPager.setPageTransformer(NoOpTransformer())
             pagerAdapter = PagerAdapter()
@@ -608,18 +620,39 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         viewPager.post { viewPager.setCurrentItem(finalPos, false) }
     }
 
+    /** ★ P0-2 模式切换位图交接：把活着的位图从缓存里"取走"（移除后 release() 不再回收它们），
+     *  交给新视图 adopBitmaps，切换零重解码（治"切换瞬间当前±1 页白屏"）。 */
+    override fun drainLiveBitmaps(): Map<Int, Bitmap> {
+        val out = LinkedHashMap<Int, Bitmap>()
+        val keys = bitmapCache.keys.toList()
+        for (k in keys) {
+            val v = bitmapCache.remove(k) ?: continue
+            if (!v.isRecycled) out[k] = v
+        }
+        Log.d("P02", "drain size=${out.size} keys=${out.keys}")
+        return out
+    }
+
+    /** ★ P0-2：接管旧视图移交的位图（首次绑定即命中，不再走解码回传链） */
+    override fun adoptBitmaps(map: Map<Int, Bitmap>) {
+        Log.d("P02", "adopt size=${map.size} keys=${map.keys}")
+        for ((k, v) in map) if (!v.isRecycled) bitmapCache[k] = v
+    }
+
     /** 注入放大后的 bitmap 到缓存并刷新当前页显示 */
     fun injectUpscaledBitmap(pageIndex: Int, bitmap: Bitmap) {
         // 不主动回收旧bitmap，让GC自然处理（避免ViewHolder还在使用时被回收导致黑屏）
         bitmapCache[pageIndex] = bitmap
         val pos = if (isRtl) pageList.size - 1 - pageIndex else pageIndex
+        android.util.Log.i("PagerView", "srInject p=$pageIndex pos=$pos bmp=${bitmap.width}x${bitmap.height}")
         if (pos >= 0 && pos < pageList.size) {
             android.os.Handler(android.os.Looper.getMainLooper()).post {
                 // 先清理旧 ViewHolder 状态，避免 OOM
                 try {
-                    val rv = viewPager.getChildAt(0) as? androidx.recyclerview.widget.RecyclerView ?: return@post
-                    val holder = rv.findViewHolderForAdapterPosition(pos) as? PagerViewHolder ?: return@post
-                    holder.clear()
+                    val rv = viewPager.getChildAt(0) as? androidx.recyclerview.widget.RecyclerView
+                    val holder = rv?.findViewHolderForAdapterPosition(pos) as? PagerViewHolder
+                    if (holder != null) holder.clear()
+                    else android.util.Log.d("PagerView", "srInject holder null (offscreen) p=$pageIndex")
                 } catch (_: Exception) {}
                 pagerAdapter?.notifyItemChanged(pos, "loaded")
             }
@@ -726,9 +759,30 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     private fun loadPageAsync(idx: Int) {
         if (idx < 0 || idx >= pageList.size) return
         val cached = bitmapCache[idx]
-        if (cached != null && !cached.isRecycled) return
+        if (cached != null && !cached.isRecycled) {
+            // 缓存自愈：上次可能注入事件丢失只存了原图；若超分结果已就绪，趁本次绑定直接换超分图
+            try {
+                val srHit = com.mangareader.sr.SrPipeline.attachOrSchedule(idx, cached)
+                if (srHit != null && !srHit.isRecycled && srHit !== cached) {
+                    bitmapCache[idx] = srHit
+                    val pos = if (isRtl) pageList.size - 1 - idx else idx
+                    if (pos >= 0 && pos < pageList.size) pagerAdapter?.notifyItemChanged(pos, "loaded")
+                }
+            } catch (_: Exception) {}
+            return
+        }
         val meta = pageList[idx]
+        // ★ P1-1-lite 页级在途去重：预载/bind/peek 常并发发同一页（实测切换瞬间 2~3 路重复请求），
+        //   已在加载（5s 内）就直接复用在途任务；坑龄≥5s 视为挂死残留，覆盖时间戳放行
+        val nowTs = android.os.SystemClock.uptimeMillis()
+        val pitTs = inflightLoads[idx]
+        if (pitTs != null && nowTs - pitTs < 5000L) {
+            ArchiveEngine.d("Dedup", "drop idx=$idx age=${nowTs - pitTs}ms")
+            return
+        }
+        inflightLoads[idx] = nowTs
         loadScope.launch {
+            try {
             ensureNativeArchive()
             val screenMax = maxOf(width, height).coerceAtLeast(800)
             var bmp = withContext(Dispatchers.IO) {
@@ -751,10 +805,15 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 } catch (_: Exception) {}
             }
             if (bmp != null && !bmp.isRecycled) {
-                // 超分：命中缓存直接换成超分图；未命中先显示原图、后台异步超分（完成走订阅→injectUpscaledBitmap）
+                // 超分：命中缓存直接换成超分图；未命中先显示原图、后台异步超分
+                // （完成走订阅→injectUpscaledBitmap；另有 pollForResult 轮询兜底防事件丢失）
                 try {
                     val srHit = com.mangareader.sr.SrPipeline.attachOrSchedule(idx, bmp)
-                    if (srHit != null && !srHit.isRecycled) bmp = srHit
+                    if (srHit != null && !srHit.isRecycled) {
+                        bmp = srHit
+                    } else {
+                        com.mangareader.sr.SrPipeline.pollForResult(idx) { b -> injectUpscaledBitmap(idx, b) }
+                    }
                 } catch (_: Exception) {}
                 bitmapCache[idx] = bmp
                 withContext(Dispatchers.Main) {
@@ -769,6 +828,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             } else {
                 bitmapCache.remove(idx)
             }
+            } finally { if (inflightLoads[idx] == nowTs) inflightLoads.remove(idx) }
         }
     }
 
@@ -830,6 +890,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         animatedCount = 0
 
         loadScope.cancel()
+        inflightLoads.clear() // ★ 白屏工单任务3
         nativeArchive?.close()
         nativeArchive = null
         nativeArchivePath = ""
@@ -842,23 +903,22 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     }
 
     override fun trimMemory(level: Int) {
-        when {
-            level >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL -> {
-                loadScope.cancel(); loadScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-                clearBitmapCacheRecycling()  // ★ ⑧ 最小修复
-            }
-            level >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW -> {
-                loadScope.cancel(); loadScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-                // Keep only current page in cache —— 踢出的 bitmap 也要 recycle
-                val keep = currentPage
-                val it = bitmapCache.entries.iterator()
-                while (it.hasNext()) {
-                    val e = it.next()
-                    if (e.key != keep) {
-                        try { if (!e.value.isRecycled) e.value.recycle() } catch (_: Exception) {}
-                        it.remove()
-                    }
-                }
+        // ★ 分级治理（白屏工单任务2）：UI_HIDDEN(20)/COMPLETE(40)/RUNNING_MODERATE(5) 一律忽略——
+        //   旧写法 level>=LOW 的大口子把"退后台/销毁"也当全清处理，切后台即清光缓存（白屏主凶）。
+        //   LOW/CRITICAL：保留 currentPage±2 阅读窗口，只回收窗外；绝不取消在途加载。
+        when (level) {
+            android.content.ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN,
+            android.content.ComponentCallbacks2.TRIM_MEMORY_COMPLETE,
+            android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_MODERATE -> return
+        }
+        if (level < android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) return
+        val keep = currentPage
+        val it = bitmapCache.entries.iterator()
+        while (it.hasNext()) {
+            val e = it.next()
+            if (kotlin.math.abs(e.key - keep) > 2) {
+                try { if (!e.value.isRecycled) e.value.recycle() } catch (_: Exception) {}
+                it.remove()
             }
         }
     }

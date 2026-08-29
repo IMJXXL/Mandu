@@ -13,5 +13,5 @@ object NativeLibraryStatus {
     fun getAvailableModels(): List<SRModel> = SRModel.entries.filter { isModelAvailable(it) }
 
     fun getFirstAvailableModel(): SRModel =
-        getAvailableModels().firstOrNull() ?: SRModel.REALCUGAN_2X_CONSERVATIVE
+        getAvailableModels().firstOrNull() ?: SRModel.QUICK_OPTIMIZE
 }

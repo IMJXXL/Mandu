@@ -81,11 +81,6 @@ object SrCore {
 
         // 启动即检查上次是不是被 native 推理带走了（安全处置：强制 CPU）
         try { checkNativeWatchdog() } catch (_: Throwable) {}
-
-        // NPU 探测/解包 context（骁龙8+ 可用）
-        scope.launch(Dispatchers.IO) {
-            try { SrNpuProcessor.warmUp(appContext) } catch (_: Throwable) {}
-        }
     }
 
     // ── native 崩溃看门狗（native 崩溃会带走整个 App 进程，Kotlin 接不住，只能靠"哨兵标记"）──
@@ -130,24 +125,6 @@ object SrCore {
     fun clearForceCpu() {
         manager.forceCpu = false
         hadNativeCrash = false
-    }
-
-    // ── NPU 防错误类崩溃：上一次 NPU 推理崩溃过 → 永久停用 NPU（直到用户主动重启）──
-    fun disableNpuAfterCrash() {
-        crashPrefs.edit().putBoolean("sr_npu_crashed", true).commit()
-        SrNpuProcessor.release()
-    }
-
-    fun isNpuBlacklisted(): Boolean = try {
-        crashPrefs.getBoolean("sr_npu_crashed", false)
-    } catch (_: Throwable) {
-        false
-    }
-
-    fun clearNpuBlacklist() {
-        try {
-            crashPrefs.edit().putBoolean("sr_npu_crashed", false).commit()
-        } catch (_: Throwable) {}
     }
 
     // ── 队列页实时刷新（暂停/继续状态）──
@@ -198,7 +175,8 @@ object SrCore {
     fun isVulkanMissing(): Boolean = !VulkanHelper.isVulkanSupported(appContext)
 
     fun emitReady(chapterId: Long, pageIndex: Int, bitmap: android.graphics.Bitmap) {
-        _readyEvents.tryEmit(SrReadyEvent(chapterId, pageIndex, bitmap))
+        val ok = _readyEvents.tryEmit(SrReadyEvent(chapterId, pageIndex, bitmap))
+        android.util.Log.i("SrCore", "emitReady cid=$chapterId p=$pageIndex bmp=${bitmap.width}x${bitmap.height} emitted=$ok")
     }
 
     /** 批量进度广播（服务调用，队列页订阅） */

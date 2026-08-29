@@ -49,22 +49,25 @@ object SrBatchRunner {
             }
             val paths = progressPaths.ifEmpty { listOf(book.filePath) }
 
-            val existing = SrCore.queueStore.load().map { it.chapterKey }.toMutableSet()
+            val current = SrCore.queueStore.load().toMutableList()
             val newItems = mutableListOf<SRQueueItem>()
             val probe = ArchiveEngine(context.applicationContext)
             paths.forEach { path ->
                 val key = SRQueueItem.chapterKey(bookId, path)
-                if (existing.add(key)) {
-                    val pageCount = try {
-                        probe.listPages(path).size
-                    } catch (_: Exception) {
-                        0
-                    }
-                    newItems.add(SRQueueItem(bookId, bookTitle, path, key, pageCount))
+                val pageCount = try {
+                    probe.listPages(path).size
+                } catch (_: Exception) {
+                    0
                 }
+                val fresh = SRQueueItem(bookId, bookTitle, path, key, pageCount)
+                // 重新入队 = 从头重做：队列里已有同章旧项时整体替换（processedPages 归零），
+                // 否则残留的旧进度会让用户看到"从中间开始"。
+                val oldIdx = current.indexOfFirst { it.chapterKey == key }
+                if (oldIdx >= 0) current[oldIdx] = fresh else current.add(fresh)
+                newItems.add(fresh)
             }
             if (newItems.isNotEmpty()) {
-                SrCore.queueStore.save(SrCore.queueStore.load() + newItems)
+                SrCore.queueStore.save(current)
             }
             newItems.size
         } catch (e: Exception) {

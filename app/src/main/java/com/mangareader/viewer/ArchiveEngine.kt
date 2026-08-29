@@ -148,11 +148,29 @@ class ArchiveEngine(private val ctx: Context) {
         File(ctx.filesDir, "page_cache").also { if (!it.exists()) it.mkdirs() }
     }
 
-    fun cacheGet(key: String): Bitmap? = bitmapCache.get(key)
+    fun cacheGet(key: String): Bitmap? {
+        val bmp = bitmapCache.get(key) ?: return null
+        if (bmp.isRecycled) {
+            // ★ C4 毒位图过滤（白屏工单 v2.4）：已被 recycle 的位图从引擎缓存剔除并按 miss 处理，
+            //   掐断"毒位图 → 视图自愈重载 → 又是毒位图"的无限循环
+            bitmapCache.remove(key)
+            Log.w(TAG, "cacheGet: evict recycled bitmap key=$key")
+            return null
+        }
+        return bmp
+    }
 
     private fun cachePut(key: String, bmp: Bitmap) { bitmapCache.put(key, bmp) }
 
-    fun getCachedBitmap(key: String): Bitmap? = sharedBitmapCache.get(key)
+    fun getCachedBitmap(key: String): Bitmap? {
+        val bmp = sharedBitmapCache.get(key) ?: return null
+        if (bmp.isRecycled) {
+            sharedBitmapCache.remove(key)
+            Log.w(TAG, "getCachedBitmap: evict recycled key=$key")
+            return null
+        }
+        return bmp
+    }
 
     fun putCachedBitmap(key: String, bmp: Bitmap) { sharedBitmapCache.put(key, bmp) }
 

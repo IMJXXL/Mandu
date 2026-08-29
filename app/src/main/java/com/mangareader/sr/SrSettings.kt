@@ -21,7 +21,7 @@ class SrSettings(context: Context) {
         set(v) = prefs.edit().putBoolean("sr_upscale_enabled", v).apply()
 
     var model: SRModel
-        get() = SRModel.fromKey(prefs.getString("sr_model", SRModel.REALCUGAN_2X_CONSERVATIVE.key)!!)
+        get() = SRModel.fromKey(prefs.getString("sr_model", SRModel.QUICK_OPTIMIZE.key)!!)
         set(v) = prefs.edit().putString("sr_model", v.key).apply()
 
     var denoise: DenoiseLevel
@@ -32,8 +32,7 @@ class SrSettings(context: Context) {
         get() = Quality.fromKey(prefs.getString("sr_quality", Quality.BALANCED.key)!!)
         set(v) = prefs.edit().putString("sr_quality", v.key).apply()
 
-    /** 否启用 GPU 计算（默认关；崩溃或发热明显时可改 CPU 强制关闭 GPU）
-     *  用户明确开启时才允许走 Vulkan，否则跑 CPU。骁龙8+ 芯片除外 */
+    /** 是否启用 GPU（Vulkan）推理（默认关 = 纯 CPU，最稳；发热/电量敏感时保持关闭） */
     var enableGpu: Boolean
         get() = prefs.getBoolean("sr_enable_gpu", false)
         set(v) = prefs.edit().putBoolean("sr_enable_gpu", v).apply()

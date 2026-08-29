@@ -111,6 +111,23 @@ class SRDiskCache(
         return readBatchPageFile(dir, pageIndex)
     }
 
+    /** 只判断产物文件是否存在（不解码整图）。批量断点续做跳页用它：
+     *  getBatchPage 每次跳过都要解码整页，续做几百页时会白白解码几百张大图（慢且吃内存） */
+    fun hasBatchPage(bookTitle: String, chapterKey: String, pageIndex: Int): Boolean {
+        // 不走 batchChapterDir：它会 mkdirs，只读判断不该产生空目录
+        val dir = File(batchDir, "${DiskUtil.buildValidFilename(bookTitle)}/$chapterKey")
+        if (!dir.isDirectory) return false
+        val stem = pageIndex.toString().padStart(3, '0')
+        return File(dir, "$stem.webp").exists() || File(dir, "$stem.jpg").exists()
+    }
+
+    /** 从 0 开始连续存在产物的页数（批量重跑/续做的进度基线） */
+    fun countBatchDonePrefix(bookTitle: String, chapterKey: String, total: Int): Int {
+        var n = 0
+        while (n < total && hasBatchPage(bookTitle, chapterKey, n)) n++
+        return n
+    }
+
     fun getBatchPageAnyBook(chapterKey: String, pageIndex: Int): Bitmap? {
         if (!batchDir.exists()) return null
         batchDir.walkTopDown().filter { it.isDirectory && it.name == chapterKey }.forEach { dir ->
@@ -142,7 +159,7 @@ class SRDiskCache(
         }
     }
 
-    fun putBatchMetadata(bookTitle: String, chapterKey: String, pageCount: Int, bookId: Long, path: String) {
+    fun putBatchMetadata(bookTitle: String, chapterKey: String, pageCount: Int, bookId: Long, path: String, modelKey: String = "") {
         val dir = batchChapterDir(bookTitle, chapterKey)
         val json = org.json.JSONObject().apply {
             put("bookId", bookId)
@@ -150,6 +167,7 @@ class SRDiskCache(
             put("path", path)
             put("pageCount", pageCount)
             put("completedAt", System.currentTimeMillis())
+            put("modelKey", modelKey)
         }.toString()
         try {
             File(dir, "metadata.json").writeText(json)
@@ -165,6 +183,7 @@ class SRDiskCache(
         val path: String,
         val pageCount: Int,
         val completedAt: Long,
+        val modelKey: String = "",
     )
 
     fun getCompletedBatchChapters(): List<BatchCompletedChapter> {
@@ -181,6 +200,7 @@ class SRDiskCache(
                         path = json.optString("path"),
                         pageCount = json.optInt("pageCount"),
                         completedAt = json.optLong("completedAt"),
+                        modelKey = json.optString("modelKey"),
                     )
                 )
             } catch (e: Exception) {
@@ -190,6 +210,7 @@ class SRDiskCache(
         return result
     }
 
+    /** 移除章节产物；书目录空了顺带移除 */
     fun removeBatchChapter(bookTitle: String, chapterKey: String) {
         val dir = batchChapterDir(bookTitle, chapterKey)
         if (dir.exists()) dir.deleteRecursively()
@@ -197,6 +218,30 @@ class SRDiskCache(
         if (bookDir != null && bookDir.exists() && bookDir.list()?.isEmpty() == true) {
             bookDir.delete()
         }
+    }
+
+    /** 章节起跑时写入模型指纹（区分"断点续做"与"换模型后须重算"） */
+    fun putBatchChapterModelStamp(bookTitle: String, chapterKey: String, modelKey: String) {
+        try {
+            File(batchChapterDir(bookTitle, chapterKey), ".model").writeText(modelKey)
+        } catch (_: Exception) {
+        }
+    }
+
+    /** 进行中章节的模型指纹（.model 文件；完成章节读 metadata.json） */
+    fun getBatchChapterModelStamp(bookTitle: String, chapterKey: String): String? = try {
+        val f = File(batchChapterDir(bookTitle, chapterKey), ".model")
+        if (f.isFile) f.readText().trim().takeIf { it.isNotEmpty() } else null
+    } catch (_: Exception) {
+        null
+    }
+
+    /** 已完成章节元数据里记录的模型（旧产物无此字段返回 null） */
+    fun getBatchChapterModelKey(bookTitle: String, chapterKey: String): String? = try {
+        val f = File(batchChapterDir(bookTitle, chapterKey), "metadata.json")
+        if (f.isFile) org.json.JSONObject(f.readText()).optString("modelKey").takeIf { it.isNotEmpty() } else null
+    } catch (_: Exception) {
+        null
     }
 
     fun clearBatch() {

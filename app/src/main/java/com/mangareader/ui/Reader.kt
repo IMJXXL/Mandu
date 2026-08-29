@@ -1122,12 +1122,13 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit) {
         switchMaskBitmap = null
     }
 
-    // ★ v1.13 就绪轮询撤除（mihon 式"数据就绪才可见"）：60ms 步进探测当前页是否出图，
-    //   出图立即撤除遮罩；1.5s 兜底防卡死。退出阅读立即清理
+    // ★ v1.13 就绪轮询撤除（mihon 式"数据就绪才可见"）：60ms 步进探测当前页是否出图，出图立即撤除遮罩。
+    //   ★ P1-2：1.5s 仍不就绪不直接暴露白屏——主动踢一次当前页重载，遮罩延到 3s 硬上限；仍不就绪才撤，留 W 日志
     LaunchedEffect(switchMaskVisible) {
         if (!switchMaskVisible) return@LaunchedEffect
         var waited = 0L
-        while (waited < 1500L) {
+        var kicked = false
+        while (waited < 3000L) {
             delay(60); waited += 60
             val ready = when {
                 useAnimPager -> true
@@ -1135,6 +1136,20 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit) {
                 else -> activePagerRef?.isCurrentPageReady() == true
             }
             if (ready) break
+            if (waited >= 1500L && !kicked) {
+                kicked = true
+                try {
+                    if (!useAnimPager && isVerticalMode) {
+                        activeWebtoonRef?.let { it.goToPage(it.currentPageForKick) }
+                    } else if (!isVerticalMode) {
+                        activePagerRef?.let { it.goToPage(it.currentPageForKick) }
+                    }
+                } catch (_: Throwable) {}
+            }
+        }
+        if (!useAnimPager) {
+            val stillNotReady = (if (isVerticalMode) activeWebtoonRef?.isCurrentPageReady() else activePagerRef?.isCurrentPageReady()) == false
+            if (stillNotReady) android.util.Log.w("Reader", "switch mask 3s 超时未就绪（页=${if (isVerticalMode) activeWebtoonRef?.currentPageForKick else activePagerRef?.currentPageForKick}），撤罩（重载已触发，页面会在后台自愈）")
         }
         hideSwitchMask()
     }

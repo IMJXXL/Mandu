@@ -103,6 +103,22 @@ bool RealESRGANWrapper::load(const char* param_path, const char* model_path, int
     }
     LOGI("Model loaded ok (gpuid=%d)", gpuid);
 
+    // ★ waifu2x cunet 探针自检：固定 312×312 输入必须产出 256×256；
+    //   失败（驱动不支持固定形状等）→ 直接标记加载失败，UI 层灰掉该档，绝不带病运行
+    if (modelType == "waifu2x_cunet") {
+        ncnn::Mat pin(312, 312, 3);
+        pin.fill(0.5f);
+        ncnn::Mat pout;
+        ncnn::Extractor pex = net.create_extractor();
+        pex.input("Input1", pin);
+        int pret = pex.extract("Eltwise4", pout);
+        if (pret != 0 || pout.empty() || pout.w != 256 || pout.h != 256) {
+            LOGE("waifu2x cunet probe FAILED: ret=%d out=%dx%d (expect 256x256)", pret, pout.w, pout.h);
+            return false;
+        }
+        LOGI("waifu2x cunet probe OK: 312 -> %dx%d", pout.w, pout.h);
+    }
+
     tilesize = calculateOptimalTileSize();
 
     loaded = true;
@@ -141,16 +157,116 @@ bool RealESRGANWrapper::process(const ncnn::Mat& inimage, ncnn::Mat& outimage) {
 
     int prepadding;
     if (modelType == "realcugan") {
-        // Real-CUGAN has no-padding conv layers → output = input*scale - CROP
-        // prepadding compensates so padded_input*scale - CROP = original*scale
-        // realcugan-2x: CROP=72, prepadding = 72/(2*2) = 18
-        // realcugan-4x: CROP=152, prepadding = 152/(2*4) = 19
         prepadding = (scale == 2) ? 18 : (scale == 4) ? 19 : 10;
     } else {
         prepadding = 10;
     }
 
+    // ===== waifu2x cunet 1x：固定 312 输入 / 256 业务区 / 28 贴边（blob: Input1→Eltwise4）=====
+    // 每个输入 tile 恒为 312×312（越界 replicate 填满，页小于 312 也填满），输出 256 写回业务网格。
+    if (modelType == "waifu2x_cunet") {
+        const int BIZ = 256, PADW = 28, TIN = 312;
+        // ★ 必须先分配输出（此前漏掉导致写空指针闪退）
+        outimage.create(out_w, out_h, 3);
+        if (outimage.empty()) {
+            LOGE("waifu2x: outimage alloc failed (%dx%d)", out_w, out_h);
+            active_processes.fetch_sub(1, std::memory_order_acq_rel);
+            { std::lock_guard<std::mutex> lock(cv_mutex); } cv.notify_all();
+            return false;
+        }
+        // 预填最近邻仅作极端兜底（网格应全铺满）
+        for (int c = 0; c < 3; c++) {
+            const float* src_ch = inimage.channel(c);
+            float* dst_ch = outimage.channel(c);
+            for (int y = 0; y < out_h; y++) {
+                int sy = y / scale; if (sy >= h) sy = h - 1;
+                for (int x = 0; x < out_w; x++) {
+                    int sx = x / scale; if (sx >= w) sx = w - 1;
+                    dst_ch[(size_t)y * out_w + x] = src_ch[(size_t)sy * w + sx];
+                }
+            }
+        }
+        const int gx = (w + BIZ - 1) / BIZ;
+        const int gy = (h + BIZ - 1) / BIZ;
+        for (int yi = 0; yi < gy; yi++) {
+            for (int xi = 0; xi < gx; xi++) {
+                if (!is_valid.load(std::memory_order_acquire)) {
+                    LOGE("waifu2x invalidated during tiling");
+                    active_processes.fetch_sub(1, std::memory_order_acq_rel);
+                    { std::lock_guard<std::mutex> lock(cv_mutex); } cv.notify_all();
+                    return false;
+                }
+                ncnn::Mat in_tile(TIN, TIN, 3);
+                if (in_tile.empty()) {
+                    LOGE("waifu2x: in_tile alloc failed (%d,%d)", xi, yi);
+                    active_processes.fetch_sub(1, std::memory_order_acq_rel);
+                    { std::lock_guard<std::mutex> lock(cv_mutex); } cv.notify_all();
+                    return false;
+                }
+                const int sx0 = xi * BIZ - PADW, sy0 = yi * BIZ - PADW;
+                for (int c = 0; c < 3; c++) {
+                    for (int y = 0; y < TIN; y++) {
+                        int sy = sy0 + y; if (sy < 0) sy = 0; else if (sy >= h) sy = h - 1;
+                        const float* src_row = static_cast<const float*>(inimage.channel(c).row(sy));
+                        float* dst_row = static_cast<float*>(in_tile.channel(c).row(y));
+                        for (int x = 0; x < TIN; x++) {
+                            int sx = sx0 + x; if (sx < 0) sx = 0; else if (sx >= w) sx = w - 1;
+                            dst_row[x] = src_row[sx];
+                        }
+                    }
+                }
+                ncnn::Mat out_tile;
+                {
+                    ncnn::Extractor ex = net.create_extractor();
+                    ex.input("Input1", in_tile);
+                    int ret = ex.extract("Eltwise4", out_tile);
+                    if (ret != 0 || out_tile.empty() || out_tile.c < 3 || out_tile.w != BIZ || out_tile.h != BIZ) {
+                        LOGE("waifu2x tile (%d,%d) failed: ret=%d out=%dx%d", xi, yi, ret,
+                             out_tile.w, out_tile.h);
+                        active_processes.fetch_sub(1, std::memory_order_acq_rel);
+                        { std::lock_guard<std::mutex> lock(cv_mutex); } cv.notify_all();
+                        return false;
+                    }
+                }
+                for (int c = 0; c < 3; c++) {
+                    for (int y = 0; y < BIZ; y++) {
+                        const int dst_y = yi * BIZ + y;
+                        if (dst_y >= out_h) break;
+                        const float* src_row = static_cast<const float*>(out_tile.channel(c).row(y));
+                        float* dst_row = static_cast<float*>(outimage.channel(c).row(dst_y));
+                        for (int x = 0; x < BIZ; x++) {
+                            const int dst_x = xi * BIZ + x;
+                            if (dst_x >= out_w) break;
+                            dst_row[dst_x] = src_row[x];
+                        }
+                    }
+                }
+            }
+        }
+        LOGI("waifu2x process complete: %dx%d (grid %dx%d)", w, h, gx, gy);
+        active_processes.fetch_sub(1, std::memory_order_acq_rel);
+        { std::lock_guard<std::mutex> lock(cv_mutex); } cv.notify_all();
+        return true;
+    }
+
     outimage.create(out_w, out_h, 3);
+    if (!outimage.empty()) {
+        // 填充保底：先放最近邻放大的原图内容，面板上边界/瑕疵时看不到"未填像素"
+        // （后续 tile 会回填正确元组；只能解决个别 tile 错就是由于 tile 全卡的致命性）
+        for (int c = 0; c < 3; c++) {
+            const float* src_ch = inimage.channel(c);
+            float* dst_ch = outimage.channel(c);
+            for (int y = 0; y < out_h; y++) {
+                int sy = y / scale;
+                if (sy < 0) sy = 0; if (sy >= h) sy = h - 1;
+                for (int x = 0; x < out_w; x++) {
+                    int sx = x / scale;
+                    if (sx < 0) sx = 0; if (sx >= w) sx = w - 1;
+                    dst_ch[y * out_w + x] = src_ch[sy * w + sx];
+                }
+            }
+        }
+    }
     if (outimage.empty()) {
         LOGE("Failed to create output Mat");
         active_processes.fetch_sub(1, std::memory_order_acq_rel);
@@ -214,11 +330,17 @@ bool RealESRGANWrapper::process(const ncnn::Mat& inimage, ncnn::Mat& outimage) {
                 return false;
             }
 
+            // 若输出比预期大（模型不裁剪），有效区域居中，跳过边缘；
+            // Real-CUGAN 裁剪模型输出正好等于 out_w×out_h，skip 为 0。
+            int skip_x = (out_tile.w - out_w) / 2;
+            int skip_y = (out_tile.h - out_h) / 2;
+            if (skip_x < 0) skip_x = 0;
+            if (skip_y < 0) skip_y = 0;
             for (int c = 0; c < 3; c++) {
                 for (int y = 0; y < out_h; y++) {
-                    const float* src_row = static_cast<const float*>(out_tile.channel(c).row(y));
+                    const float* src_row = static_cast<const float*>(out_tile.channel(c).row(skip_y + y));
                     float* dst_row = static_cast<float*>(outimage.channel(c).row(y));
-                    memcpy(dst_row, src_row, out_w * sizeof(float));
+                    memcpy(dst_row, src_row + skip_x, out_w * sizeof(float));
                 }
             }
             LOGI("RealCUGAN (no tiling): %dx%d -> %dx%d", w, h, out_w, out_h);
@@ -282,20 +404,29 @@ bool RealESRGANWrapper::process(const ncnn::Mat& inimage, ncnn::Mat& outimage) {
                     }
                 }
 
-                // Copy full output tile to (xi*tile_size - prepadding)*scale, clipped to output
-                int out_x0 = (xi * tile_size - prepadding) * scale;
-                int out_y0 = (yi * tile_size - prepadding) * scale;
+                // Real-CUGAN 是无填充卷积模型：输出即输入 [xi*ts, xi*ts+ts) 区域的放大结果，
+                // 必须整块写到 (xi*ts*scale, yi*ts*scale)。若起始点减去 prepadding，
+                // 整图会向左上错 36px，右/下边缘露出未覆盖区域（颜色异常带）。
+                // src_off 自适应：不裁剪模型（输出含 prepadding 圈）时跳过边缘即可。
+                int src_off_x = (out_tile.w - tile_size * scale) / 2;
+                int src_off_y = (out_tile.h - tile_size * scale) / 2;
+                if (src_off_x < 0) src_off_x = 0;
+                if (src_off_y < 0) src_off_y = 0;
+                int copy_w = out_tile.w - 2 * src_off_x;
+                int copy_h = out_tile.h - 2 * src_off_y;
+                int out_x0 = xi * tile_size * scale;
+                int out_y0 = yi * tile_size * scale;
 
                 for (int c = 0; c < 3; c++) {
-                    for (int y = 0; y < out_tile.h; y++) {
+                    for (int y = 0; y < copy_h; y++) {
                         int dst_y = out_y0 + y;
                         if (dst_y < 0 || dst_y >= out_h) continue;
-                        const float* src_row = static_cast<const float*>(out_tile.channel(c).row(y));
+                        const float* src_row = static_cast<const float*>(out_tile.channel(c).row(src_off_y + y));
                         float* dst_row = static_cast<float*>(outimage.channel(c).row(dst_y));
-                        for (int x = 0; x < out_tile.w; x++) {
+                        for (int x = 0; x < copy_w; x++) {
                             int dst_x = out_x0 + x;
                             if (dst_x < 0 || dst_x >= out_w) continue;
-                            dst_row[dst_x] = src_row[x];
+                            dst_row[dst_x] = src_row[src_off_x + x];
                         }
                     }
                 }

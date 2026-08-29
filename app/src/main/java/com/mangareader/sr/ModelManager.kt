@@ -39,6 +39,8 @@ class ModelManager private constructor(
 
     fun ensureModelsExtracted() {
         SRModel.entries.filter { it.isBuiltIn }.forEach { model ->
+            // 快速优化档无模型文件，跳过解包
+            if (model.modelType == "algorithm") return@forEach
             if (!isModelReady(model)) {
                 val modelDir = getModelDir(model)
                 modelDir.mkdirs()

@@ -716,12 +716,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
                                 Text("✗ 本设备不可用超分：${if (!vulkanOk) "缺少 Vulkan 图形加速" else "超分组件加载失败"}", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
                             }
                             Text(vulkanDetail, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            if (sdk >= android.os.Build.VERSION_CODES.S) {
-                                val soc = try { android.os.Build.SOC_MODEL } catch (_: Throwable) { "" }
-                                Text("NPU 加速：Android 12+ 满足；芯片 $soc（骁龙8+ Gen1 及以上将在后续版本启用 NPU）", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            } else {
-                                Text("NPU 加速不可用：需要 Android 12 及以上（当前 API $sdk），且需骁龙8+以上芯片", fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
-                            }
+                            Text("超分路径：Vulkan GPU / CPU 自动选择；不支持 Vulkan 的设备走 CPU（较慢但绝对稳定）", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Text("超分缓存：${if (sdk >= android.os.Build.VERSION_CODES.R) "WEBP 高质量存储" else "JPEG 存储（系统限制，画质略低）"}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Spacer(Modifier.height(12.dp))
                             HorizontalDivider()
@@ -739,6 +734,12 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
                             LicenseLink("libmobi", "https://github.com/niceSaber/libmobi")
                             LicenseLink("libzip", "https://github.com/niceSaber/libzip")
                             LicenseLink("APNG4Android (penfeizhou)", "https://github.com/penfeizhou/APNG4Android")
+                            // 超分栈（模型随包内置，BSD 系许可）
+                            LicenseLink("ncnn (Tencent)", "https://github.com/Tencent/ncnn")
+                            LicenseLink("Real-CUGAN 模型 (bilibili/ailab)", "https://github.com/bilibili/ailab")
+                            LicenseLink("Real-ESRGAN 模型 (xinntao)", "https://github.com/xinntao/Real-ESRGAN")
+                            LicenseLink("ncnn 超分推理实现 (nihui)", "https://github.com/nihui/realcugan-ncnn-vulkan")
+                            LicenseLink("waifu2x 模型与 ncnn 移植 (nagadomi / nihui)", "https://github.com/nihui/waifu2x-ncnn-vulkan")
                             Spacer(Modifier.height(8.dp))
                             Text("特别感谢", fontSize = 14.sp, fontWeight = FontWeight.Medium)
                             Text("· TachiyomiSY — 阅读器架构与功能设计的重要参考", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)

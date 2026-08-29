@@ -10,44 +10,67 @@ enum class SRModel(
     val modelType: String,
     val isBuiltIn: Boolean,
 ) {
+    QUICK_OPTIMIZE(
+        key = "quick_optimize",
+        // 快速优化档（默认）：非神经网络，无权重文件——纯 CPU 双边滤波+锐化，原图尺寸毫秒级。
+        displayName = "快速优化 1x（算法）",
+        scale = 1,
+        requiresVulkan = false,
+        modelDirName = "",
+        modelType = "algorithm",
+        isBuiltIn = true,
+    ),
     REALCUGAN_2X_CONSERVATIVE(
         key = "realcugan_2x_conservative",
-        displayName = "Real-CUGAN 2x 保守（默认，最稳）",
+        displayName = "CUGAN 2x 保守",
         scale = 2,
         requiresVulkan = true,
         modelDirName = "realcugan-2x-conservative",
         modelType = "realcugan",
         isBuiltIn = true,
     ),
+    ANIMEVIDEOV3_2X(
+        key = "animevideov3_2x",
+        // 与 4x 档同一套权重（md5 一致），走 Interp 2x 上采样分支。
+        // 实算 0.62 vs CUGAN 1.42 MMACs/px：比 2x 保守少 2.3 倍算力；与 4x 档推理同速（卷积都在输入分辨率），省的是输出内存/IO
+        displayName = "动漫V3 2x 极速",
+        scale = 2,
+        requiresVulkan = true,
+        modelDirName = "animevideov3-2x",
+        modelType = "realesrgan",
+        isBuiltIn = true,
+    ),
     REALESRGAN_ANIME_FAST(
         key = "realesrgan_anime_fast",
-        displayName = "Real-ESRGAN 动漫 快速",
+        displayName = "动漫V3 4x 大屏",
         scale = 4,
         requiresVulkan = true,
         modelDirName = "realesrgan-anime-fast",
         modelType = "realesrgan",
         isBuiltIn = true,
     ),
-    REALESRGAN_GENERAL_FAST(
-        key = "realesrgan_general_fast",
-        displayName = "Real-ESRGAN 通用 快速",
-        scale = 4,
+    WAIFU2X_1X(
+        key = "waifu2x_cunet_1x",
+        // waifu2x cunet 1x 降噪（固定 312 输入/256 业务区/28 贴边，blob Input1→Eltwise4）
+        displayName = "waifu2x 1x 清理",
+        scale = 1,
         requiresVulkan = true,
-        modelDirName = "realesrgan-general-fast",
-        modelType = "realesrgan",
+        modelDirName = "waifu2x-cunet-1x",
+        modelType = "waifu2x_cunet",
         isBuiltIn = true,
     );
+    // 2026-08-28 移除 REALESRGAN_GENERAL_FAST（通用 快速）：用户设备上该模型推理必闪退。
+    // 已选过它的用户靠 fromKey 兜底自动落回默认档。
 
     companion object {
         fun fromKey(key: String): SRModel =
-            entries.firstOrNull { it.key == key } ?: REALCUGAN_2X_CONSERVATIVE
+            entries.firstOrNull { it.key == key } ?: QUICK_OPTIMIZE
 
-        fun selectModel(scale: Int, denoiseLevel: DenoiseLevel, quality: Quality = Quality.BALANCED): SRModel {
-            return when {
-                scale == 2 -> REALCUGAN_2X_CONSERVATIVE
-                denoiseLevel == DenoiseLevel.STRONG -> REALESRGAN_GENERAL_FAST
-                else -> REALESRGAN_ANIME_FAST
+        fun selectModel(scale: Int, denoiseLevel: DenoiseLevel, quality: Quality = Quality.BALANCED): SRModel =
+            when {
+                scale <= 1 -> if (denoiseLevel == DenoiseLevel.STRONG) WAIFU2X_1X else QUICK_OPTIMIZE
+                scale >= 4 -> REALESRGAN_ANIME_FAST
+                else -> REALCUGAN_2X_CONSERVATIVE
             }
-        }
     }
 }

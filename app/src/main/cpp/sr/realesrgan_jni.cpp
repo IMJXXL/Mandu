@@ -27,30 +27,29 @@ Java_com_mangareader_sr_RealESRGANProcessor_nativeInit(
     auto* wrapper = new RealESRGANWrapper();
     wrapper->useFp16 = (use_fp16 == JNI_TRUE);
 
+    // 注意：GetStringUTFChars 拿到的指针，必须等所有用完再 Release，不能先放堆里
     const char *param = env->GetStringUTFChars(param_path, nullptr);
     const char *model = env->GetStringUTFChars(bin_path, nullptr);
     const char *type = env->GetStringUTFChars(model_type, nullptr);
 
     bool result = wrapper->load(param, model, gpuid, type, scale);
 
+    // 如果 GPU 失败，留新模式重试（字符串此刻还在，存活期不会再穿了）
+    if (!result && gpuid >= 0) {
+        LOGW("GPU init failed, retrying with CPU");
+        delete wrapper;
+        wrapper = new RealESRGANWrapper();
+        wrapper->useFp16 = (use_fp16 == JNI_TRUE);
+        result = wrapper->load(param, model, -1, type, scale);
+    }
+
     env->ReleaseStringUTFChars(param_path, param);
     env->ReleaseStringUTFChars(bin_path, model);
     env->ReleaseStringUTFChars(model_type, type);
 
     if (!result) {
-        // Vulkan 失败时自动降级 CPU 重试（终极兜底：让功能宁可慢也不罢工）
-        if (gpuid >= 0) {
-            LOGW("GPU init failed, retrying with CPU (gpuid=-1)");
-            LOGE("GPU init failed, retrying with CPU (gpuid=-1)");
-            delete wrapper;
-            wrapper = new RealESRGANWrapper();
-            wrapper->useFp16 = (use_fp16 == JNI_TRUE);
-            result = wrapper->load(param ? param : param, model ? model : model, -1, type, scale);
-        }
-        if (!result) {
-            delete wrapper;
-            return 0;
-        }
+        delete wrapper;
+        return 0;
     }
 
     LOGI("RealESRGAN initialized: gpuid=%d, type=%s, fp16=%d", gpuid, wrapper->modelType.c_str(), wrapper->useFp16);
@@ -89,12 +88,15 @@ Java_com_mangareader_sr_RealESRGANProcessor_nativeProcess(
 
     ncnn::Mat inimage(in_w, in_h, 3);
     const unsigned char* rgba_data = static_cast<const unsigned char*>(pixels);
-    
+
+    // 按实际 stride 取行（位图行对齐可能大于 width*4，否则整图扭曲错位）
+    const size_t in_stride = info.stride > 0 ? (size_t)info.stride : (size_t)in_w * 4;
+
     const float mean_vals[3] = {0.0f, 0.0f, 0.0f};
     const float norm_vals[3] = {1.0f / 255.0f, 1.0f / 255.0f, 1.0f / 255.0f};
-    
+
     for (int y = 0; y < in_h; y++) {
-        const unsigned char* rgba_row = rgba_data + y * in_w * 4;
+        const unsigned char* rgba_row = rgba_data + (size_t)y * in_stride;
         float* r_row = static_cast<float*>(inimage.channel(0).row(y));
         float* g_row = static_cast<float*>(inimage.channel(1).row(y));
         float* b_row = static_cast<float*>(inimage.channel(2).row(y));
@@ -197,12 +199,17 @@ Java_com_mangareader_sr_RealESRGANProcessor_nativeProcess(
     const float inv_norm_vals[3] = {255.0f, 255.0f, 255.0f};
     const float add_mean_vals[3] = {0.0f, 0.0f, 0.0f};
 
+    AndroidBitmapInfo out_info;
+    memset(&out_info, 0, sizeof(out_info));
+    AndroidBitmap_getInfo(env, output_bitmap, &out_info);
+    const size_t out_stride = out_info.stride > 0 ? (size_t)out_info.stride : (size_t)out_w * 4;
+
     unsigned char* out_rgba = static_cast<unsigned char*>(out_pixels);
     for (int y = 0; y < out_h; y++) {
         const float* r_row = static_cast<const float*>(outimage.channel(0).row(y));
         const float* g_row = static_cast<const float*>(outimage.channel(1).row(y));
         const float* b_row = static_cast<const float*>(outimage.channel(2).row(y));
-        unsigned char* rgba_row = out_rgba + y * out_w * 4;
+        unsigned char* rgba_row = out_rgba + (size_t)y * out_stride;
         
         for (int x = 0; x < out_w; x++) {
             float r = r_row[x] * inv_norm_vals[0] + add_mean_vals[0];

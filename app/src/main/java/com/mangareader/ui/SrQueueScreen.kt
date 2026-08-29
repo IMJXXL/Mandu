@@ -82,6 +82,8 @@ fun SrQueueScreen(onBack: () -> Unit, onOpenBook: ((Long, String) -> Unit)? = nu
     var queue by remember { mutableStateOf(emptyList<SRQueueItem>()) }
     var completed by remember { mutableStateOf(emptyList<com.mangareader.sr.SRDiskCache.BatchCompletedChapter>()) }
     var usageText by remember { mutableStateOf("") }
+    // 暂停状态必须是 Compose 状态：直接读普通 var 时，若其它状态内容相等不触发重组，按钮文案会永远停在"暂停"
+    var pausedState by remember { mutableStateOf(com.mangareader.sr.SrBatchService.paused) }
 
     fun refresh() {
         if (!SrCore.initialized) return
@@ -102,7 +104,12 @@ fun SrQueueScreen(onBack: () -> Unit, onOpenBook: ((Long, String) -> Unit)? = nu
         if (SrCore.initialized) {
             launch { SrCore.queueProgress.collect { refresh() } }
             // 暂停/继续状态实时刷新按钮文案
-            launch { SrCore.batchPausedFlow.collect { refresh() } }
+            launch {
+                SrCore.batchPausedFlow.collect {
+                    pausedState = com.mangareader.sr.SrBatchService.paused
+                    refresh()
+                }
+            }
         }
     }
 
@@ -116,11 +123,12 @@ fun SrQueueScreen(onBack: () -> Unit, onOpenBook: ((Long, String) -> Unit)? = nu
                 actions = {
                     // 暂停/继续批量（通知栏也有此按钮）
                     TextButton(onClick = {
+                        pausedState = !pausedState // 先本地翻转立即反馈，服务回包后再校准
                         ctx.startService(
                             android.content.Intent(ctx, com.mangareader.sr.SrBatchService::class.java)
                                 .setAction(com.mangareader.sr.SrBatchService.ACTION_TOGGLE_PAUSE),
                         )
-                    }) { Text(if (com.mangareader.sr.SrBatchService.paused) "继续" else "暂停") }
+                    }) { Text(if (pausedState) "继续" else "暂停") }
                     TextButton(onClick = {
                         SrBatchRunner.clear(ctx)
                         refresh()
@@ -152,6 +160,10 @@ fun SrQueueScreen(onBack: () -> Unit, onOpenBook: ((Long, String) -> Unit)? = nu
                             }) { Text("清空实时缓存") }
                             TextButton(onClick = {
                                 SrCore.diskCache.clearBatch()
+                                // 队列里条目进度同步归零（产物都没了，进度数字不能停在中段）
+                                SrCore.queueStore.save(
+                                    SrCore.queueStore.load().map { it.copy(processedPages = 0) },
+                                )
                                 refresh()
                             }) { Text("清空批量产物", color = MaterialTheme.colorScheme.error) }
                         }
@@ -213,7 +225,7 @@ fun SrQueueScreen(onBack: () -> Unit, onOpenBook: ((Long, String) -> Unit)? = nu
                         Column(Modifier.weight(1f)) {
                             Text(ch.bookTitle, fontWeight = FontWeight.Medium, fontSize = 14.sp)
                             Text(
-                                "${ch.pageCount} 页 · ${formatTime(ch.completedAt)} · 点我直接阅读",
+                                "${ch.pageCount} 页 · ${if (ch.modelKey.isEmpty()) "旧版产物" else com.mangareader.sr.SRModel.fromKey(ch.modelKey).displayName} · ${formatTime(ch.completedAt)} · 点我直接阅读",
                                 fontSize = 12.sp,
                                 color = MaterialTheme.colorScheme.primary,
                             )

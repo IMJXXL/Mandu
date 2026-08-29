@@ -154,6 +154,13 @@ class MainActivity : ComponentActivity() {
         } catch (_: Exception) {}
     }
 
+    // ★ 附录 B.3 修复：trimMemory 过去全项目无调用方（阅读视图缓存永远没人收）。
+    //   广播给 NES 注册的阅读视图（弱引用注册表，不收想释放的视图）
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        com.mangareader.native.ReaderTrimRegistry.trimAll(level)
+    }
+
     private fun requestAllFilesAccess() {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
             if (!android.os.Environment.isExternalStorageManager()) {

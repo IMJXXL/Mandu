@@ -9,6 +9,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -26,6 +27,9 @@ object SrPipeline {
 
     private var scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val inFlight = ConcurrentHashMap.newKeySet<String>()
+
+    /** 进行中轮询的页（防同一页起多个轮询协程） */
+    private val pollKeys = ConcurrentHashMap.newKeySet<String>()
 
     @Volatile
     private var engine: ArchiveEngine? = null
@@ -149,6 +153,34 @@ object SrPipeline {
     private fun cancelScope() {
         scope.cancel()
         inFlight.clear()
+        pollKeys.clear()
+    }
+
+    /** 显示层兜底轮询（照搬参考项目 ReaderPageImageView.scheduleSrRefresh 的思路）：
+     *  readyEvents 事件可能被丢/视图当时不在屏，事件注入失败后就永远停在原图。
+     *  每 800ms 查一次三级缓存（实时/黑白独立/批量离线），命中即回调，最多约 48s。
+     *  与事件注入并存：两边都走到时 inject 幂等（同一张图重复写缓存+刷新，无副作用）。 */
+    fun pollForResult(pageIndex: Int, onReady: (Bitmap) -> Unit) {
+        if (!sessionActive) return
+        if (SrUiState.scope.intValue == SrUiState.SCOPE_OFF) return
+        if (!SrCore.settings.upscaleEnabled && !SrCore.settings.bwEnabled) return
+        val key = "$sessionChapterId:$pageIndex"
+        if (!pollKeys.add(key)) return
+        scope.launch(Dispatchers.IO) {
+            try {
+                repeat(60) {
+                    if (!sessionActive) return@launch
+                    val hit = getCached(pageIndex)
+                    if (hit != null && !hit.isRecycled) {
+                        onReady(hit)
+                        return@launch
+                    }
+                    delay(800)
+                }
+            } finally {
+                pollKeys.remove(key)
+            }
+        }
     }
 
     private fun stableChapterId(treeStr: String): Long {
@@ -191,8 +223,15 @@ object SrPipeline {
         }
         val chKey = SRQueueItem.chapterKey(sessionBookId, sessionTreeStr)
         if (SrCore.diskCache.hasBatchChapter(sessionBookTitle, chKey)) {
-            SrCore.diskCache.getBatchPage(sessionBookTitle, chKey, pageIndex)?.let {
-                return it
+            SrCore.diskCache.getBatchPage(sessionBookTitle, chKey, pageIndex)?.let { bmp ->
+                // 同步回填内存结果缓存（只进内存，不写实时磁盘区——批量产物有自己的领地，不重复占用配额）。
+                // 回填后状态指示/前后对比也能看到批量产物，不再出现"已显示超分却提示未启动"。
+                try {
+                    SrCore.manager.putCachedResult(
+                        SrCore.manager.buildCacheKey(sessionChapterId, pageIndex), bmp,
+                    )
+                } catch (_: Throwable) {}
+                return bmp
             }
         }
         return null
@@ -251,8 +290,25 @@ object SrPipeline {
         }
     }
 
-    private fun scheduleInternal(pageIndex: Int, callerBitmap: Bitmap?) {
-        if (sessionHasBatch) return
+    /** "重算本页"（面板手动按钮）：已有结果→补发注入事件立刻替换；没有→清在途标记强制重算。
+     *  显式用户动作，绕过 batch 章节跳过策略与作用域守卫（调用方 UI 已在作用域关闭时灰掉）。 */
+    fun forceRetryCurrentPage(): String {
+        if (!sessionActive) return "当前没有打开的书"
+        if (sessionPageList.isEmpty()) return "没有可用页"
+        val p = currentPageIdx.coerceIn(0, sessionPageList.size - 1)
+        val cached = getCached(p)
+        if (cached != null && !cached.isRecycled) {
+            SrCore.emitReady(sessionChapterId, p, cached)
+            return "本页已有超分结果，已刷新显示"
+        }
+        inFlight.remove("$sessionChapterId:$p")
+        val orig = synchronized(originals) { originals["$sessionChapterId:$p"] }
+        scheduleInternal(p, orig, force = true)
+        return "已开始重算本页，完成后自动替换"
+    }
+
+    private fun scheduleInternal(pageIndex: Int, callerBitmap: Bitmap?, force: Boolean = false) {
+        if (sessionHasBatch && !force) return
         val cid = sessionChapterId
         val key = "$cid:$pageIndex"
         if (!inFlight.add(key)) return
@@ -278,25 +334,11 @@ object SrPipeline {
                 if (upscaleOn) {
                     // A. 超分放大（可选叠加黑白后处理；黑白对彩页自动跳过）
                     val bwForceOff = bwOn && !isGrayscaleish(original)
-                    // NPU 优先（仅默认铺底模型有离线 context；其它模型回落 Vulkan/CPU）
-                    var result: Bitmap? = null
-                    val activeModelKey = SrCore.manager.activeModel?.key ?: "realcugan_2x_conservative"
-                    val npuModelKey = if (activeModelKey == "realcugan_2x_conservative") activeModelKey else null
-                    if (npuModelKey != null &&
-                        SrNpuProcessor.check(SrCore.appContext) &&
-                        SrNpuProcessor.activate(SrCore.appContext, npuModelKey)) {
-                        // 与 Vulkan 一样打看门狗标记；崩溃后自动把 NPU 拉黑
-                        if (!SrCore.inferenceInFlight) SrCore.markInferenceStart()
-                        result = SrNpuProcessor.process(original)
-                        SrCore.markInferenceEnd()
-                    }
-                    if (result == null || result.isRecycled) {
-                        val version = SrCore.manager.currentModelVersion()
-                        // 看门狗：推理前打标记（崩溃后下次启动强制 CPU 兜底）
-                        if (!SrCore.inferenceInFlight) SrCore.markInferenceStart()
-                        result = SrCore.manager.process(original, version, bwForceOff)
-                        SrCore.markInferenceEnd()
-                    }
+                    val version = SrCore.manager.currentModelVersion()
+                    // 看门狗：推理前打标记（崩溃后下次启动强制 CPU 兜底）
+                    if (!SrCore.inferenceInFlight) SrCore.markInferenceStart()
+                    var result = SrCore.manager.process(original, version, bwForceOff)
+                    SrCore.markInferenceEnd()
                     if (result === original || result.isRecycled) return@launch
 
                     if (isFullyTransparent(result)) {

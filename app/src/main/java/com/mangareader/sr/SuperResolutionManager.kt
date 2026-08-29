@@ -172,6 +172,20 @@ class SuperResolutionManager(
     suspend fun process(input: Bitmap, versionAtStart: Long, bwForceOff: Boolean = false): Bitmap = mutex.withLock {
         ensureModelLoaded()
 
+        // ★ 快速优化档（algorithm）：纯 CPU 经典算法（双边滤波+锐化），不经 ncnn、不看 Vulkan。
+        //   任何失败回退原图，绝不空白。
+        if (currentModel?.modelType == "algorithm") {
+            if (versionAtStart != modelVersion) return@withLock input
+            val strength = when (currentDenoiseLevel) {
+                DenoiseLevel.OFF -> 0
+                DenoiseLevel.LIGHT -> 1
+                DenoiseLevel.STRONG -> 2
+            }
+            return@withLock withContext(Dispatchers.IO) {
+                try { SrCleanupProcessor.process(input, strength) ?: input } catch (_: Throwable) { input }
+            }
+        }
+
         val processor = currentProcessor
         if (processor == null || !processor.isReady) {
             return input
@@ -226,6 +240,8 @@ class SuperResolutionManager(
     }
 
     private fun createProcessor(model: SRModel): SuperResolutionProcessor {
+        // ★ 快速优化档：无 ncnn 处理器，占位 NoOp（process() 内直接走 SrCleanupProcessor）
+        if (model.modelType == "algorithm") return NoOpProcessor()
         return try {
             RealESRGANProcessor(model)
         } catch (e: Throwable) {

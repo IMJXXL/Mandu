@@ -43,28 +43,13 @@ target_link_libraries(native_engine android log jnigraphics z m mobi dl libzip)
 add_library(native_reader SHARED native_reader.cpp jni_reader.cpp)
 target_link_libraries(native_reader android log jnigraphics m)
 
-# QNN NPU 后端（骁龙8+ 及以上）：头文件路径由 gradle 传入 -DQNN_SDK_DIR=...
-set(QNN_SDK_DIR "" CACHE PATH "Path to Qualcomm QNN (QAIRT) SDK root")
-set(QNN_ENABLED OFF)
-if(QNN_SDK_DIR AND EXISTS "${QNN_SDK_DIR}/include/QNN/QnnInterface.h" AND ${ANDROID_ABI} STREQUAL "arm64-v8a")
-    set(QNN_ENABLED ON)
-    message(STATUS "QNN enabled, headers at ${QNN_SDK_DIR}/include")
-endif()
-
-# 超分引擎：NCNN Vulkan + 可选 QNN NPU（移植自 mihon-super-resolution / mihon_img_upscale，Apache-2.0）
+# 超分引擎：NCNN Vulkan（NaModelsmi超分项目移植，Apache-2.0）
 add_library(sr_engine SHARED
     sr/realesrgan_jni.cpp
     sr/realesrgan_wrapper.cpp
     sr/manga_bw_postprocessor.cpp
-    sr/qnn_backend.cpp
-    sr/sr_qnn_jni.cpp
+    sr/manga_cleanup.cpp
 )
-if(QNN_ENABLED)
-    target_compile_definitions(sr_engine PRIVATE MIHON_ENABLE_QNN=1)
-    target_include_directories(sr_engine PRIVATE "${QNN_SDK_DIR}/include/QNN")
-else()
-    target_compile_definitions(sr_engine PRIVATE MIHON_ENABLE_QNN=0)
-endif()
 target_include_directories(sr_engine PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/sr/ncnn/include)
 target_compile_features(sr_engine PRIVATE cxx_std_17)
 # ncnn 静态库带 OpenMP 引用，需要 -fopenmp 编译 + 静态链接 OpenMP 运行时

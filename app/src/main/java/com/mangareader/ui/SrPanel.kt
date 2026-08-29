@@ -46,8 +46,7 @@ fun SrPanel(bookId: Long, bookTitle: String, onOpenQueue: () -> Unit, onDismiss:
     var benchText by remember { mutableStateOf(SrCore.profileManager.describe()) }
     var benchRunning by remember { mutableStateOf(false) }
     var cacheText by remember { mutableStateOf(cacheUsageText()) }
-    var autoSelRunning by remember { mutableStateOf(false) }
-    var autoSelText by remember { mutableStateOf("") }
+    // （原"自动选最快模型"功能 2026-08-28 已下线：只剩两个模型，手动选即可）
     var cacheMbInput by remember { mutableStateOf(settings.realtimeCacheLimitMb.toString()) }
 
     val scopeState = SrUiState.scope.intValue
@@ -101,7 +100,11 @@ fun SrPanel(bookId: Long, bookTitle: String, onOpenQueue: () -> Unit, onDismiss:
             if (blockReason != null) {
                 Text(blockReason, fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+            ) {
                 listOf(
                     SrUiState.SCOPE_OFF to "关闭",
                     SrUiState.SCOPE_PAGE to "仅当前页",
@@ -118,9 +121,21 @@ fun SrPanel(bookId: Long, bookTitle: String, onOpenQueue: () -> Unit, onDismiss:
                         enabled = usable || v == SrUiState.SCOPE_OFF,
                     )
                 }
+                // 重算本页：检测当前页是否已有超分结果，没有强制重算（已批量过但缺页的书也补得动）
+                OutlinedButton(
+                    onClick = {
+                        val msg = SrPipeline.forceRetryCurrentPage()
+                        android.widget.Toast.makeText(ctx, msg, android.widget.Toast.LENGTH_SHORT).show()
+                    },
+                    enabled = usable && scopeState != SrUiState.SCOPE_OFF,
+                    contentPadding = PaddingValues(horizontal = 10.dp),
+                    modifier = Modifier.height(32.dp),
+                ) {
+                    Text("重算本页", fontSize = 12.sp)
+                }
             }
             Text(
-                "作用域关闭时下面功能都不会生效，但都能提前设置好；" +
+                "作用域关闭时下面功能都不会生效，但都能提前设置好（“重算本页”同样需要先选作用域）；" +
                     "已批量离线超分过的内容无需开关，阅读时自动用超分图。",
                 fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -141,47 +156,56 @@ fun SrPanel(bookId: Long, bookTitle: String, onOpenQueue: () -> Unit, onDismiss:
                     },
                 )
             }
-            if (upscaleOn) {
-                Text("放大模型", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    SRModel.entries.forEach { m ->
-                        FilterChip(
-                            selected = model == m,
-                            onClick = {
-                                model = m; settings.model = m
-                                scope.launch { SrCore.applySettings(bookId) }
-                            },
-                            label = { Text(m.displayName, fontSize = 12.sp) },
-                            enabled = NativeLibraryStatus.isModelAvailable(m),
-                        )
-                    }
-                }
-                Text("降噪（针对扫描噪点）", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    DenoiseLevel.entries.forEach { d ->
-                        FilterChip(
-                            selected = denoise == d,
-                            onClick = {
-                                denoise = d; settings.denoise = d
-                                scope.launch { SrCore.applySettings(bookId) }
-                            },
-                            label = { Text(d.displayName, fontSize = 12.sp) },
-                        )
-                    }
-                }
-                if (scopeState == SrUiState.SCOPE_BOOK) {
-                    Text("提前加载页数（整本模式翻页更顺）", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf(-1 to "跟随设备", 1 to "1 页", 2 to "2 页", 3 to "3 页", 5 to "5 页").forEach { (v, label) ->
-                            FilterChip(
-                                selected = preloadOv == v,
-                                onClick = {
-                                    preloadOv = v; settings.preloadOverride = v
-                                    SrCore.dispatcher.preloadWindow = if (v >= 0) v else SrCore.profileManager.getPreloadWindow()
-                                },
-                                label = { Text(label, fontSize = 12.sp) },
-                            )
+            // ★ 处理档位：始终可见可预选（作用域关闭时也能提前设置好），主开关仍控制是否生效
+            Text("处理档位", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+            // ★ 内层 Column 包成一个整体子项：外层 Column 的 spacedBy(10dp) 不再对每行重复计费；
+            //   关闭 chip 的 48dp 最小触摸目标强制 + 固定 32dp 高，行距精确 2dp
+            Column {
+                CompositionLocalProvider(LocalMinimumInteractiveComponentEnforcement provides false) {
+                    SRModel.entries.chunked(2).forEach { rowModels ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            rowModels.forEach { m ->
+                                FilterChip(
+                                    selected = model == m,
+                                    onClick = {
+                                        model = m; settings.model = m
+                                        scope.launch { SrCore.applySettings(bookId) }
+                                    },
+                                    modifier = Modifier.height(32.dp),
+                                    label = { Text(m.displayName, fontSize = 12.sp) },
+                                    enabled = NativeLibraryStatus.isModelAvailable(m),
+                                )
+                            }
                         }
+                        Spacer(Modifier.height(8.dp))
+                    }
+                }
+            }
+            Text("降噪强度（针对扫描噪点）", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                DenoiseLevel.entries.forEach { d ->
+                    FilterChip(
+                        selected = denoise == d,
+                        onClick = {
+                            denoise = d; settings.denoise = d
+                            scope.launch { SrCore.applySettings(bookId) }
+                        },
+                        label = { Text(d.displayName, fontSize = 12.sp) },
+                    )
+                }
+            }
+            if (scopeState == SrUiState.SCOPE_BOOK) {
+                Text("提前加载页数（整本模式翻页更顺）", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(-1 to "跟随设备", 1 to "1 页", 2 to "2 页", 3 to "3 页", 5 to "5 页").forEach { (v, label) ->
+                        FilterChip(
+                            selected = preloadOv == v,
+                            onClick = {
+                                preloadOv = v; settings.preloadOverride = v
+                                SrCore.dispatcher.preloadWindow = if (v >= 0) v else SrCore.profileManager.getPreloadWindow()
+                            },
+                            label = { Text(label, fontSize = 12.sp) },
+                        )
                     }
                 }
             }
@@ -253,40 +277,7 @@ fun SrPanel(bookId: Long, bookTitle: String, onOpenQueue: () -> Unit, onDismiss:
                 )
             }
 
-            // ── 自动选最快模型 ──
-            if (upscaleOn) {
-                OutlinedButton(
-                    onClick = {
-                        if (autoSelRunning) return@OutlinedButton
-                        autoSelRunning = true
-                        autoSelText = "开始实测，请耐心等待（约 10~30 秒，期间不要翻页）…"
-                        scope.launch {
-                            val sample = SrPipeline.peekOriginal(SrPipeline.currentPageIdx)
-                            val res = SrAutoSelect.run(sample) { p -> autoSelText = p }
-                            if (res == null) {
-                                autoSelText = "当前页还没有可用素材：先翻到想测试的漫画页，再点本按钮"
-                            } else {
-                                model = res.best
-                                autoSelText = buildString {
-                                    append("最快：${res.best.displayName}（每页约 ${res.bestMs}ms），已设为默认\n")
-                                    append("会一直生效，直到你再次点本按钮或手动换模型\n")
-                                    res.all.sortedBy { it.second }.forEach { (m, ms) ->
-                                        append("${if (m == res.best) "✅" else "　"}${m.displayName}：${ms}ms\n")
-                                    }
-                                }.trimEnd()
-                            }
-                            autoSelRunning = false
-                        }
-                    },
-                    enabled = usable && !autoSelRunning,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(if (autoSelRunning) "正在实测各模型，请耐心等待…" else "⚡ 自动选最快模型（用当前页实测）")
-                }
-                if (autoSelText.isNotEmpty()) {
-                    Text(autoSelText, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
+            // （2026-08-28 去掉"自动选最快模型"：只剩两个模型，手动选即可，实测反而费电耗时）
 
             HorizontalDivider()
 
@@ -311,34 +302,6 @@ fun SrPanel(bookId: Long, bookTitle: String, onOpenQueue: () -> Unit, onDismiss:
                 Text("查看超分队列与缓存管理")
             }
 
-            // ── NPU（骁龙8+ 起可用；不满足条件的条列灰掉+原因文案）──
-            val npuUsable = SrNpuProcessor.usable
-            var npuEnabled by remember { mutableStateOf(SrNpuProcessor.userEnabled) }
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        "NPU 加速（骁龙8+ 及更新专属）",
-                        fontSize = 14.sp,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (npuUsable) 1f else 0.6f),
-                    )
-                    Text(
-                        if (npuUsable) "${SrNpuProcessor.describeSupportedSoC()} → 用时最短，优先于 GPU"
-                        else SrNpuProcessor.statusText(),
-                        fontSize = 12.sp,
-                        color = if (npuUsable) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                    )
-                }
-                Switch(
-                    checked = npuUsable && npuEnabled,
-                    onCheckedChange = {
-                        npuEnabled = it
-                        SrNpuProcessor.userEnabled = it
-                        if (!it) SrNpuProcessor.release()
-                    },
-                    enabled = npuUsable,
-                )
-            }
 
             // ── 测速 / 缓存 ──
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
@@ -401,6 +364,26 @@ fun SrPanel(bookId: Long, bookTitle: String, onOpenQueue: () -> Unit, onDismiss:
                 },
                 modifier = Modifier.fillMaxWidth(),
             ) { Text("清空实时缓存（不动批量产物）", color = MaterialTheme.colorScheme.error) }
+
+            HorizontalDivider()
+            Spacer(Modifier.height(8.dp))
+
+            // ── 档位说明（从快到慢，帮助用户直白理解选哪个）──
+            Text("档位说明（从快到慢）", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "⚡ 快速优化 1x：不放大。毫秒级去掉噪点脏斑、拉锐线条。图够大、只想要干净时选它。\n" +
+                    "🛡 CUGAN 2x 保守：放大 2 倍。漫画特化，线条最稳。画质优先选它。\n" +
+                    "⚡ 动漫V3 2x 极速：放大 2 倍。比保守档快约一倍，线条略软。省电/批量选它。\n" +
+                    "🔍 动漫V3 4x 大屏：放大 4 倍。平板大屏细看用，手机上过剩。\n" +
+                    "🎨 waifu2x 1x 清理：不放大。神经网络级去噪，快速优化不够干净时选它。",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                "实际速度与你的设备、是否开 GPU 有关；放大倍数越高图越大越清晰，但更慢、更占缓存。",
+                fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

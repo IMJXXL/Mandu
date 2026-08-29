@@ -129,7 +129,24 @@ class SrBatchService : Service() {
             }
 
             val total = pages.size
-            var processed = item.processedPages
+            // 模型一致性检查：章节产物是用别的模型生成的 → 整章删除重算。
+            // 无任何模型记录（老产物/未写完章节）→ 保留产物，断点续做不受影响。
+            val batchModelKey = SrCore.settings.model.key
+            val existingModel = SrCore.diskCache.getBatchChapterModelStamp(item.bookTitle, item.chapterKey)
+                ?: SrCore.diskCache.getBatchChapterModelKey(item.bookTitle, item.chapterKey)
+            if (existingModel != null && existingModel != batchModelKey) {
+                Log.i(TAG, "batch model changed (${existingModel} -> ${batchModelKey}), re-run chapter ${item.chapterKey}")
+                SrCore.diskCache.removeBatchChapter(item.bookTitle, item.chapterKey)
+            }
+            SrCore.diskCache.putBatchChapterModelStamp(item.bookTitle, item.chapterKey, batchModelKey)
+
+            // 进度基线以"磁盘上真实存在的产物数量"为准，不信任队列里的旧数字：
+            // 产物被清空后基线归零从头显示；断点续做时自动对准真实进度。
+            var processed = SrCore.diskCache.countBatchDonePrefix(item.bookTitle, item.chapterKey, total)
+            if (processed != item.processedPages) {
+                updateItemProgress(item.chapterKey, processed, total)
+                SrCore.emitBatchProgress(item.copy(processedPages = processed, totalPages = total))
+            }
             var failedAll = true
 
             for (i in 0 until total) {
@@ -139,8 +156,8 @@ class SrBatchService : Service() {
                 }
                 if (item.chapterKey in cancelledKeys) break
 
-                // 已存在产物（断点续做）直接跳过
-                if (SrCore.diskCache.getBatchPage(item.bookTitle, item.chapterKey, i) != null) {
+                // 已存在产物（断点续做）直接跳过；只看文件存在与否，不解码整图
+                if (SrCore.diskCache.hasBatchPage(item.bookTitle, item.chapterKey, i)) {
                     processed = i + 1
                     continue
                 }
@@ -183,7 +200,7 @@ class SrBatchService : Service() {
                 // 取消：删掉半成品，避免半成品章节被当成完成品
                 SrCore.diskCache.removeBatchChapter(item.bookTitle, item.chapterKey)
             } else {
-                SrCore.diskCache.putBatchMetadata(item.bookTitle, item.chapterKey, total, item.bookId, item.path)
+                SrCore.diskCache.putBatchMetadata(item.bookTitle, item.chapterKey, total, item.bookId, item.path, batchModelKey)
             }
             SrBatchRunner.remove(applicationContext, item.chapterKey)
             cancelledKeys.remove(item.chapterKey)

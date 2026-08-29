@@ -21,7 +21,7 @@ import com.mangareader.viewer.ArchiveEngine
 
 interface ReaderViewDelegate {
     /** ★ §34.3：verticalPager=true 表示 VERT_PAGER 竖向翻页模式（ViewPager2 orientation 垂直）。
-     *  与 isVertical（条漫连续滚动）语义分离。旧参数 vertical 保留语义兼容。 */
+     *  与 isVertical（条漫）语义分离。旧参数 vertical 保留语义兼容。 */
     fun setup(engine: ArchiveEngine, treePath: String, pages: List<ArchiveEngine.PageMeta>, startPage: Int, vertical: Boolean, clickFlip: Int, rtl: Boolean, verticalPager: Boolean = false)
     fun goToPage(page: Int)
     fun release()
@@ -30,6 +30,37 @@ interface ReaderViewDelegate {
     var onToggleUi: (() -> Unit)?
     /** ★ v1.13：当前页是否已渲染出内容（无感切换遮罩的就绪信号；mihon 式"数据就绪才可见"） */
     fun isCurrentPageReady(): Boolean
+
+    /** ★ P0-2 模式切换位图交接：把本视图缓存里还活着的位图"取出"（从缓存移除，
+     *  随后 release() 只回收未移交的，不会把这些位图 recycle 掉）。动图视图不移交。 */
+    fun drainLiveBitmaps(): Map<Int, android.graphics.Bitmap> = emptyMap()
+
+    /** ★ P0-2 模式切换位图交接：把旧视图移交的位图接管进缓存，新视图首次绑定即命中，零重解码 */
+    fun adoptBitmaps(map: Map<Int, android.graphics.Bitmap>) {}
+}
+
+/** ★ C4 交接所有权令牌（白屏工单 v2.4）：adopt 过的批次归新视图缓存管；
+ *  从未被 adopt 的批次（切换抖动导致 handoff 未被消费）才允许兜底回收。 */
+private class BitmapHandoff(val bitmaps: Map<Int, android.graphics.Bitmap>) {
+    @Volatile var adopted: Boolean = false
+    fun recycleIfUnadopted() {
+        if (adopted) return
+        bitmaps.values.forEach { bmp -> try { bmp.recycle() } catch (_: Throwable) {} }
+    }
+}
+
+/** ★ 附录 B.3 修复：三个阅读视图的 trimMemory 过去全项目无人调用（缓存无回收机制）。
+ *  现在经本注册表由 MainActivity.onTrimMemory 广播。WeakHashMap 持键，不会挂住已释放视图。 */
+object ReaderTrimRegistry {
+    private val delegates = java.util.WeakHashMap<ReaderViewDelegate, Boolean>()
+    fun register(d: ReaderViewDelegate) = synchronized(delegates) { delegates[d] = true }
+    fun clear() = synchronized(delegates) { delegates.clear() }
+    fun trimAll(level: Int) {
+        val snapshot = synchronized(delegates) { delegates.keys.toList() }
+        // ★ 白屏工单任务1：观测 trim 触发频率/级别（C2 定论的最后一块直接证据）
+        android.util.Log.w("TrimRegistry", "level=$level n=${snapshot.size}")
+        snapshot.forEach { try { it.trimMemory(level) } catch (_: Throwable) {} }
+    }
 }
 
 private fun getCombinedPaint(grayscale: Boolean, invertedColors: Boolean): Paint? {
@@ -105,6 +136,24 @@ fun NativeReaderScreen(
     // Track last released delegate to avoid double release
     var lastReleasedDelegate by remember { mutableStateOf<ReaderViewDelegate?>(null) }
 
+    // ★ P0-2 切换交接容器：onDispose 时 old.drain → 新 effect body 里 new.adopt。
+    //   没有任何人接管的兜底（退出阅读）：下面这个 Unit effect 反方向最晚 dispose，发现残留会统一回收。
+    // ★ C4 交接所有权令牌（白屏工单 v2.4）：adopt 过的批次归新视图缓存管；
+    //   从未被 adopt 的批次（切换抖动导致 handoff 没被消费）才允许兜底回收。
+    //   直接回收引擎 LruCache 仍共享持有的对象 = 毒位图死循环的根源。
+    val srBitmapHandoff = remember { java.util.concurrent.atomic.AtomicReference<BitmapHandoff?>(null) }
+    DisposableEffect(Unit) {
+        // 三视图的 trimMemory 一并接线（修复"trimMemory 全项目无调用方"）
+        ReaderTrimRegistry.register(webtoonView)
+        ReaderTrimRegistry.register(pagerView)
+        ReaderTrimRegistry.register(animPagerView)
+        onDispose {
+            // Compose 逆序 dispose：keyed effect 先 dispose（drain 完成）→ 本 Unit effect 最后兜底
+            srBitmapHandoff.getAndSet(null)?.recycleIfUnadopted()
+            ReaderTrimRegistry.clear()
+        }
+    }
+
     DisposableEffect(treePath, isVertical, isRtl, verticalPager, useAnimPager) {
         if (firstComposition) {
             savedPage = startPage
@@ -142,7 +191,23 @@ fun NativeReaderScreen(
             delegate.trimThreshold = trimThreshold
             delegate.trimWhiteRatio = trimWhiteRatio
         }
-        onDispose { delegate.release(); lastReleasedDelegate = null }
+        // ★ P0-2：切换交接——本次 setup 后立即接管旧视图移交的位图，新视图首帧绑定直接命中缓存
+        android.util.Log.w("NES", "setup delegate=${System.identityHashCode(delegate)} v=$isVertical anim=$useAnimPager vp=$verticalPager tree=$treePath")
+        srBitmapHandoff.getAndSet(null)?.let { h ->
+            if (!h.adopted) {
+                h.adopted = true
+                delegate.adoptBitmaps(h.bitmaps)
+            }
+        }
+        onDispose {
+            // 顺序关键：先 drain（位图从缓存挪走，归属权移交），再 release（残留位图统一回收）；
+            // 上一批若从未被 adopt（切换抖动）→ 兜底回收防泄漏
+            android.util.Log.w("NES", "dispose delegate=${System.identityHashCode(delegate)}")
+            val prev = srBitmapHandoff.getAndSet(BitmapHandoff(delegate.drainLiveBitmaps()))
+            prev?.recycleIfUnadopted()
+            delegate.release()
+            lastReleasedDelegate = null
+        }
     }
 
     // Handle pageLayout: SINGLE=0, DOUBLE=1, DOUBLE_SHIFTED=2
