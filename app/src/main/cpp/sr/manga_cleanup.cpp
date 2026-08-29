@@ -140,6 +140,12 @@ void guidedBand(const std::vector<unsigned char>& in, std::vector<unsigned char>
                 drow[x*4 + c] = clamp255((arow[x] * irow[x] + brow[x]) * 255.f);
             }
         }
+        // ★ alpha 通道引导滤波不处理，必须从源图拷回——否则输出全透明（静默失效漏洞）
+        for (int y = y0; y < y1; y++) {
+            const unsigned char* srow = &in[(size_t)y * w * 4];
+            unsigned char* drow = &out[(size_t)y * w * 4];
+            for (int x = 0; x < w; x++) drow[x*4 + 3] = srow[x*4 + 3];
+        }
     }
 }
 
