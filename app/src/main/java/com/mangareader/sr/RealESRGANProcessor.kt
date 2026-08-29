@@ -9,6 +9,9 @@ class RealESRGANProcessor(
 ) : SuperResolutionProcessor {
 
     private var handle: Long = 0L
+    // ★ F4.5②：abort/release 共用生命周期锁——原先 abort 读 handle 与 release 置空之间有
+    //   use-after-free 窗口（nativeAbort 可打在已 delete 的 wrapper 上；release 的 waitForIdle 不覆盖 abort 路径）
+    private val lifecycleLock = Any()
 
     override val isReady: Boolean
         get() = handle != 0L && nativeLibraryLoaded
@@ -59,16 +62,22 @@ class RealESRGANProcessor(
     }
 
     override fun abort() {
-        if (handle != 0L && nativeLibraryLoaded) {
-            try { nativeAbort(handle) } catch (_: Throwable) {}
+        synchronized(lifecycleLock) {
+            val h = handle
+            if (h != 0L && nativeLibraryLoaded) {
+                try { nativeAbort(h) } catch (_: Throwable) {}
+            }
         }
     }
 
     override fun release() {
-        if (handle != 0L && nativeLibraryLoaded) {
-            nativeRelease(handle)
+        synchronized(lifecycleLock) {
+            val h = handle
+            handle = 0L
+            if (h != 0L && nativeLibraryLoaded) {
+                try { nativeRelease(h) } catch (_: Throwable) {}
+            }
         }
-        handle = 0L
     }
 
     private external fun nativeInit(paramPath: String, binPath: String, gpuid: Int, modelType: String, useFp16: Boolean, scale: Int): Long

@@ -49,27 +49,29 @@ object SrBatchRunner {
             }
             val paths = progressPaths.ifEmpty { listOf(book.filePath) }
 
-            val current = SrCore.queueStore.load().toMutableList()
-            val newItems = mutableListOf<SRQueueItem>()
-            val probe = ArchiveEngine(context.applicationContext)
-            paths.forEach { path ->
+            val built = paths.map { path ->
                 val key = SRQueueItem.chapterKey(bookId, path)
                 val pageCount = try {
                     probe.listPages(path).size
                 } catch (_: Exception) {
                     0
                 }
-                val fresh = SRQueueItem(bookId, bookTitle, path, key, pageCount)
-                // 重新入队 = 从头重做：队列里已有同章旧项时整体替换（processedPages 归零），
-                // 否则残留的旧进度会让用户看到"从中间开始"。
-                val oldIdx = current.indexOfFirst { it.chapterKey == key }
-                if (oldIdx >= 0) current[oldIdx] = fresh else current.add(fresh)
-                newItems.add(fresh)
+                // ★ F4.4：入队打代际戳（重启续跑不改写已有条目的代际——只有显式重新入队才刷新）
+                SRQueueItem(bookId, bookTitle, path, key, pageCount, enqueuedAt = System.currentTimeMillis())
             }
-            if (newItems.isNotEmpty()) {
-                SrCore.queueStore.save(current)
+            // 重新入队 = 从头重做：队列里已有同章旧项时整体替换（processedPages 归零），
+            // 否则残留的旧进度会让用户看到"从中间开始"。★ F4.3：经 store 锁内原子读改写。
+            if (built.isNotEmpty()) {
+                SrCore.queueStore.mutate { current ->
+                    val next = current.toMutableList()
+                    built.forEach { fresh ->
+                        val oldIdx = next.indexOfFirst { it.chapterKey == fresh.chapterKey }
+                        if (oldIdx >= 0) next[oldIdx] = fresh else next.add(fresh)
+                    }
+                    next
+                }
             }
-            newItems.size
+            built.size
         } catch (e: Exception) {
             Log.e(TAG, "enqueue book $bookId failed", e)
             0
@@ -77,8 +79,8 @@ object SrBatchRunner {
     }
 
     fun remove(context: Context, chapterKey: String) {
-        val items = SrCore.queueStore.load().filterNot { it.chapterKey == chapterKey }
-        SrCore.queueStore.save(items)
+        // ★ F4.3：原子读改写
+        SrCore.queueStore.mutate { it.filterNot { item -> item.chapterKey == chapterKey } }
     }
 
     fun clear(context: Context) {

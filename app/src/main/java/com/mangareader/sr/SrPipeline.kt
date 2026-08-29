@@ -170,8 +170,9 @@ object SrPipeline {
      *  与事件注入并存：两边都走到时 inject 幂等（同一张图重复写缓存+刷新，无副作用）。 */
     fun pollForResult(pageIndex: Int, onReady: (Bitmap) -> Unit) {
         if (!sessionActive) return
-        if (SrUiState.scope.intValue == SrUiState.SCOPE_OFF) return
-        if (!SrCore.settings.upscaleEnabled && !SrCore.settings.bwEnabled) return
+        // ★ F4.6：批量产物"永远生效"——作用域/开关关闭时也要为批量章节轮询回填
+        if (SrUiState.scope.intValue == SrUiState.SCOPE_OFF && !sessionHasBatch) return
+        if (!SrCore.settings.upscaleEnabled && !SrCore.settings.bwEnabled && !sessionHasBatch) return
         val key = "$sessionChapterId:$pageIndex"
         if (!pollKeys.add(key)) return
         scope.launch(Dispatchers.IO) {
@@ -264,7 +265,16 @@ object SrPipeline {
     }
 
     /** 主入口：有缓存返回超分图；未命中则按作用域决定是否后台调度（完成后走 readyEvents 原位替换） */
-    fun attachOrSchedule(pageIndex: Int, callerBitmap: Bitmap?): Bitmap? {
+    fun attachOrSchedule(pageIndex: Int, callerBitmap: Bitmap?): Bitmap? =
+        attachOrScheduleInternal(pageIndex, callerBitmap, allowSyncDisk = true)
+
+    /** ★ F4.6：UI 线程专用入口。内存命中同步返回；磁盘/批量产物命中【不解码】——
+     *  只 stat 文件确认存在，命中交给 pollForResult 在 IO 回填；完全未命中才调度。
+     *  杜绝 onBindViewHolder 主线程 decodeFile 大 webw/jpg 掉帧。 */
+    fun attachOrScheduleFast(pageIndex: Int, callerBitmap: Bitmap?): Bitmap? =
+        attachOrScheduleInternal(pageIndex, callerBitmap, allowSyncDisk = false)
+
+    private fun attachOrScheduleInternal(pageIndex: Int, callerBitmap: Bitmap?, allowSyncDisk: Boolean): Bitmap? {
         if (!sessionActive || !SrCore.initialized) return null
         val meta = sessionPageList.getOrNull(pageIndex) ?: return null
         if (!isApplicable(meta) || callerBitmap == null) return null
@@ -273,10 +283,33 @@ object SrPipeline {
         synchronized(originals) { originals["$cid:$pageIndex"] = callerBitmap }
         lastUserPage = pageIndex
 
-        getCached(pageIndex)?.let { return it }
+        if (allowSyncDisk) {
+            getCached(pageIndex)?.let { return it }
+        } else {
+            // 内存命中（快，不碰磁盘）
+            if (SrUiState.scope.intValue > SrUiState.SCOPE_OFF) {
+                SrCore.manager.getCachedResult(SrCore.manager.buildCacheKey(cid, pageIndex))?.let { return it }
+                if (!SrCore.settings.upscaleEnabled && SrCore.settings.bwEnabled) {
+                    val key = "bwonly_${cid}_${pageIndex}_${SrCore.settings.bwGrayLevels}_${if (SrCore.settings.bwDensityCorrection) 1 else 0}"
+                    SrCore.manager.getCachedResult(key)?.let { return it }
+                }
+            }
+            // 磁盘已有结果？只 stat 文件不解码；命中（含批量产物页）交给 pollForResult 异步回填
+            val diskLikely = runCatching {
+                (SrUiState.scope.intValue > SrUiState.SCOPE_OFF &&
+                    SrCore.diskCache.contains(SrCore.manager.buildCacheKey(cid, pageIndex))) || sessionHasBatch
+            }.getOrDefault(false)
+            if (diskLikely) {
+                pollForResult(pageIndex) { b -> SrCore.emitReady(cid, pageIndex, b) }
+                return null
+            }
+        }
 
         // 已有离线产物的章节不再实时超分（直接吃产物；产物缺的页就显示原图）
         if (sessionHasBatch) return null
+
+        // ★ F4.7③：省电模式/低 RAM 设备自动停用"新起"的实时超分（缓存/批量产物照常吃）
+        if (SrCore.shouldThrottleRealtimeSr()) return null
 
         val scope = SrUiState.scope.intValue
         if (scope == SrUiState.SCOPE_OFF) return null
@@ -390,6 +423,10 @@ object SrPipeline {
                     var result = SrCore.manager.process(original, version, bwForceOff)
                     synchronized(runningKeyLock) { if (runningKey == key) runningKey = null }
                     SrCore.markInferenceEnd()
+                    // ★ F4.7②：GPU 失败熔断计数（仅版本未变的真实结果才计；切档时管理器自动重置）
+                    if (version == SrCore.manager.currentModelVersion()) {
+                        SrCore.manager.recordInferenceOutcome(result === original)
+                    }
                     if (result === original || result.isRecycled) return@launch
 
                     if (isFullyTransparent(result)) {

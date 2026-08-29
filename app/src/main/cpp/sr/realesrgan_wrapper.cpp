@@ -130,7 +130,10 @@ bool RealESRGANWrapper::load(const char* param_path, const char* model_path, int
 
 bool RealESRGANWrapper::process(const ncnn::Mat& inimage, ncnn::Mat& outimage) {
     active_processes.fetch_add(1, std::memory_order_acq_rel);
-    if (!is_valid.load(std::memory_order_acquire) || abortFlag.exchange(false)) {
+    // ★ F4.5①：入口不再消费 abortFlag——陈旧标志（上一任务已退出后才置位的残留）曾在此把
+    //   新任务直接杀死（"翻页让位后新页永远原图"）。合法中止只由瓦片边界检查消费；
+    //   入循环前的 store(false) 负责清残留。
+    if (!is_valid.load(std::memory_order_acquire)) {
         active_processes.fetch_sub(1, std::memory_order_acq_rel);
         cv.notify_all();
         LOGE("Wrapper invalid, cannot process");
@@ -144,7 +147,7 @@ bool RealESRGANWrapper::process(const ncnn::Mat& inimage, ncnn::Mat& outimage) {
         return false;
     }
 
-    abortFlag.store(false);   // ★ 新一轮推理清除中止标志
+    abortFlag.store(false);   // ★ F4.5①：新一轮推理起跑前清残留标志（原先在入口检查之后，晚了一步）
 
     if (scale != lastScale) {
         LOGI("Scale changed from %d to %d, recalculating tile_size", lastScale, scale);

@@ -480,7 +480,8 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
         if (cached != null && !cached.isRecycled) {
             // 缓存自愈：注入事件可能丢失导致一直存的是原图；若超分结果已就绪，趁本次绑定直接换超分图
             try {
-                val srHit = com.mangareader.sr.SrPipeline.attachOrSchedule(idx, cached)
+                // ★ F4.6：UI 绑定走 Fast 入口——磁盘命中不解码，交给 pollForResult 异步回填
+                val srHit = com.mangareader.sr.SrPipeline.attachOrScheduleFast(idx, cached)
                 if (srHit != null && !srHit.isRecycled && srHit !== cached) {
                     synchronized(bitmapCache) { bitmapCache.put(idx, srHit) }
                     recycler.post { adapter?.notifyItemChanged(idx, "ld") }

@@ -139,6 +139,16 @@ object SrCore {
         else profileManager.getPreloadWindow()
     }
 
+    /** ★ F4.7③：省电模式/低 RAM 设备自动停用"新起"的实时超分（缓存/批量产物不受影响）。
+     *  调用方在调度入口检查；已算好的结果照常显示。 */
+    fun shouldThrottleRealtimeSr(): Boolean = runCatching {
+        if (!initialized) return false
+        val am = appContext.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+        if (am.isLowRamDevice) return true
+        val pm = appContext.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+        pm.isPowerSaveMode
+    }.getOrDefault(false)
+
     /** 把当前设置应用到引擎（模型/降噪/黑白配置）。bookId 用于单作品覆盖。
      *  应用完成后通知管线重算当前页，让新设置即时生效。 */
     fun applySettings(bookId: Long?) {

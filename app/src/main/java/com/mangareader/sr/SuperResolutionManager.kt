@@ -45,6 +45,29 @@ class SuperResolutionManager(
     @Volatile
     var forceCpu: Boolean = false
 
+    // ★ F4.7②：GPU 连续失败熔断（推理连续 3 次原样返回 → 本次会话强制 CPU，切档自动解除）
+    @Volatile
+    private var gpuFused: Boolean = false
+    private val gpuFailStreak = java.util.concurrent.atomic.AtomicInteger(0)
+
+    private fun gpuCurrentlyUsed(): Boolean =
+        !forceCpu && !gpuFused && SrCore.settings.enableGpu && isVulkanAvailable && currentModel?.requiresVulkan == true
+
+    /** 每次真实推理（版本未变的）结束后由管线回报结果；returnedInput=true 视为一次失败 */
+    fun recordInferenceOutcome(returnedInput: Boolean) {
+        if (!gpuCurrentlyUsed()) { gpuFailStreak.set(0); return }
+        if (returnedInput) {
+            val n = gpuFailStreak.incrementAndGet()
+            if (n >= 3) {
+                gpuFused = true
+                gpuFailStreak.set(0)
+                Log.w(TAG, "GPU 连续失败 3 次，本会话熔断强制 CPU（重新切档自动恢复）")
+            }
+        } else {
+            gpuFailStreak.set(0)
+        }
+    }
+
     private var processingJobs = mutableListOf<Job>()
     private val jobsMutex = Any()
 
@@ -131,6 +154,9 @@ class SuperResolutionManager(
         pendingModelKey = model.key
         cancelProcessingJobs()
         onModelSwitching?.invoke()
+        // ★ F4.7②：切档解除本会话的 GPU 失败熔断（看门狗 forceCpu 不受影响，仍等用户手动恢复）
+        gpuFused = false
+        gpuFailStreak.set(0)
         currentProcessor?.release()
         currentProcessor = null
         currentModel = model
@@ -163,7 +189,7 @@ class SuperResolutionManager(
             try {
                 // 规则：用户没手动开 GPU 就用 CPU（默认更安全）；崩溃防护已加 forceCpu 逻辑
                 val useGpu = com.mangareader.sr.SrCore.settings.enableGpu && isVulkanAvailable && model.requiresVulkan
-                val gpuid = if (!forceCpu && useGpu) 0 else -1
+                val gpuid = if (!forceCpu && !gpuFused && useGpu) 0 else -1
                 val loadStart = System.currentTimeMillis()
                 processor.initialize(modelPath, gpuid)
                 currentProcessor = processor

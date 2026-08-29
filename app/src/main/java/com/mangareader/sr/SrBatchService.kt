@@ -30,8 +30,8 @@ class SrBatchService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private lateinit var engine: ArchiveEngine
 
-    @Volatile
-    private var cancelledKeys = mutableSetOf<String>()
+    // ★ F4.3：主线程 add 与 IO 协程读删并发 → 并发集合（原来是普通 mutableSetOf）
+    private val cancelledKeys: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
 
     companion object {
         private const val TAG = "SrBatch"
@@ -102,12 +102,22 @@ class SrBatchService : Service() {
     private suspend fun runQueue() {
         // 引擎按全局设置就位（批量不强制"阅读开关"开着——批量是显式用户指令）
         SrCore.applySettings(null)
+        // ★ F4.1：等模型真正就绪再开跑——原来 applySettings 是异步 fire-and-forget，
+        //   首章可能撞上未就绪引擎逐页静默跳过（result === original 被护栏拦下）白排队
+        runCatching { SrCore.manager.ensureModelLoaded() }
+        var waited = 0
+        while (!SrCore.manager.isReady && waited < 20_000) {
+            kotlinx.coroutines.delay(200)
+            waited += 200
+        }
+        if (!SrCore.manager.isReady) Log.w(TAG, "model not ready after ${waited}ms, run anyway")
 
         while (true) {
             val queue = SrCore.queueStore.load()
             if (queue.isEmpty()) break
 
             val item = queue.first()
+            val itemGeneration = item.enqueuedAt   // ★ F4.4：本条目入队代际
             if (item.chapterKey in cancelledKeys) {
                 SrBatchRunner.remove(applicationContext, item.chapterKey)
                 cancelledKeys.remove(item.chapterKey)
@@ -148,6 +158,7 @@ class SrBatchService : Service() {
                 SrCore.emitBatchProgress(item.copy(processedPages = processed, totalPages = total))
             }
             var failedAll = true
+            var sawApplicablePage = false
 
             for (i in 0 until total) {
                 // 暂停：页面粒度停走，等恢复
@@ -167,6 +178,7 @@ class SrBatchService : Service() {
                     processed = i + 1
                     continue
                 }
+                sawApplicablePage = true
 
                 try {
                     val original = engine.loadPage(meta, item.path) ?: continue
@@ -183,7 +195,9 @@ class SrBatchService : Service() {
                         failedAll = false
                     }
                 } catch (_: kotlinx.coroutines.CancellationException) {
-                    break
+                    // ★ F4.2：服务被销毁/协程取消——不盖章不删产物，条目原样留在队列，
+                    //   下次服务启动按磁盘产物断点续做
+                    return
                 } catch (e: Exception) {
                     Log.e(TAG, "page $i failed", e)
                 }
@@ -199,10 +213,21 @@ class SrBatchService : Service() {
             if (item.chapterKey in cancelledKeys) {
                 // 取消：删掉半成品，避免半成品章节被当成完成品
                 SrCore.diskCache.removeBatchChapter(item.bookTitle, item.chapterKey)
+            } else if (sawApplicablePage && failedAll) {
+                // ★ F4.2：整章零产物不盖章——盖章会让该章"实时超分被禁、永远原图"。
+                //   不写 metadata、清残留产物、条目照常移出（用户修好环境后可重新入队）
+                Log.w(TAG, "chapter all-failed, NOT stamped: ${item.chapterKey}")
+                SrCore.diskCache.removeBatchChapter(item.bookTitle, item.chapterKey)
             } else {
                 SrCore.diskCache.putBatchMetadata(item.bookTitle, item.chapterKey, total, item.bookId, item.path, batchModelKey)
             }
-            SrBatchRunner.remove(applicationContext, item.chapterKey)
+            // ★ F4.4：收尾移除前比对代际——运行中被重新入队的条目（代际更新）不删，留给下一轮
+            val stillQueued = SrCore.queueStore.load().firstOrNull { it.chapterKey == item.chapterKey }
+            if (stillQueued == null || stillQueued.enqueuedAt == itemGeneration) {
+                SrBatchRunner.remove(applicationContext, item.chapterKey)
+            } else {
+                Log.i(TAG, "chapter ${item.chapterKey} re-enqueued during run (gen $itemGeneration -> ${stillQueued.enqueuedAt}), keep new entry")
+            }
             cancelledKeys.remove(item.chapterKey)
         }
 
@@ -210,10 +235,12 @@ class SrBatchService : Service() {
     }
 
     private fun updateItemProgress(chapterKey: String, processed: Int, total: Int) {
-        val items = SrCore.queueStore.load().map {
-            if (it.chapterKey == chapterKey) it.copy(processedPages = processed, totalPages = total) else it
+        // ★ F4.3：经 store 锁原子读改写
+        SrCore.queueStore.mutate { items ->
+            items.map {
+                if (it.chapterKey == chapterKey) it.copy(processedPages = processed, totalPages = total) else it
+            }
         }
-        SrCore.queueStore.save(items)
     }
 
     private fun ensureChannels() {
