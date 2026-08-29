@@ -261,7 +261,10 @@ class SuperResolutionManager(
     }
 
     fun buildCacheKey(chapterId: Long, pageIndex: Int): String {
-        val modelKey = activeModel?.key ?: "unknown"
+        val active = activeModel
+        var modelKey = active?.key ?: "unknown"
+        // ★ 算法档实现升级（v2：双边→引导滤波）：键内版本化，旧缓存自然失效
+        if (active?.modelType == "algorithm") modelKey = "${modelKey}_v2"
         val bw = currentBwConfig
         val bwPart = if (bw != null) "_bw${bw.grayLevels}${if (bw.densityCorrection) "d" else ""}" else ""
         val denoise = currentDenoiseLevel.key

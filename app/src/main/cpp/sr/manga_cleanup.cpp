@@ -1,8 +1,10 @@
-// 快速优化档（1x 算法清理）：双边滤波去噪 + 锐化掩模拉线条，纯 CPU，原图尺寸毫秒级。
-// 自研实现（算法为教科书标准件：bilateral filter + unsharp mask），不依赖 ncnn/Vulkan。
+// 快速优化档（1x 算法清理）：引导滤波去噪 + 锐化掩模拉线条，纯 CPU，原图尺寸毫秒级。
+// v2（2026-08-29）：双边滤波 → 引导滤波（He et al. 2010 标准件，滑动窗口盒滤波 O(1)/px），
+//   分带处理控内存（每带 ~9MB）；双边保留为 OOM 兜底路径。算法均为教科书标准件，自研集成。
 #include <jni.h>
 #include <android/bitmap.h>
 #include <android/log.h>
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <vector>
@@ -16,14 +18,24 @@
 
 namespace {
 
-// 强度参数（Kotlin 侧 0=中 1=轻 2=强）：半径/范围σ/锐化量
-struct Params { int radius; float sigmaRange; float amount; };
+// 强度参数（Kotlin 侧 0=中 1=轻 2=强）：引导滤波 半径/eps（I 归一化到 [0,1]）
+struct GParams { int radius; float eps; };
 
+GParams gparamsFor(int strength) {
+    switch (strength) {
+        case 1:  return {2, 0.05f};  // 轻
+        case 2:  return {8, 0.15f};  // 强
+        default: return {4, 0.10f};  // 中
+    }
+}
+
+// 旧双边参数（OOM 兜底路径用）
+struct Params { int radius; float sigmaRange; float amount; };
 Params paramsFor(int strength) {
     switch (strength) {
-        case 1:  return {2, 15.f, 0.4f};  // 轻
-        case 2:  return {4, 40.f, 0.8f};  // 强
-        default: return {3, 25.f, 0.6f};  // 中
+        case 1:  return {2, 15.f, 0.4f};
+        case 2:  return {4, 40.f, 0.8f};
+        default: return {3, 25.f, 0.6f};
     }
 }
 
@@ -31,7 +43,107 @@ inline unsigned char clamp255(float v) {
     return v < 0.f ? 0 : (v > 255.f ? 255 : (unsigned char)v);
 }
 
-// 双边滤波：范围权重用亮度差（避免彩色边缘渗色），空间核/范围核均预计算
+// ---- 盒式滤波（半径 r，滑动窗口，O(1)/px）。in 与 out 不可混用；tmp 为调用方复用的暂存平面 ----
+void boxFilterPlane(const float* in, float* tmp, float* out, int w, int h, int r) {
+    // 水平：in → tmp
+    for (int y = 0; y < h; y++) {
+        const float* row = &in[(size_t)y * w];
+        float* dst = &tmp[(size_t)y * w];
+        const int initHi = std::min(r, w - 1);
+        float s = 0.f;
+        for (int k = 0; k <= initHi; k++) s += row[k];
+        int lastLo = 0, lastHi = initHi;
+        for (int x = 0; x < w; x++) {
+            const int hi = std::min(x + r, w - 1);
+            const int lo = std::max(0, x - r);
+            while (lastHi < hi) s += row[++lastHi];
+            while (lastLo < lo) s -= row[lastLo++];
+            dst[x] = s / (hi - lo + 1);
+        }
+    }
+    // 垂直：tmp → out
+    std::vector<float> col((size_t)h);
+    for (int x = 0; x < w; x++) {
+        for (int y = 0; y < h; y++) col[y] = tmp[(size_t)y * w + x];
+        const int initHi = std::min(r, h - 1);
+        float s = 0.f;
+        for (int k = 0; k <= initHi; k++) s += col[k];
+        int lastLo = 0, lastHi = initHi;
+        for (int y = 0; y < h; y++) {
+            const int hi = std::min(y + r, h - 1);
+            const int lo = std::max(0, y - r);
+            while (lastHi < hi) s += col[++lastHi];
+            while (lastLo < lo) s -= col[lastLo++];
+            out[(size_t)y * w + x] = s / (hi - lo + 1);
+        }
+    }
+}
+
+// 引导滤波（亮度 I 引导，逐通道 p），带内 [y0,y1) 有效、[y0-r,y1+r) 参与，跨带结果与全页一致。
+void guidedBand(const std::vector<unsigned char>& in, std::vector<unsigned char>& out,
+                int w, int h, int y0, int y1, int r, float eps,
+                std::vector<float>& scratch) {
+    const int by0 = y0 - r < 0 ? 0 : y0 - r;
+    const int by1 = y1 + r > h ? h : y1 + r;
+    const int bh = by1 - by0;
+    const size_t plane = (size_t)bh * w;
+    if (scratch.size() < plane * 11) scratch.resize(plane * 11);
+
+    float* I   = scratch.data();
+    float* mI  = I + plane;
+    float* mII = mI + plane;
+    float* pP  = mII + plane;
+    float* mIp = pP + plane;
+    float* mp  = mIp + plane;
+    float* aP  = mp + plane;
+    float* bP  = aP + plane;
+    float* mA  = bP + plane;
+    float* mB  = mA + plane;
+    std::vector<float> tmpPlane(plane);   // 盒滤波读写隔离暂存（每带重建，成本可忽略）
+
+    // I = 亮度 [0,1]
+    for (int y = 0; y < bh; y++) {
+        const unsigned char* row = &in[(size_t)(by0 + y) * w * 4];
+        float* irow = I + (size_t)y * w;
+        for (int x = 0; x < w; x++) {
+            irow[x] = (0.299f * row[x*4] + 0.587f * row[x*4+1] + 0.114f * row[x*4+2]) / 255.f;
+        }
+    }
+    boxFilterPlane(I, tmpPlane.data(), mI, w, bh, r);                 // mean(I)
+    for (size_t i = 0; i < plane; i++) mII[i] = I[i] * I[i];
+    boxFilterPlane(mII, tmpPlane.data(), mII, w, bh, r);              // 暂存区隔离，防读写混叠
+    for (size_t i = 0; i < plane; i++) mII[i] -= mI[i] * mI[i];  // var(I)
+
+    for (int c = 0; c < 3; c++) {
+        for (int y = 0; y < bh; y++) {
+            const unsigned char* row = &in[(size_t)(by0 + y) * w * 4];
+            float* prow = pP + (size_t)y * w;
+            for (int x = 0; x < w; x++) prow[x] = row[x*4 + c] / 255.f;
+        }
+        boxFilterPlane(pP, tmpPlane.data(), mp, w, bh, r);            // mean(p)
+        for (size_t i = 0; i < plane; i++) mIp[i] = I[i] * pP[i];
+        boxFilterPlane(mIp, tmpPlane.data(), mIp, w, bh, r);          // mean(I*p)
+        for (size_t i = 0; i < plane; i++) {
+            const float cov = mIp[i] - mI[i] * mp[i];
+            aP[i] = cov / (mII[i] + eps);
+            bP[i] = mp[i] - aP[i] * mI[i];
+        }
+        boxFilterPlane(aP, tmpPlane.data(), mA, w, bh, r);            // mean(a)
+        boxFilterPlane(bP, tmpPlane.data(), mB, w, bh, r);            // mean(b)
+        for (int y = y0; y < y1; y++) {
+            const int ly = y - by0;
+            const float* irow = I + (size_t)ly * w;
+            const float* arow = mA + (size_t)ly * w;
+            const float* brow = mB + (size_t)ly * w;
+            unsigned char* drow = &out[(size_t)y * w * 4];
+            for (int x = 0; x < w; x++) {
+                drow[x*4 + c] = clamp255((arow[x] * irow[x] + brow[x]) * 255.f);
+            }
+        }
+    }
+}
+
+// 旧双边（OOM 兜底保留）
 void bilateral(const std::vector<unsigned char>& in, std::vector<unsigned char>& out,
                int w, int h, const Params& p) {
     const int r = p.radius;
@@ -72,7 +184,6 @@ void bilateral(const std::vector<unsigned char>& in, std::vector<unsigned char>&
     }
 }
 
-// 盒式模糊（水平+垂直两趟，近似高斯）——锐化掩模的底图
 void boxBlur(const std::vector<unsigned char>& in, std::vector<unsigned char>& tmp,
              std::vector<unsigned char>& out, int w, int h, int r) {
     const size_t stride = (size_t)w * 4;
@@ -126,16 +237,28 @@ Java_com_mangareader_sr_SrCleanupProcessor_nativeCleanup(
     memcpy(src.data(), pixels, bufBytes);
     AndroidBitmap_unlockPixels(env, input_bitmap);
 
-    const Params p = paramsFor(strength);
     try {
-        // ① 双边滤波去噪
         std::vector<unsigned char> base(bufBytes);
-        bilateral(src, base, w, h, p);
+        const GParams gp = gparamsFor(strength);
+        bool guidedOk = true;
+        try {
+            std::vector<float> scratch;   // 带内工作平面，跨带复用
+            const int BAND = 128;
+            for (int y0 = 0; y0 < h && guidedOk; y0 += BAND) {
+                const int y1 = y0 + BAND > h ? h : y0 + BAND;
+                guidedBand(src, base, w, h, y0, y1, gp.radius, gp.eps, scratch);
+            }
+        } catch (const std::bad_alloc&) {
+            guidedOk = false;
+        }
+        if (!guidedOk) {
+            bilateral(src, base, w, h, paramsFor(strength));  // OOM 兜底：旧双边
+        }
 
-        // ② 锐化掩模：out = base + amount * (base - blur(base))
+        // 锐化掩模
         std::vector<unsigned char> blurTmp(bufBytes), blur(bufBytes);
         boxBlur(base, blurTmp, blur, w, h, 1);
-        const float amt = p.amount;
+        const float amt = paramsFor(strength).amount;
         #pragma omp parallel for schedule(static)
         for (int y = 0; y < h; y++) {
             for (int x = 0; x < w; x++) {
@@ -146,7 +269,6 @@ Java_com_mangareader_sr_SrCleanupProcessor_nativeCleanup(
             }
         }
 
-        // ③ 产出新 Bitmap（与 realesrgan_jni 相同的创建模式）
         jclass bitmapClass = env->FindClass("android/graphics/Bitmap");
         jclass configClass = env->FindClass("android/graphics/Bitmap$Config");
         jstring configName = env->NewStringUTF("ARGB_8888");
