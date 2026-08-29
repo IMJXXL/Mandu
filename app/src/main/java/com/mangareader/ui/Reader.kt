@@ -1030,6 +1030,14 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
                 if (!jumpPath.isNullOrEmpty()) {
                     // ★ 继续阅读：直达上次阅读的实际章节（reading_progress.path），不经过目录
                     navStack = listOf(filePath, jumpPath)
+                    // ★ 214122 日志修复：直跳进章必须同时装配章节清单——否则 tocItems 为空，
+                    //   "下一章/上一章"跌落到文件夹级切到隔壁书（AdjBook 实锤目标=downloads）
+                    if (filePath.startsWith("d:")) {
+                        val toc = withContext(Dispatchers.IO) {
+                            try { engine.children(filePath) } catch (_: Exception) { emptyList() }
+                        }
+                        if (toc.isNotEmpty()) tocItems = toc
+                    }
                     enterReader(jumpPath)
                 } else if (filePath.startsWith("d:")) {
                     navStack = listOf(filePath)
