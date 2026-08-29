@@ -76,7 +76,15 @@ class SuperResolutionManager(
         srCache.size to srCache.values.sumOf { it.allocationByteCount.toLong() }
     }
 
-    fun getCachedResult(cacheKey: String): Bitmap? = synchronized(cacheLock) { srCache[cacheKey] }
+    fun getCachedResult(cacheKey: String): Bitmap? = synchronized(cacheLock) {
+        val bmp = srCache[cacheKey]
+        if (bmp != null && bmp.isRecycled) {
+            // ★ F1.1 毒图防护：结果实例同时被视图缓存持有，视图侧 clearBitmapCacheRecycling/trim
+            //   recycle 后这里若原样返回会二次分发毒图（画布崩溃/调度卡死）——命中即剔除按未命中处理
+            srCache.remove(cacheKey)
+            null
+        } else bmp
+    }
 
     fun putCachedResult(cacheKey: String, bitmap: Bitmap) = synchronized(cacheLock) {
         srCache[cacheKey] = bitmap

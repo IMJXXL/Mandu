@@ -79,6 +79,13 @@ Java_com_mangareader_sr_RealESRGANProcessor_nativeProcess(
     int out_w = in_w * scale;
     int out_h = in_h * scale;
 
+    // ★ F1.2 OOM 护栏：输出 RGBA 字节估算超 512MB 直接拒绝（Kotlin 侧 ?: input 兜底跳过本页）。
+    //   4x 档大图页曾出现 16384² 瞬间分配 OOM；护栏在 lockPixels 之前，失败路径无需解锁。
+    if ((long long)out_w * (long long)out_h * 4 > 512LL * 1024 * 1024) {
+        LOGE("Output %dx%d exceeds 512MB budget, skip this page", out_w, out_h);
+        return nullptr;
+    }
+
     void *pixels;
     int lock_result = AndroidBitmap_lockPixels(env, input_bitmap, &pixels);
     if (lock_result != ANDROID_BITMAP_RESULT_SUCCESS) {
