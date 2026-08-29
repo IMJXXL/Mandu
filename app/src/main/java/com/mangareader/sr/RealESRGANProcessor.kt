@@ -1,5 +1,6 @@
 package com.mangareader.sr
 
+import java.io.File
 import android.graphics.Bitmap
 import android.util.Log
 
@@ -23,8 +24,11 @@ class RealESRGANProcessor(
         System.setProperty("KMP_AFFINITY", "disabled")
         System.setProperty("OMP_NUM_THREADS", "1")
 
-        val paramPath = "$modelPath/${model.modelDirName}.param"
-        val binPath = "$modelPath/${model.modelDirName}.bin"
+        // ★ 文件名跟随实际解析出的目录名（降噪变体目录里的文件按变体名命名；
+        //   基础模型目录名==modelDirName，行为不变）
+        val dirName = File(modelPath).name
+        val paramPath = "$modelPath/$dirName.param"
+        val binPath = "$modelPath/$dirName.bin"
         try {
             handle = nativeInit(paramPath, binPath, gpuid, model.modelType, true, model.scale)
             Log.i(TAG, "RealESRGAN initialized: model=${model.key}, handle=$handle")
