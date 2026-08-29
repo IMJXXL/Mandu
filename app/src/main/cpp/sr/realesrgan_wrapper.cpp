@@ -9,6 +9,7 @@
 #define LOG_TAG "RealESRGANJNI"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
+#define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
 
 int RealESRGANWrapper::calculateOptimalTileSize() {
     uint32_t available_mb = 0;
@@ -129,7 +130,7 @@ bool RealESRGANWrapper::load(const char* param_path, const char* model_path, int
 
 bool RealESRGANWrapper::process(const ncnn::Mat& inimage, ncnn::Mat& outimage) {
     active_processes.fetch_add(1, std::memory_order_acq_rel);
-    if (!is_valid.load(std::memory_order_acquire)) {
+    if (!is_valid.load(std::memory_order_acquire) || abortFlag.exchange(false)) {
         active_processes.fetch_sub(1, std::memory_order_acq_rel);
         cv.notify_all();
         LOGE("Wrapper invalid, cannot process");
@@ -142,6 +143,8 @@ bool RealESRGANWrapper::process(const ncnn::Mat& inimage, ncnn::Mat& outimage) {
         LOGE("Model not loaded");
         return false;
     }
+
+    abortFlag.store(false);   // ★ 新一轮推理清除中止标志
 
     if (scale != lastScale) {
         LOGI("Scale changed from %d to %d, recalculating tile_size", lastScale, scale);
@@ -190,7 +193,7 @@ bool RealESRGANWrapper::process(const ncnn::Mat& inimage, ncnn::Mat& outimage) {
         const int gy = (h + BIZ - 1) / BIZ;
         for (int yi = 0; yi < gy; yi++) {
             for (int xi = 0; xi < gx; xi++) {
-                if (!is_valid.load(std::memory_order_acquire)) {
+                if (!is_valid.load(std::memory_order_acquire) || abortFlag.exchange(false)) {
                     LOGE("waifu2x invalidated during tiling");
                     active_processes.fetch_sub(1, std::memory_order_acq_rel);
                     { std::lock_guard<std::mutex> lock(cv_mutex); } cv.notify_all();
@@ -343,7 +346,7 @@ bool RealESRGANWrapper::process(const ncnn::Mat& inimage, ncnn::Mat& outimage) {
                     memcpy(dst_row, src_row + skip_x, out_w * sizeof(float));
                 }
             }
-            LOGI("RealCUGAN (no tiling): %dx%d -> %dx%d", w, h, out_w, out_h);
+            LOGD("RealCUGAN (no tiling): %dx%d -> %dx%d", w, h, out_w, out_h);
             active_processes.fetch_sub(1, std::memory_order_acq_rel);
             { std::lock_guard<std::mutex> lock(cv_mutex); } cv.notify_all();
             return true;
@@ -355,7 +358,7 @@ bool RealESRGANWrapper::process(const ncnn::Mat& inimage, ncnn::Mat& outimage) {
 
         for (int yi = 0; yi < ytiles; yi++) {
             for (int xi = 0; xi < xtiles; xi++) {
-                if (!is_valid.load(std::memory_order_acquire)) {
+                if (!is_valid.load(std::memory_order_acquire) || abortFlag.exchange(false)) {
                     LOGE("Wrapper invalidated during tiling, aborting");
                     active_processes.fetch_sub(1, std::memory_order_acq_rel);
                     { std::lock_guard<std::mutex> lock(cv_mutex); } cv.notify_all();
@@ -386,7 +389,7 @@ bool RealESRGANWrapper::process(const ncnn::Mat& inimage, ncnn::Mat& outimage) {
                     }
                 }
 
-                LOGI("RealCUGAN Tile (%d/%d,%d/%d): extract sx=%d sy=%d tw=%d th=%d",
+                LOGD("RealCUGAN Tile (%d/%d,%d/%d): extract sx=%d sy=%d tw=%d th=%d",
                      xi, xtiles, yi, ytiles, sx, sy, tw, th);
 
                 ncnn::Mat out_tile;
@@ -394,7 +397,7 @@ bool RealESRGANWrapper::process(const ncnn::Mat& inimage, ncnn::Mat& outimage) {
                     ncnn::Extractor ex = net.create_extractor();
                     ex.input(input_blob, in_tile);
                     int ret = ex.extract(output_blob, out_tile);
-                    LOGI("RealCUGAN Tile (%d,%d): ret=%d out=%dx%dx%d",
+                    LOGD("RealCUGAN Tile (%d,%d): ret=%d out=%dx%dx%d",
                          xi, yi, ret, out_tile.w, out_tile.h, out_tile.c);
                     if (ret != 0 || out_tile.empty()) {
                         LOGE("Inference failed for tile (%d,%d), ret=%d", xi, yi, ret);
@@ -483,7 +486,7 @@ bool RealESRGANWrapper::process(const ncnn::Mat& inimage, ncnn::Mat& outimage) {
 
     for (int yi = 0; yi < ytiles; yi++) {
         for (int xi = 0; xi < xtiles; xi++) {
-            if (!is_valid.load(std::memory_order_acquire)) {
+            if (!is_valid.load(std::memory_order_acquire) || abortFlag.exchange(false)) {
                 LOGE("Wrapper invalidated during tiling, aborting");
                 active_processes.fetch_sub(1, std::memory_order_acq_rel);
                 { std::lock_guard<std::mutex> lock(cv_mutex); } cv.notify_all();
@@ -504,7 +507,7 @@ bool RealESRGANWrapper::process(const ncnn::Mat& inimage, ncnn::Mat& outimage) {
             int out_tile_w = out_x1 - out_x0;
             int out_tile_h = out_y1 - out_y0;
 
-            LOGI("Tile (%d/%d,%d/%d): in_tile=[%d×%d] prepad=[%d,%d] out_region=[%d,%d,%d,%d]",
+            LOGD("Tile (%d/%d,%d/%d): in_tile=[%d×%d] prepad=[%d,%d] out_region=[%d,%d,%d,%d]",
                  xi, xtiles, yi, ytiles, tile_w, tile_h, prepadding, prepadding,
                  out_x0, out_y0, out_x1, out_y1);
 
@@ -527,9 +530,9 @@ bool RealESRGANWrapper::process(const ncnn::Mat& inimage, ncnn::Mat& outimage) {
             {
                 ncnn::Extractor ex = net.create_extractor();
                 ex.input(input_blob, in_tile);
-                LOGI("Tile (%d,%d): ex.extract input=%dx%d", xi, yi, tile_w, tile_h);
+                LOGD("Tile (%d,%d): ex.extract input=%dx%d", xi, yi, tile_w, tile_h);
                 int ret = ex.extract(output_blob, out_tile);
-                LOGI("Tile (%d,%d): ex.extract done ret=%d out=%dx%dx%d",
+                LOGD("Tile (%d,%d): ex.extract done ret=%d out=%dx%dx%d",
                      xi, yi, ret, out_tile.w, out_tile.h, out_tile.c);
                 if (ret != 0 || out_tile.empty()) {
                     LOGE("Inference failed for tile (%d,%d), ret=%d", xi, yi, ret);

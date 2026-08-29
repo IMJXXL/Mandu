@@ -236,6 +236,12 @@ class SuperResolutionManager(
         }
     }
 
+    /** 请求中止在途推理（仅当前页翻页让位；引擎在下一瓦片边界停下让位给当前页） */
+    fun abortInFlight() {
+        val p = currentProcessor ?: return
+        try { p.abort() } catch (_: Throwable) {}
+    }
+
     fun currentModelVersion(): Long = modelVersion
 
     fun release() {

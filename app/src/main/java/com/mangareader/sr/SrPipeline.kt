@@ -63,6 +63,14 @@ object SrPipeline {
     var currentPageIdx: Int = 0
         private set
 
+    /** 当前正占用引擎推理的页 key（翻页让位：中止在途旧页推理用） */
+    @Volatile
+    private var runningKey: String? = null
+    private val runningKeyLock = Any()
+
+    /** 在途/排队任务的 Job（翻页让位：取消旧页排队任务） */
+    private val pageJobs = java.util.concurrent.ConcurrentHashMap<String, kotlinx.coroutines.Job>()
+
     /** 作用域切换：关闭=取消在跑任务并把当前页换回原图；开启=按当前设置立刻算当前页并按需预载 */
     fun onScopeChanged(newScope: Int) {
         if (newScope == SrUiState.SCOPE_OFF) {
@@ -201,9 +209,27 @@ object SrPipeline {
         }
     }
 
-    /** 阅读器翻页钩子：更新当前页，且只有"整本"作用域才做前后预载 */
+    /** 阅读器翻页钩子：更新当前页；"整本"作用域做前后预载；"仅当前页"作用域旧页让位 */
     fun onPageChanged(centerIdx: Int, totalPages: Int) {
         currentPageIdx = centerIdx
+        // ★ 仅当前页：翻页即让位——取消别的页"排队中"的任务、中止"在途"的旧推理，让当前页插队
+        if (SrUiState.scope.intValue == SrUiState.SCOPE_PAGE) {
+            val keepKey = "$sessionChapterId:$centerIdx"
+            pageJobs.entries.removeAll { (k, job) ->
+                if (k != keepKey) {
+                    job.cancel()
+                    inFlight.remove(k)
+                    synchronized(SrUiState.computingPages) {
+                        SrUiState.computingPages.removeAll { it == k.substringAfterLast(':').toIntOrNull() }
+                    }
+                    true
+                } else false
+            }
+            val runningNow = synchronized(runningKeyLock) { runningKey }
+            if (runningNow != null && runningNow != keepKey) {
+                SrCore.manager.abortInFlight()
+            }
+        }
         if (SrUiState.scope.intValue == SrUiState.SCOPE_BOOK) {
             SrCore.dispatcher.onPageChanged(sessionChapterId, centerIdx, totalPages)
         }
@@ -314,8 +340,14 @@ object SrPipeline {
         if (!inFlight.add(key)) return
         synchronized(SrUiState.computingPages) { SrUiState.computingPages.add(pageIndex) }
 
-        scope.launch(Dispatchers.IO) {
+        // ★ 仅当前页模式：本页是否已让位（翻页后旧任务开跑前自检放弃，避免空转占引擎）
+        fun staleForPageMode(): Boolean =
+            SrUiState.scope.intValue == SrUiState.SCOPE_PAGE && pageIndex != currentPageIdx
+
+        val job = scope.launch(Dispatchers.IO) {
             try {
+                if (staleForPageMode()) return@launch
+
                 val original = callerBitmap ?: run {
                     val eng = engine ?: return@run null
                     val meta = sessionPageList.getOrNull(pageIndex) ?: return@run null
@@ -332,6 +364,7 @@ object SrPipeline {
                 val upscaleOn = SrCore.settings.upscaleEnabled
                 val bwOn = SrCore.settings.bwEnabled
                 if (!upscaleOn && !bwOn) return@launch
+                if (staleForPageMode()) return@launch
 
                 if (upscaleOn) {
                     // A. 超分放大（可选叠加黑白后处理；黑白对彩页自动跳过）
@@ -339,7 +372,17 @@ object SrPipeline {
                     val version = SrCore.manager.currentModelVersion()
                     // 看门狗：推理前打标记（崩溃后下次启动强制 CPU 兜底）
                     if (!SrCore.inferenceInFlight) SrCore.markInferenceStart()
+                    // 等待引擎互斥锁前：若引擎正被别的页占用且当前是"仅当前页"模式，
+                    // 对在途推理发中止信号（引擎逐瓦片检查，~一瓦片内停下让位）
+                    val runningNow = synchronized(runningKeyLock) { runningKey }
+                    if (runningNow != null && runningNow != key &&
+                        SrUiState.scope.intValue == SrUiState.SCOPE_PAGE
+                    ) {
+                        SrCore.manager.abortInFlight()
+                    }
+                    synchronized(runningKeyLock) { runningKey = key }
                     var result = SrCore.manager.process(original, version, bwForceOff)
+                    synchronized(runningKeyLock) { if (runningKey == key) runningKey = null }
                     SrCore.markInferenceEnd()
                     if (result === original || result.isRecycled) return@launch
 
@@ -382,9 +425,11 @@ object SrPipeline {
                 Log.e(TAG, "schedule p$pageIndex failed", e)
             } finally {
                 inFlight.remove(key)
+                pageJobs.remove(key)
                 synchronized(SrUiState.computingPages) { SrUiState.computingPages.remove(pageIndex) }
             }
         }
+        pageJobs[key] = job
     }
 
     /** 抽样判定是否近乎灰度图（彩色像素占比 >0.5% 即视为彩页） */

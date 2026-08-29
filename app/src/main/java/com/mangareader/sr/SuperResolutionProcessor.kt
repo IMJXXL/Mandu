@@ -16,5 +16,8 @@ interface SuperResolutionProcessor {
         bwConfig: MangaBWPostProcessConfig? = null,
     ): Bitmap
 
+    /** 请求中止在途推理（仅当前页翻页让位；在下一瓦片边界生效） */
+    fun abort() {}
+
     fun release()
 }

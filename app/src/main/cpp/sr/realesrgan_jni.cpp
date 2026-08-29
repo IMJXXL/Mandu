@@ -239,6 +239,13 @@ Java_com_mangareader_sr_RealESRGANProcessor_nativeProcess(
 }
 
 JNIEXPORT void JNICALL
+Java_com_mangareader_sr_RealESRGANProcessor_nativeAbort(JNIEnv*, jclass, jlong handle) {
+    if (handle == 0) return;
+    auto* wrapper = reinterpret_cast<RealESRGANWrapper*>(handle);
+    wrapper->requestAbort();
+}
+
+JNIEXPORT void JNICALL
 Java_com_mangareader_sr_RealESRGANProcessor_nativeRelease(
     JNIEnv *env, jobject thiz, jlong handle) {
 

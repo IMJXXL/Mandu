@@ -19,6 +19,9 @@ public:
     std::mutex cv_mutex;
     std::condition_variable cv;
 
+    std::atomic<bool> abortFlag{false};   // ★ 翻页让位：在途推理逐瓦片中止标志
+    void requestAbort() { abortFlag.store(true); }
+
     bool load(const char* param_path, const char* model_path, int gpu_id, const char* model_type, int initial_scale);
     bool process(const ncnn::Mat& inimage, ncnn::Mat& outimage);
     void markInvalid();

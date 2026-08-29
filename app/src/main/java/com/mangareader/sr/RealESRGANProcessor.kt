@@ -58,6 +58,12 @@ class RealESRGANProcessor(
         return output ?: input
     }
 
+    override fun abort() {
+        if (handle != 0L && nativeLibraryLoaded) {
+            try { nativeAbort(handle) } catch (_: Throwable) {}
+        }
+    }
+
     override fun release() {
         if (handle != 0L && nativeLibraryLoaded) {
             nativeRelease(handle)
@@ -71,6 +77,7 @@ class RealESRGANProcessor(
         denoiseStrength: Float, grayLevels: Int, densityCorrection: Boolean,
     ): Bitmap?
     private external fun nativeRelease(handle: Long)
+    private external fun nativeAbort(handle: Long)
 
     companion object {
         private const val TAG = "SrProcessor"
