@@ -740,6 +740,9 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
             val curParent = parentOf(currentPath)
             val siblings = if (curParent.isEmpty()) emptyList() else allBooks
                 .filter { parentOf(it.filePath) == curParent }
+                // ★ 去重：书库存在同文件多条记录（重复入库）时，相邻切换会切到"自己的另一条记录"，
+                //   表现为"说切换了实际没切"（日志实锤：同 cid 出现 book=35/book=7 两条）
+                .distinctBy { it.filePath }
                 .sortedWith(compareBy(com.mangareader.util.ComicSortUtil.fileNameComparator) { it.filePath })
             val idx = siblings.indexOfFirst { b -> b.filePath == currentPath }
             // ★ AdjBook 诊断：切书失败时日志直接给出原因（书库数量/父目录解析/同夹清单/方向边界）
