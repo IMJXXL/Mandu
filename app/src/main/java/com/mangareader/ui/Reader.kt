@@ -208,6 +208,8 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
     var showChapterTransition by remember { mutableStateOf(false) }
     var chapterTransitionIsLast by remember { mutableStateOf(false) }
     var showSwitchConfirm by remember { mutableStateOf(false) }
+    // ★ N1 防抖：无缝续读 3 秒内不重复触发（模式切换/重复章末回调的并发窗口）
+    var lastSeamlessAt by remember { mutableStateOf(0L) }
     var switchTargetName by remember { mutableStateOf("") }
     var switchTargetPath by remember { mutableStateOf("") }
 
@@ -1301,18 +1303,23 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
                         val trySeamlessNextVolume = handler@{
                             if (!config.seamlessNextVolume) return@handler false
                             if (tocItems.size < 2) return@handler false
+                            // ★ 防抖：3 秒内已触发过就不再接（双页模式切换/末端重复回调的并发窗口）
+                            val now = android.os.SystemClock.elapsedRealtime()
+                            if (now - lastSeamlessAt < 3000L) return@handler false
                             val curIdx = tocItems.indexOfFirst { it.subPath == extractSubPathFromNav() }
                             if (curIdx == -1) return@handler false
                             val nextIdx = curIdx + 1
                             if (nextIdx >= tocItems.size) return@handler false   // 已是最末卷 → 回退现状
                             val target = tocItems[nextIdx]
+                            lastSeamlessAt = now
                             scope.launch {
                                 val enterable = withContext(Dispatchers.IO) {
                                     try { engine.children(target.subPath).isEmpty() } catch (_: Exception) { false }
                                 }
                                 if (!enterable) {
-                                    // 目标卷为空/嵌套目录 → 回退现状过渡页
-                                    chapterTransitionIsLast = mode != Mode.RTL
+                                    // 目标卷为空/嵌套目录 → 回退现状过渡页（此处必然处于"向后读"末端，
+                                    // 过渡页要按"末页端"渲染：RTL 也是进入下一章，不是返回上一章）
+                                    chapterTransitionIsLast = true
                                     showChapterTransition = true
                                     return@launch
                                 }
@@ -1332,7 +1339,9 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
                             if (forwardEnd && trySeamlessNextVolume()) {
                                 // 静默切换已启动
                             } else if (config.chapterTransition && tocItems.size > 1) {
-                                chapterTransitionIsLast = isLast
+                                // ★ 修复：过渡页按钮方向用 forwardEnd（带阅读方向语义）——
+                                //   RTL 末端回调带回的是 isLast=false，直接透传会错显"返回上一章"
+                                chapterTransitionIsLast = forwardEnd
                                 showChapterTransition = true
                             }
                         }

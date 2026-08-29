@@ -501,12 +501,25 @@ class Scanner(private val ctx: Context, private val dao: MangaDao) {
     }
 
     /** 刷新通用：Phase 1 极速扫元数据（回调进度）→ 立即返回 count；Phase 2 后台火并忘入库+封面。 */
-    suspend fun rescanAndCommit(f: Folder, onProgress: ((Int) -> Unit)? = null): Int = withContext(Dispatchers.IO) {
+    /** 刷新：Phase 1 极速扫元数据 → 返回真实 (新增, 移除) 数；Phase 2 后台入库+封面。
+     *  ★ 文案修正：books 是全量清单（含未变的书），原来直接把 books.size 当"新增"报——
+     *  书架没变也提示"新增 N 本"。现在与库中现存路径集合对比出真实增删数。 */
+    suspend fun rescanAndCommit(f: Folder, onProgress: ((Int) -> Unit)? = null): Pair<Int, Int> = withContext(Dispatchers.IO) {
         val books = rescanMetaOnly(f, onProgress)
-        val count = books.size
+        val treeUri = Uri.parse(f.treeUri)
+        val auth = treeUri.authority ?: ""
+        val docId = DocumentsContract.getTreeDocumentId(treeUri)
+        val prefixes = listOf("a:$auth|$docId|", "d:$auth|$docId|", "z:a:$auth|$docId|")
+        val oldPaths = runCatching { dao.getAllBooksAnyHidden().map { it.filePath } }
+            .getOrDefault(emptyList())
+            .filter { p -> prefixes.any { p.startsWith(it) } }
+            .toSet()
+        val newPaths = books.map { it.filePath }.toSet()
+        val added = newPaths.count { it !in oldPaths }
+        val removed = oldPaths.count { it !in newPaths }
         // Phase 2 火并忘：入库 + 后台封面
         coverScope.launch { commitRescanResults(f, books) }
-        count
+        Pair(added, removed)
     }
 
     private suspend fun scanDirFast(auth: String, treeStr: String, treeDocId: String, childUri: Uri, books: MutableList<Book>, skipDedup: Boolean = false, onFound: ((Int) -> Unit)? = null) {

@@ -361,13 +361,20 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
                     Button(onClick = {
                         scope.launch {
                             scanning = true; scanTarget = "一键扫描所有文件夹..."; scanCount = 0
-                            var total = 0
+                            var totalAdded = 0
+                            var totalRemoved = 0
                             withContext(Dispatchers.IO) {
-                                folders.forEach { f -> total += scanner.rescanAndCommit(f) { count -> scanCount = count } }
+                                folders.forEach { f ->
+                                    val (a, r) = scanner.rescanAndCommit(f) { count -> scanCount = count }
+                                    totalAdded += a; totalRemoved += r
+                                }
                             }
-                            scanCount = total
+                            scanCount = totalAdded
                             scanning = false
-                            val msg = if (total > 0) "扫描成功，共 $total 本漫画，封面后台加载中" else "扫描完成，没有新漫画"
+                            val msg = when {
+                                totalAdded == 0 && totalRemoved == 0 -> "扫描完成，书架无变化"
+                                else -> "扫描成功：新增 $totalAdded 本、移除 $totalRemoved 本，封面后台加载中"
+                            }
                             Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show()
                             // 自动关闭扫描弹窗
                             scanning = false
@@ -390,10 +397,13 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
                         TextButton(onClick = {
                             scope.launch {
                                 scanning = true; scanTarget = "正在扫描「${f.displayName}」..."; scanCount = 0
-                                val c = withContext(Dispatchers.IO) { scanner.rescanAndCommit(f) { count -> scanCount = count } }
-                                scanCount = c
+                                val (addedN, removedN) = withContext(Dispatchers.IO) { scanner.rescanAndCommit(f) { count -> scanCount = count } }
+                                scanCount = addedN
                                 scanning = false
-                                val msg = if (c > 0) "刷新成功，新增 $c 本漫画，封面后台加载中" else "刷新完成，没有新漫画"
+                                val msg = when {
+                                    addedN == 0 && removedN == 0 -> "刷新完成，书架无变化"
+                                    else -> "刷新成功：新增 $addedN 本、移除 $removedN 本，封面后台加载中"
+                                }
                                 Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show()
                                 scanning = false
                             }
@@ -719,6 +729,26 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
                             Text("超分路径：Vulkan GPU / CPU 自动选择；不支持 Vulkan 的设备走 CPU（较慢但绝对稳定）", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Text("超分缓存：${if (sdk >= android.os.Build.VERSION_CODES.R) "WEBP 高质量存储" else "JPEG 存储（系统限制，画质略低）"}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Spacer(Modifier.height(12.dp))
+                            // 【临时诊断 0829，用完删除】导出 logcat + 自检到手机下载目录
+                            var exportingDiag by remember { mutableStateOf(false) }
+                            Button(
+                                enabled = !exportingDiag,
+                                onClick = {
+                                    exportingDiag = true
+                                    Thread {
+                                        val result = try {
+                                            com.mangareader.sr.DiagLogExporter.export(ctx)
+                                        } catch (t: Throwable) {
+                                            "导出异常: ${t.message}"
+                                        }
+                                        android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                            exportingDiag = false
+                                            Toast.makeText(ctx, result, Toast.LENGTH_LONG).show()
+                                        }
+                                    }.start()
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) { Text(if (exportingDiag) "正在导出诊断日志…" else "导出诊断日志（临时）") }
                             HorizontalDivider()
                             Spacer(Modifier.height(12.dp))
                             Text("开源许可", fontSize = 14.sp, fontWeight = FontWeight.Medium)

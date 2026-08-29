@@ -327,11 +327,12 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         } catch (_: Exception) {}
     }
 
-    // ★ F3.1：无上限 ConcurrentHashMap → LruCache 字节限容（64MB）。minSdk 26 起位图像素在 Java 堆，
-    //   LRU 淘汰只丢引用、不主动 recycle（杜绝任何"回收在显示位图"的可能，GC 兜底）；
-    //   显式 remove（窗口 trim/清缓存/release）的 recycle 语义由原调用方保持不变。
-    private val bitmapCache = object : android.util.LruCache<Int, Bitmap>(64 * 1024 * 1024) {
-        override fun sizeOf(key: Int, value: Bitmap): Int = value.byteCount
+    // ★ F3.1 修正版（0829 双页闪退实锤）：LruCache 按张数限容（8 张），sizeOf 恒返回 1。
+    //   首版按 byteCount 计重——位图 recycle 后 byteCount 归 0，LruCache 内部计重失配，
+    //   evictAll 时抛 "sizeOf() is reporting inconsistent results!" 闪退；常量计重永不失配。
+    //   单页内存上限由 F3.2 解码闸（≤6M px ≈ 24MB）兜底，8 张最坏 ~192MB，远好于原来无上限。
+    private val bitmapCache = object : android.util.LruCache<Int, Bitmap>(8) {
+        override fun sizeOf(key: Int, value: Bitmap): Int = 1
     }
 
     // ★ ⑧ 最小修复辅助：recycle + 清空，避免裸 clear 漏 recycle 造成的内存泄漏。
@@ -419,9 +420,12 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                     com.mangareader.viewer.ArchiveEngine.d("PagerView", "onPageSelected pos=$position pageIdx=$pageIdx realPos=$realPos rtl=$isRtl double=$doublePageMode total=${pageList.size} curPage=$currentPage")
                     if (realPos in pageList.indices && realPos != currentPage) {
                         currentPage = realPos; onPageChanged?.invoke(currentPage)
-                        // ★ N1：双页模式最后跨页 realPos 可能是 N-2（奇偶错位），末页判据放宽到倒数第二页
-                        if (currentPage >= pageList.size - (if (doublePageMode) 2 else 1)) onChapterEnd?.invoke(true)
-                        if (currentPage == 0) onChapterEnd?.invoke(false)
+                        // ★ N1：双页模式最后跨页 realPos 可能是 N-2（奇偶错位），末页判据放宽到倒数第二页；
+                        //   模式切换窗口内（layoutSwitchPending）抑制章末回调，防并发闪退
+                        if (!layoutSwitchPending) {
+                            if (currentPage >= pageList.size - (if (doublePageMode) 2 else 1)) onChapterEnd?.invoke(true)
+                            if (currentPage == 0) onChapterEnd?.invoke(false)
+                        }
                     }
                     // ★ §24 二代：翻到新页时启动该页动图、停止其他正在播的
                     if (realPos in pageList.indices) {
@@ -682,9 +686,14 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         viewPager.post { viewPager.setCurrentItem(finalPos, false) }
     }
 
+    // ★ N1 修复：双页模式切换期间位置重映射会产生瞬态 onPageSelected，曾误触章末处理
+    //   （无缝静默切章与模式切换并发、过渡页在切换中弹出）——切换窗口内抑制章末回调
+    private var layoutSwitchPending = false
+
     fun setDoublePageModeAndShift(doubleEnabled: Boolean, shiftEnabled: Boolean) {
         if (doublePageMode == doubleEnabled && shiftDoublePage == shiftEnabled) return
         val savedPage = currentPage
+        layoutSwitchPending = true
         doublePageMode = doubleEnabled
         shiftDoublePage = shiftEnabled
         clearBitmapCacheRecycling()  // ★ ⑧ 最小修复
@@ -695,7 +704,11 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             } else savedPage / 2
         } else savedPage
         val finalPos = newPos.coerceIn(0, pagerAdapter?.itemCount?.minus(1) ?: 0)
-        viewPager.postDelayed({ viewPager.setCurrentItem(finalPos, false) }, 100)
+        viewPager.postDelayed({
+            viewPager.setCurrentItem(finalPos, false)
+            // 目标落位事件处理完再放行章末回调
+            viewPager.post { layoutSwitchPending = false }
+        }, 100)
     }
 
     override fun goToPage(page: Int) {

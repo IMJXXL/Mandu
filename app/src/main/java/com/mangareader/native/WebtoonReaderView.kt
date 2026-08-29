@@ -143,11 +143,11 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
         isSettleWindowActive = false
     }
     private var adapter: PageAdapter? = null
-    // ★ F3.1：accessOrder LinkedHashMap 无上限 → LruCache 字节限容（64MB）。minSdk 26 起位图像素在 Java 堆，
-    //   LRU 淘汰只丢引用、不主动 recycle（杜绝任何"回收在显示位图"的可能，GC 兜底）；
-    //   显式 remove/清缓存的 recycle 语义由原调用方保持。原有 synchronized 包裹全部保留（LruCache 自带同步，嵌套无害）。
-    private val bitmapCache = object : android.util.LruCache<Int, Bitmap>(64 * 1024 * 1024) {
-        override fun sizeOf(key: Int, value: Bitmap): Int = value.byteCount
+    // ★ F3.1 修正版（0829 双页闪退实锤）：按张数限容（8 张），sizeOf 恒返回 1。
+    //   byteCount 计重在位图 recycle 后归 0 → LruCache 计重失配 → evictAll 抛异常闪退。
+    //   单页内存上限由 F3.2 解码闸兜底。原有 synchronized 包裹保留（嵌套无害）。
+    private val bitmapCache = object : android.util.LruCache<Int, Bitmap>(8) {
+        override fun sizeOf(key: Int, value: Bitmap): Int = 1
     }
     // ★ ⑧ 最小修复辅助：recycle + 清空同步块，避免裸 clear 漏 recycle 造成内存泄漏。
     //   Webtoon 原 accessOrder LinkedHashMap 非 thread-safe 必须包 synchronized。所有真 bitmapCache 调用点
