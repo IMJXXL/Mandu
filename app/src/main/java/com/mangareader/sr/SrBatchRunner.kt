@@ -49,6 +49,7 @@ object SrBatchRunner {
             }
             val paths = progressPaths.ifEmpty { listOf(book.filePath) }
 
+            val probe = ArchiveEngine(context.applicationContext)
             val built = paths.map { path ->
                 val key = SRQueueItem.chapterKey(bookId, path)
                 val pageCount = try {
