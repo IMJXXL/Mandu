@@ -327,20 +327,22 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         } catch (_: Exception) {}
     }
 
-    private val bitmapCache = java.util.concurrent.ConcurrentHashMap<Int, Bitmap>()
+    // ★ F3.1：无上限 ConcurrentHashMap → LruCache 字节限容（64MB）。minSdk 26 起位图像素在 Java 堆，
+    //   LRU 淘汰只丢引用、不主动 recycle（杜绝任何"回收在显示位图"的可能，GC 兜底）；
+    //   显式 remove（窗口 trim/清缓存/release）的 recycle 语义由原调用方保持不变。
+    private val bitmapCache = object : android.util.LruCache<Int, Bitmap>(64 * 1024 * 1024) {
+        override fun sizeOf(key: Int, value: Bitmap): Int = value.byteCount
+    }
 
-    // ★ ⑧ 最小修复辅助：recycle + clear 一个 ConcurrentHashMap<Int,Bitmap>，避免裸 clear 漏 recycle
-    //   造成的内存泄漏（无 LRU 上限下尤其明显）。Pager 是 ConcurrentHashMap 无需额外同步。
+    // ★ ⑧ 最小修复辅助：recycle + 清空，避免裸 clear 漏 recycle 造成的内存泄漏。
     //   ★ release() 不改：原版 recycle + clear 已对，不引入 helper 避免行为差异。
     private fun clearBitmapCacheRecycling() {
         // ★ 白屏工单任务2附属：指认"谁在清缓存"（C4 定位用：size + 视图实例 hash）
-        Log.w("Recycle", "pager clearBitmapCacheRecycling n=${bitmapCache.size} view=${System.identityHashCode(this)}")
-        val it = bitmapCache.entries.iterator()
-        while (it.hasNext()) {
-            val e = it.next()
-            try { if (!e.value.isRecycled) e.value.recycle() } catch (_: Exception) {}
-            it.remove()
+        Log.w("Recycle", "pager clearBitmapCacheRecycling n=${bitmapCache.size()} view=${System.identityHashCode(this)}")
+        for ((_, v) in bitmapCache.snapshot()) {
+            try { if (!v.isRecycled) v.recycle() } catch (_: Exception) {}
         }
+        bitmapCache.evictAll()
     }
 
     // Zoom indicator paint
@@ -624,8 +626,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
      *  交给新视图 adopBitmaps，切换零重解码（治"切换瞬间当前±1 页白屏"）。 */
     override fun drainLiveBitmaps(): Map<Int, Bitmap> {
         val out = LinkedHashMap<Int, Bitmap>()
-        val keys = bitmapCache.keys.toList()
-        for (k in keys) {
+        for (k in bitmapCache.snapshot().keys) {
             val v = bitmapCache.remove(k) ?: continue
             if (!v.isRecycled) out[k] = v
         }
@@ -636,13 +637,13 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     /** ★ P0-2：接管旧视图移交的位图（首次绑定即命中，不再走解码回传链） */
     override fun adoptBitmaps(map: Map<Int, Bitmap>) {
         Log.d("P02", "adopt size=${map.size} keys=${map.keys}")
-        for ((k, v) in map) if (!v.isRecycled) bitmapCache[k] = v
+        for ((k, v) in map) if (!v.isRecycled) bitmapCache.put(k, v)
     }
 
     /** 注入放大后的 bitmap 到缓存并刷新当前页显示 */
     fun injectUpscaledBitmap(pageIndex: Int, bitmap: Bitmap) {
         // 不主动回收旧bitmap，让GC自然处理（避免ViewHolder还在使用时被回收导致黑屏）
-        bitmapCache[pageIndex] = bitmap
+        bitmapCache.put(pageIndex, bitmap)
         val pos = if (isRtl) pageList.size - 1 - pageIndex else pageIndex
         android.util.Log.i("PagerView", "srInject p=$pageIndex pos=$pos bmp=${bitmap.width}x${bitmap.height}")
         if (pos >= 0 && pos < pageList.size) {
@@ -764,7 +765,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             try {
                 val srHit = com.mangareader.sr.SrPipeline.attachOrSchedule(idx, cached)
                 if (srHit != null && !srHit.isRecycled && srHit !== cached) {
-                    bitmapCache[idx] = srHit
+                    bitmapCache.put(idx, srHit)
                     val pos = if (isRtl) pageList.size - 1 - idx else idx
                     if (pos >= 0 && pos < pageList.size) pagerAdapter?.notifyItemChanged(pos, "loaded")
                 }
@@ -815,7 +816,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                         com.mangareader.sr.SrPipeline.pollForResult(idx) { b -> injectUpscaledBitmap(idx, b) }
                     }
                 } catch (_: Exception) {}
-                bitmapCache[idx] = bmp
+                bitmapCache.put(idx, bmp)
                 withContext(Dispatchers.Main) {
                     // Convert page index to adapter position
                     val adapterPos = if (doublePageMode) {
@@ -894,8 +895,8 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         nativeArchive?.close()
         nativeArchive = null
         nativeArchivePath = ""
-        bitmapCache.values.forEach { try { it.recycle() } catch (_: Exception) {} }
-        bitmapCache.clear()
+        bitmapCache.snapshot().values.forEach { try { it.recycle() } catch (_: Exception) {} }
+        bitmapCache.evictAll()
         // ★ v1.13 C-1：身份字段随缓存一并作废——下次 setup 必命中 pagesChanged=true 走全量重建
         //   （重建 adapter + setCurrentItem + preloadAround 补载），根治模式切换白屏
         pageList = emptyList()
@@ -913,14 +914,23 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         }
         if (level < android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) return
         val keep = currentPage
-        val it = bitmapCache.entries.iterator()
-        while (it.hasNext()) {
-            val e = it.next()
-            if (kotlin.math.abs(e.key - keep) > 2) {
-                try { if (!e.value.isRecycled) e.value.recycle() } catch (_: Exception) {}
-                it.remove()
+        for ((k, v) in bitmapCache.snapshot()) {
+            if (kotlin.math.abs(k - keep) > 2) {
+                try { if (!v.isRecycled) v.recycle() } catch (_: Exception) {}
+                bitmapCache.remove(k)
             }
         }
+        // ★ F3.4：低内存补收动图缓冲（pageAnimDrawables 无上限 + animRawCache 自估可上百 MB，原版完全不收）。
+        //   当前页动图会停帧，重绑自动重建恢复；CRITICAL 一下就把在途标记一并清了。
+        try {
+            synchronized(pageAnimDrawables) {
+                pageAnimDrawables.values.forEach { d -> try { (d as? android.graphics.drawable.Animatable)?.stop() } catch (_: Throwable) {} }
+                pageAnimDrawables.clear()
+            }
+            currentPlayingAnimIdx = -1
+            synchronized(animRawCache) { animRawCache.clear() }
+            inflightAnimLoads.clear()
+        } catch (_: Throwable) {}
     }
 
     private fun mergeBitmaps(left: Bitmap, right: Bitmap, gapPx: Int = 0): Bitmap {

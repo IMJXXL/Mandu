@@ -834,8 +834,25 @@ class ArchiveEngine(private val ctx: Context) {
 
     fun decodeBitmap(data: ByteArray): Bitmap? {
         return try {
-            // 全尺寸解码，不降采样，保持原始清晰度（SSIV 通过 tile 机制高效显示大图）
-            BitmapFactory.decodeByteArray(data, 0, data.size)
+            // ★ F3.2 大图解码闸：解码前先探尺寸，解码内存超 24MB(6M px) 逐级 inSampleSize。
+            //   8K 图全尺寸解码可达 256MB 瞬时 OOM；6M px ≈ 3 倍屏幕像素，fit-width 观感无损。
+            //   bounds 探测不消费数据（ByteArray 可重复解码）。
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(data, 0, data.size, bounds)
+            var sample = 1
+            if (bounds.outWidth > 0 && bounds.outHeight > 0) {
+                val px = bounds.outWidth.toLong() * bounds.outHeight.toLong()
+                while (px / (sample.toLong() * sample) > 6_291_456L) sample *= 2
+            }
+            if (sample > 1) {
+                BitmapFactory.decodeByteArray(
+                    data, 0, data.size,
+                    BitmapFactory.Options().apply { inSampleSize = sample },
+                )
+            } else {
+                // 全尺寸解码（≤6M px），保持原始清晰度
+                BitmapFactory.decodeByteArray(data, 0, data.size)
+            }
         } catch (e: OutOfMemoryError) {
             System.gc()
             try {

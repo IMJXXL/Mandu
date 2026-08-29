@@ -143,16 +143,23 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
         isSettleWindowActive = false
     }
     private var adapter: PageAdapter? = null
-    private val bitmapCache = java.util.LinkedHashMap<Int, Bitmap>(16, 0.75f, true)
-    // ★ ⑧ 最小修复辅助：recycle + clear 同步块，避免裸 clear 漏 recycle 造成内存泄漏。
-    //   Webtoon 是 accessOrder LinkedHashMap 非 thread-safe 必须包 synchronized。所有真 bitmapCache 调用点
+    // ★ F3.1：accessOrder LinkedHashMap 无上限 → LruCache 字节限容（64MB）。minSdk 26 起位图像素在 Java 堆，
+    //   LRU 淘汰只丢引用、不主动 recycle（杜绝任何"回收在显示位图"的可能，GC 兜底）；
+    //   显式 remove/清缓存的 recycle 语义由原调用方保持。原有 synchronized 包裹全部保留（LruCache 自带同步，嵌套无害）。
+    private val bitmapCache = object : android.util.LruCache<Int, Bitmap>(64 * 1024 * 1024) {
+        override fun sizeOf(key: Int, value: Bitmap): Int = value.byteCount
+    }
+    // ★ ⑧ 最小修复辅助：recycle + 清空同步块，避免裸 clear 漏 recycle 造成内存泄漏。
+    //   Webtoon 原 accessOrder LinkedHashMap 非 thread-safe 必须包 synchronized。所有真 bitmapCache 调用点
     //   (load/render/trim) 都已 synchronized 制度约束，helper 内同样包 synchronized 与之对齐。
     private fun clearBitmapCacheRecycling() {
         synchronized(bitmapCache) {
             // ★ 白屏工单任务2附属：指认"谁在清缓存"（C4 定位用：size + 视图实例 hash）
-            Log.w("Recycle", "webtoon clearBitmapCacheRecycling n=${bitmapCache.size} view=${System.identityHashCode(this)}")
-            bitmapCache.values.forEach { try { if (!it.isRecycled) it.recycle() } catch (_: Exception) {} }
-            bitmapCache.clear()
+            Log.w("Recycle", "webtoon clearBitmapCacheRecycling n=${bitmapCache.size()} view=${System.identityHashCode(this)}")
+            for ((_, v) in bitmapCache.snapshot()) {
+                try { if (!v.isRecycled) v.recycle() } catch (_: Exception) {}
+            }
+            bitmapCache.evictAll()
         }
     }
     var imageMarginH: Int = 0
@@ -440,7 +447,7 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
     fun prevPage() { if (currentPage > 0) goToPage(currentPage - 1) }
 
     fun injectUpscaledBitmap(pageIndex: Int, bitmap: Bitmap) {
-        synchronized(bitmapCache) { bitmapCache[pageIndex] = bitmap }
+        synchronized(bitmapCache) { bitmapCache.put(pageIndex, bitmap) }
         android.util.Log.i("WebtoonRV", "srInject p=$pageIndex bmp=${bitmap.width}x${bitmap.height}")
         recycler.post {
             adapter?.notifyItemChanged(pageIndex, "ld")
@@ -451,11 +458,9 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
      *  交给新视图 adoptBitmaps，切换零重解码（治"切换瞬间当前±1 页白屏"）。 */
     override fun drainLiveBitmaps(): Map<Int, Bitmap> = synchronized(bitmapCache) {
         val out = LinkedHashMap<Int, Bitmap>()
-        val it = bitmapCache.entries.iterator()
-        while (it.hasNext()) {
-            val e = it.next()
-            if (!e.value.isRecycled) out[e.key] = e.value
-            it.remove()
+        for (k in bitmapCache.snapshot().keys) {
+            val v = bitmapCache.remove(k) ?: continue
+            if (!v.isRecycled) out[k] = v
         }
         Log.d("P02", "drain size=${out.size} keys=${out.keys}")
         out
@@ -465,7 +470,7 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
     override fun adoptBitmaps(map: Map<Int, Bitmap>) {
         Log.d("P02", "adopt size=${map.size} keys=${map.keys}")
         synchronized(bitmapCache) {
-            for ((k, v) in map) if (!v.isRecycled) bitmapCache[k] = v
+            for ((k, v) in map) if (!v.isRecycled) bitmapCache.put(k, v)
         }
     }
 
@@ -477,7 +482,7 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
             try {
                 val srHit = com.mangareader.sr.SrPipeline.attachOrSchedule(idx, cached)
                 if (srHit != null && !srHit.isRecycled && srHit !== cached) {
-                    synchronized(bitmapCache) { bitmapCache[idx] = srHit }
+                    synchronized(bitmapCache) { bitmapCache.put(idx, srHit) }
                     recycler.post { adapter?.notifyItemChanged(idx, "ld") }
                 }
             } catch (_: Exception) {}
@@ -503,7 +508,7 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
                 val sharedKey = engine?.getPdfSharedKey(treePath, meta.index)
                 if (sharedKey != null) {
                     engine?.getCachedBitmap(sharedKey)?.let { bmp ->
-                        synchronized(bitmapCache) { bitmapCache[idx] = bmp }
+                        synchronized(bitmapCache) { bitmapCache.put(idx, bmp) }
                         onResult?.invoke(bmp)
                         return
                     }
@@ -536,7 +541,7 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
                         com.mangareader.sr.SrPipeline.pollForResult(idx) { b -> injectUpscaledBitmap(idx, b) }
                     }
                 } catch (_: Exception) {}
-                synchronized(bitmapCache) { bitmapCache[idx] = processed }
+                synchronized(bitmapCache) { bitmapCache.put(idx, processed) }
                 // ★ 白屏工单任务1：补 webtoon 成功路径观测（与 pager 对齐，消除盲区）
                 ArchiveEngine.d("WebtoonRV", "loaded idx=$idx bmp=${processed.width}x${processed.height}")
                 recycler.post { adapter?.notifyItemChanged(idx, "ld") }
@@ -613,7 +618,7 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
                 }
                 if (bmp != null) {
                     val processed = processBitmap(bmp)
-                    synchronized(bitmapCache) { bitmapCache[idx] = processed ?: bmp }
+                    synchronized(bitmapCache) { bitmapCache.put(idx, processed ?: bmp) }
                     recycler.post { adapter?.notifyItemChanged(idx, "ld") }
                 }
             }
@@ -688,12 +693,10 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
         if (level < android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) return
         synchronized(bitmapCache) {
             val keep = currentPage
-            val it = bitmapCache.entries.iterator()
-            while (it.hasNext()) {
-                val e = it.next()
-                if (kotlin.math.abs(e.key - keep) > 2) {
-                    try { if (!e.value.isRecycled) e.value.recycle() } catch (_: Exception) {}
-                    it.remove()
+            for ((k, v) in bitmapCache.snapshot()) {
+                if (kotlin.math.abs(k - keep) > 2) {
+                    try { if (!v.isRecycled) v.recycle() } catch (_: Exception) {}
+                    bitmapCache.remove(k)
                 }
             }
         }
