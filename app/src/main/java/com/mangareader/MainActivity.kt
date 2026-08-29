@@ -18,9 +18,11 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.mangareader.ui.HistoryScreen
+import com.mangareader.ui.showSystemBars
 import androidx.navigation.navOptions
 import com.mangareader.ui.Library
 import com.mangareader.ui.Reader
@@ -48,6 +50,18 @@ class MainActivity : ComponentActivity() {
 
             Theme(dark = dark, appTheme = currentTheme) {
                 val nav = rememberNavController()
+
+                // ★ 免疫沉浸式：只要当前屏幕不是阅读器，状态栏强制可见。
+                //   key=路由，路由变化时重跑；书架/历史/设置/超分队列及以后所有非阅读页一处覆盖。
+                //   维护点：若重命名 reader 路由，同步下方 startsWith("reader/")。
+                val backStackEntry by nav.currentBackStackEntryAsState()
+                val currentRoute = backStackEntry?.destination?.route
+                DisposableEffect(currentRoute) {
+                    if (currentRoute != null && !currentRoute.startsWith("reader/")) {
+                        showSystemBars(this@MainActivity, false)
+                    }
+                    onDispose { }
+                }
                 NavHost(nav, "library") {
                     composable("library") {
                         Library(
