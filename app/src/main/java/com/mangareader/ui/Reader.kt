@@ -1412,7 +1412,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
                                         if (pageIdx in displayPages.indices) {
                                             scope.launch {
                                                 try {
-                                                    val bmp = withContext(Dispatchers.IO) { engine.loadPage(displayPages[pageIdx], book?.filePath ?: "") }
+                                                    val bmp = withContext(Dispatchers.IO) { engine.loadPage(displayPages[pageIdx], navStack.lastOrNull() ?: book?.filePath ?: "") }
                                                     if (bmp != null) {
                                                         val dir = java.io.File(ctx.getExternalFilesDir(null), "saved_pages"); dir.mkdirs()
                                                         val file = java.io.File(dir, "page_${System.currentTimeMillis()}.png")
