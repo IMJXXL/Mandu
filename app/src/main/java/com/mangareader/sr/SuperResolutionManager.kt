@@ -182,7 +182,13 @@ class SuperResolutionManager(
                 DenoiseLevel.STRONG -> 2
             }
             return@withLock withContext(Dispatchers.IO) {
-                try { SrCleanupProcessor.process(input, strength) ?: input } catch (_: Throwable) { input }
+                // 与 SR 路径同语义：bwForceOff 已编码"彩色页跳过"，灰阶级数>0 才应用黑白量化
+                val bwForThisCall = if (bwForceOff) MangaBWPostProcessConfig(0, false) else currentBwConfig
+                val cleaned = try { SrCleanupProcessor.process(input, strength) } catch (_: Throwable) { null }
+                val finalBmp = if (cleaned != null && bwForThisCall != null && bwForThisCall.grayLevels > 0) {
+                    try { SrBwProcessor.process(cleaned, bwForThisCall.grayLevels, bwForThisCall.densityCorrection) ?: cleaned } catch (_: Throwable) { cleaned }
+                } else cleaned
+                finalBmp ?: input
             }
         }
 
