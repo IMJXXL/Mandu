@@ -213,9 +213,9 @@ private fun ReadingModeTab(config: ReaderConfig, mode: Mode, useAnimPager: Boole
     // ★ §34.5 动图专属视图下精简：只保留三种单页式（FLIP/RTL/VERT_PAGER）
     //   隐藏：条漫/WEBTOON_GAP 模式（动图视图是 ViewPager2 翻页，不支持连续滚动）
     //         双页布局、裁剪白边、自动放大横向、拆分双页、侧边留白、中间空白类型（AnimPager 不走 SSIV/不需要这些）
-    // ★ §34.5 标题加提示"切换模式后请返回书架重进" —— 用户切 mode 后必须重进卷才生效
-    //   （NativeReaderScreen 的 DisposableEffect 依赖 mode，切 mode 会重建视图，但保留的缓存 bitmap 可能与新 mode 不一致）
-    SettingsChipRow("阅读模式（切换模式后请返回主书架重进）") {
+    // ★ §34.5 标题提示"切换模式后如遇问题请返回书架重进"（P0-2 交接 + C4 闭环后切换已即时出图，
+    //   提示降级为兜底说明；NativeReaderScreen 的 DisposableEffect 依赖 mode，切 mode 会重建视图）
+    SettingsChipRow("阅读模式（切换模式后如遇问题请返回书架重进）") {
         // ★ §34.5 useAnimPager=true → 限定三种单页式（动图视图不支持条漫连续滚动）
         val modeList = if (useAnimPager) {
             listOf("单页式（从左到右）" to 0, "单页式（从右到左）" to 1, "单页式（从上到下）" to 2)

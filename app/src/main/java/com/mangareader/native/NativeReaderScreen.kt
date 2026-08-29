@@ -40,12 +40,43 @@ interface ReaderViewDelegate {
 }
 
 /** ★ C4 交接所有权令牌（白屏工单 v2.4）：adopt 过的批次归新视图缓存管；
- *  从未被 adopt 的批次（切换抖动导致 handoff 未被消费）才允许兜底回收。 */
-private class BitmapHandoff(val bitmaps: Map<Int, android.graphics.Bitmap>) {
+ *  从未被 adopt 的批次才允许兜底回收，且必须超时（2s）——
+ *  Reader.kt 用 key() 包裹 NES，切模式=子树重建，正常移交窗口只有几十毫秒。 */
+class BitmapHandoff(val bitmaps: Map<Int, android.graphics.Bitmap>) {
     @Volatile var adopted: Boolean = false
+    private val createdAt = android.os.SystemClock.uptimeMillis()
+    fun isStale(): Boolean = android.os.SystemClock.uptimeMillis() - createdAt > 2000L
     fun recycleIfUnadopted() {
         if (adopted) return
         bitmaps.values.forEach { bmp -> try { bmp.recycle() } catch (_: Throwable) {} }
+    }
+}
+
+/** ★ 交接总线（进程级单例）：Reader.kt 的 key() 使 NES 切模式时整树重建，
+ *  remember 级交接引用随实例销毁导致 adopt 永远收不到（P02 adopt 全场零调用的根源）。
+ *  总线跨实例移交；put 覆盖时回收超时未消费的旧批次。 */
+object SrBitmapHandoffBus {
+    private val ref = java.util.concurrent.atomic.AtomicReference<BitmapHandoff?>(null)
+
+    fun put(h: BitmapHandoff) {
+        val prev = ref.getAndSet(h)
+        if (prev != null && !prev.adopted && prev.isStale()) prev.recycleIfUnadopted()
+    }
+
+    fun take(): BitmapHandoff? {
+        val h = ref.getAndSet(null) ?: return null
+        if (h.adopted) return null
+        return h
+    }
+
+    /** 兜底回收：仅超时未消费的批次（正常模式切换的新鲜批次放回去等新实例 adopt） */
+    fun recycleStale() {
+        val h = ref.getAndSet(null) ?: return
+        if (h.adopted || h.isStale()) {
+            h.recycleIfUnadopted()
+        } else {
+            ref.compareAndSet(null, h) // 新鲜批次放回，等接管
+        }
     }
 }
 
@@ -138,10 +169,8 @@ fun NativeReaderScreen(
 
     // ★ P0-2 切换交接容器：onDispose 时 old.drain → 新 effect body 里 new.adopt。
     //   没有任何人接管的兜底（退出阅读）：下面这个 Unit effect 反方向最晚 dispose，发现残留会统一回收。
-    // ★ C4 交接所有权令牌（白屏工单 v2.4）：adopt 过的批次归新视图缓存管；
-    //   从未被 adopt 的批次（切换抖动导致 handoff 没被消费）才允许兜底回收。
-    //   直接回收引擎 LruCache 仍共享持有的对象 = 毒位图死循环的根源。
-    val srBitmapHandoff = remember { java.util.concurrent.atomic.AtomicReference<BitmapHandoff?>(null) }
+    // ★ C4 交接：Reader.kt 的 key() 使切模式时 NES 整树重建，交接走进程级总线跨实例移交。
+    //   Unit 兜底只回收"超时未消费"批次，正常切换的新鲜批次等新实例接管。
     DisposableEffect(Unit) {
         // 三视图的 trimMemory 一并接线（修复"trimMemory 全项目无调用方"）
         ReaderTrimRegistry.register(webtoonView)
@@ -149,7 +178,7 @@ fun NativeReaderScreen(
         ReaderTrimRegistry.register(animPagerView)
         onDispose {
             // Compose 逆序 dispose：keyed effect 先 dispose（drain 完成）→ 本 Unit effect 最后兜底
-            srBitmapHandoff.getAndSet(null)?.recycleIfUnadopted()
+            SrBitmapHandoffBus.recycleStale()
             ReaderTrimRegistry.clear()
         }
     }
@@ -191,20 +220,16 @@ fun NativeReaderScreen(
             delegate.trimThreshold = trimThreshold
             delegate.trimWhiteRatio = trimWhiteRatio
         }
-        // ★ P0-2：切换交接——本次 setup 后立即接管旧视图移交的位图，新视图首帧绑定直接命中缓存
+        // ★ P0-2：切换交接——本次 setup 后立即从总线接管旧实例移交的位图（跨实例），首帧绑定直接命中缓存
         android.util.Log.w("NES", "setup delegate=${System.identityHashCode(delegate)} v=$isVertical anim=$useAnimPager vp=$verticalPager tree=$treePath")
-        srBitmapHandoff.getAndSet(null)?.let { h ->
-            if (!h.adopted) {
-                h.adopted = true
-                delegate.adoptBitmaps(h.bitmaps)
-            }
+        SrBitmapHandoffBus.take()?.let { h ->
+            h.adopted = true
+            delegate.adoptBitmaps(h.bitmaps)
         }
         onDispose {
-            // 顺序关键：先 drain（位图从缓存挪走，归属权移交），再 release（残留位图统一回收）；
-            // 上一批若从未被 adopt（切换抖动）→ 兜底回收防泄漏
+            // 顺序关键：先 drain（位图从缓存挪走，归属权移交），再 release（残留位图统一回收）
             android.util.Log.w("NES", "dispose delegate=${System.identityHashCode(delegate)}")
-            val prev = srBitmapHandoff.getAndSet(BitmapHandoff(delegate.drainLiveBitmaps()))
-            prev?.recycleIfUnadopted()
+            SrBitmapHandoffBus.put(BitmapHandoff(delegate.drainLiveBitmaps()))
             delegate.release()
             lastReleasedDelegate = null
         }
