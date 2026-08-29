@@ -217,6 +217,8 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
 
     override var onPageChanged: ((Int) -> Unit)? = null
     override var onToggleUi: (() -> Unit)? = null
+    /** ★ N1 章末回调：条漫只有"向后读"，滚到最后一页即触发 true（语义对齐 PagerReaderView.onChapterEnd） */
+    var onChapterEnd: ((Boolean) -> Unit)? = null
 
     init {
         addView(webtoonFrame, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
@@ -288,6 +290,8 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
         }
         if (best in pageList.indices && best != currentPage) {
             currentPage = best; onPageChanged?.invoke(currentPage)
+            // ★ N1 条漫到底哨兵：滚到最后一页即章末（竖读无方向歧义）
+            if (best >= pageList.size - 1) onChapterEnd?.invoke(true)
         }
     }
 

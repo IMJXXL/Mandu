@@ -40,7 +40,9 @@ data class ReaderConfig(
 
     val autoWebtoon: Boolean = true,
     val chapterTransition: Boolean = true,
-    val centerGapType: Int = 0
+    val centerGapType: Int = 0,
+    // ★ N1：卷末无缝续读（默认关；仅同一本书的分卷之间生效，跨书永不自动跳）
+    val seamlessNextVolume: Boolean = false
 ) {
     enum class ScrollMode { VERTICAL, HORIZONTAL_LEFT, HORIZONTAL_RIGHT }
     @Deprecated("Dead code - navigation uses Int field navigationMode instead") enum class ClickFlipType { NO, LEFT_RIGHT, DIAGONAL_LB_RT, DIAGONAL_LT_RB }
@@ -88,6 +90,7 @@ data class ReaderConfig(
 
             putBoolean("${prefix}autoWebtoon", autoWebtoon)
             putBoolean("${prefix}chapterTransition", chapterTransition)
+            putBoolean("${prefix}seamlessNextVolume", seamlessNextVolume)
             putInt("${prefix}centerGapType", centerGapType)
             apply()
         }
@@ -132,7 +135,8 @@ data class ReaderConfig(
 
                 autoWebtoon = prefs.getBoolean("${prefix}autoWebtoon", true),
                 chapterTransition = prefs.getBoolean("${prefix}chapterTransition", true),
-                centerGapType = prefs.getInt("${prefix}centerGapType", 0)
+                centerGapType = prefs.getInt("${prefix}centerGapType", 0),
+                seamlessNextVolume = prefs.getBoolean("${prefix}seamlessNextVolume", false)
             )
         }
     }

@@ -58,6 +58,11 @@ object SrPipeline {
     @Volatile
     private var sessionHasBatch = false
 
+    /** ★ N1 无缝续读：跨卷切换时暂存用户此前的作用域，beginSession 里恢复
+     *  （resetForBook 会把作用域重置为关闭；无缝场景需要保留用户的选择） */
+    @Volatile
+    var pendingScopeRestore: Int? = null
+
     /** 用户正在看的页（由阅读器 onPageChanged 钩子喂入） */
     @Volatile
     var currentPageIdx: Int = 0
@@ -149,6 +154,12 @@ object SrPipeline {
             }
         }
         Log.i(TAG, "session begin: cid=$sessionChapterId book=$bookId maxEdge=$maxOutputEdge pages=${pages.size}")
+
+        // ★ N1：无缝跨卷恢复实时超分作用域（resetForBook 刚把 scope 重置为 OFF；非关闭才恢复）
+        pendingScopeRestore?.let { saved ->
+            pendingScopeRestore = null
+            if (saved != SrUiState.SCOPE_OFF) onScopeChanged(saved)
+        }
     }
 
     fun endSession() {

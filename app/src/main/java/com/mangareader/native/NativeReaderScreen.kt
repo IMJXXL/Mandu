@@ -143,6 +143,8 @@ fun NativeReaderScreen(
     onPageChanged: (Int) -> Unit = {},
     onToggleUi: () -> Unit = {},
     onViewReady: (webtoonView: View, pagerView: View) -> Unit = { _, _ -> },
+    /** ★ N1：动图卷视图就绪回调——动图卷的无缝续读章末钩子走这里（onViewReady 只给 Pager） */
+    onAnimPagerReady: ((AnimPagerReaderView) -> Unit)? = null,
     /** ★ v1.13 C-2：把内容容器暴露给上层做切换前同步截图（无感模式切换遮罩的数据源） */
     onContainerReady: (FrameLayout) -> Unit = {}
 ) {
@@ -291,6 +293,8 @@ fun NativeReaderScreen(
             //   都是 PagerReaderView 专属，动图卷下不显示时挂上无副作用；useAnimPager 切回 false 时立即生效。
             //   AnimPagerReaderView 不需要这些 hook（其内部状态自洽）。
             onViewReady(webtoonView, pagerView)
+            // ★ N1：动图卷就绪钩子（章末无缝续读）
+            onAnimPagerReady?.invoke(animPagerView)
             // ★ v1.13 C-2：容器就绪回调（截图用；draw(container) 只画 VISIBLE 子树，GONE 自动排除）
             onContainerReady(container)
             container

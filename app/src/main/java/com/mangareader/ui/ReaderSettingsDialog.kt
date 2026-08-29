@@ -194,6 +194,8 @@ private fun GeneralTab(config: ReaderConfig, onConfigChange: (ReaderConfig) -> U
     TsyCheckbox("保持屏幕常亮", config.isKeepScreenOn) { onConfigChange(config.copy(isKeepScreenOn = it)) }
     TsyCheckbox("长按显示操作菜单", true) { }
     TsyCheckbox("始终显示章节间的过渡页面", config.chapterTransition) { onConfigChange(config.copy(chapterTransition = it)) }
+    // ★ N1：与 ReaderSettingsSheet 同步的开关（本对话框当前备用，防日后启用遗漏）
+    TsyCheckbox("无缝续读下一卷（读到卷末自动进入同书下一卷）", config.seamlessNextVolume) { onConfigChange(config.copy(seamlessNextVolume = it)) }
     TsyCheckbox("翻页时闪烁（开启后可降低墨水屏残影）", config.isFlipFlashEnabled) { onConfigChange(config.copy(isFlipFlashEnabled = it)) }
     if (config.isFlipFlashEnabled) {
         TsySlider("持续时间", config.flipFlashDuration.toFloat(), 50f..1500f, 14, "${config.flipFlashDuration}ms") {

@@ -1296,6 +1296,46 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
                             } catch (_: Throwable) {}
                         }
                         key(navStack.lastOrNull(), vertical, isRtl, verticalPagerEffective, useAnimPager) {
+                        // ★ N1 无缝续读：读到卷末静默进入同书下一卷（默认关；失败回退现状过渡页）。
+                        //   返回 true = 已接管本次章末（不再弹过渡页）；false = 按现状走。
+                        val trySeamlessNextVolume = handler@{
+                            if (!config.seamlessNextVolume) return@handler false
+                            if (tocItems.size < 2) return@handler false
+                            val curIdx = tocItems.indexOfFirst { it.subPath == extractSubPathFromNav() }
+                            if (curIdx == -1) return@handler false
+                            val nextIdx = curIdx + 1
+                            if (nextIdx >= tocItems.size) return@handler false   // 已是最末卷 → 回退现状
+                            val target = tocItems[nextIdx]
+                            scope.launch {
+                                val enterable = withContext(Dispatchers.IO) {
+                                    try { engine.children(target.subPath).isEmpty() } catch (_: Exception) { false }
+                                }
+                                if (!enterable) {
+                                    // 目标卷为空/嵌套目录 → 回退现状过渡页
+                                    chapterTransitionIsLast = mode != Mode.RTL
+                                    showChapterTransition = true
+                                    return@launch
+                                }
+                                // 作用域写回：beginSession 会把实时超分作用域重置为关闭，无缝跨卷要保留
+                                SrPipeline.pendingScopeRestore = SrUiState.scope.intValue
+                                switchTargetName = target.name
+                                switchTargetPath = target.subPath
+                                confirmSwitch()
+                                android.widget.Toast.makeText(ctx, "已进入下一卷：${target.name}", android.widget.Toast.LENGTH_SHORT).show()
+                            }
+                            true
+                        }
+                        // ★ N1 共享章末处理器：RTL 版式"向后读"的末端是第 0 页端，其余版式是末页端；
+                        //   反方向（回第一章）永不触发无缝
+                        val handleChapterEnd = { isLast: Boolean ->
+                            val forwardEnd = if (mode == Mode.RTL) !isLast else isLast
+                            if (forwardEnd && trySeamlessNextVolume()) {
+                                // 静默切换已启动
+                            } else if (config.chapterTransition && tocItems.size > 1) {
+                                chapterTransitionIsLast = isLast
+                                showChapterTransition = true
+                            }
+                        }
                         com.mangareader.native.NativeReaderScreen(
                             engine = engine,
                             treePath = navStack.lastOrNull() ?: book?.filePath ?: "",
@@ -1342,6 +1382,10 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
                                 }
                             },
                             onToggleUi = ::toggleUi,
+                            onAnimPagerReady = { av ->
+                                // ★ N1：动图卷章末钩子接入无缝续读
+                                av.onChapterEnd = handleChapterEnd
+                            },
                             onViewReady = { w, p ->
                                 webtoonViewRef = w; pagerViewRef = p
                                 activePagerRef = p as? com.mangareader.native.PagerReaderView
@@ -1351,6 +1395,8 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
                                 (w as? com.mangareader.native.WebtoonReaderView)?.let { wv ->
                                     wv.onAnimDetected = { count ->
                                     }
+                                    // ★ N1：条漫到底哨兵接入无缝续读
+                                    wv.onChapterEnd = handleChapterEnd
                                 }
                                 // ★ §24 二代：PagerReaderView 接动图播放，hook 同 wait——但翻页模式下不需"切翻页"对话框（已在翻页中）
                                 (p as? com.mangareader.native.PagerReaderView)?.let { pv ->
@@ -1360,12 +1406,8 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
                                 (p as? com.mangareader.native.PagerReaderView)?.let {
                                     it.flipAnimationEnabled = config.isFlipAnimation
                                     it.imageMarginH = config.imageMarginH
-                                    it.onChapterEnd = { isLast ->
-                                        if (config.chapterTransition && tocItems.size > 1) {
-                                            chapterTransitionIsLast = isLast
-                                            showChapterTransition = true
-                                        }
-                                    }
+                                    // ★ N1：翻页/双页/RTL 末端判定统一走共享章末处理器
+                                    it.onChapterEnd = handleChapterEnd
                                     it.onPageLongPress = { pageIdx ->
                                         if (pageIdx in displayPages.indices) {
                                             scope.launch {

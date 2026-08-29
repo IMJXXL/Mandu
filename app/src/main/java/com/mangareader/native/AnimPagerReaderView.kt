@@ -86,6 +86,8 @@ class AnimPagerReaderView(context: Context) : FrameLayout(context), ReaderViewDe
 
     override var onPageChanged: ((Int) -> Unit)? = null
     override var onToggleUi: (() -> Unit)? = null
+    /** ★ N1 章末回调：true=末页 / false=首页，语义与 PagerReaderView.onChapterEnd 一致（动图卷无缝续读用） */
+    var onChapterEnd: ((Boolean) -> Unit)? = null
 
     /** ★ §34.1 hook：同 PagerReaderView 语义——Reader.kt 用来挂钩动图提示（本视图本身就在播，不需弹窗）*/
     var onAnimDetected: ((animatedCount: Int) -> Unit)? = null
@@ -106,6 +108,9 @@ class AnimPagerReaderView(context: Context) : FrameLayout(context), ReaderViewDe
                     if (realPos in pageList.indices && realPos != currentPage) {
                         currentPage = realPos
                         onPageChanged?.invoke(currentPage)
+                        // ★ N1 动图卷：与 Pager 一致的章末回调（首/末页端）
+                        if (currentPage == pageList.size - 1) onChapterEnd?.invoke(true)
+                        if (currentPage == 0) onChapterEnd?.invoke(false)
                     }
                 }
             })

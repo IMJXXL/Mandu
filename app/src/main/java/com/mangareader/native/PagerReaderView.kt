@@ -419,7 +419,8 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                     com.mangareader.viewer.ArchiveEngine.d("PagerView", "onPageSelected pos=$position pageIdx=$pageIdx realPos=$realPos rtl=$isRtl double=$doublePageMode total=${pageList.size} curPage=$currentPage")
                     if (realPos in pageList.indices && realPos != currentPage) {
                         currentPage = realPos; onPageChanged?.invoke(currentPage)
-                        if (currentPage == pageList.size - 1) onChapterEnd?.invoke(true)
+                        // ★ N1：双页模式最后跨页 realPos 可能是 N-2（奇偶错位），末页判据放宽到倒数第二页
+                        if (currentPage >= pageList.size - (if (doublePageMode) 2 else 1)) onChapterEnd?.invoke(true)
                         if (currentPage == 0) onChapterEnd?.invoke(false)
                     }
                     // ★ §24 二代：翻到新页时启动该页动图、停止其他正在播的
