@@ -81,7 +81,7 @@ object ReaderParams {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit) {
+fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook: ((Long, String) -> Unit)? = null) {
     val ctx = LocalContext.current
     val act = ctx as? Activity
     val app = ctx.applicationContext as App
@@ -1420,11 +1420,11 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit) {
                                                     color = Color.White,
                                                     strokeWidth = 1.5.dp,
                                                 )
-                                                Text("超分计算中", color = Color.White, fontSize = 11.sp)
+                                                Text("画质优化中", color = Color.White, fontSize = 11.sp)
                                             }
                                             done -> {
                                                 Icon(Icons.Default.Check, null, tint = Color(0xFF66BB6A), modifier = Modifier.size(12.dp))
-                                                Text("超分完成", color = Color.White, fontSize = 11.sp)
+                                                Text("优化完成", color = Color.White, fontSize = 11.sp)
                                             }
                                             else -> Text("未启动", color = Color(0xFFFFA726), fontSize = 11.sp)
                                         }
@@ -1611,7 +1611,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit) {
     }
 
     if (showSrQueue) {
-        com.mangareader.ui.SrQueueScreen(onBack = { showSrQueue = false })
+        com.mangareader.ui.SrQueueScreen(onBack = { showSrQueue = false }, onOpenBook = onOpenBook)
     }
 
     if (showSettings) {

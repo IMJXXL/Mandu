@@ -98,7 +98,16 @@ class MainActivity : ComponentActivity() {
                         navArgument("jump") { type = NavType.StringType; nullable = true; defaultValue = null }
                     )) {
                         val readerId = it.arguments?.getLong("id") ?: return@composable
-                        Reader(readerId, it.arguments?.getString("jump")) { nav.popBackStack() }
+                        Reader(
+                            bookId = readerId,
+                            jumpPath = it.arguments?.getString("jump"),
+                            back = { nav.popBackStack() },
+                            onOpenBook = { bookId, path ->
+                                nav.navigate("reader/$bookId?jump=${android.net.Uri.encode(path)}") {
+                                    popUpTo("library")
+                                }
+                            },
+                        )
                     }
                     composable("settings") {
                         SettingsScreen(
