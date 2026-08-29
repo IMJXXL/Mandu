@@ -22,6 +22,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -37,7 +38,7 @@ import kotlin.math.min
  * 退出：点右上角"退出对比"按钮，或再点一次底栏"对比"。
  */
 @Composable
-fun SrCompareOverlay(pageIndex: Int, tick: Int, onClose: () -> Unit) {
+fun SrCompareOverlay(pageIndex: Int, tick: Int, onClose: () -> Unit, bgColor: Int = android.graphics.Color.BLACK) {
     if (!SrCore.initialized) return
     if (!SrUiState.compareActive.value) return
 
@@ -45,11 +46,11 @@ fun SrCompareOverlay(pageIndex: Int, tick: Int, onClose: () -> Unit) {
     val original = remember(pageIndex, tick) { SrPipeline.peekOriginal(pageIndex) }
     val enhanced = remember(pageIndex, tick) { SrPipeline.peekSr(pageIndex) }
 
-    // ★ 纯黑底：长页按高度适配后两侧会露出底下阅读器（邻页/不同缩放），看起来像三段错位内容；
-    //   对比视图必须是独立黑场舞台
-    Box(Modifier.fillMaxSize().background(Color.Black)) {
+    // ★ 底色跟随阅读器背景色（非固定黑）：长页适配后两侧必然露出底色，与阅读观感保持一致
+    Box(Modifier.fillMaxSize().background(Color(bgColor))) {
         if (original != null && enhanced != null && !original.isRecycled && !enhanced.isRecycled) {
             var fraction by remember(pageIndex) { mutableFloatStateOf(0.5f) }
+            var panY by remember(pageIndex) { mutableFloatStateOf(0f) }
             val oImg = original.asImageBitmap()
             val eImg = enhanced.asImageBitmap()
 
@@ -57,24 +58,30 @@ fun SrCompareOverlay(pageIndex: Int, tick: Int, onClose: () -> Unit) {
                 Modifier
                     .fillMaxSize()
                     .pointerInput(Unit) {
+                        // 横向拖 = 分割线；纵向拖 = 长页上下平移（条漫长页按宽适配后超出屏幕）
                         detectDragGestures { change, _ ->
-                            fraction = (change.position.x / size.width).coerceIn(0.02f, 0.98f)
+                            fraction = (fraction + change.positionChange().x / size.width).coerceIn(0.02f, 0.98f)
+                            panY += change.positionChange().y
                             change.consume()
                         }
                     }
                     .pointerInput(Unit) {
-                        // 单击也能拖动定位分割线
+                        // 单击也能定位分割线
                         detectTapGestures { pt ->
                             fraction = (pt.x / size.width).coerceIn(0.02f, 0.98f)
                         }
                     },
             ) {
-                // 用原图尺寸算 Fit 矩形；两半都用这个矩形画 → 位置/高度完全一致
-                val scale = min(size.width / oImg.width, size.height / oImg.height)
+                // ★ 条漫长页：按宽适配（=条漫阅读的正常大小），纵向拖动浏览；
+                //   短页/横页：整页适配屏幕居中（原行为）
+                val fitWScale = size.width / oImg.width
+                val fitH = oImg.height * fitWScale
+                val tall = fitH > size.height
+                val scale = if (tall) fitWScale else min(size.width / oImg.width, size.height / oImg.height)
                 val dw = oImg.width * scale
                 val dh = oImg.height * scale
                 val left = (size.width - dw) / 2
-                val top = (size.height - dh) / 2
+                val top = if (tall) panY.coerceIn(size.height - dh, 0f) else (size.height - dh) / 2
                 val dstOffset = IntOffset(left.toInt(), top.toInt())
                 val dstSize = IntSize(dw.toInt(), dh.toInt())
                 val srcSize = IntSize(oImg.width, oImg.height)

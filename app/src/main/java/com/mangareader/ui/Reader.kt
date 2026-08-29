@@ -1380,6 +1380,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit) {
                                 pageIndex = cur,
                                 tick = srReadyTick,
                                 onClose = { com.mangareader.sr.SrUiState.compareActive.value = false },
+                                bgColor = bgColor.toArgb(),
                             )
                         }
                         // ★ v1.13 C-2 无感切换遮罩：截取的旧画面盖在内容区顶，500ms 兜底撤除
