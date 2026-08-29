@@ -41,12 +41,31 @@ class ModelManager private constructor(
         SRModel.entries.filter { it.isBuiltIn }.forEach { model ->
             // 快速优化档无模型文件，跳过解包
             if (model.modelType == "algorithm") return@forEach
-            if (!isModelReady(model)) {
-                val modelDir = getModelDir(model)
-                modelDir.mkdirs()
-                copyModelAssets(model)
-                try { File(modelDir, ".v$MODEL_CACHE_VERSION").writeText("1") } catch (_: Exception) {}
+            // 基础目录 + 全部降噪变体目录逐个解包
+            model.assetDirs().forEach { dirName ->
+                val modelDir = File(modelsDir, dirName)
+                val stamp = File(modelDir, ".v$MODEL_CACHE_VERSION")
+                if (!stamp.exists()) {
+                    modelDir.mkdirs()
+                    copyModelAssetsDir(dirName, modelDir)
+                    try { stamp.writeText("1") } catch (_: Exception) {}
+                }
             }
+        }
+    }
+
+    private fun copyModelAssetsDir(dirName: String, modelDir: File) {
+        try {
+            context.assets.list("models/$dirName")?.forEach { filename ->
+                context.assets.open("models/$dirName/$filename").use { input ->
+                    File(modelDir, filename).outputStream().use { output ->
+                        input.copyTo(output)
+                    }
+                }
+            }
+            Log.i(TAG, "Model extracted: $dirName")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to extract model: $dirName", e)
         }
     }
 

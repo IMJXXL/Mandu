@@ -33,7 +33,8 @@ class SuperResolutionManager(
 
     private var currentProcessor: SuperResolutionProcessor? = null
     private var currentModel: SRModel? = null
-    private var currentScale: Int = 2
+    var currentScale: Int = 2
+        private set
     private var currentDenoiseLevel: DenoiseLevel = DenoiseLevel.LIGHT
 
     @Volatile
@@ -111,7 +112,8 @@ class SuperResolutionManager(
     ) = mutex.withLock {
         Log.i(TAG, "SR: switchModel model=${model.key}, scale=$scale, denoise=$denoiseLevel")
 
-        if (currentModel == model && currentScale == scale && currentProcessor?.isReady == true) {
+        if (currentModel == model && currentScale == scale && !model.hasDenoiseVariants &&
+            currentProcessor?.isReady == true) {
             // 引擎不变，仅更新降噪/黑白配置（实时生效，无需重新加载模型）
             currentDenoiseLevel = denoiseLevel
             currentBwConfig = bwConfig
@@ -257,7 +259,9 @@ class SuperResolutionManager(
     }
 
     private fun getModelPath(model: SRModel): String {
-        return File(context.filesDir, "models/${model.modelDirName}").absolutePath
+        // ★ 降噪强度实装：有变体档的模型按当前强度解析实际目录（"关闭"=原默认模型，行为不变）
+        val dirName = model.resolveDirName(currentDenoiseLevel)
+        return File(context.filesDir, "models/$dirName").absolutePath
     }
 
     fun buildCacheKey(chapterId: Long, pageIndex: Int): String {

@@ -181,7 +181,13 @@ fun SrPanel(bookId: Long, bookTitle: String, onOpenQueue: () -> Unit, onDismiss:
                     }
                 }
             }
-            Text("降噪强度（针对扫描噪点）", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+            // ★ 降噪强度仅对支持的档位生效（V3 无降噪输入→灰掉+说明；CUGAN/waifu2x 按强度换变体模型）
+            val denoiseCapable = model.denoiseCapable
+            Text(
+                if (denoiseCapable) "降噪强度（针对扫描噪点）" else "降噪强度（动漫V3 档不支持降噪调节）",
+                fontSize = 14.sp, fontWeight = FontWeight.Medium,
+                color = if (denoiseCapable) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 DenoiseLevel.entries.forEach { d ->
                     FilterChip(
@@ -191,6 +197,7 @@ fun SrPanel(bookId: Long, bookTitle: String, onOpenQueue: () -> Unit, onDismiss:
                             scope.launch { SrCore.applySettings(bookId) }
                         },
                         label = { Text(d.displayName, fontSize = 12.sp) },
+                        enabled = denoiseCapable,
                     )
                 }
             }

@@ -73,4 +73,34 @@ enum class SRModel(
                 else -> REALCUGAN_2X_CONSERVATIVE
             }
     }
+
+    /** 降噪强度是否对本档生效（算法档映射滤波参数；CUGAN/waifu2x 映射变体模型；V3 无降噪输入） */
+    val denoiseCapable: Boolean
+        get() = modelType != "realesrgan"
+
+    /** 有按强度切换的变体模型（切换强度需重载引擎） */
+    val hasDenoiseVariants: Boolean
+        get() = key == "realcugan_2x_conservative" || key == "waifu2x_cunet_1x"
+
+    /** 按降噪强度解析实际模型目录（有变体档的模型按强度换文件，其余原样；"关闭"=原默认模型，行为不变） */
+    fun resolveDirName(denoise: DenoiseLevel): String = when (key) {
+        "realcugan_2x_conservative" -> when (denoise) {
+            DenoiseLevel.LIGHT -> "realcugan-2x-denoise1x"
+            DenoiseLevel.STRONG -> "realcugan-2x-denoise3x"
+            else -> modelDirName
+        }
+        "waifu2x_cunet_1x" -> when (denoise) {
+            DenoiseLevel.LIGHT -> "waifu2x-cunet-1x-noise1"
+            DenoiseLevel.STRONG -> "waifu2x-cunet-1x-noise3"
+            else -> modelDirName
+        }
+        else -> modelDirName
+    }
+
+    /** 需要随包解包的目录（基础 + 全部变体） */
+    fun assetDirs(): List<String> = when (key) {
+        "realcugan_2x_conservative" -> listOf(modelDirName, "realcugan-2x-denoise1x", "realcugan-2x-denoise3x")
+        "waifu2x_cunet_1x" -> listOf(modelDirName, "waifu2x-cunet-1x-noise1", "waifu2x-cunet-1x-noise3")
+        else -> listOf(modelDirName)
+    }.filter { it.isNotEmpty() }
 }

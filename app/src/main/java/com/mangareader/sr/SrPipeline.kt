@@ -325,7 +325,9 @@ object SrPipeline {
                 if (original == null || original.isRecycled) return@launch
 
                 if (original.width < 100 || original.height < 100) return@launch
-                if (maxOf(original.width, original.height) > 4096) return@launch
+                // ★ 1x 档（快速优化/waifu2x 清理）输出不放大，输入上限放宽到 8192；放大档维持 4096（输出内存考虑）
+                val inputCap = if (SrCore.manager.currentScale <= 1) 8192 else 4096
+                if (maxOf(original.width, original.height) > inputCap) return@launch
 
                 val upscaleOn = SrCore.settings.upscaleEnabled
                 val bwOn = SrCore.settings.bwEnabled
