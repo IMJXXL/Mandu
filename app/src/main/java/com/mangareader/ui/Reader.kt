@@ -1317,7 +1317,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
                                     return@launch
                                 }
                                 // 作用域写回：beginSession 会把实时超分作用域重置为关闭，无缝跨卷要保留
-                                SrPipeline.pendingScopeRestore = SrUiState.scope.intValue
+                                com.mangareader.sr.SrPipeline.pendingScopeRestore = com.mangareader.sr.SrUiState.scope.intValue
                                 switchTargetName = target.name
                                 switchTargetPath = target.subPath
                                 confirmSwitch()
