@@ -730,7 +730,9 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
     suspend fun findAdjacentBook(direction: Int): com.mangareader.data.Book? {
         return try {
             val allBooks = dao.getAllBooksList()
-            val currentPath = book?.filePath ?: return null
+            val currentPath = book?.filePath ?: run {
+                android.util.Log.w("AdjBook", "adj(d=$direction): book 为空"); return null
+            }
             // ★ F2.1：相邻书改"同父文件夹内文件名自然序"。原实现直接用 getAllBooksList 的
             //   lastReadAt DESC 序取相邻，"下一本"实际按最近阅读跳——末卷会跳进书库里的任意文件。
             //   同夹无邻居（首/末卷方向耗尽）→ null → "没有下一本/上一本"提示，不再全局乱跳。
@@ -740,10 +742,28 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
                 .filter { parentOf(it.filePath) == curParent }
                 .sortedWith(compareBy(com.mangareader.util.ComicSortUtil.fileNameComparator) { it.filePath })
             val idx = siblings.indexOfFirst { b -> b.filePath == currentPath }
-            if (idx == -1) return null
+            // ★ AdjBook 诊断：切书失败时日志直接给出原因（书库数量/父目录解析/同夹清单/方向边界）
+            android.util.Log.i(
+                "AdjBook",
+                "adj(d=$direction): 库内=${allBooks.size} curParent=[$curParent] 同夹=${siblings.size} 当前序号=$idx " +
+                    "清单=[${siblings.joinToString(" | ") { it.filePath }}] 当前=[$currentPath]",
+            )
+            if (idx == -1) {
+                android.util.Log.w("AdjBook", "adj: 当前书不在同夹清单——父目录解析不一致 / 书被隐藏或已删")
+                return null
+            }
             val targetIdx = idx + direction
-            if (targetIdx in siblings.indices) siblings[targetIdx] else null
-        } catch (_: Exception) { null }
+            if (targetIdx in siblings.indices) {
+                val t = siblings[targetIdx]
+                android.util.Log.i("AdjBook", "adj: 目标=[${t.title}] ${t.filePath}")
+                t
+            } else {
+                android.util.Log.i("AdjBook", "adj: d=$direction 方向已到边界（首/末本）")
+                null
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("AdjBook", "adj 异常", e); null
+        }
     }
 
     fun extractSubPathFromNav(): String {
@@ -873,7 +893,14 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
                         config.save(ctx, newBookId)
                     }
                 }
-                openFolder(switchTargetPath)
+                // ★ 切书落点分发：文件夹书(d:)走 openFolder 列目录；单文件书(a:/z:)直达正文
+                //   （原实现一律 openFolder——对单文件路径 children 为空，表现为"说切换了实际没切"）
+                if (switchTargetPath.startsWith("a:") || switchTargetPath.startsWith("z:")) {
+                    // ★ §23 改走 enterReader 恢复 lastPage
+                    enterReader(switchTargetPath)
+                } else {
+                    openFolder(switchTargetPath)
+                }
             }
         }
     }
