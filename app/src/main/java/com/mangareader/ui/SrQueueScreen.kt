@@ -81,7 +81,8 @@ fun SrQueueScreen(onBack: () -> Unit, onOpenBook: ((Long, String) -> Unit)? = nu
 
     var queue by remember { mutableStateOf(emptyList<SRQueueItem>()) }
     var completed by remember { mutableStateOf(emptyList<com.mangareader.sr.SRDiskCache.BatchCompletedChapter>()) }
-    var usageText by remember { mutableStateOf("") }
+    var realtimeText by remember { mutableStateOf("") }
+    var batchText by remember { mutableStateOf("") }
     // 暂停状态必须是 Compose 状态：直接读普通 var 时，若其它状态内容相等不触发重组，按钮文案会永远停在"暂停"
     var pausedState by remember { mutableStateOf(com.mangareader.sr.SrBatchService.paused) }
 
@@ -94,7 +95,8 @@ fun SrQueueScreen(onBack: () -> Unit, onOpenBook: ((Long, String) -> Unit)? = nu
             val (bc, bb) = SrCore.diskCache.getBatchUsage()
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                 queue = q; completed = c
-                usageText = "实时缓存 $rc 张 / ${rb / 1024 / 1024} MB　·　批量产物 $bc 张 / ${bb / 1024 / 1024} MB"
+                realtimeText = "共 $rc 张 / ${rb / 1024 / 1024} MB"
+                batchText = "共 $bc 张 / ${bb / 1024 / 1024} MB"
             }
         }
     }
@@ -144,28 +146,41 @@ fun SrQueueScreen(onBack: () -> Unit, onOpenBook: ((Long, String) -> Unit)? = nu
         ) {
             item {
                 Card(Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("缓存（两块独立存储）", fontWeight = FontWeight.Bold)
-                        Text(usageText, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text(
-                            "① 实时缓存：阅读时临时算的超分图，自动限额、自动清最旧，清了无影响。" +
-                                "② 批量产物：「批量超分」离线做的成品，永久保留，打开书直接高清；清了要重新跑批量。",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            TextButton(onClick = {
-                                SrCore.dispatcher.clearCache()
-                                refresh()
-                            }) { Text("清空实时缓存") }
-                            TextButton(onClick = {
-                                SrCore.diskCache.clearBatch()
-                                // 队列里条目进度同步归零（产物都没了，进度数字不能停在中段）
-                                SrCore.queueStore.save(
-                                    SrCore.queueStore.load().map { it.copy(processedPages = 0) },
-                                )
-                                refresh()
-                            }) { Text("清空批量产物", color = MaterialTheme.colorScheme.error) }
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text("缓存管理", fontWeight = FontWeight.Bold)
+
+                        // ── 实时缓存 ──
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("实时缓存", fontWeight = FontWeight.Medium, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                                TextButton(onClick = {
+                                    SrCore.dispatcher.clearCache()
+                                    refresh()
+                                }, contentPadding = PaddingValues(horizontal = 8.dp)) { Text("清空", fontSize = 12.sp) }
+                            }
+                            Text(realtimeText, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("阅读时临时算的超分图，自动限额、自动清最旧，清了无影响", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+
+                        HorizontalDivider()
+
+                        // ── 批量产物 ──
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("批量产物", fontWeight = FontWeight.Medium, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                                TextButton(onClick = {
+                                    SrCore.diskCache.clearBatch()
+                                    // 队列里条目进度同步归零（产物都没了，进度数字不能停在中段）
+                                    SrCore.queueStore.save(
+                                        SrCore.queueStore.load().map { it.copy(processedPages = 0) },
+                                    )
+                                    refresh()
+                                }, contentPadding = PaddingValues(horizontal = 8.dp)) {
+                                    Text("清空", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+                                }
+                            }
+                            Text(batchText, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("批量超分的离线成品，永久保留，打开书直接高清；清了要重新跑批量", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }
@@ -225,7 +240,12 @@ fun SrQueueScreen(onBack: () -> Unit, onOpenBook: ((Long, String) -> Unit)? = nu
                         Column(Modifier.weight(1f)) {
                             Text(ch.bookTitle, fontWeight = FontWeight.Medium, fontSize = 14.sp)
                             Text(
-                                "${ch.pageCount} 页 · ${if (ch.modelKey.isEmpty()) "旧版产物" else com.mangareader.sr.SRModel.fromKey(ch.modelKey).displayName} · ${formatTime(ch.completedAt)} · 点我直接阅读",
+                                "${ch.pageCount} 页 · ${if (ch.modelKey.isEmpty()) "旧版产物" else com.mangareader.sr.SRModel.fromKey(ch.modelKey).displayName}",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Text(
+                                "${formatTime(ch.completedAt)} · 点按直接阅读",
                                 fontSize = 12.sp,
                                 color = MaterialTheme.colorScheme.primary,
                             )
