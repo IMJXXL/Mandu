@@ -676,7 +676,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
                         Text("关于", fontSize = 16.sp)
-                        Text("漫读 v1.1", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("漫读 v${com.mangareader.BuildConfig.VERSION_NAME}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Icon(Icons.Default.ChevronRight, null)
                 }
@@ -688,7 +688,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
                     title = { Text("关于") },
                     text = {
                         Column(Modifier.verticalScroll(rememberScrollState())) {
-                            Text("漫读 v1.1", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                            Text("漫读 v${com.mangareader.BuildConfig.VERSION_NAME}", fontSize = 16.sp, fontWeight = FontWeight.Bold)
                             Spacer(Modifier.height(8.dp))
                             Text("支持格式", fontSize = 14.sp, fontWeight = FontWeight.Medium)
                             Text("漫画: ZIP/CBZ · RAR/CBR · 7Z/CB7 · PDF · EPUB · MOBI/AZW/AZW3/PDB/PRC", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)

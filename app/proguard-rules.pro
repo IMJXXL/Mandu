@@ -23,3 +23,7 @@
 # 忽略缺失的库类（commons-compress 的 xz 依赖未打包）
 -dontwarn org.tukaani.xz.**
 -dontwarn org.slf4j.**
+
+# ★ 超分 JNI 三件套（realesrgan_jni/manga_cleanup 按类名注册 native 方法）：
+#   默认规则虽保 native 方法所在类名，显式冻结整包杜绝 R8 任何合并/改名风险（发布保险）。
+-keep class com.mangareader.sr.** { *; }

@@ -15,8 +15,8 @@ android {
         applicationId = "com.mangareader"
         minSdk = 26
         targetSdk = 36
-versionCode = 17
-versionName = "1.12"
+versionCode = 18
+versionName = "1.2"
 
         externalNativeBuild {
             cmake {
@@ -82,6 +82,7 @@ versionName = "1.12"
     buildFeatures {
         compose = true
         aidl = true
+        buildConfig = true   // 关于页动态显示版本号
     }
 
     packaging {
