@@ -2165,7 +2165,11 @@ class ArchiveEngine(private val ctx: Context) {
                     val id = c.getString(ii) ?: continue
                     val mime = if (mi >= 0) c.getString(mi) ?: "" else ""
                     val isDir = mime == DocumentsContract.Document.MIME_TYPE_DIR
-                    if (isDir || isComic(n)) items.add(Item(n, auth, treeId, id, isDir))
+                    // ★ F2.2：d: 目录项赋予稳定身份 subPath = 完整 d: 路径（与 openItem 入栈格式一致）。
+                    //   原来恒空导致 TOC 点击静默关闭、switchToNext/Previous 恒认第 1 卷、当前卷永不高亮。
+                    //   图片文件不需要身份，保持空。
+                    val itemSubPath = if (isDir) "d:$auth|$treeId|$id" else ""
+                    if (isDir || isComic(n)) items.add(Item(n, auth, treeId, id, isDir, itemSubPath))
                 }
             }
         } catch (e: Exception) { Log.e(TAG, "listDir: ${e.message}", e) }

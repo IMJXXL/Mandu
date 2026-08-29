@@ -214,6 +214,9 @@ fun ReaderTocSheet(
                                                 val chapterPath = "z:${archivePath}//${item.subPath}"
                                                 onChapterNavigate(chapterPath)
                                             }
+                                        } else if (currentPath.startsWith("d:")) {
+                                            // ★ F2.2：d: 书目录点击 → 章节身份路径直达（原来 subPath 恒空导致两分支都不中、静默关闭）
+                                            onChapterNavigate("d:${item.auth}|${item.tree}|${item.doc}")
                                         }
                                     } else if (!item.dir) {
                                         onItemOpen(item)

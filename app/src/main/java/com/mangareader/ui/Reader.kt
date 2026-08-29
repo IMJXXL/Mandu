@@ -729,15 +729,25 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
         return try {
             val allBooks = dao.getAllBooksList()
             val currentPath = book?.filePath ?: return null
-            val idx = allBooks.indexOfFirst { b -> b.filePath == currentPath }
+            // ★ F2.1：相邻书改"同父文件夹内文件名自然序"。原实现直接用 getAllBooksList 的
+            //   lastReadAt DESC 序取相邻，"下一本"实际按最近阅读跳——末卷会跳进书库里的任意文件。
+            //   同夹无邻居（首/末卷方向耗尽）→ null → "没有下一本/上一本"提示，不再全局乱跳。
+            val parentOf = { p: String -> p.substringBeforeLast('/', missingDelimiterValue = "") }
+            val curParent = parentOf(currentPath)
+            val siblings = if (curParent.isEmpty()) emptyList() else allBooks
+                .filter { parentOf(it.filePath) == curParent }
+                .sortedWith(compareBy(com.mangareader.util.ComicSortUtil.fileNameComparator) { it.filePath })
+            val idx = siblings.indexOfFirst { b -> b.filePath == currentPath }
             if (idx == -1) return null
             val targetIdx = idx + direction
-            if (targetIdx in allBooks.indices) allBooks[targetIdx] else null
+            if (targetIdx in siblings.indices) siblings[targetIdx] else null
         } catch (_: Exception) { null }
     }
 
     fun extractSubPathFromNav(): String {
         val last = navStack.lastOrNull() ?: return ""
+        // ★ F2.2：d: 书的章节身份 = 完整 d: 路径（与 openItem 入栈格式一致），直接作为 tocItems 匹配键
+        if (last.startsWith("d:")) return last
         if (!last.startsWith("z:")) return ""
         val inner = last.removePrefix("z:")
         val sep = inner.indexOf("//")
@@ -819,7 +829,11 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
         if (switchTargetPath.isEmpty()) return
         if (tocItems.size > 1 && tocItems.any { it.subPath == switchTargetPath }) {
             // 切章节：重置navStack到书根+新章节，不嵌套
-            val bookRoot = navStack.firstOrNull { it.startsWith("z:") } ?: switchTargetPath
+            // ★ F2.2：d: 书的书根取 navStack 首位（d: 栈首即书根；原来 fallback 到 switchTargetPath
+            //   会把目标卷当书根压栈）；z: 维持原取法
+            val bookRoot = navStack.firstOrNull { it.startsWith("z:") }
+                ?: navStack.firstOrNull()?.takeIf { it.startsWith("d:") }
+                ?: switchTargetPath
             navStack = listOf(bookRoot, switchTargetPath)
             scope.launch {
                 withContext(Dispatchers.IO) {
@@ -1657,7 +1671,10 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
             onDismiss = { showToc = false },
             onChapterNavigate = { chapterPath ->
                 // 保留书根路径 + 新章节路径，不丢弃整个 navStack
-                val bookRoot = navStack.firstOrNull { it.startsWith("z:") } ?: chapterPath
+                // ★ F2.2：d: 书书根取 navStack 首位（d: 栈首即书根）
+                val bookRoot = navStack.firstOrNull { it.startsWith("z:") }
+                    ?: navStack.firstOrNull()?.takeIf { it.startsWith("d:") }
+                    ?: chapterPath
                 navStack = listOf(bookRoot, chapterPath)
                 scope.launch {
                     withContext(Dispatchers.IO) {
