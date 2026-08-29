@@ -13,6 +13,7 @@ import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 class App : Application() {
     val db by lazy { MangaDatabase.getDatabase(this) }
@@ -68,6 +69,11 @@ class App : Application() {
         preloadGifDecoder()
         // 超分子系统初始化（引擎/缓存/队列；模型解包在后台进行，不阻塞启动）
         try { com.mangareader.sr.SrCore.init(this) } catch (_: Throwable) {}
+        // ★ 书库一次性去重（幂等；延迟 2s 避开启动 IO 高峰。DB 迁移在单事务内，失败整体回滚下次重试）
+        appScope.launch {
+            kotlinx.coroutines.delay(2000L)
+            try { com.mangareader.data.BookDeduper.runOnce(this@App, db.mangaDao()) } catch (_: Throwable) {}
+        }
     }
 
     // ★ GIF 闪退防御（2026-08-27 红米 diag）：gif native 库在 GifFrame 类初化时按需加载，

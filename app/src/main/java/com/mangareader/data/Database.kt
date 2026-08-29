@@ -650,7 +650,116 @@ interface MangaDao {
             }
         }
     }
+
+    // ==================== ★ 书库一次性去重（DedupBooks） ====================
+
+    @Query("DELETE FROM reading_progress WHERE bookId IN (:bookIds)")
+    suspend fun deleteProgressForBookIds(bookIds: List<Long>)
+
+    @Query("DELETE FROM tag_links WHERE bookId IN (:bookIds)")
+    suspend fun deleteTagLinksForBookIds(bookIds: List<Long>)
+
+    /**
+     * ★ 书库去重（幂等；App 启动后台跑，复用 rescanFolderReplace 的四表回填模式）。
+     *   背景：manga_books.filePath 只有普通索引无唯一约束，历史重复导入/并发扫描留下了
+     *   同一 filePath 多行（实机诊断实锤 book=35/7 同书两行）——书架重复显示、进度挂错 id。
+     *
+     *   每组同 filePath 行的处理（单事务，任一组失败整体回滚）：
+     *     ① 存活者 = 活跃度最高（max(自身 lastReadAt, 其 progress 行最大 updatedAt)），平手取小 id
+     *     ② 四表迁移：
+     *        - progress：全组行（含存活者自己的）按 (存活id, path) 合并，同 key 保 updatedAt
+     *          最新，全组删后重插赢家——不能只插不删：存活者旧行若更旧，IGNORE 会挡住新赢家
+     *        - history：冗余 id 行重挂存活 id（reading_history 无 Book 外键，须显式清）
+     *        - bookshelf_items / tag_links：重挂前查重——存活者已在同书架/同标签则跳过
+     *     ③ 存活者 Book 行吸收冗余行资产（readPages/totalPages 取 max、lastReadAt 取最新、
+     *        isFavorite 取或、addedAt 取最早、coverPath 空则从冗余行补）
+     *     ④ 删冗余行——此时 CASCADE 清掉的只是已搬空的壳
+     *   已知取舍（与 rescanFolderReplace 的 K.c 同款）：与 rescan/正在阅读并发碰撞时
+     *   FK 失败 → 事务整体回滚，无损，下次启动重试。
+     */
+    @Transaction
+    suspend fun dedupMigrateAndDelete(groups: List<List<Book>>): DedupResult {
+        var migratedProgress = 0; var migratedHistory = 0; var migratedShelf = 0; var migratedTags = 0
+        val outcomes = mutableListOf<DedupOutcome>()
+        for (group in groups) {
+            if (group.size < 2) continue
+            val ids = group.map { it.id }
+            val progSnap = getProgressForBooks(ids)
+            // ① 存活者：活跃度优先，平手小 id（老记录被书架/历史引用的概率更高）
+            val survivor = group.sortedWith(
+                compareByDescending<Book> { b ->
+                    maxOf(b.lastReadAt ?: 0L, progSnap.filter { it.bookId == b.id }.maxOfOrNull { it.updatedAt } ?: 0L)
+                }.thenBy { it.id }
+            ).first()
+            val dupIds = ids.filter { it != survivor.id }
+
+            val histSnap = getHistoryForBooks(dupIds)
+            val shelfSnap = getShelfItemsForBooks(dupIds)
+            val tagSnap = getTagLinksForBooks(dupIds)
+
+            // ② progress：全组删后按赢家重插
+            deleteProgressForBookIds(ids)
+            val progMerged = HashMap<Pair<Long, String>, ReadingProgress>()
+            for (p in progSnap) {
+                val key = survivor.id to p.path
+                val exist = progMerged[key]
+                if (exist == null || p.updatedAt >= exist.updatedAt) progMerged[key] = p.copy(id = 0, bookId = survivor.id)
+            }
+            for (p in progMerged.values) insertProgressFull(p)
+            migratedProgress += progMerged.size
+
+            deleteHistoryForBookIds(dupIds)
+            for (h in histSnap) insertHistory(h.copy(id = 0, bookId = survivor.id))
+            migratedHistory += histSnap.size
+
+            deleteShelfItemsForBookIds(dupIds)
+            val survivorShelves = getShelfItemsForBooks(listOf(survivor.id)).map { it.bookshelfId }.toHashSet()
+            for (s in shelfSnap) {
+                if (s.bookshelfId in survivorShelves) continue
+                insertBookshelfItem(BookshelfItem(bookshelfId = s.bookshelfId, bookId = survivor.id))
+                survivorShelves.add(s.bookshelfId); migratedShelf++
+            }
+
+            deleteTagLinksForBookIds(dupIds)
+            val survivorTags = getTagLinksForBooks(listOf(survivor.id)).map { it.tagId }.toHashSet()
+            for (t in tagSnap) {
+                if (t.tagId in survivorTags) continue
+                insertTagLink(TagLink(tagId = t.tagId, bookId = survivor.id))
+                survivorTags.add(t.tagId); migratedTags++
+            }
+
+            // ③ 存活者吸收资产
+            updateBook(survivor.copy(
+                readPages = group.maxOf { it.readPages },
+                totalPages = group.maxOf { it.totalPages },
+                lastReadAt = group.mapNotNull { it.lastReadAt }.maxOrNull(),
+                isFavorite = group.any { it.isFavorite },
+                addedAt = group.minOf { it.addedAt },
+                coverPath = survivor.coverPath ?: group.firstNotNullOfOrNull { it.coverPath },
+            ))
+
+            // ④ 删冗余
+            deleteBooksByIds(dupIds)
+            outcomes += DedupOutcome(survivor.id, dupIds, survivor.filePath)
+        }
+        return DedupResult(outcomes, migratedProgress, migratedHistory, migratedShelf, migratedTags)
+    }
 }
+
+/** ★ 书库去重结果（日志 + prefs/SR 队列迁移用） */
+data class DedupOutcome(
+    val survivorId: Long,
+    val dupIds: List<Long>,
+    val filePath: String,
+)
+
+data class DedupResult(
+    val outcomes: List<DedupOutcome>,
+    val migratedProgress: Int,
+    val migratedHistory: Int,
+    val migratedShelf: Int,
+    val migratedTags: Int,
+)
 
 /**
  * ★ v1.13 A'：历史页 progress 主导行——每分卷一条独立阅读记忆。
