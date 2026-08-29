@@ -339,6 +339,7 @@ object SrPipeline {
         val key = "$cid:$pageIndex"
         if (!inFlight.add(key)) return
         synchronized(SrUiState.computingPages) { SrUiState.computingPages.add(pageIndex) }
+        SrUiState.bumpSrTick()
 
         // ★ 仅当前页模式：本页是否已让位（翻页后旧任务开跑前自检放弃，避免空转占引擎）
         fun staleForPageMode(): Boolean =
@@ -427,6 +428,7 @@ object SrPipeline {
                 inFlight.remove(key)
                 pageJobs.remove(key)
                 synchronized(SrUiState.computingPages) { SrUiState.computingPages.remove(pageIndex) }
+                SrUiState.bumpSrTick()
             }
         }
         pageJobs[key] = job

@@ -9,6 +9,10 @@ import androidx.compose.runtime.mutableStateOf
  */
 object SrUiState {
 
+    /** 超分状态节拍器：调度开始/结束/出结果时 +1，状态指示器读它实现实时刷新 */
+    val srTick = androidx.compose.runtime.mutableIntStateOf(0)
+    fun bumpSrTick() { srTick.intValue++ }
+
     /** 超分作用域：0=关闭 1=仅当前页 2=当前整本 */
     val scope = mutableIntStateOf(0)
 

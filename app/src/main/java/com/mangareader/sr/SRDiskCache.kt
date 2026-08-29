@@ -66,9 +66,9 @@ class SRDiskCache(
         try {
             FileOutputStream(tmp).use { out ->
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    bitmap.compress(Bitmap.CompressFormat.WEBP_LOSSY, 90, out)
+                    bitmap.compress(Bitmap.CompressFormat.WEBP_LOSSY, 95, out)
                 } else {
-                    bitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
+                    bitmap.compress(Bitmap.CompressFormat.JPEG, 95, out)
                 }
             }
             if (file.exists()) file.delete()
@@ -76,9 +76,9 @@ class SRDiskCache(
                 // rename 失败兜底直写
                 FileOutputStream(file).use { out ->
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                        bitmap.compress(Bitmap.CompressFormat.WEBP_LOSSY, 90, out)
+                        bitmap.compress(Bitmap.CompressFormat.WEBP_LOSSY, 95, out)
                     } else {
-                        bitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
+                        bitmap.compress(Bitmap.CompressFormat.JPEG, 95, out)
                     }
                 }
                 tmp.delete()

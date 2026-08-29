@@ -1409,6 +1409,8 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit) {
                                         .padding(horizontal = 8.dp, vertical = 4.dp),
                                 ) {
                                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        // ★ 读节拍器：调度开始/结束/出结果都会实时重组此指示器
+                                        val srTick = com.mangareader.sr.SrUiState.srTick.intValue
                                         val computing = com.mangareader.sr.SrPipeline.computing(cur)
                                         val done = !computing && com.mangareader.sr.SrPipeline.peekSr(cur) != null
                                         when {
