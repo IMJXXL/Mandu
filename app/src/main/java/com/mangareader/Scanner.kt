@@ -505,15 +505,18 @@ class Scanner(private val ctx: Context, private val dao: MangaDao) {
      *  ★ 文案修正：books 是全量清单（含未变的书），原来直接把 books.size 当"新增"报——
      *  书架没变也提示"新增 N 本"。现在与库中现存路径集合对比出真实增删数。 */
     suspend fun rescanAndCommit(f: Folder, onProgress: ((Int) -> Unit)? = null): Pair<Int, Int> = withContext(Dispatchers.IO) {
-        val books = rescanMetaOnly(f, onProgress)
         val treeUri = Uri.parse(f.treeUri)
         val auth = treeUri.authority ?: ""
         val docId = DocumentsContract.getTreeDocumentId(treeUri)
         val prefixes = listOf("a:$auth|$docId|", "d:$auth|$docId|", "z:a:$auth|$docId|")
+        // ★ 快照必须先于扫描：verifyZipContent（扫描检验压缩包）在扫描期就把无图 zip 从 DB
+        //   直接删掉——若扫描后才读 oldPaths，被删的书已不在集合里，removed 统计不到，
+        //   表现为"书架实际少了书却提示无变化"（0830 用户报告）
         val oldPaths = runCatching { dao.getAllBooksAnyHidden().map { it.filePath } }
             .getOrDefault(emptyList())
             .filter { p -> prefixes.any { p.startsWith(it) } }
             .toSet()
+        val books = rescanMetaOnly(f, onProgress)
         val newPaths = books.map { it.filePath }.toSet()
         val added = newPaths.count { it !in oldPaths }
         val removed = oldPaths.count { it !in newPaths }
