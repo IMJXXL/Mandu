@@ -141,6 +141,32 @@ data class ReadingProgress(
     val totalPages: Int = 0
 )
 
+/**
+ * ★ 书签（DB v12 纯增量表）：书 × 章节 × 页。chapterPath 与 reading_progress.path 完全同源
+ *   （a:/d:/z: 全路径），page 与 cur 同义（五模式统一页索引，displayPages==pageList）。
+ *   (bookId,chapterPath,page) 唯一索引：重复添加 IGNORE，天然防重防竞态。
+ *   FK CASCADE：删书自动清书签，零代码。
+ */
+@Entity(
+    tableName = "bookmarks",
+    indices = [
+        Index("bookId"),
+        Index(value = ["bookId", "chapterPath", "page"], unique = true)
+    ],
+    foreignKeys = [ForeignKey(
+        entity = Book::class, parentColumns = ["id"], childColumns = ["bookId"],
+        onDelete = ForeignKey.CASCADE
+    )]
+)
+@Immutable
+data class Bookmark(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val bookId: Long,
+    val chapterPath: String,
+    val page: Int,
+    val createdAt: Long = System.currentTimeMillis()
+)
+
 @Dao
 interface MangaDao {
     @Query("SELECT * FROM manga_books ORDER BY lastReadAt DESC")
@@ -543,6 +569,24 @@ interface MangaDao {
     @Query("SELECT anim_dialog_choice FROM reading_progress WHERE bookId = :bookId AND path = :path LIMIT 1")
     suspend fun getAnimDialogChoice(bookId: Long, path: String): Int?
 
+    // ==================== ★ 书签（DB v12 纯增量） ====================
+
+    @Query("SELECT * FROM bookmarks WHERE bookId = :bookId ORDER BY createdAt DESC")
+    suspend fun getBookmarksForBook(bookId: Long): List<Bookmark>
+
+    @Query("SELECT COUNT(*) FROM bookmarks WHERE bookId = :bookId AND chapterPath = :chapterPath AND page = :page")
+    suspend fun countBookmark(bookId: Long, chapterPath: String, page: Int): Int
+
+    /** IGNORE 走 (bookId,chapterPath,page) 唯一索引：重复添加/迁移冲突静默吸收，返回 -1=冲突 */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertBookmark(b: Bookmark): Long
+
+    @Query("DELETE FROM bookmarks WHERE bookId = :bookId AND chapterPath = :chapterPath AND page = :page")
+    suspend fun deleteBookmark(bookId: Long, chapterPath: String, page: Int)
+
+    @Query("SELECT * FROM bookmarks WHERE bookId IN (:bookIds)")
+    suspend fun getBookmarksForBooks(bookIds: List<Long>): List<Bookmark>
+
     // ==================== ★ C1 修复：rescan 四表快照回填 ====================
 
     /** 全字段裸插入回填行（内存合并后调用，IGNORE 仅作防御） */
@@ -593,6 +637,8 @@ interface MangaDao {
         val histSnap = getHistoryForBooks(oldIds)
         val shelfSnap = getShelfItemsForBooks(oldIds)
         val tagSnap = getTagLinksForBooks(oldIds)
+        // ★ 书签随书迁移：bookmarks 有 FK CASCADE，删书时行会级联清——必须在删书前快照
+        val bookmarkSnap = getBookmarksForBooks(oldIds)
 
         deleteBooksByFolderParams(aPrefix, dPrefix, zPrefix)
 
@@ -648,6 +694,10 @@ interface MangaDao {
             for (t in tagSnap) {
                 newIdByOldId[t.bookId]?.let { insertTagLink(TagLink(tagId = t.tagId, bookId = it)) }
             }
+            // ★ 书签重挂新 id：同 filePath 多旧行映射同一新书时，同页书签经唯一索引 IGNORE 吸收
+            for (bm in bookmarkSnap) {
+                newIdByOldId[bm.bookId]?.let { insertBookmark(bm.copy(id = 0, bookId = it)) }
+            }
         }
     }
 
@@ -680,6 +730,7 @@ interface MangaDao {
     @Transaction
     suspend fun dedupMigrateAndDelete(groups: List<List<Book>>): DedupResult {
         var migratedProgress = 0; var migratedHistory = 0; var migratedShelf = 0; var migratedTags = 0
+        var migratedBookmarks = 0
         val outcomes = mutableListOf<DedupOutcome>()
         for (group in groups) {
             if (group.size < 2) continue
@@ -696,6 +747,7 @@ interface MangaDao {
             val histSnap = getHistoryForBooks(dupIds)
             val shelfSnap = getShelfItemsForBooks(dupIds)
             val tagSnap = getTagLinksForBooks(dupIds)
+            val bookmarkSnap = getBookmarksForBooks(dupIds)
 
             // ② progress：全组删后按赢家重插
             deleteProgressForBookIds(ids)
@@ -728,6 +780,12 @@ interface MangaDao {
                 survivorTags.add(t.tagId); migratedTags++
             }
 
+            // ★ 书签重挂存活者：唯一索引 IGNORE 吸收存活者已有同页书签的冲突
+            for (bm in bookmarkSnap) {
+                insertBookmark(bm.copy(id = 0, bookId = survivor.id))
+                migratedBookmarks++
+            }
+
             // ③ 存活者吸收资产
             updateBook(survivor.copy(
                 readPages = group.maxOf { it.readPages },
@@ -742,7 +800,7 @@ interface MangaDao {
             deleteBooksByIds(dupIds)
             outcomes += DedupOutcome(survivor.id, dupIds, survivor.filePath)
         }
-        return DedupResult(outcomes, migratedProgress, migratedHistory, migratedShelf, migratedTags)
+        return DedupResult(outcomes, migratedProgress, migratedHistory, migratedShelf, migratedTags, migratedBookmarks)
     }
 }
 
@@ -759,6 +817,7 @@ data class DedupResult(
     val migratedHistory: Int,
     val migratedShelf: Int,
     val migratedTags: Int,
+    val migratedBookmarks: Int = 0,
 )
 
 /**
@@ -777,8 +836,8 @@ data class ProgressHistoryRow(
 )
 
 @Database(
-    entities = [Book::class, Folder::class, ReadingHistory::class, Bookshelf::class, BookshelfItem::class, Tag::class, TagLink::class, ReadingProgress::class],
-    version = 11,
+    entities = [Book::class, Folder::class, ReadingHistory::class, Bookshelf::class, BookshelfItem::class, Tag::class, TagLink::class, ReadingProgress::class, Bookmark::class],
+    version = 12,
     exportSchema = false
 )
 abstract class MangaDatabase : RoomDatabase() {
@@ -863,13 +922,31 @@ abstract class MangaDatabase : RoomDatabase() {
             }
         }
 
+        // ★ 书签表（纯新增，不动现有表——Room 迁移后 schema 校验唯一风险点只在新表 SQL 与实体逐字匹配）
+        private val MIGRATION_11_12 = object : androidx.room.migration.Migration(11, 12) {
+            override fun migrate(database: androidx.sqlite.db.SupportSQLiteDatabase) {
+                database.execSQL("""
+                    CREATE TABLE IF NOT EXISTS bookmarks (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        bookId INTEGER NOT NULL,
+                        chapterPath TEXT NOT NULL,
+                        page INTEGER NOT NULL,
+                        createdAt INTEGER NOT NULL,
+                        FOREIGN KEY(bookId) REFERENCES manga_books(id) ON DELETE CASCADE
+                    )
+                """.trimIndent())
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_bookmarks_bookId ON bookmarks(bookId)")
+                database.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_bookmarks_bookId_chapterPath_page ON bookmarks(bookId, chapterPath, page)")
+            }
+        }
+
         fun getDatabase(context: Context): MangaDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
                     context.applicationContext,
                     MangaDatabase::class.java,
                     "manga_reader_db"
-                ).addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
+                ).addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12)
                 .build()
                 INSTANCE = instance
                 instance

@@ -176,6 +176,13 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
     // ★ v1.13 C-2 无感切换遮罩：提交 mode 前同步 view.draw 截当前画面，盖住
     //   "旧 delegate release → 新 delegate 全量重建+解码"的占位空窗；500ms 兜底撤除。
     //   动图弹窗路径（useAnimPager 直设）不经 onModeChange，一期无遮罩降级（C-1 已保不白屏）
+    // ★ 书签：章节身份= navStack.last()（与 reading_progress.path 同源）；page = cur（五模式统一页索引）
+    var bookmarks by remember { mutableStateOf(listOf<com.mangareader.data.Bookmark>()) }
+    var bookmarkTick by remember { mutableIntStateOf(0) }
+    var pageBookmarked by remember { mutableStateOf(false) }
+    var pendingPageSaveIdx by remember { mutableIntStateOf(-1) }
+
+
     var switchMaskBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var switchMaskVisible by remember { mutableStateOf(false) }
     var readerContainerRef by remember { mutableStateOf<FrameLayout?>(null) }
@@ -457,7 +464,8 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
      *
      * 决策 1（用户 2026-08-15）：completed==true 时跳第 1 页（对齐 mihon `!chapter.read` 才恢复语义）。
      */
-    suspend fun enterReader(path: String): List<com.mangareader.viewer.ArchiveEngine.PageMeta> {
+    /** @param targetPage ≥0 = 书签直跳目标页（覆盖 progress 恢复值）；默认 -1 走既有恢复逻辑 */
+    suspend fun enterReader(path: String, targetPage: Int = -1): List<com.mangareader.viewer.ArchiveEngine.PageMeta> {
         val b = book ?: return emptyList()
         val pages = withContext(Dispatchers.IO) {
             try { engine.listPages(path) } catch (_: Exception) { emptyList() }
@@ -504,7 +512,8 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
         }
         // ★ 已读完卷再次进入跳第 1 页（progress.completed==true 或本次正补写完成位 willMarkRead → lastPage=0）
         val lastPage = if (progress?.completed == true || willMarkRead) 0 else (progress?.lastPage ?: 0)
-        cur = lastPage.coerceIn(0, (pages.size - 1).coerceAtLeast(0))
+        // 书签直跳优先级最高：targetPage 显式覆盖
+        cur = (if (targetPage >= 0) targetPage else lastPage).coerceIn(0, (pages.size - 1).coerceAtLeast(0))
         // ★ §24 P9c：本卷动图对话框的选择（0=未答/1=切条漫/2=保持现状）——
         //   setup 末尾 webtoon onAnimDetected 触发 P9 弹窗时读这个标志决定是否弹
         animDialogChoiceForChapter = withContext(Dispatchers.IO) { dao.getAnimDialogChoice(b.id, path) ?: 0 }
@@ -623,6 +632,162 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
             }
         }
         return pages
+    }
+
+    // ★ 书签状态同步：翻页/切章/增删后刷新"当前页是否有书签"；TOC 打开时拉一次该书书签列表
+    LaunchedEffect(cur, navStack, bookmarkTick, viewing, book) {
+        val bid = book?.id
+        val ch = if (viewing) navStack.lastOrNull() else null
+        pageBookmarked = if (bid != null && bid > 0 && ch != null) {
+            withContext(Dispatchers.IO) { runCatching { dao.countBookmark(bid, ch, cur) }.getOrDefault(0) } > 0
+        } else false
+    }
+    LaunchedEffect(showToc, bookmarkTick, book) {
+        val bid = book?.id
+        if (showToc && bid != null) {
+            bookmarks = withContext(Dispatchers.IO) { runCatching { dao.getBookmarksForBook(bid) }.getOrDefault(emptyList()) }
+        }
+    }
+
+    /** 兜底：私有目录（原行为），相册不可见但绝不丢图 */
+    fun savePageFallback(bmp: Bitmap): String {
+        return try {
+            val dir = java.io.File(ctx.getExternalFilesDir(null), "saved_pages"); dir.mkdirs()
+            val file = java.io.File(dir, "page_${System.currentTimeMillis()}.png")
+            java.io.FileOutputStream(file).use { out -> bmp.compress(Bitmap.CompressFormat.PNG, 100, out) }
+            "已保存到应用目录 saved_pages"
+        } catch (e: Exception) { "保存失败" }
+    }
+
+    /** MediaStore / 公共目录写图（调用方在 IO 线程）；任何环节失败一律回退私有目录，绝不抛 */
+    fun writePageImage(bmp: Bitmap): String {
+        val name = "mandu_page_${System.currentTimeMillis()}.png"
+        return try {
+            if (android.os.Build.VERSION.SDK_INT >= 29) {
+                val cv = android.content.ContentValues().apply {
+                    put(android.provider.MediaStore.Images.Media.DISPLAY_NAME, name)
+                    put(android.provider.MediaStore.Images.Media.MIME_TYPE, "image/png")
+                    put(android.provider.MediaStore.Images.Media.RELATIVE_PATH, "Pictures/漫读")
+                    put(android.provider.MediaStore.Images.Media.IS_PENDING, 1)
+                }
+                val resolver = ctx.contentResolver
+                val uri = resolver.insert(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, cv)
+                    ?: return savePageFallback(bmp)
+                val ok = resolver.openOutputStream(uri)?.use { out ->
+                    bmp.compress(Bitmap.CompressFormat.PNG, 100, out)
+                } ?: false
+                if (ok != true) {
+                    try { resolver.delete(uri, null, null) } catch (_: Exception) {}
+                    return savePageFallback(bmp)
+                }
+                val done = android.content.ContentValues().apply {
+                    put(android.provider.MediaStore.Images.Media.IS_PENDING, 0)
+                }
+                resolver.update(uri, done, null, null)
+                "已保存到相册 Pictures/漫读"
+            } else {
+                val dir = java.io.File(
+                    android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_PICTURES), "漫读"
+                )
+                dir.mkdirs()
+                val f = java.io.File(dir, name)
+                java.io.FileOutputStream(f).use { out -> bmp.compress(Bitmap.CompressFormat.PNG, 100, out) }
+                android.media.MediaScannerConnection.scanFile(ctx, arrayOf(f.absolutePath), arrayOf("image/png"), null)
+                "已保存到相册 Pictures/漫读"
+            }
+        } catch (e: Exception) {
+            savePageFallback(bmp)
+        }
+    }
+
+    // ★ 长按存图 v2（API 26-28 存储权限通道）：结果回来后重跑 savePageAt；拒绝则回退应用私有目录（不丢图）
+    val savePagePermLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        val idx = pendingPageSaveIdx
+        pendingPageSaveIdx = -1
+        if (idx >= 0) {
+            if (granted) {
+                scope.launch {
+                    try {
+                        val bmp = withContext(Dispatchers.IO) { engine.loadPage(displayPages[idx], navStack.lastOrNull() ?: book?.filePath ?: "") }
+                        val msg = if (bmp != null) withContext(Dispatchers.IO) { writePageImage(bmp) } else "保存失败"
+                        android.widget.Toast.makeText(ctx, msg, android.widget.Toast.LENGTH_SHORT).show()
+                    } catch (_: Exception) { android.widget.Toast.makeText(ctx, "保存失败", android.widget.Toast.LENGTH_SHORT).show() }
+                }
+            } else {
+                scope.launch {
+                    try {
+                        val bmp = withContext(Dispatchers.IO) { engine.loadPage(displayPages[idx], navStack.lastOrNull() ?: book?.filePath ?: "") }
+                        val msg = if (bmp != null) withContext(Dispatchers.IO) { savePageFallback(bmp) } else "保存失败"
+                        android.widget.Toast.makeText(ctx, msg, android.widget.Toast.LENGTH_SHORT).show()
+                    } catch (_: Exception) { android.widget.Toast.makeText(ctx, "保存失败", android.widget.Toast.LENGTH_SHORT).show() }
+                }
+            }
+        }
+    }
+
+    // ★ 长按存图 v2：存公共 Pictures/漫读（相册可见）。API29+ 走 MediaStore（无需权限）；
+    //   API26-28 先查 WRITE_EXTERNAL_STORAGE，未授权走权限请求（回调重试），任何失败回退私有目录
+    fun savePageAt(pageIdx: Int) {
+        if (android.os.Build.VERSION.SDK_INT < 29 &&
+            ctx.checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            pendingPageSaveIdx = pageIdx
+            savePagePermLauncher.launch(android.Manifest.permission.WRITE_EXTERNAL_STORAGE)
+            return
+        }
+        scope.launch {
+            try {
+                val bmp = withContext(Dispatchers.IO) { engine.loadPage(displayPages[pageIdx], navStack.lastOrNull() ?: book?.filePath ?: "") }
+                val msg = if (bmp != null) withContext(Dispatchers.IO) { writePageImage(bmp) } else "保存失败"
+                android.widget.Toast.makeText(ctx, msg, android.widget.Toast.LENGTH_SHORT).show()
+            } catch (_: Exception) { android.widget.Toast.makeText(ctx, "保存失败", android.widget.Toast.LENGTH_SHORT).show() }
+        }
+    }
+
+    // ★ 书签 click/toggle：同页 idempotent（唯一索引+IGNORE）；toggle 结果 Toast 反馈
+    fun toggleBookmark() {
+        val b = book ?: return
+        if (!viewing || pageList.isEmpty() || b.id <= 0) return
+        val chPath = navStack.lastOrNull() ?: b.filePath
+        val page = cur
+        scope.launch(Dispatchers.Main) {
+            val added = withContext(Dispatchers.IO) {
+                if (dao.countBookmark(b.id, chPath, page) > 0) {
+                    dao.deleteBookmark(b.id, chPath, page); false
+                } else {
+                    dao.insertBookmark(com.mangareader.data.Bookmark(bookId = b.id, chapterPath = chPath, page = page)) != -1L
+                }
+            }
+            bookmarkTick++
+            android.widget.Toast.makeText(ctx, if (added) "已添加书签（第 ${page + 1} 页）" else "已移除书签", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    /** 书签跳转：同章直接翻 cur（同进度条跳页通道，五模式天然生效）；跨章复用目录跳章模式带 targetPage */
+    fun jumpToBookmark(bm: com.mangareader.data.Bookmark) {
+        val chNow = navStack.lastOrNull()
+        if (bm.chapterPath == chNow && pageList.isNotEmpty()) {
+            cur = bm.page.coerceIn(0, (pageList.size - 1).coerceAtLeast(0))
+            return
+        }
+        // 跨章：navStack 重建与目录跳章同款（书根 + 目标章完整身份）
+        val bookRoot = navStack.firstOrNull { it.startsWith("z:") }
+            ?: navStack.firstOrNull()?.takeIf { it.startsWith("d:") }
+            ?: bm.chapterPath
+        loading = false
+        navStack = listOf(bookRoot, bm.chapterPath)
+        scope.launch(Dispatchers.Main) {
+            items = emptyList()
+            val chItems = withContext(Dispatchers.IO) {
+                try { engine.children(bm.chapterPath) } catch (_: Exception) { emptyList() }
+            }
+            if (chItems.isEmpty()) {
+                enterReader(bm.chapterPath, targetPage = bm.page)
+            } else {
+                items = chItems
+            }
+        }
     }
 
     fun openFolder(path: String) {
@@ -1263,6 +1428,11 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
                 Column(Modifier.fillMaxWidth()) {
                     ReaderBottomBar(actions = buildList {
                         add(BottomBarAction(Icons.Default.Menu, "目录") { showToc = !showToc })
+                        add(BottomBarAction(
+                            if (pageBookmarked) Icons.Default.BookmarkAdded else Icons.Default.BookmarkAdd,
+                            if (pageBookmarked) "已书签" else "书签",
+                            isActive = pageBookmarked
+                        ) { toggleBookmark() })
                         add(BottomBarAction(Icons.Default.AutoFixHigh, "超分") { showSrPanel = true })
                         // 超分作用域已开启 → 右侧出现"对比"按钮；开/关两种状态实时切换
                         if (com.mangareader.sr.SrUiState.scope.intValue > 0) {
@@ -1457,19 +1627,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
                                     // ★ N1：翻页/双页/RTL 末端判定统一走共享章末处理器
                                     it.onChapterEnd = handleChapterEnd
                                     it.onPageLongPress = { pageIdx ->
-                                        if (pageIdx in displayPages.indices) {
-                                            scope.launch {
-                                                try {
-                                                    val bmp = withContext(Dispatchers.IO) { engine.loadPage(displayPages[pageIdx], navStack.lastOrNull() ?: book?.filePath ?: "") }
-                                                    if (bmp != null) {
-                                                        val dir = java.io.File(ctx.getExternalFilesDir(null), "saved_pages"); dir.mkdirs()
-                                                        val file = java.io.File(dir, "page_${System.currentTimeMillis()}.png")
-                                                        java.io.FileOutputStream(file).use { out -> bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out) }
-                                                        android.widget.Toast.makeText(ctx, "已保存到 ${file.name}", android.widget.Toast.LENGTH_SHORT).show()
-                                                    }
-                                                } catch (e: Exception) { android.widget.Toast.makeText(ctx, "保存失败", android.widget.Toast.LENGTH_SHORT).show() }
-                                            }
-                                        }
+                                        if (pageIdx in displayPages.indices) savePageAt(pageIdx)
                                     }
                                 }
                                 (w as? com.mangareader.native.WebtoonReaderView)?.let {
@@ -1758,7 +1916,16 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
             viewing = viewing,
             progress = progressForToc,
             bookId = book?.id ?: 0L,
+            bookmarks = bookmarks,
             onDismiss = { showToc = false },
+            onPageBookmarkClick = { bm -> showToc = false; jumpToBookmark(bm) },
+            onPageBookmarkDelete = { bm ->
+                scope.launch {
+                    withContext(Dispatchers.IO) { dao.deleteBookmark(bm.bookId, bm.chapterPath, bm.page) }
+                    bookmarkTick++
+                    android.widget.Toast.makeText(ctx, "已删除书签", android.widget.Toast.LENGTH_SHORT).show()
+                }
+            },
             onChapterNavigate = { chapterPath ->
                 // 保留书根路径 + 新章节路径，不丢弃整个 navStack
                 // ★ F2.2：d: 书书根取 navStack 首位（d: 栈首即书根）

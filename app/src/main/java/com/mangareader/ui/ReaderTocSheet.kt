@@ -3,10 +3,13 @@ package com.mangareader.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.Sort
@@ -21,6 +24,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.mangareader.data.Bookmark
 import com.mangareader.data.ReadingProgress
 import com.mangareader.viewer.ArchiveEngine
 import com.mangareader.viewer.NaturalComparator
@@ -156,6 +160,23 @@ private fun statusForDirItem(item: ArchiveEngine.Item, progresses: List<ReadingP
     }
 }
 
+/** 书签章节名提取（复刻 HistoryScreen.chapterLabel 的尾段解析，z:/d:/a: 全路径→显示名） */
+private fun bookmarkChapterLabel(path: String): String {
+    return try {
+        if (path.startsWith("z:")) {
+            val inner = path.removePrefix("z:")
+            val subPath = inner.substringAfter("//", "").trimEnd('/')
+            if (subPath.isNotEmpty()) subPath.substringAfterLast('/').substringBeforeLast('.')
+            else inner.substringBefore("//").substringAfterLast('/').substringBeforeLast('.')
+        } else {
+            val parts = path.removePrefix("a:").removePrefix("d:").split("|")
+            val doc = parts.getOrNull(2) ?: path
+            doc.substringAfterLast('/').substringAfterLast('%').substringBeforeLast('.')
+                .ifEmpty { doc.substringAfterLast('/').substringBeforeLast('.') }
+        }
+    } catch (_: Exception) { path.takeLast(24) }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ReaderTocSheet(
@@ -166,9 +187,14 @@ fun ReaderTocSheet(
     bookId: Long,
     onDismiss: () -> Unit,
     onChapterNavigate: (chapterPath: String) -> Unit,
-    onItemOpen: (ArchiveEngine.Item) -> Unit
+    onItemOpen: (ArchiveEngine.Item) -> Unit,
+    bookmarks: List<Bookmark> = emptyList(),
+    onPageBookmarkClick: (Bookmark) -> Unit = {},
+    onPageBookmarkDelete: (Bookmark) -> Unit = {},
 ) {
     var tocSortAsc by remember { mutableStateOf(true) }
+    var tocTab by remember { mutableIntStateOf(0) }
+    val dateFormat = remember { java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.getDefault()) }
     val sortedDisplayItems = remember(displayItems, tocSortAsc) {
         val base = displayItems.sortedWith(compareByDescending<ArchiveEngine.Item> { it.dir }.thenComparing({ it.name }, NaturalComparator))
         if (tocSortAsc) base else base.reversed()
@@ -178,7 +204,51 @@ fun ReaderTocSheet(
         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
     ) {
         Column(Modifier.fillMaxWidth().height(400.dp).padding(16.dp)) {
-            if (sortedDisplayItems.size > 1) {
+            // ★ 书签 Tab：章节 / 书签 双页签（章节列表原样保留在页签 0）
+            TabRow(
+                selectedTabIndex = tocTab,
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                contentColor = MaterialTheme.colorScheme.primary,
+            ) {
+                Tab(selected = tocTab == 0, onClick = { tocTab = 0 }) {
+                    Text("章节", modifier = Modifier.padding(vertical = 10.dp), fontSize = 14.sp)
+                }
+                Tab(selected = tocTab == 1, onClick = { tocTab = 1 }) {
+                    Text("书签 (${bookmarks.size})", modifier = Modifier.padding(vertical = 10.dp), fontSize = 14.sp)
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+
+            if (tocTab == 1) {
+                // ─── 书签页签 ───
+                if (bookmarks.isEmpty()) {
+                    Text("暂无书签（阅读中点底部「书签」按钮添加当前页）", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
+                } else {
+                    LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        items(bookmarks.size) { i ->
+                            val bm = bookmarks[i]
+                            Row(
+                                Modifier.fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                                    .clickable { onPageBookmarkClick(bm) }
+                                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.BookmarkBorder, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text(bookmarkChapterLabel(bm.chapterPath), color = MaterialTheme.colorScheme.onSurface, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text("第 ${bm.page + 1} 页 · ${dateFormat.format(java.util.Date(bm.createdAt))}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+                                }
+                                IconButton(onClick = { onPageBookmarkDelete(bm) }) {
+                                    Icon(Icons.Default.DeleteOutline, "删除书签", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(20.dp))
+                                }
+                            }
+                        }
+                    }
+                }
+            } else if (sortedDisplayItems.size > 1) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Text("目录 (${sortedDisplayItems.size}章)", color = MaterialTheme.colorScheme.onSurface, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                     TextButton(onClick = { tocSortAsc = !tocSortAsc }) {
