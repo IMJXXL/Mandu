@@ -729,26 +729,6 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
                             Text("超分路径：Vulkan GPU / CPU 自动选择；不支持 Vulkan 的设备走 CPU（较慢但绝对稳定）", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Text("超分缓存：${if (sdk >= android.os.Build.VERSION_CODES.R) "WEBP 高质量存储" else "JPEG 存储（系统限制，画质略低）"}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Spacer(Modifier.height(12.dp))
-                            // 【临时诊断 0829，用完删除】导出 logcat + 自检到手机下载目录
-                            var exportingDiag by remember { mutableStateOf(false) }
-                            Button(
-                                enabled = !exportingDiag,
-                                onClick = {
-                                    exportingDiag = true
-                                    Thread {
-                                        val result = try {
-                                            com.mangareader.sr.DiagLogExporter.export(ctx)
-                                        } catch (t: Throwable) {
-                                            "导出异常: ${t.message}"
-                                        }
-                                        android.os.Handler(android.os.Looper.getMainLooper()).post {
-                                            exportingDiag = false
-                                            Toast.makeText(ctx, result, Toast.LENGTH_LONG).show()
-                                        }
-                                    }.start()
-                                },
-                                modifier = Modifier.fillMaxWidth(),
-                            ) { Text(if (exportingDiag) "正在导出诊断日志…" else "导出诊断日志（临时）") }
                             HorizontalDivider()
                             Spacer(Modifier.height(12.dp))
                             Text("开源许可", fontSize = 14.sp, fontWeight = FontWeight.Medium)
