@@ -48,7 +48,9 @@ private fun HorizontalNavigator(
     //   （实机堆栈实锤：误触/快拖时 dispatchRawDelta 以 20ms/次 连发 → goToPage 风暴拉扯画面）。
     //   松手 onValueChangeFinished 无条件补发 pendingPage 最终值，保证落点精确不丢步。
     var lastEmit by remember { mutableLongStateOf(0L) }
+    var lastChange by remember { mutableLongStateOf(android.os.SystemClock.elapsedRealtime()) }
     var pendingPage by remember { mutableIntStateOf(currentPage) }
+    var throttleMs by remember { mutableIntStateOf(150) }
 
     Surface(color = surfaceColor, shape = RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp), modifier = modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -68,9 +70,16 @@ private fun HorizontalNavigator(
                 value = sliderValue,
                 onValueChange = { v ->
                     val newPage = if (isRtl) (totalPages - 1 - v.toInt()).coerceIn(0, (totalPages - 1).coerceAtLeast(0)) else v.toInt().coerceIn(0, (totalPages - 1).coerceAtLeast(0))
-                    pendingPage = newPage
                     val now = android.os.SystemClock.elapsedRealtime()
-                    if (now - lastEmit >= 300) {
+                    val frameInterval = now - lastChange
+                    lastChange = now
+                    if (frameInterval in 20..100) {
+                        throttleMs = (throttleMs * 1.4f).toInt().coerceAtMost(300)
+                    } else if (frameInterval < 20 && now - lastEmit > throttleMs) {
+                        throttleMs = (throttleMs * 0.85f).toInt().coerceAtLeast(50)
+                    }
+                    pendingPage = newPage
+                    if (now - lastEmit >= throttleMs) {
                         lastEmit = now
                         onPageChange(newPage)
                     }
