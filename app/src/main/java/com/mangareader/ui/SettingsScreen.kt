@@ -73,6 +73,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
     var scanning by remember { mutableStateOf(false) }
     var scanTarget by remember { mutableStateOf("") }
     var scanCount by remember { mutableIntStateOf(0) }
+    var showDonation by remember { mutableStateOf(false) }
     var showDeleteFolder by remember { mutableStateOf<Folder?>(null) }
     var showDeleteShelf by remember { mutableStateOf<Bookshelf?>(null) }
     var showNomediaDialog by remember { mutableStateOf<android.net.Uri?>(null) }
@@ -529,6 +530,14 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
                 })
             }
 
+            Row(Modifier.fillMaxWidth().padding(vertical = 12.dp).clickable { showDonation = true },
+                horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("请作者喝杯咖啡", fontSize = 16.sp)
+                    Text("随心就好，不看也没关系", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+
             HorizontalDivider()
             Spacer(Modifier.height(24.dp))
             Text("外观（待完善）", fontSize = 18.sp, fontWeight = FontWeight.Medium)
@@ -778,6 +787,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
     if (showReadingSettings) {
         ReadingSettingsScreen(onBack = { showReadingSettings = false })
     }
+    if (showDonation) DonationDialog(onDismiss = { showDonation = false })
 }
 
 private fun formatFileSize(bytes: Long): String {

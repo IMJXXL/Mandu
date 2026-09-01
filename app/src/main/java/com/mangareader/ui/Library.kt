@@ -77,6 +77,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
     // ★ ⑨ 修复辅助：500ms 节流，源头阻断 FAB 双击与 grid tween 双触发（launchSingleTop 已在 MainActivity 加双保险）
     //   节流时间戳必须放 remember —— 放 LaunchedEffect 内每次 recompose 会被重置。
     var lastOpenAt by remember { mutableLongStateOf(0L) }
+    var showDonation by remember { mutableStateOf(false) }
     fun openBookThrottled(id: Long, jump: String?) {
         val now = System.currentTimeMillis()
         if (now - lastOpenAt < 500) return
@@ -410,7 +411,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
             ) else TopAppBar(
                 title = { Column {
-                    Text("瑾", fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                    Text("瑾", fontWeight = FontWeight.Bold, fontSize = 20.sp, modifier = Modifier.clickable { showDonation = true })
                     Text("${books.size} 本", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 } },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
@@ -578,6 +579,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
             }
         }
     }
+    if (showDonation) DonationDialog(onDismiss = { showDonation = false })
 }
 
 @OptIn(ExperimentalFoundationApi::class)
