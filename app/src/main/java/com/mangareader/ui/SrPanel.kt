@@ -31,7 +31,7 @@ fun SrPanel(bookId: Long, bookTitle: String, onOpenQueue: () -> Unit, onDismiss:
     val scope = rememberCoroutineScope()
     LaunchedEffect(Unit) { if (!SrCore.initialized) SrCore.init(ctx) }
     if (!SrCore.initialized) {
-        ModalBottomSheet(onDismissRequest = onDismiss) { Text("初始化中…", Modifier.padding(24.dp)) }
+        ModalBottomSheet(onDismissRequest = onDismiss, sheetMaxWidth = 520.dp) { Text("初始化中…", Modifier.padding(24.dp)) }
         return
     }
     val settings = SrCore.settings
@@ -60,7 +60,7 @@ fun SrPanel(bookId: Long, bookTitle: String, onOpenQueue: () -> Unit, onDismiss:
         else -> null
     }
 
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetMaxWidth = 520.dp) {
         Column(
             Modifier
                 .fillMaxWidth()

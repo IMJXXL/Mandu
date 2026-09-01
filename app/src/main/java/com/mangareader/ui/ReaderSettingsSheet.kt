@@ -67,6 +67,7 @@ fun ReaderSettingsSheet(
         ) {
             Surface(
                 modifier = Modifier
+                    .widthIn(max = 520.dp)
                     .fillMaxWidth()
                     .heightIn(max = with(LocalDensity.current) {
                         (LocalConfiguration.current.screenHeightDp * 0.60f).dp

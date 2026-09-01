@@ -201,7 +201,8 @@ fun ReaderTocSheet(
     }
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        sheetMaxWidth = 520.dp
     ) {
         Column(Modifier.fillMaxWidth().height(400.dp).padding(16.dp)) {
             // ★ 书签 Tab：章节 / 书签 双页签（章节列表原样保留在页签 0）
