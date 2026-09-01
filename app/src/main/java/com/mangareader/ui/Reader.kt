@@ -1451,7 +1451,6 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
                             // ★ P0-B6：Slider 直通不设限（用户要求：任何时候都不能限制进度条操作）。
                             //   误触防护由两处承担：① ChapterNavigator 内部改为松手才提交（拖动过程不触发本回调）
                             //   ② settleWindow 承诺"用户滚过绝不拉回"
-                            android.util.Log.d("WebtoonRV", "ChapterNav.onPageChange newCur=$newCur cur=$cur")
                             cur = newCur
                         },
                         onSliderFinished = { save(); restartAutoHide() },
