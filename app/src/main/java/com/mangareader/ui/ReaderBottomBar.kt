@@ -7,6 +7,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -33,7 +34,10 @@ fun ReaderBottomBar(
     val surfaceColor = bgColor.copy(alpha = 0.85f)
 
     Surface(color = surfaceColor, modifier = modifier) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)) {
+        val isTablet = LocalConfiguration.current.smallestScreenWidthDp >= 600
+        val hPad = if (isTablet) 24.dp else 12.dp
+        val vPad = if (isTablet) 10.dp else 6.dp
+        Column(Modifier.fillMaxWidth().padding(horizontal = hPad, vertical = vPad)) {
             val rows = actions.chunked(5)
             rows.forEach { rowActions ->
                 Row(
