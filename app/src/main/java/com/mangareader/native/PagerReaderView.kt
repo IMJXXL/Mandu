@@ -375,7 +375,8 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         }
 
         override fun onLongPress(e: MotionEvent) {
-            val pageIdx = if (isRtl) pageList.size - 1 - currentPage else currentPage
+            // ★ T8 副修复：currentPage 本身已是物理页号，不能再镜像一次（RTL 下长按存的是镜像页）
+            val pageIdx = currentPage
             onPageLongPress?.invoke(pageIdx)
             try { performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS) } catch (_: Exception) {}
         }
@@ -410,13 +411,16 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             // 初始不设置 PageTransformer，等 setup 完成后再应用
             registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
                 override fun onPageSelected(position: Int) {
-                    // Convert adapter position to page index
-                    val pageIdx = if (doublePageMode) {
-                        if (shiftDoublePage && pageList.size > 1) {
-                            if (position == 0) 0 else 1 + (position - 1) * 2
-                        } else position * 2
-                    } else position
-                    val realPos = if (isRtl) pageList.size - 1 - pageIdx else pageIdx
+                    // ★ T8：position → spread 序号（RTL 唯一镜像点）→ 该 spread 阅读序首页
+                    //   （LTR/单页下与旧公式完全一致；RTL 双页旧公式错把 spread 序号当页号再镜像一次）
+                    val itemCount = pagerAdapter?.itemCount ?: pageList.size
+                    val s = if (isRtl) itemCount - 1 - position else position
+                    val pageIdx = when {
+                        !doublePageMode -> s
+                        shiftDoublePage && pageList.size > 1 -> if (s == 0) 0 else 2 * s - 1
+                        else -> 2 * s
+                    }
+                    val realPos = pageIdx
                     com.mangareader.viewer.ArchiveEngine.d("PagerView", "onPageSelected pos=$position pageIdx=$pageIdx realPos=$realPos rtl=$isRtl double=$doublePageMode total=${pageList.size} curPage=$currentPage")
                     if (realPos in pageList.indices && realPos != currentPage) {
                         currentPage = realPos; onPageChanged?.invoke(currentPage)
@@ -558,18 +562,18 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             viewPager.setPageTransformer(NoOpTransformer())
             pagerAdapter = PagerAdapter()
             viewPager.adapter = pagerAdapter
-            viewPager.setCurrentItem((if (isRtl) pages.size - 1 - startPage else startPage).coerceIn(0, pagerAdapter?.itemCount?.minus(1) ?: 0), false)
+            viewPager.setCurrentItem(positionOf(startPage).coerceIn(0, pagerAdapter?.itemCount?.minus(1) ?: 0), false)
             if (flipAnimationEnabled && !verticalPager) {
                 viewPager.postDelayed({ viewPager.setPageTransformer(FlipPageTransformer()) }, 300)
             }
         } else if (rtlChanged) {
             // 仅RTL变化：保留缓存，只更新位置映射
             this.currentPage = startPage
-            val pos = if (doublePageMode) startPage / 2 else (if (isRtl) pages.size - 1 - startPage else startPage)
+            val pos = positionOf(startPage)
             viewPager.setCurrentItem(pos.coerceIn(0, pagerAdapter?.itemCount?.minus(1) ?: 0), false)
         } else {
             this.currentPage = startPage
-            val pos = if (doublePageMode) startPage / 2 else (if (isRtl) pages.size - 1 - startPage else startPage)
+            val pos = positionOf(startPage)
             viewPager.setCurrentItem(pos.coerceIn(0, pagerAdapter?.itemCount?.minus(1) ?: 0), false)
         }
         // ★ v1.13 C-1：无条件补载（loadPageAsync 自带 cache-miss 幂等守卫，代价近零）——
@@ -618,11 +622,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         shiftDoublePage = enabled
         clearBitmapCacheRecycling()  // ★ ⑧ 最小修复
         pagerAdapter?.notifyDataSetChanged()
-        val newPos = if (doublePageMode) {
-            if (shiftDoublePage && pageList.size > 1) {
-                if (currentPage == 0) 0 else 1 + (currentPage - 1) / 2
-            } else currentPage / 2
-        } else currentPage
+        val newPos = positionOf(currentPage)
         val finalPos = newPos.coerceIn(0, pagerAdapter?.itemCount?.minus(1) ?: 0)
         viewPager.post { viewPager.setCurrentItem(finalPos, false) }
     }
@@ -649,7 +649,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     fun injectUpscaledBitmap(pageIndex: Int, bitmap: Bitmap) {
         // 不主动回收旧bitmap，让GC自然处理（避免ViewHolder还在使用时被回收导致黑屏）
         bitmapCache.put(pageIndex, bitmap)
-        val pos = if (isRtl) pageList.size - 1 - pageIndex else pageIndex
+        val pos = positionOf(pageIndex)
         android.util.Log.i("PagerView", "srInject p=$pageIndex pos=$pos bmp=${bitmap.width}x${bitmap.height}")
         if (pos >= 0 && pos < pageList.size) {
             android.os.Handler(android.os.Looper.getMainLooper()).post {
@@ -681,7 +681,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         doublePageMode = enabled
         clearBitmapCacheRecycling()  // ★ ⑧ 最小修复
         pagerAdapter?.notifyDataSetChanged()
-        val newPos = if (doublePageMode) currentPage / 2 else currentPage
+        val newPos = positionOf(currentPage)
         val finalPos = newPos.coerceIn(0, pagerAdapter?.itemCount?.minus(1) ?: 0)
         viewPager.post { viewPager.setCurrentItem(finalPos, false) }
     }
@@ -698,11 +698,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         shiftDoublePage = shiftEnabled
         clearBitmapCacheRecycling()  // ★ ⑧ 最小修复
         pagerAdapter?.notifyDataSetChanged()
-        val newPos = if (doublePageMode) {
-            if (shiftDoublePage && pageList.size > 1) {
-                if (savedPage == 0) 0 else 1 + (savedPage - 1) / 2
-            } else savedPage / 2
-        } else savedPage
+        val newPos = positionOf(savedPage)
         val finalPos = newPos.coerceIn(0, pagerAdapter?.itemCount?.minus(1) ?: 0)
         viewPager.postDelayed({
             viewPager.setCurrentItem(finalPos, false)
@@ -713,12 +709,31 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
 
     override fun goToPage(page: Int) {
         if (page < 0 || page >= pageList.size) return
-        val pos = if (doublePageMode) {
-            if (shiftDoublePage && pageList.size > 1) {
-                if (page == 0) 0 else 1 + (page - 1) / 2
-            } else page / 2
-        } else if (isRtl) pageList.size - 1 - page else page
+        val pos = positionOf(page)
         viewPager.setCurrentItem(pos.coerceIn(0, pagerAdapter?.itemCount?.minus(1) ?: 0), false)
+        preloadAround(page)
+    }
+
+    /** ★ T8：物理页 → spread 序号（双页/双页shift/单页三态，按阅读顺序排） */
+    private fun spreadOf(page: Int): Int = when {
+        !doublePageMode -> page
+        shiftDoublePage && pageList.size > 1 -> if (page == 0) 0 else 1 + (page - 1) / 2
+        else -> page / 2
+    }
+
+    /** ★ T8：物理页 → adapter 位置。RTL 唯一镜像点：全工程位置镜像只在这里发生一次；
+     *  LTR/单页下退化为原公式（itemCount-1-s 在非 RTL 时就是 s）。 */
+    private fun positionOf(page: Int): Int {
+        val s = spreadOf(page)
+        val itemCount = if (doublePageMode) {
+            if (shiftDoublePage && pageList.size > 1) 1 + pageList.size / 2 else (pageList.size + 1) / 2
+        } else pageList.size
+        return if (isRtl) (itemCount - 1 - s) else s
+    }
+
+    /** ★ 进度条拖动预解码：把目标页及其前后 spread 预热进缓存（不改变当前位置） */
+    fun preloadPreview(page: Int) {
+        if (page < 0 || page >= pageList.size) return
         preloadAround(page)
     }
 
@@ -833,12 +848,8 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 } catch (_: Exception) {}
                 bitmapCache.put(idx, bmp)
                 withContext(Dispatchers.Main) {
-                    // Convert page index to adapter position
-                    val adapterPos = if (doublePageMode) {
-                        if (shiftDoublePage && pageList.size > 1) {
-                            if (idx == 0) 0 else 1 + (idx - 1) / 2
-                        } else idx / 2
-                    } else if (isRtl) pageList.size - 1 - idx else idx
+                    // Convert page index to adapter position (★ T8 统一走 positionOf)
+                    val adapterPos = positionOf(idx)
                     if (adapterPos >= 0 && adapterPos < (pagerAdapter?.itemCount ?: 0)) pagerAdapter?.notifyItemChanged(adapterPos, "loaded")
                 }
             } else {

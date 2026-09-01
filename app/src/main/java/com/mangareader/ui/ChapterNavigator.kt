@@ -29,15 +29,17 @@ fun ChapterNavigator(
     isShowPageNum: Boolean = true,
     isRtl: Boolean = false,
     bgColor: Color = Color.Black,
+    onPreviewPage: ((Int) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
-    HorizontalNavigator(currentPage, totalPages, onPageChange, onSliderFinished, onPreviousChapter, onNextChapter, isShowPageNum, isRtl, bgColor, modifier)
+    HorizontalNavigator(currentPage, totalPages, onPageChange, onSliderFinished, onPreviousChapter, onNextChapter, isShowPageNum, isRtl, bgColor, onPreviewPage, modifier)
 }
 
 @Composable
 private fun HorizontalNavigator(
     currentPage: Int, totalPages: Int, onPageChange: (Int) -> Unit, onSliderFinished: () -> Unit,
-    onPreviousChapter: (() -> Unit)?, onNextChapter: (() -> Unit)?, isShowPageNum: Boolean, isRtl: Boolean, bgColor: Color, modifier: Modifier
+    onPreviousChapter: (() -> Unit)?, onNextChapter: (() -> Unit)?, isShowPageNum: Boolean, isRtl: Boolean, bgColor: Color,
+    onPreviewPage: ((Int) -> Unit)?, modifier: Modifier
 ) {
     // 根据背景亮度决定文字颜色
     val luminance = bgColor.red * 0.299f + bgColor.green * 0.587f + bgColor.blue * 0.114f
@@ -76,9 +78,11 @@ private fun HorizontalNavigator(
                     if (frameInterval in 20..100) {
                         throttleMs = (throttleMs * 1.4f).toInt().coerceAtMost(300)
                     } else if (frameInterval < 20 && now - lastEmit > throttleMs) {
-                        throttleMs = (throttleMs * 0.85f).toInt().coerceAtLeast(50)
+                        // ★ 丝滑对齐：下限 50→40ms（mhark 同款），预览页同步预解码，落点秒切无白屏
+                        throttleMs = (throttleMs * 0.85f).toInt().coerceAtLeast(40)
                     }
                     pendingPage = newPage
+                    onPreviewPage?.invoke(newPage)
                     if (now - lastEmit >= throttleMs) {
                         lastEmit = now
                         onPageChange(newPage)

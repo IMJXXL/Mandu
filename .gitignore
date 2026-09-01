@@ -24,3 +24,5 @@ local.properties
 *.log
 *.hprof
 crash-logs/
+.codegraph/
+app/libs/*.bak

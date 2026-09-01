@@ -1459,7 +1459,12 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
                         onNextChapter = ::switchToNext,
                         isShowPageNum = config.isShowPageNum,
                         isRtl = isRtl,
-                        bgColor = bgColor
+                        bgColor = bgColor,
+                        onPreviewPage = { previewPage ->
+                            // ★ 丝滑对齐：拖动时预热目标页（preloadAround 幂等，缓存命中近零开销）
+                            val pv = activePagerRef ?: (pagerViewRef as? com.mangareader.native.PagerReaderView)
+                            pv?.preloadPreview(previewPage)
+                        }
                     )
                 }
             }
