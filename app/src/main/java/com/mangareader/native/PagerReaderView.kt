@@ -1058,7 +1058,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 if (leftBmp != null && !leftBmp.isRecycled) {
                     try {
                         val merged = if (rightBmp != null && !rightBmp.isRecycled) {
-                            if (isRtl != doublePageReverseEnabled) mergeBitmaps(rightBmp, leftBmp, gapPx)
+                            if (doublePageReverseEnabled) mergeBitmaps(rightBmp, leftBmp, gapPx)
                             else mergeBitmaps(leftBmp, rightBmp, gapPx)
                         } else leftBmp
                         holder.setImage(merged, useSSIV, landscapeZoomEnabled, fitWidth = true)
