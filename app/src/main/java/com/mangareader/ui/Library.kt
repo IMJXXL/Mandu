@@ -39,6 +39,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -98,12 +99,23 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
     var sortAsc by remember { mutableStateOf(prefs.getBoolean("library_sort_asc", false)) }
     var filter by remember { mutableStateOf(FilterMode.ALL) }
     var showSort by remember { mutableStateOf(false) }
-    val screenCols = remember {
-        val dm = ctx.resources.displayMetrics
-        val widthDp = dm.widthPixels / dm.density
-        when { widthDp > 900 -> 5; widthDp > 600 -> 4; else -> 3 }
+    val configuration = LocalConfiguration.current
+    val isTablet = configuration.smallestScreenWidthDp >= 600
+    val autoCols = if (isTablet) {
+        when {
+            configuration.screenWidthDp > 1100 -> 6
+            configuration.screenWidthDp > 800 -> 4
+            else -> 3
+        }
+    } else {
+        when {
+            configuration.screenWidthDp > 900 -> 5
+            configuration.screenWidthDp > 600 -> 4
+            else -> 3
+        }
     }
-    var layoutMode by remember { mutableStateOf(LayoutMode.entries.first { it.cols == screenCols }) }
+    var manualCols by remember { mutableStateOf<Int?>(null) }
+    val effectiveCols = manualCols ?: autoCols
     var searchQuery by remember { mutableStateOf("") }
     var debouncedQuery by remember { mutableStateOf("") }
 
@@ -412,8 +424,18 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                     }) {
                         Icon(if (sortAsc) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward, "排序方向")
                     }
-                    IconButton(onClick = { layoutMode = LayoutMode.entries[(LayoutMode.entries.indexOf(layoutMode) + 1) % LayoutMode.entries.size] }) {
-                        Icon(when (layoutMode) { LayoutMode.LIST -> Icons.Default.ViewList; LayoutMode.GRID2 -> Icons.Default.ViewModule; LayoutMode.GRID3 -> Icons.Default.GridView; LayoutMode.GRID4 -> Icons.Default.Dashboard; LayoutMode.GRID5 -> Icons.Default.Apps }, "布局")
+                    val colsCandidates = if (isTablet) listOf(1, 3, 4, 6) else listOf(1, 2, 3, 4, 5)
+                    IconButton(onClick = {
+                        val idx = colsCandidates.indexOf(effectiveCols).coerceAtLeast(0)
+                        manualCols = colsCandidates[(idx + 1) % colsCandidates.size]
+                    }) {
+                        Icon(when (effectiveCols) {
+                            1 -> Icons.Default.ViewList
+                            2 -> Icons.Default.ViewModule
+                            3 -> Icons.Default.GridView
+                            4 -> Icons.Default.Dashboard
+                            else -> Icons.Default.Apps
+                        }, "布局")
                     }
                     IconButton(onClick = { showSearch = !showSearch }) { Icon(if (showSearch) Icons.Filled.Close else Icons.Default.Search, "搜索") }
                     // ★ F 历史记录页入口
@@ -539,7 +561,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                     }
                 }
             } else {
-                LazyVerticalGrid(columns = GridCells.Fixed(layoutMode.cols), contentPadding = PaddingValues(12.dp),
+                LazyVerticalGrid(columns = GridCells.Fixed(effectiveCols), contentPadding = PaddingValues(12.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     items(books, key = { it.id }, contentType = { "book" }) { b ->
                         val onToggleSelect = remember(b.id, isMultiSelect) { { selectedBooks = if (b.id in selectedBooks) selectedBooks - b.id else selectedBooks + b.id } }
