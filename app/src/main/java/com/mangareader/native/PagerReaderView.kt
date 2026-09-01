@@ -1236,8 +1236,14 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 override fun onGlobalLayout() {
                     ssiv.viewTreeObserver.removeOnGlobalLayoutListener(this)
                     val w = ssiv.width.toFloat()
+                    val h = ssiv.height.toFloat()
                     if (w > 0 && bmp.width > 0) {
-                        val scale = w / bmp.width
+                        val isTablet = ssiv.resources.configuration.smallestScreenWidthDp >= 600
+                        val scale = if (h > 0 && bmp.width > bmp.height && !landscapeZoom && isTablet) {
+                            minOf(w / bmp.width, h / bmp.height)
+                        } else {
+                            w / bmp.width
+                        }
                         ssiv.setScaleAndCenter(scale, android.graphics.PointF(bmp.width / 2f, bmp.height / 2f))
                     }
                 }
