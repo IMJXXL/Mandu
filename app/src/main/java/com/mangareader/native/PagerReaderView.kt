@@ -1046,7 +1046,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 if (doublePageSplitEnabled) {
                     val leftBmp = bitmapCache[leftIdx]
                     if (leftBmp != null && !leftBmp.isRecycled && leftBmp.width.toFloat() / leftBmp.height > 1.5f) {
-                        val showRight = doublePageReverseEnabled
+                        val showRight = isRtl != doublePageReverseEnabled
                         holder.setImageSplit(leftBmp, showRight, useSSIV, landscapeZoomEnabled)
                         return
                     }
@@ -1058,7 +1058,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 if (leftBmp != null && !leftBmp.isRecycled) {
                     try {
                         val merged = if (rightBmp != null && !rightBmp.isRecycled) {
-                            if (doublePageReverseEnabled) mergeBitmaps(rightBmp, leftBmp, gapPx)
+                            if (isRtl != doublePageReverseEnabled) mergeBitmaps(rightBmp, leftBmp, gapPx)
                             else mergeBitmaps(leftBmp, rightBmp, gapPx)
                         } else leftBmp
                         holder.setImage(merged, useSSIV, landscapeZoomEnabled, fitWidth = true)
@@ -1085,7 +1085,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 if (bmp != null && !bmp.isRecycled) {
                     // 双页裁剪：全图加载到SSIV，视口定位显示左/右半边
                     if (doublePageSplitEnabled && bmp.width > bmp.height) {
-                        val showRight = doublePageReverseEnabled
+                        val showRight = isRtl != doublePageReverseEnabled
                         holder.setImageSplit(bmp, showRight, useSSIV, landscapeZoomEnabled)
                     } else {
                         val needFitWidth = bmp.width > holder.itemView.width
