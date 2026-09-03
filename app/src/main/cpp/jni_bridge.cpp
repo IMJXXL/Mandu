@@ -204,6 +204,30 @@ Java_com_mangareader_native_NativeEngine_nativeClearCache(JNIEnv* env, jobject t
     NativeEngine::instance().clearCache();
 }
 
+JNIEXPORT jboolean JNICALL
+Java_com_mangareader_native_NativeEngine_nativeCacheDecodedBitmap(JNIEnv* env, jobject thiz, jlong handle, jint pageIndex, jobject bitmap) {
+    if (!bitmap) return JNI_FALSE;
+    AndroidBitmapInfo info;
+    if (AndroidBitmap_getInfo(env, bitmap, &info) != ANDROID_BITMAP_RESULT_SUCCESS) return JNI_FALSE;
+    if (info.width <= 0 || info.height <= 0) return JNI_FALSE;
+    void* srcPixels = nullptr;
+    if (AndroidBitmap_lockPixels(env, bitmap, &srcPixels) != ANDROID_BITMAP_RESULT_SUCCESS || !srcPixels) return JNI_FALSE;
+    int w = (int)info.width, h = (int)info.height;
+    uint8_t* dst = (uint8_t*)malloc(w * h * 4);
+    if (dst) {
+        uint32_t* src = (uint32_t*)srcPixels;
+        for (int i = 0; i < w * h; i++) {
+            dst[i*4+0] = (src[i] >> 16) & 0xFF;
+            dst[i*4+1] = (src[i] >> 8) & 0xFF;
+            dst[i*4+2] = src[i] & 0xFF;
+            dst[i*4+3] = (src[i] >> 24) & 0xFF;
+        }
+        NativeEngine::instance().cacheDecodedBitmap(handle, pageIndex, dst, w, h);
+    }
+    AndroidBitmap_unlockPixels(env, bitmap);
+    return dst ? JNI_TRUE : JNI_FALSE;
+}
+
 JNIEXPORT jobject JNICALL
 Java_com_mangareader_native_NativeEngine_nativeCreateBitmapFromCache(JNIEnv* env, jobject thiz, jlong handle, jint pageIndex) {
     int w = 0, h = 0;
