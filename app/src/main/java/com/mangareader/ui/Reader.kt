@@ -1025,10 +1025,12 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
             val bookRoot = navStack.firstOrNull { it.startsWith("z:") }
                 ?: navStack.firstOrNull()?.takeIf { it.startsWith("d:") }
                 ?: switchTargetPath
+            // ★ 修复白屏：先同步清 pageList+viewing，再更新 navStack，防止 NativeReaderScreen
+            //   重建时拿到旧/空 pageList 白屏（navStack 更新触发 key 变→重建，此时 pageList 已空+viewing=false 不显示）
+            pageList = emptyList(); viewing = false; items = emptyList()
             navStack = listOf(bookRoot, switchTargetPath)
             scope.launch {
                 withContext(Dispatchers.IO) {
-                    items = emptyList(); viewing = false; pageList = emptyList()
                     val chItems = try { engine.children(switchTargetPath) } catch (_: Exception) { emptyList() }
                     if (chItems.isEmpty()) {
                         // ★ §23 改走 enterReader 恢复 lastPage

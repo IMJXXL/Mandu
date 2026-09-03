@@ -227,19 +227,7 @@ class ArchiveEngine(private val ctx: Context) {
     }
 
     private fun evictOldCoverFiles() {
-        try {
-            val files = coverDir.listFiles() ?: return
-            val totalSize = files.sumOf { it.length() }
-            val maxSize = 100L * 1024 * 1024
-            if (totalSize <= maxSize) return
-            val sorted = files.sortedBy { it.lastModified() }
-            var freed = 0L
-            for (f in sorted) {
-                if (totalSize - freed <= maxSize * 0.7) break
-                freed += f.length()
-                f.delete()
-            }
-        } catch (_: Exception) {}
+        // ★ 封面缓存无上限（用户要求）：不再淘汰，封面是持久资产
     }
 
     private val pageListCache = object : LinkedHashMap<String, List<PageMeta>>(20, 0.75f, true) {

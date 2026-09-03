@@ -129,7 +129,18 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
                             val auth = treeUri.authority ?: ""
                             // ★ C8：前缀 Kotlin 侧拼好（a/z 带尾 '|'，d 不带）
                             val td = docId.removePrefix("tree:")
-                            dao.deleteBooksByFolderParams("a:$auth|$td|%", "d:$auth|$td%", "z:a:$auth|$td|%")
+                            val aPrefix = "a:$auth|$td|%"; val dPrefix = "d:$auth|$td%"; val zPrefix = "z:a:$auth|$td|%"
+                            // ★ 先查出这些书的 coverPath，删对应封面文件
+                            val books = dao.getBooksByFolderParams(aPrefix, dPrefix, zPrefix)
+                            val coverDir = File(ctx.filesDir, "covers")
+                            books.forEach { b ->
+                                b.coverPath?.let { cp ->
+                                    val md = java.security.MessageDigest.getInstance("MD5").digest(cp.toByteArray())
+                                    val hash = md.joinToString("") { "%02x".format(it) }
+                                    File(coverDir, "$hash.thumb").delete()
+                                }
+                            }
+                            dao.deleteBooksByFolderParams(aPrefix, dPrefix, zPrefix)
                             dao.deleteFolder(f)
                         }
                         showDeleteFolder = null
