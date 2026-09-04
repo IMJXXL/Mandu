@@ -149,16 +149,13 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
     private val bitmapCache = object : android.util.LruCache<Int, Bitmap>(8) {
         override fun sizeOf(key: Int, value: Bitmap): Int = 1
     }
-    // ★ ⑧ 最小修复辅助：recycle + 清空同步块，避免裸 clear 漏 recycle 造成内存泄漏。
-    //   Webtoon 原 accessOrder LinkedHashMap 非 thread-safe 必须包 synchronized。所有真 bitmapCache 调用点
-    //   (load/render/trim) 都已 synchronized 制度约束，helper 内同样包 synchronized 与之对齐。
+    // ★ ⑧ 最小修复辅助：清空同步块。
+    //   ★ v102 关键修复：不再 recycle——Bitmap 可能仍被显示中的 ImageView/SSIV 异步持有，
+    //   recycle → native 像素 UAF → RenderThread/GC SIGSEGV。只 evict 让 GC 兜底回收。
     private fun clearBitmapCacheRecycling() {
         synchronized(bitmapCache) {
             // ★ 白屏工单任务2附属：指认"谁在清缓存"（C4 定位用：size + 视图实例 hash）
             Log.w("Recycle", "webtoon clearBitmapCacheRecycling n=${bitmapCache.size()} view=${System.identityHashCode(this)}")
-            for ((_, v) in bitmapCache.snapshot()) {
-                try { if (!v.isRecycled) v.recycle() } catch (_: Exception) {}
-            }
             bitmapCache.evictAll()
         }
     }

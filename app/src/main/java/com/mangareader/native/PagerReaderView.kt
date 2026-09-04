@@ -318,14 +318,16 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         override fun sizeOf(key: Int, value: Bitmap): Int = 1
     }
 
-    // ★ ⑧ 最小修复辅助：recycle + 清空，避免裸 clear 漏 recycle 造成的内存泄漏。
-    //   ★ release() 不改：原版 recycle + clear 已对，不引入 helper 避免行为差异。
+    // ★ ⑧ 最小修复辅助：clear 缓存。
+    //   ★ v102 关键修复：不再 recycle——v101 起 SMB 图片 decode 到 bitmapCache 的 Bitmap 会通过
+    //   SSIV.setImage(ImageSource.bitmap(bmp)) 交给 SSIV 渲染，SSIV/RenderThread 异步持有该 Bitmap
+    //   引用（tile 化后台线程读像素）。此处 recycle 而 SSIV 还在用 → native 像素内存 UAF →
+    //   RenderThread/HeapTaskDaemon/Jit SIGSEGV（fault addr 呈 ASCII 字符串 = 已被复用内存）。
+    //   只 evict 让 GC 管：SSIV 引用保活到用完，无人引用后 NativeAllocationRegistry 自动释放 native 像素。
     private fun clearBitmapCacheRecycling() {
         // ★ 白屏工单任务2附属：指认"谁在清缓存"（C4 定位用：size + 视图实例 hash）
         Log.w("Recycle", "pager clearBitmapCacheRecycling n=${bitmapCache.size()} view=${System.identityHashCode(this)}")
-        for ((_, v) in bitmapCache.snapshot()) {
-            try { if (!v.isRecycled) v.recycle() } catch (_: Exception) {}
-        }
+
         bitmapCache.evictAll()
     }
 
@@ -911,7 +913,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         nativeArchive?.close()
         nativeArchive = null
         nativeArchivePath = ""
-        bitmapCache.snapshot().values.forEach { try { it.recycle() } catch (_: Exception) {} }
+        // ★ v102: 不 recycle（SSIV 可能仍持有引用，同 clearBitmapCacheRecycling）；evict 后 GC 自动回收
         bitmapCache.evictAll()
         // ★ v1.13 C-1：身份字段随缓存一并作废——下次 setup 必命中 pagesChanged=true 走全量重建
         //   （重建 adapter + setCurrentItem + preloadAround 补载），根治模式切换白屏
@@ -930,9 +932,9 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         }
         if (level < android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) return
         val keep = currentPage
-        for ((k, v) in bitmapCache.snapshot()) {
+        for ((k, _) in bitmapCache.snapshot()) {
             if (kotlin.math.abs(k - keep) > 2) {
-                try { if (!v.isRecycled) v.recycle() } catch (_: Exception) {}
+                // ★ v102: 只 remove 不 recycle（SSIV 可能仍持有引用）；GC 兜底回收
                 bitmapCache.remove(k)
             }
         }

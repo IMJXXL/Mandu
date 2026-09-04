@@ -226,6 +226,7 @@ class ArchiveEngine(private val ctx: Context) {
         return null
     }
 
+
     private fun evictOldCoverFiles() {
         // ★ 封面缓存无上限（用户要求）：不再淘汰，封面是持久资产
     }
