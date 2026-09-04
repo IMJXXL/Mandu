@@ -328,6 +328,7 @@ class ArchiveEngine(private val ctx: Context) {
     fun loadPageRaw(meta: PageMeta, treeStr: String): ByteArray? {
         // 一、ZIP + treeStr z:→ NativeEngine.readZipEntry
         if (treeStr.isNotEmpty() && meta.source == "zip") {
+
             if (treeStr.startsWith("z:")) {
                 try {
                     val inner = treeStr.removePrefix("z:")
@@ -584,61 +585,14 @@ class ArchiveEngine(private val ctx: Context) {
      *   消除 peek/load 各自全文件读的重复 IO）。逻辑与 peekAnimKind 一致。
      */
     fun peekAnimKindFromRaw(raw: ByteArray): AnimKind {
-        if (raw.size < 8) return AnimKind.NONE
-        // GIF: 47 49 46 38 (GIF8)
-        if (raw[0] == 0x47.toByte() && raw[1] == 0x49.toByte() && raw[2] == 0x46.toByte() && raw[3] == 0x38.toByte()) {
-            val r = com.github.penfeizhou.animation.io.ByteBufferReader(java.nio.ByteBuffer.wrap(raw))
-            return try {
-                if (com.github.penfeizhou.animation.gif.decode.GifParser.isGif(r)) AnimKind.GIF else AnimKind.NONE
-            } catch (_: Exception) { AnimKind.NONE }
-        }
-        // PNG: 89 50 4E 47 → 可能 APNG
-        if (raw[0] == 0x89.toByte() && raw[1] == 0x50.toByte() && raw[2] == 0x4E.toByte() && raw[3] == 0x47.toByte()) {
-            val r = com.github.penfeizhou.animation.io.ByteBufferReader(java.nio.ByteBuffer.wrap(raw))
-            return try {
-                if (com.github.penfeizhou.animation.apng.decode.APNGParser.isAPNG(r)) AnimKind.APNG else AnimKind.NONE
-            } catch (_: Exception) { AnimKind.NONE }
-        }
-        // WEBP: RIFF....WEBP
-        if (raw.size >= 12 && raw[0] == 0x52.toByte() && raw[1] == 0x49.toByte() && raw[2] == 0x46.toByte() && raw[3] == 0x46.toByte()
-            && raw[8] == 0x57.toByte() && raw[9] == 0x45.toByte() && raw[10] == 0x42.toByte() && raw[11] == 0x50.toByte()
-        ) {
-            val r = com.github.penfeizhou.animation.io.ByteBufferReader(java.nio.ByteBuffer.wrap(raw))
-            return try {
-                if (com.github.penfeizhou.animation.webp.decode.WebPParser.isAWebP(r)) AnimKind.WEBP else AnimKind.NONE
-            } catch (_: Exception) { AnimKind.NONE }
-        }
-        return AnimKind.NONE
+        return animKindFromHead(raw, raw.size) ?: AnimKind.NONE
     }
 
     suspend fun peekAnimKind(treeStr: String, meta: PageMeta): AnimKind {
         val raw = try { loadPageRaw(meta, treeStr) } catch (_: Exception) { null } ?: return AnimKind.NONE
-        if (raw.size < 8) {
-            return AnimKind.NONE
-        }
-        // 三个 Parser 共用同一 reader（注意 reader 内部 mark 后可能消费，按需 new）
-        // GIF: 47 49 46 38 (GIF8)
-        if (raw[0]==0x47.toByte() && raw[1]==0x49.toByte() && raw[2]==0x46.toByte() && raw[3]==0x38.toByte()) {
-            val r = com.github.penfeizhou.animation.io.ByteBufferReader(java.nio.ByteBuffer.wrap(raw))
-            val anim = try { com.github.penfeizhou.animation.gif.decode.GifParser.isGif(r) } catch (_: Exception) { false }
-            return if (anim) AnimKind.GIF else AnimKind.NONE
-        }
-        // PNG: 89 50 4E 47 → 可能 APNG
-        if (raw[0]==0x89.toByte() && raw[1]==0x50.toByte() && raw[2]==0x4E.toByte() && raw[3]==0x47.toByte()) {
-            val r = com.github.penfeizhou.animation.io.ByteBufferReader(java.nio.ByteBuffer.wrap(raw))
-            val anim = try { com.github.penfeizhou.animation.apng.decode.APNGParser.isAPNG(r) } catch (_: Exception) { false }
-            return if (anim) AnimKind.APNG else AnimKind.NONE
-        }
-        // WEBP: 52 49 46 46 (RIFF) ... 57 45 42 50 (WEBP)
-        if (raw.size>=12 && raw[0]==0x52.toByte() && raw[1]==0x49.toByte() && raw[2]==0x46.toByte() && raw[3]==0x46.toByte()
-            && raw[8]==0x57.toByte() && raw[9]==0x45.toByte() && raw[10]==0x42.toByte() && raw[11]==0x50.toByte()) {
-            val r = com.github.penfeizhou.animation.io.ByteBufferReader(java.nio.ByteBuffer.wrap(raw))
-            val anim = try { com.github.penfeizhou.animation.webp.decode.WebPParser.isAWebP(r) } catch (_: Exception) { false }
-            return if (anim) AnimKind.WEBP else AnimKind.NONE
-        }
-        // JPEG 等：直接 NONE（不算动图）
-        return AnimKind.NONE
+        return animKindFromHead(raw, raw.size) ?: AnimKind.NONE
     }
+
 
 
     fun loadPage(meta: PageMeta, treeStr: String): Bitmap? {
@@ -993,6 +947,7 @@ class ArchiveEngine(private val ctx: Context) {
     }
 
     fun loadCover(cover: String): Bitmap? {
+
         if (!cover.startsWith("cv:")) return null
         synchronized(coverCache) { coverCache[cover]?.let { return it } }
         val diskCached = loadCoverFromDisk(cover)

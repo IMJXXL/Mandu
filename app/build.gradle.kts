@@ -2,7 +2,7 @@ import java.io.File
 
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
+
     id("org.jetbrains.kotlin.plugin.compose")
     id("com.google.devtools.ksp")
 }
@@ -75,8 +75,10 @@ versionName = "1.2"
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
+    kotlin {
+        compilerOptions {
+            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+        }
     }
 
     buildFeatures {
@@ -118,9 +120,9 @@ dependencies {
     implementation("com.github.tachiyomiorg:subsampling-scale-image-view:66e0db195d")
 
     // Room
-    implementation("androidx.room:room-runtime:2.6.1")
-    implementation("androidx.room:room-ktx:2.6.1")
-    ksp("androidx.room:room-compiler:2.6.1")
+    implementation("androidx.room:room-runtime:2.7.0")
+    implementation("androidx.room:room-ktx:2.7.0")
+    ksp("androidx.room:room-compiler:2.7.0")
 
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
@@ -131,28 +133,16 @@ dependencies {
     // JunRAR - RAR/CBR support
     implementation("com.github.junrar:junrar:7.5.5")
 
-    // Coil - image loading with memory+disk cache
-    implementation("io.coil-kt:coil-compose:2.7.0")
-    // ★ Coil AnimatedImageDecoder（系统 ImageDecoder 路线，API≥28 原生 WEBP/GIF/APNG 动图）
-    //   与 Kototoro 的 coil3.gif.AnimatedImageDecoder 一致，比 APNG4Android 更稳（API≥28 原生解码）。
-    //   坑警示（Mihon）：必须在 ImageLoader 组件中注册此 Factory，否则动图只出首帧 BitmapDrawable。
-    implementation("io.coil-kt:coil-gif:2.7.0")
+    // Coil3 - image loading with memory+disk cache (upgraded from Coil 2.7.0)
+    implementation(platform("io.coil-kt.coil3:coil-bom:3.4.0"))
+    implementation("io.coil-kt.coil3:coil-compose")
+    implementation("io.coil-kt.coil3:coil-gif")
+
+    // okio - required by Coil3 DiskCache (okio.Path)
+    implementation("com.squareup.okio:okio:3.9.1")
 
     // zhanghai libarchive-android (open source, Apache 2.0)
     implementation(files("libs/libarchive-android.aar"))
-
-    // ★ §24 P1：APNG4Android 走 source include（4 个 module 拷到 app/lib/apng4android/）
-    //   原方案走 JitPack 拉 `com.github.penfeizhou:APNG4Android:3.0.5`（确实 jitpack build ok），
-    //   但实际解析超时——改用 source include 走项目内模块依赖，编译更稳，可控。
-    //   4 个 module 是从 penfeizhou/APNG4Android 3.0.5 拷贝（X:\115\APNG4Android-3.0.5）
-    //   含 cpp（gif 用的 giflib CMake）：漫读本身已配 NDK/CMake，兼容。
-    implementation(project(":frameanimation"))
-    implementation(project(":apng"))
-    implementation(project(":awebp"))
-    implementation(project(":gif"))
-    // ★ §24 P3c-P8：APNG4Android 的 FrameAnimationDrawable 间接 extends Animatable2Compat
-    //   只显式声明 vectordrawable-animated 让 app 编译可见
-    implementation("androidx.vectordrawable:vectordrawable-animated:1.2.0")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 

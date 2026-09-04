@@ -46,7 +46,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil.compose.AsyncImage
+import coil3.compose.AsyncImage
 import com.mangareader.App
 import com.mangareader.Scanner
 import com.mangareader.data.Book
@@ -618,8 +618,8 @@ private fun BookCard(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, isS
         .combinedClickable(onClick = onTap, onLongClick = onLongClick)) {
         Box(Modifier.fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)).background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
             if (coverReady && coverFile != null) {
-                coil.compose.AsyncImage(
-                    model = coil.request.ImageRequest.Builder(ctx)
+                coil3.compose.AsyncImage(
+                    model = coil3.request.ImageRequest.Builder(ctx)
                         .data(coverFile)
                         .size(600, 800)
                         .build(),

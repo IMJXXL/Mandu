@@ -12,10 +12,7 @@ import android.widget.ImageView
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.viewpager2.widget.ViewPager2
-import com.github.penfeizhou.animation.apng.APNGDrawable
-import com.github.penfeizhou.animation.gif.GifDrawable
-import com.github.penfeizhou.animation.loader.ByteBufferLoader
-import com.github.penfeizhou.animation.webp.WebPDrawable
+
 import com.mangareader.viewer.AnimKind
 import com.mangareader.viewer.ArchiveEngine
 import java.nio.ByteBuffer
@@ -211,19 +208,12 @@ class AnimPagerReaderView(context: Context) : FrameLayout(context), ReaderViewDe
 
     /** ★ §34.1 单页动图 Drawable 构造——同 PagerReaderView.makeAPNGAnimDrawable，复制以解耦 */
     private fun makeAnimDrawable(raw: ByteArray, kind: AnimKind): Drawable? {
+        if (kind == AnimKind.NONE) return null
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.P) return null
         return try {
-            val loader = object : ByteBufferLoader() {
-                override fun getByteBuffer(): ByteBuffer = ByteBuffer.wrap(raw)
-            }
-            when (kind) {
-                AnimKind.WEBP -> WebPDrawable(loader)
-                AnimKind.APNG -> APNGDrawable(loader)
-                AnimKind.GIF -> GifDrawable(loader)
-                AnimKind.NONE -> null
-            }
-        } catch (t: Throwable) {
-            null
-        }
+            val source = android.graphics.ImageDecoder.createSource(ByteBuffer.wrap(raw))
+            android.graphics.ImageDecoder.decodeDrawable(source)
+        } catch (_: Exception) { null }
     }
 
     /** ★ §34.1 单页 raw kind peek（suspend）——在 IO 线程做，不能在主线程同步调

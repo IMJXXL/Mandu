@@ -22,10 +22,7 @@ import androidx.recyclerview.widget.RecyclerView
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.mangareader.viewer.AnimKind
 import com.mangareader.viewer.ArchiveEngine
-import com.github.penfeizhou.animation.loader.ByteBufferLoader
-import com.github.penfeizhou.animation.webp.WebPDrawable
-import com.github.penfeizhou.animation.apng.APNGDrawable
-import com.github.penfeizhou.animation.gif.GifDrawable
+
 import java.nio.ByteBuffer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -105,26 +102,12 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
      *   FrameAnimationDrawable 自带 Matrix 缩放（setBounds 时自算），不走 Coil 就不被 ScaleDrawable 包装。
      *   参考：EhViewer 自写 Decoder 绕开 Coil wrap；APNG4Android 库本设计即不依赖任何上层 loader。
      */
-    private fun makeAPNGAnimDrawable(raw: ByteArray, kind: AnimKind): Drawable? {
+    private fun makeAnimDrawable(raw: ByteArray): Drawable? {
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.P) return null
         return try {
-            val loader = object : ByteBufferLoader() {
-                override fun getByteBuffer(): ByteBuffer = ByteBuffer.wrap(raw)
-            }
-            val drawable = when (kind) {
-                AnimKind.WEBP -> WebPDrawable(loader)
-                AnimKind.APNG -> APNGDrawable(loader)
-                AnimKind.GIF -> GifDrawable(loader)
-                AnimKind.NONE -> return null
-            }
-            // ★ §34.1 初始化步骤（非日志）：drawable 构造后主线程同步触发 decoder 解析 header
-            //   （getIntrinsicWidth 阻塞读 header），拿到 canvas 尺寸后才返回。
-            //   若得到 0 或异常，说明 WebP header 解析失败 → draw 时 bitmap=null → 全白。
-            try { drawable.intrinsicWidth } catch (_: Throwable) {}
-            try { drawable.intrinsicHeight } catch (_: Throwable) {}
-            drawable
-        } catch (t: Throwable) {
-            null
-        }
+            val source = android.graphics.ImageDecoder.createSource(ByteBuffer.wrap(raw))
+            android.graphics.ImageDecoder.decodeDrawable(source)
+        } catch (_: Exception) { null }
     }
 
     /**
@@ -165,7 +148,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                             }
                         }
                         val preDrawable = withContext(Dispatchers.IO) {
-                            try { makeAPNGAnimDrawable(preRaw, kind) } catch (_: Exception) { null }
+                            try { makeAnimDrawable(preRaw) } catch (_: Exception) { null }
                         }
                         if (preDrawable != null && pageAnimDrawables[idx] == null) {
                             pageAnimDrawables[idx] = preDrawable
@@ -202,7 +185,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         if (cachedRaw != null) {
             loadScope.launch {
                 val drawable = withContext(Dispatchers.IO) {
-                    try { makeAPNGAnimDrawable(cachedRaw, kind) } catch (_: Exception) { null }
+                    try { makeAnimDrawable(cachedRaw) } catch (_: Exception) { null }
                 }
                 if (drawable == null) return@launch
                 withContext(Dispatchers.Main) {
@@ -236,7 +219,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                     }
                 }
                 val drawable = withContext(Dispatchers.IO) {
-                    try { makeAPNGAnimDrawable(raw, kind) } catch (_: Exception) { null }
+                    try { makeAnimDrawable(raw) } catch (_: Exception) { null }
                 }
                 if (drawable == null) return@launch
                 withContext(Dispatchers.Main) {
