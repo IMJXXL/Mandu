@@ -260,11 +260,11 @@ private fun ReadingModeTab(config: ReaderConfig, mode: Mode, useAnimPager: Boole
         CheckboxItem("裁剪白边", config.isTrimWhiteBorder) { onConfigChange(config.copy(isTrimWhiteBorder = it)) }
         if (config.isTrimWhiteBorder) {
             // 检测阈值：像素平均亮度超过此值视为"白色"，越小越激进
-            SliderItem("检测阈值", config.trimThreshold.toFloat(), 180f..250f, 70, "${config.trimThreshold}") {
+            SliderItem("检测阈值（默认220）", config.trimThreshold.toFloat(), 180f..250f, 70, "${config.trimThreshold}") {
                 onConfigChange(config.copy(trimThreshold = it.toInt()))
             }
             // 白色比例：一行/列中白色像素占比达到此值才算"白边"，越小越容易判定
-            SliderItem("白色比例", config.trimWhiteRatio, 0.50f..0.95f, 45, "${(config.trimWhiteRatio * 100).toInt()}%") {
+            SliderItem("白色比例（默认90%）", config.trimWhiteRatio, 0.50f..0.95f, 45, "${(config.trimWhiteRatio * 100).toInt()}%") {
                 onConfigChange(config.copy(trimWhiteRatio = it))
             }
         }

@@ -581,8 +581,12 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         this.trimWhiteBorder = trim
         this.trimThreshold = threshold
         this.trimWhiteRatio = whiteRatio
-        clearBitmapCacheRecycling()  // ★ ⑧ 最小修复
-        pagerAdapter?.notifyDataSetChanged()
+        // ★ 修复白屏：不清除全部缓存+notifyDataSetChanged（会白屏），
+        //   逐页 remove+loadPageAsync，旧 bitmap 在 SSIV 中保留显示直到新 bitmap 加载完成
+        val cur = currentPage
+        (cur-2..cur+5).forEach {
+            if (it in pageList.indices) { bitmapCache.remove(it); inflightLoads.remove(it); loadPageAsync(it) }
+        }
     }
 
     fun setPanNavigation(pan: Boolean) {
@@ -799,6 +803,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             try {
             ensureNativeArchive()
             val screenMax = maxOf(width, height).coerceAtLeast(800)
+
             var bmp = withContext(Dispatchers.IO) {
                 var result: Bitmap? = null
                 // 文件夹来源直接走 Java loadPage，跳过 native 引擎（native 对文件夹返回错误数据）
@@ -985,6 +990,14 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             }
             container.addView(iv)
             container.addView(ssiv)
+            val loadingBar = android.widget.ProgressBar(parent.context, null, android.R.attr.progressBarStyleLarge).apply {
+                layoutParams = android.widget.FrameLayout.LayoutParams(dpToPx(48), dpToPx(48)).apply {
+                    gravity = android.view.Gravity.CENTER
+                }
+                indeterminateTintList = android.content.res.ColorStateList.valueOf(0xFFBB86FC.toInt())
+                visibility = View.GONE
+            }
+            container.addView(loadingBar)
             return PagerViewHolder(container)
         }
 
@@ -1077,13 +1090,15 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 //   pageAnimFlags 保留仅供 enterReader 采样判定与 AnimPager 使用，本视图不再消费。
                 val bmp = bitmapCache[realIdx]
                 if (bmp != null && !bmp.isRecycled) {
+                    // ★ SMB 图片文件夹已 decode 到 Bitmap（不走 setImageFile），SSIV.setImage(bitmap) 同步初始化不闪且能缩放
+                    val pageUseSsiv = useSSIV
                     // 双页裁剪：全图加载到SSIV，视口定位显示左/右半边
                     if (doublePageSplitEnabled && bmp.width > bmp.height) {
                         val showRight = isRtl != doublePageReverseEnabled
-                        holder.setImageSplit(bmp, showRight, useSSIV, landscapeZoomEnabled)
+                        holder.setImageSplit(bmp, showRight, pageUseSsiv, landscapeZoomEnabled)
                     } else {
                         val needFitWidth = bmp.width > holder.itemView.width
-                        holder.setImage(bmp, useSSIV, landscapeZoomEnabled, fitWidth = needFitWidth)
+                        holder.setImage(bmp, pageUseSsiv, landscapeZoomEnabled, fitWidth = needFitWidth)
                     }
                     return
                 }
@@ -1145,27 +1160,28 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             heldBitmap = bmp
             if (useSsiv) {
                 val container = itemView as android.widget.FrameLayout
-                // 移除旧SSIV，创建全新实例（模仿TSY，避免复用导致的渲染状态残留）
-                ssiv?.let { container.removeView(it) }
-                val newSsiv = createSsiv()
-                container.addView(newSsiv)
-                ssiv = newSsiv
-
-                newSsiv.visibility = View.VISIBLE
+                // ★ 修复翻页闪烁：复用已有 SSIV（setImage 会重置内部 decoder/状态），
+                //   原来每次 removeView+new SSIV 产生空白帧 = 闪烁
+                val ssv = ssiv ?: createSsiv().also { container.addView(it); ssiv = it }
+                ssv.visibility = View.VISIBLE
                 iv?.visibility = View.GONE
-                // 先设listener，再setImage，确保onReady能捕获到
-                newSsiv.setOnImageEventListener(object : com.davemorrissey.labs.subscaleview.SubsamplingScaleImageView.DefaultOnImageEventListener() {
+                // ★ 占位动画：SSIV setImage(bitmap) 异步 decode+tile 初始化，onReady 之前显示 loadingBar
+                loadingBar?.visibility = View.VISIBLE
+                ssv.setOnImageEventListener(object : com.davemorrissey.labs.subscaleview.SubsamplingScaleImageView.DefaultOnImageEventListener() {
                     override fun onReady() {
-                        newSsiv.setOnImageEventListener(null)
-                        applyScale(newSsiv, bmp, fitWidth, landscapeZoom)
+                        ssv.setOnImageEventListener(null)
+                        loadingBar?.visibility = View.GONE
+                        applyScale(ssv, bmp, fitWidth, landscapeZoom)
                     }
                     override fun onImageLoadError(e: Exception) {
-                        newSsiv.setOnImageEventListener(null)
+                        ssv.setOnImageEventListener(null)
+                        loadingBar?.visibility = View.GONE
                     }
                 })
-                newSsiv.setImage(com.davemorrissey.labs.subscaleview.ImageSource.bitmap(bmp))
+                ssv.setImage(com.davemorrissey.labs.subscaleview.ImageSource.bitmap(bmp))
             } else {
-                // 不使用 SSIV：用 ImageView FIT_CENTER
+                // 不使用 SSIV：用 ImageView FIT_CENTER（同步设 bitmap，无需 loadingBar）
+                loadingBar?.visibility = View.GONE
                 ssiv?.visibility = View.GONE
                 iv?.visibility = View.VISIBLE
                 iv?.scaleType = ImageView.ScaleType.FIT_CENTER
@@ -1182,26 +1198,28 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             heldBitmap = bmp
             if (useSsiv) {
                 val container = itemView as android.widget.FrameLayout
-                ssiv?.let { container.removeView(it) }
-                val newSsiv = createSsiv()
-                container.addView(newSsiv)
-                ssiv = newSsiv
-                newSsiv.visibility = View.VISIBLE
+                val ssv = ssiv ?: createSsiv().also { container.addView(it); ssiv = it }
+                ssv.visibility = View.VISIBLE
                 iv?.visibility = View.GONE
-                newSsiv.setOnImageEventListener(object : com.davemorrissey.labs.subscaleview.SubsamplingScaleImageView.DefaultOnImageEventListener() {
+                // ★ 占位动画：onReady 之前显示 loadingBar
+                loadingBar?.visibility = View.VISIBLE
+                ssv.setOnImageEventListener(object : com.davemorrissey.labs.subscaleview.SubsamplingScaleImageView.DefaultOnImageEventListener() {
                     override fun onReady() {
-                        newSsiv.setOnImageEventListener(null)
-                        applySplitScale(newSsiv, bmp, showRight)
+                        ssv.setOnImageEventListener(null)
+                        loadingBar?.visibility = View.GONE
+                        applySplitScale(ssv, bmp, showRight)
                     }
                     override fun onImageLoadError(e: Exception) {
-                        newSsiv.setOnImageEventListener(null)
+                        ssv.setOnImageEventListener(null)
+                        loadingBar?.visibility = View.GONE
                     }
                 })
-                newSsiv.setImage(com.davemorrissey.labs.subscaleview.ImageSource.bitmap(bmp))
+                ssv.setImage(com.davemorrissey.labs.subscaleview.ImageSource.bitmap(bmp))
             } else {
                 val halfW = bmp.width / 2
                 val srcX = if (showRight) halfW else 0
                 val splitBmp = Bitmap.createBitmap(bmp, srcX, 0, halfW, bmp.height)
+                loadingBar?.visibility = View.GONE
                 ssiv?.visibility = View.GONE
                 iv?.visibility = View.VISIBLE
                 iv?.scaleType = ImageView.ScaleType.FIT_CENTER
@@ -1309,6 +1327,47 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             try { ssiv?.resetScaleAndCenter() } catch (_: Exception) {}
             ssiv?.visibility = View.GONE
             iv?.visibility = View.VISIBLE
+        }
+        fun setImageFile(file: java.io.File, landscapeZoom: Boolean) {
+            heldBitmap = null
+            val container = itemView as android.widget.FrameLayout
+            // ★ 修复翻页闪烁：复用已有 SSIV（setImage 会重置内部 decoder/状态），
+            //   原来每次 removeView+new SSIV 产生空白帧 = 闪烁
+            val ssv = ssiv ?: createSsiv().also { container.addView(it); ssiv = it }
+            ssv.visibility = View.VISIBLE
+            iv?.visibility = View.GONE
+            // ★ 占位动画：SSIV setImage(uri) 异步 decode+tile 初始化，onReady 之前显示 loadingBar
+            loadingBar?.visibility = View.VISIBLE
+            ssv.setOnImageEventListener(object : com.davemorrissey.labs.subscaleview.SubsamplingScaleImageView.DefaultOnImageEventListener() {
+                override fun onReady() {
+                    ssv.setOnImageEventListener(null)
+                    loadingBar?.visibility = View.GONE
+                    val sw = ssv.sWidth; val sh = ssv.sHeight
+                    if (sw <= 0 || sh <= 0) return
+                    ssv.viewTreeObserver.addOnGlobalLayoutListener(object : android.view.ViewTreeObserver.OnGlobalLayoutListener {
+                        override fun onGlobalLayout() {
+                            ssv.viewTreeObserver.removeOnGlobalLayoutListener(this)
+                            val w = ssv.width.toFloat(); val h = ssv.height.toFloat()
+                            if (w > 0 && sw > 0) {
+                                val isTablet = ssv.resources.configuration.smallestScreenWidthDp >= 600
+                                val scale = if (h > 0 && sw > sh && !landscapeZoom && isTablet) minOf(w / sw, h / sh) else w / sw
+                                ssv.setScaleAndCenter(scale, android.graphics.PointF(sw / 2f, sh / 2f))
+                            }
+                        }
+                    })
+                    if (landscapeZoom && sw > sh) {
+                        ssv.handler?.postDelayed({
+                            if (ssv.isReady) {
+                                val targetScale = ssv.height.toFloat() / sh.toFloat()
+                                val center = ssv.center ?: android.graphics.PointF(sw / 2f, sh / 2f)
+                                ssv.animateScaleAndCenter(targetScale, center)?.withDuration(500)?.withInterruptible(true)?.start()
+                            }
+                        }, 1000)
+                    }
+                }
+                override fun onImageLoadError(e: Exception) { ssv.setOnImageEventListener(null); loadingBar?.visibility = View.GONE }
+            })
+            ssv.setImage(com.davemorrissey.labs.subscaleview.ImageSource.uri(itemView.context, android.net.Uri.fromFile(file)))
         }
     }
 }

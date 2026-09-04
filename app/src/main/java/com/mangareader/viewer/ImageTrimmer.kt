@@ -64,6 +64,8 @@ object ImageTrimmer {
         val w = (trim.right - trim.left + 1).coerceIn(1, bitmap.width - x)
         val h = (trim.bottom - trim.top + 1).coerceIn(1, bitmap.height - y)
         if (w <= 0 || h <= 0) return bitmap
+        // ★ 修复白屏：全白页/阈值过激时防过度裁剪——结果小于原图 50% 视为误判，不裁（重进恢复正常即此场景）
+        if (w < bitmap.width / 2 || h < bitmap.height / 2) return bitmap
         val cropped = Bitmap.createBitmap(bitmap, x, y, w, h)
         // ★ F3.3：createBitmap 裁剪本就产生独立新位图（仅无裁剪全尺寸时返回原对象，已被 !== 判断挡住），
         //   原来的额外 .copy() 是第三份瞬时内存，删掉（4096×8192 场景省约 128MB 峰值）

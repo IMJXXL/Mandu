@@ -60,11 +60,13 @@ class AnimPagerReaderView(context: Context) : FrameLayout(context), ReaderViewDe
     private var loadScope: CoroutineScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     /** IO inflight 守卫：避免 onBind 同 idx 触发多次 load + 同 holder 二次重设 */
     private val inflightLoads = java.util.Collections.synchronizedSet(HashSet<Int>())
-    // ★ v1.13 动图提速：raw 单次读取复用缓存（LRU≤6，peek/构造 drawable 共用，消除重复全文件读）
-    private val rawCache = object : LinkedHashMap<Int, ByteArray>(6, 0.75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Int, ByteArray>?): Boolean = size > 6
+    // ★ v1.13 动图提速：raw 单次读取复用缓存（LRU≤3，peek/构造 drawable 共用，消除重复全文件读）
+    private val rawCache = object : LinkedHashMap<Int, ByteArray>(3, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Int, ByteArray>?): Boolean = size > 3
     }
     private val rawCacheLock = Any()
+    // ★ 限制并发解码：动画 WebP 解码耗内存大，两页同时解码易 OOM
+    private val decodeSem = java.util.concurrent.Semaphore(1)
 
     /** ★ v1.13 动图提速：后台预读 raw 入缓存（setup 时对当前页预热，首帧 IO 提前开始） */
     fun warmRaw(idx: Int) {
@@ -243,18 +245,35 @@ class AnimPagerReaderView(context: Context) : FrameLayout(context), ReaderViewDe
                 val cached = synchronized(rawCacheLock) { rawCache[idx] }
                 val raw = cached ?: withContext(Dispatchers.IO) {
                     try { e.loadPageRaw(meta, treePath) } catch (_: Exception) { null }
-                } ?: return@launch
+                }
+                if (raw == null) { withContext(Dispatchers.Main) { holder.hideLoading() }; return@launch }
                 if (cached == null) synchronized(rawCacheLock) { rawCache[idx] = raw }
                 val kind = e.peekAnimKindFromRaw(raw)
                 if (kind == AnimKind.NONE) {
-                    // ★ §34.5 静图占位（理论上 Reader.kt 已分流：纯动图卷才用本视图）
+                    // ★ 静图 fallback：decode 到 Bitmap 设到 ImageView（原直接 return 导致不显示）
+                    decodeSem.acquire()
+                    val bmp = try {
+                        withContext(Dispatchers.IO) {
+                            try { android.graphics.BitmapFactory.decodeByteArray(raw, 0, raw.size) } catch (oom: OutOfMemoryError) { android.util.Log.e("ANIMT", "decode OOM idx=$idx size=${raw.size}"); synchronized(rawCacheLock) { rawCache.clear() }; null } catch (_: Exception) { null }
+                        }
+                    } finally { decodeSem.release() }
+                    withContext(Dispatchers.Main) {
+                        val pos = holder.bindingAdapterPosition
+                        val fresh = pos != RecyclerView.NO_POSITION && pos in pageList.indices
+                                && (if (isRtl) pageList.size - 1 - pos else pos) == idx
+                        if (fresh) { holder.setStaticBitmap(idx, bmp) }
+                        else { holder.hideLoading() }
+                    }
                     return@launch
                 }
-                // 构造 drawable
-                val drawable = withContext(Dispatchers.IO) {
-                    try { makeAnimDrawable(raw, kind) } catch (_: Exception) { null }
-                }
-                if (drawable == null) return@launch
+                // 构造 drawable（信号量限制并发，避免两页同时解码 OOM）
+                decodeSem.acquire()
+                val drawable = try {
+                    withContext(Dispatchers.IO) {
+                        try { makeAnimDrawable(raw, kind) } catch (oom: OutOfMemoryError) { android.util.Log.e("ANIMT", "anim OOM idx=$idx kind=$kind size=${raw.size}"); synchronized(rawCacheLock) { rawCache.clear() }; null } catch (_: Exception) { null }
+                    }
+                } finally { decodeSem.release() }
+                if (drawable == null) { android.util.Log.e("ANIMT", "drawable null idx=$idx"); withContext(Dispatchers.Main) { holder.hideLoading() }; return@launch }
                 // 4. 主线程 set 到 holder
                 withContext(Dispatchers.Main) {
                     val pos = holder.bindingAdapterPosition
@@ -264,6 +283,7 @@ class AnimPagerReaderView(context: Context) : FrameLayout(context), ReaderViewDe
                         holder.setDrawable(idx, drawable)
                         android.util.Log.i("ANIMT", "page ready idx=$idx total=${android.os.SystemClock.elapsedRealtime() - t0}ms rawBytes=${raw.size}")
                     }
+                    else { holder.hideLoading() }
                 }
             } finally {
                 inflightLoads.remove(idx)
@@ -287,6 +307,12 @@ class AnimPagerReaderView(context: Context) : FrameLayout(context), ReaderViewDe
                 visibility = View.VISIBLE
             }
             container.addView(iv)
+            val loadingBar = android.widget.ProgressBar(parent.context, null, android.R.attr.progressBarStyleLarge).apply {
+                layoutParams = android.widget.FrameLayout.LayoutParams((48 * parent.context.resources.displayMetrics.density).toInt(), (48 * parent.context.resources.displayMetrics.density).toInt(), android.view.Gravity.CENTER)
+                indeterminateDrawable?.setColorFilter(0xFFBB86FC.toInt(), android.graphics.PorterDuff.Mode.SRC_IN)
+                visibility = View.GONE
+            }
+            container.addView(loadingBar)
             return AnimViewHolder(container)
         }
         override fun onBindViewHolder(holder: AnimViewHolder, position: Int) {
@@ -297,6 +323,7 @@ class AnimPagerReaderView(context: Context) : FrameLayout(context), ReaderViewDe
             container.setBackgroundColor(pageBgColor)
 
             holder.reset()  // ★ 清前一张残留 drawable（若是新 holder 则空操作）
+            holder.showLoading()  // ★ 占位动画
             // ★ §34.5：peek 改到 loadAndSetDrawableAsync 内部做（ArchiveEngine.peekAnimKind 是 suspend，
             //   不能在主线程同步调）。该函数里 IO peek + load + makeDrawable + 主线程 set。
             loadAndSetDrawableAsync(realIdx, holder)
@@ -308,8 +335,15 @@ class AnimPagerReaderView(context: Context) : FrameLayout(context), ReaderViewDe
 
     inner class AnimViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
         private val iv: ImageView? = itemView.findViewById(android.R.id.content)
+        private val loadingBar: android.widget.ProgressBar? = (itemView as? android.widget.FrameLayout)?.let { container ->
+            (0 until container.childCount).map { container.getChildAt(it) }
+                .filterIsInstance<android.widget.ProgressBar>().firstOrNull()
+        }
         private var currentIdx: Int = -1
         private var currentDrawable: Drawable? = null
+
+        fun showLoading() { loadingBar?.visibility = View.VISIBLE }
+        fun hideLoading() { loadingBar?.visibility = View.GONE }
 
         /** ★ 设置 idx 的 drawable——记住 idx 防错配，set 到 ImageView 让 framework 管 start/stop */
         fun setDrawable(idx: Int, drawable: Drawable) {
@@ -318,6 +352,7 @@ class AnimPagerReaderView(context: Context) : FrameLayout(context), ReaderViewDe
             currentIdx = idx
             currentDrawable = drawable
             iv?.setImageDrawable(drawable)
+            hideLoading()
             // ★ 不主动 start——holder attach 到 RV 后 ImageView 会调 drawable.setVisible(true)
             //   → FrameAnimationDrawable 内部 autoPlay=true → innerStart() 自动跑
             //   但本调用发生时 holder 已经 attach（onBindViewHolder 在可见前调）
@@ -327,6 +362,14 @@ class AnimPagerReaderView(context: Context) : FrameLayout(context), ReaderViewDe
                     try { anim.start() } catch (_: Throwable) {}
                 }
             }
+        }
+
+        /** ★ 静图 fallback：decode 到 Bitmap 设到 ImageView */
+        fun setStaticBitmap(idx: Int, bmp: android.graphics.Bitmap?) {
+            reset()
+            currentIdx = idx
+            if (bmp != null) { iv?.setImageBitmap(bmp); currentDrawable = android.graphics.drawable.BitmapDrawable(iv?.resources, bmp) }
+            hideLoading()
         }
 
         /** 清掉本 holder 的 drawable——detach 时被 onViewRecycled 调；或下次 onBind 防残留调 */
