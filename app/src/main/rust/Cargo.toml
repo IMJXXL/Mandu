@@ -1,0 +1,25 @@
+[package]
+name = "mangareader_rust"
+version = "0.0.0"
+edition = "2024"
+
+[lib]
+crate-type = ["staticlib"]
+
+[features]
+jvm = ["dep:jni", "dep:jni_fn"]
+android = ["dep:ndk", "jvm", "ndk/bitmap"]
+android-26 = ["android", "ndk/api-level-26"]
+
+[dependencies]
+jni = { version = "0.21", optional = true }
+jni_fn = { version = "0.1", optional = true }
+ndk = { version = "0.9", optional = true }
+libwebp-sys2 = { version = "0.2", features = ["1_5", "demux", "extern-types"] }
+anyhow = "1.0"
+
+[profile.release]
+panic = "abort"
+strip = true
+lto = true
+codegen-units = 1

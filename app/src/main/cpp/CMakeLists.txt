@@ -5,6 +5,33 @@ project("mangareader")
 set(CMAKE_C_VISIBILITY_PRESET hidden)
 set(CMAKE_CXX_VISIBILITY_PRESET hidden)
 
+# ── Rust Corrosion 集成（AnimatedWebP Rust Decoder，可选，需网络） ──
+option(ENABLE_RUST_WEBP "Enable Rust WebP animated decoder (requires network for Corrosion + crates)" OFF)
+if(ENABLE_RUST_WEBP)
+    include(FetchContent)
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ../../../../rust-toolchain.toml)
+    unset(Rust_TOOLCHAIN CACHE)
+    FetchContent_Declare(
+            Corrosion
+            GIT_REPOSITORY https://github.com/FooIbar/corrosion.git
+            GIT_TAG v0.6.1
+            GIT_SHALLOW 1
+    )
+    FetchContent_MakeAvailable(Corrosion)
+    corrosion_import_crate(
+            MANIFEST_PATH ../rust/Cargo.toml
+            LOCKED
+            FEATURES $<IF:$<VERSION_GREATER_EQUAL:${ANDROID_NATIVE_API_LEVEL},26>,android-26,android>
+            FLAGS $<$<NOT:$<CONFIG:Debug>>:-Z build-std -Z build-std-features=>
+    )
+    corrosion_add_target_rustflags(mangareader_rust $<$<NOT:$<CONFIG:Debug>>:-Z unstable-options -C panic=immediate-abort -Z location-detail=none -Z fmt-debug=none>)
+    corrosion_link_libraries(mangareader_rust android jnigraphics log webp webpdemux)
+
+    # ★ Rust WebP animated decoder shared library
+    add_library(webp_decoder SHARED webp_jni_dummy.c)
+    target_link_libraries(webp_decoder mangareader_rust android log)
+endif()
+
 # libmobi static library
 add_library(mobi STATIC
     libmobi/buffer.c
