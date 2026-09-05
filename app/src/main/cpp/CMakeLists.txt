@@ -92,3 +92,21 @@ target_link_libraries(sr_engine
     ${CMAKE_CURRENT_SOURCE_DIR}/sr/ncnn/${ANDROID_ABI}/lib/libglslang-default-resource-limits.a
     android log jnigraphics vulkan
 )
+
+# ── libarchive stream (SMB archive reading, from reference project LocalViewer 1.19) ──
+# archive.c provides JNI bridge for stream-based archive extraction (openArchiveStream/extractToByteBuffer etc.)
+# Links to libarchive-jni.so (from zhanghai libarchive-android.aar) which contains libarchive C API symbols.
+add_library(libarchive_jni SHARED IMPORTED)
+set_target_properties(libarchive_jni PROPERTIES
+    IMPORTED_LOCATION ${CMAKE_SOURCE_DIR}/libarchive_libs/${ANDROID_ABI}/libarchive-jni.so
+)
+
+add_library(archive_stream SHARED archive.c natsort/strnatcmp.c)
+target_include_directories(archive_stream PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/libarchive_include
+)
+target_link_libraries(archive_stream
+    android log z
+    libarchive_jni
+)
