@@ -586,25 +586,8 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
 @Composable
 private fun BookCard(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, isSelected: Boolean, onToggleSelect: () -> Unit, onTap: () -> Unit, onLongClick: () -> Unit, onDelete: () -> Unit) {
     val ctx = LocalContext.current
-    val key = remember(b.coverPath) {
-        b.coverPath?.let { path ->
-            java.security.MessageDigest.getInstance("MD5").digest(path.toByteArray()).joinToString("") { "%02x".format(it) }
-        }
-    }
-    val coverFile = remember(key) { key?.let { java.io.File(ctx.filesDir, "covers/$it.thumb") } }
-    var coverReady by remember(b.id) { mutableStateOf(false) }
-
-    LaunchedEffect(b.id) {
-        if (coverFile == null) return@LaunchedEffect
-        while (!coverReady) {
-            if (withContext(Dispatchers.IO) { coverFile.exists() }) {
-                coverReady = true
-            } else {
-                delay(800)
-            }
-        }
-    }
-
+    // ★ LV119 对齐参考项目：直接用 coverPath (cv:...) 作为 Coil3 model，
+    //   CoverFetcher 返回原始字节 → Coil3 decoders 自动识别动图（GIF/WebP/APNG）
     val progress = if (b.totalPages > 0) b.readPages.toFloat() / b.totalPages else 0f
     val isFinished = b.totalPages > 0 && b.readPages >= b.totalPages
     val isReading = !isFinished && (b.readPages > 0 || (b.lastReadAt != null && b.lastReadAt > 0))
@@ -617,10 +600,10 @@ private fun BookCard(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, isS
     Column(Modifier.clip(RoundedCornerShape(12.dp))
         .combinedClickable(onClick = onTap, onLongClick = onLongClick)) {
         Box(Modifier.fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)).background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
-            if (coverReady && coverFile != null) {
+            if (b.coverPath != null) {
                 coil3.compose.AsyncImage(
                     model = coil3.request.ImageRequest.Builder(ctx)
-                        .data(coverFile)
+                        .data(com.mangareader.viewer.CoverData(b.coverPath))
                         .size(600, 800)
                         .build(),
                     contentDescription = null,

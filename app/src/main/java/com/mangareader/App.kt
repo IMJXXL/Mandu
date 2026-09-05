@@ -52,6 +52,7 @@ class App : Application(), SingletonImageLoader.Factory {
                 add(com.mangareader.smb.SmbFetcher.Factory(context))
                 add(com.mangareader.smb.SmbImageDataKeyer)
                 add(com.mangareader.viewer.CoverFetcher.Factory(engine))
+                add(com.mangareader.viewer.CoverDataKeyer)
                 add(com.mangareader.coil.AnimatedWebPDecoder.Factory)
                 add(AnimatedImageDecoder.Factory(false))
             }
