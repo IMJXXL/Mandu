@@ -2025,24 +2025,21 @@ private fun ItemGrid(items: List<ArchiveEngine.Item>, engine: ArchiveEngine, bgC
 
 @Composable
 private fun ItemCard(item: ArchiveEngine.Item, engine: ArchiveEngine, bgColor: Color, progress: List<ReadingProgress>, tap: () -> Unit) {
-    val ctx = LocalContext.current
-    // ★ LV119 对齐参考项目：用 Coil3 AsyncImage + CoverData 显示封面，自动识别动图
-    val coverPath = remember(item.auth, item.tree, item.doc, item.subPath) {
-        if (item.subPath.isNotEmpty()) "z:${item.auth}|${item.tree}|${item.doc}|${item.subPath}"
-        else "cv:${item.auth}|${item.tree}|${item.doc}|${item.name}"
+    // ★ LV119：文件夹内子项封面仍用 loadCoverForItem + Bitmap（静态），待后续对齐
+    var cover by remember(item.doc, item.subPath) { mutableStateOf<Bitmap?>(null) }
+    LaunchedEffect(item.doc, item.subPath) {
+        cover = null
+        withContext(Dispatchers.IO) { try { cover = engine.loadCoverForItem(item) } catch (_: Exception) { cover = null } }
     }
     val status = remember(progress, item.name) { com.mangareader.ui.statusForItem(item, progress) }
     Column(Modifier.clip(RoundedCornerShape(12.dp)).clickable(onClick = tap).shadow(4.dp, RoundedCornerShape(12.dp))) {
         Box(Modifier.fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)).background(bgColor.copy(alpha = 0.8f)), contentAlignment = Alignment.Center) {
-            coil3.compose.AsyncImage(
-                model = coil3.request.ImageRequest.Builder(ctx)
-                    .data(com.mangareader.viewer.CoverData(coverPath))
-                    .size(600, 800)
-                    .build(),
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop
-            )
+            if (cover != null) {
+                val bitmap = cover!!
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    drawImage(bitmap.asImageBitmap())
+                }
+            }
             Box(Modifier.fillMaxWidth().height(36.dp).align(Alignment.BottomCenter).background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.5f)))))
             // ★ §37(17) 状态徽章——三态都画（已读完绿、阅读中橙、未读红），替代原"文件夹/压缩包"类型标签
             Surface(Modifier.align(Alignment.TopEnd).padding(4.dp), RoundedCornerShape(6.dp), color = status.color.copy(alpha = 0.9f)) {
