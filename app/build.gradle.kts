@@ -4,6 +4,7 @@ plugins {
     id("com.android.application")
 
     id("org.jetbrains.kotlin.plugin.compose")
+    id("org.jetbrains.kotlin.plugin.serialization")
     id("com.google.devtools.ksp")
 }
 
@@ -143,6 +144,16 @@ dependencies {
 
     // zhanghai libarchive-android (open source, Apache 2.0)
     implementation(files("libs/libarchive-android.aar"))
+
+    // SMB - smbj (SMB protocol library, same version as reference project)
+    implementation("com.hierynomus:smbj:0.14.0")
+
+    // kotlinx-serialization (NetworkFolderIndexCache JSON persistence)
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
+
+    // splitties (reference project appCtx dependency, zero-modification compat)
+    implementation("com.louiscad.splitties:splitties-appctx:3.0.0")
+    implementation("com.louiscad.splitties:splitties-systemservices:3.0.0")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 
