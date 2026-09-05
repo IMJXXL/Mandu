@@ -994,15 +994,18 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             }
             container.addView(iv)
             container.addView(ssiv)
+            val density = parent.context.resources.displayMetrics.density
             val loadingBar = android.widget.ProgressBar(parent.context, null, android.R.attr.progressBarStyleLarge).apply {
-                layoutParams = android.widget.FrameLayout.LayoutParams(dpToPx(48), dpToPx(48)).apply {
+                layoutParams = android.widget.FrameLayout.LayoutParams((48 * density).toInt(), (48 * density).toInt()).apply {
                     gravity = android.view.Gravity.CENTER
                 }
                 indeterminateTintList = android.content.res.ColorStateList.valueOf(0xFFBB86FC.toInt())
                 visibility = View.GONE
             }
             container.addView(loadingBar)
-            return PagerViewHolder(container)
+            val vh = PagerViewHolder(container)
+            vh.loadingBar = loadingBar
+            return vh
         }
 
         override fun onBindViewHolder(holder: PagerViewHolder, position: Int, payloads: MutableList<Any>) {
@@ -1140,6 +1143,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
          *   disposeAnimDrawable 用它从 pageAnimDrawables 移除对应 entry，
          *   不用 bindingAdapterPosition（holder 复用后 dp 会变，错删别的页）。 */
         internal var heldIdx: Int = -1
+        internal var loadingBar: android.widget.ProgressBar? = null
 
         private fun createSsiv(): PagerSSIV {
             return PagerSSIV(itemView.context).apply {
