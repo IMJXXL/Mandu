@@ -777,9 +777,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         if (idx < 0 || idx >= pageList.size) return
         val cached = bitmapCache[idx]
         if (cached != null && !cached.isRecycled) {
-            // 缓存自愈：上次可能注入事件丢失只存了原图；若超分结果已就绪，趁本次绑定直接换超分图
             try {
-                // ★ F4.6：UI 绑定走 Fast 入口——磁盘命中不解码，交给 pollForResult 异步回填
                 val srHit = com.mangareader.sr.SrPipeline.attachOrScheduleFast(idx, cached)
                 if (srHit != null && !srHit.isRecycled && srHit !== cached) {
                     bitmapCache.put(idx, srHit)
@@ -789,9 +787,9 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             } catch (_: Exception) {}
             return
         }
+        // ★ LV119：动图页已在 pageAnimDrawables 中，跳过静图加载
+        if (pageAnimDrawables[idx] != null) return
         val meta = pageList[idx]
-        // ★ P1-1-lite 页级在途去重：预载/bind/peek 常并发发同一页（实测切换瞬间 2~3 路重复请求），
-        //   已在加载（5s 内）就直接复用在途任务；坑龄≥5s 视为挂死残留，覆盖时间戳放行
         val nowTs = android.os.SystemClock.uptimeMillis()
         val pitTs = inflightLoads[idx]
         if (pitTs != null && nowTs - pitTs < 5000L) {
@@ -802,30 +800,40 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         loadScope.launch {
             try {
             ensureNativeArchive()
-            val screenMax = maxOf(width, height).coerceAtLeast(800)
 
-            var bmp = withContext(Dispatchers.IO) {
-                var result: Bitmap? = null
-                // 文件夹来源直接走 Java loadPage，跳过 native 引擎（native 对文件夹返回错误数据）
-                if (meta.source == "dir") {
-                    result = engine?.loadPage(pageList[idx], treePath)
-                } else {
-                    // 所有格式统一走 Java BitmapFactory（正确处理 CMYK/ICC 色彩空间）
-                    result = engine?.loadPage(pageList[idx], treePath)
+            // ★ LV119 对齐参考项目：用 Coil3 加载原始字节，decoders 自动识别动图
+            val raw = withContext(Dispatchers.IO) { engine?.loadPageRaw(pageList[idx], treePath) }
+            if (raw == null) {
+                bitmapCache.remove(idx)
+                return@launch
+            }
+            val loader = coil3.SingletonImageLoader.get(context)
+            val result = withContext(Dispatchers.IO) {
+                loader.execute(coil3.request.ImageRequest.Builder(context).data(raw).build())
+            }
+            val image = result.image
+            if (image is coil3.DrawableImage) {
+                // 动图：Coil3 decoders 自动识别 → DrawableImage
+                val drawable = image.drawable
+                synchronized(pageAnimDrawables) { pageAnimDrawables[idx] = drawable }
+                if (pageAnimFlags.none { it.pageIdx == idx }) {
+                    pageAnimFlags = pageAnimFlags + AnimFlag(idx, AnimKind.WEBP)
+                    animatedCount++
                 }
-                result
-            }
-            com.mangareader.viewer.ArchiveEngine.d("PagerView", "loaded idx=$idx bmp=${bmp?.width}x${bmp?.height} source=${meta.source}")
-            // Apply trim white border
-            if (bmp != null && !bmp.isRecycled && trimWhiteBorder && bmp.width > 10 && bmp.height > 10) {
-                try {
-                    val trim = com.mangareader.viewer.ImageTrimmer.trimWhiteBorders(bmp, threshold = trimThreshold, whiteRatio = trimWhiteRatio, factor = 0.15f)
-                    bmp = com.mangareader.viewer.ImageTrimmer.applyTrim(bmp, trim)
-                } catch (_: Exception) {}
-            }
-            if (bmp != null && !bmp.isRecycled) {
-                // 超分：命中缓存直接换成超分图；未命中先显示原图、后台异步超分
-                // （完成走订阅→injectUpscaledBitmap；另有 pollForResult 轮询兜底防事件丢失）
+                withContext(Dispatchers.Main) {
+                    val adapterPos = positionOf(idx)
+                    if (adapterPos >= 0 && adapterPos < (pagerAdapter?.itemCount ?: 0)) pagerAdapter?.notifyItemChanged(adapterPos, "anim")
+                }
+            } else if (image is coil3.BitmapImage) {
+                // 静图：提取 Bitmap → 超分 → bitmapCache → SSIV
+                var bmp = image.bitmap
+                com.mangareader.viewer.ArchiveEngine.d("PagerView", "loaded idx=$idx bmp=${bmp.width}x${bmp.height} source=${meta.source}")
+                if (trimWhiteBorder && bmp.width > 10 && bmp.height > 10) {
+                    try {
+                        val trim = com.mangareader.viewer.ImageTrimmer.trimWhiteBorders(bmp, threshold = trimThreshold, whiteRatio = trimWhiteRatio, factor = 0.15f)
+                        bmp = com.mangareader.viewer.ImageTrimmer.applyTrim(bmp, trim)
+                    } catch (_: Exception) {}
+                }
                 try {
                     val srHit = com.mangareader.sr.SrPipeline.attachOrSchedule(idx, bmp)
                     if (srHit != null && !srHit.isRecycled) {
@@ -836,12 +844,9 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 } catch (_: Exception) {}
                 bitmapCache.put(idx, bmp)
                 withContext(Dispatchers.Main) {
-                    // Convert page index to adapter position (★ T8 统一走 positionOf)
                     val adapterPos = positionOf(idx)
                     if (adapterPos >= 0 && adapterPos < (pagerAdapter?.itemCount ?: 0)) pagerAdapter?.notifyItemChanged(adapterPos, "loaded")
                 }
-            } else {
-                bitmapCache.remove(idx)
             }
             } finally { if (inflightLoads[idx] == nowTs) inflightLoads.remove(idx) }
         }
@@ -867,16 +872,13 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 if (bwd >= 0) loadPageAsync(bwd)
             }
         }
-        // ★ §34.1 预 peek ±5 idx 动图——确保翻到该页时 pageAnimFlags 已就绪 + drawable 已入 map，
-        //   翻页瞬间 setAnimDrawable 即可命中 → 无 ~700ms 白窗。
-        //   动图 raw 16-20MB，peekCost ≈ 80-150ms/页，±5 共 10 个并发 peek 不会阻塞主线程
-        //   （ensureAnimKindAsync 内部走 Dispatchers.IO）。
+        // ★ LV119 对齐参考项目：不再预 peek 动图——loadPageAsync 内部用 Coil3 自动识别动图
         if (!doublePageMode) {
             for (delta in -5..5) {
                 val target = centerIdx + delta
                 if (target !in pageList.indices) continue
-                if (pageAnimFlags.none { it.pageIdx == target }) {
-                    ensureAnimKindAsync(target)
+                if (bitmapCache[target] == null && pageAnimDrawables[target] == null) {
+                    loadPageAsync(target)
                 }
             }
         }
@@ -1084,15 +1086,16 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 }
             } else {
                 val realIdx = if (isRtl) pageList.size - 1 - position else position
-                // ★ v1.13 T10（用户裁定）：普通翻页视图下动图页一律走静图路径（显示静态首帧）。
-                //   旧 workaround（ImageView+APNG4Android Drawable 播放）实机体验为负——白屏/闪白/卡顿；
-                //   动画播放职责完全归动图专属视图 AnimPagerReaderView。
-                //   pageAnimFlags 保留仅供 enterReader 采样判定与 AnimPager 使用，本视图不再消费。
+                // ★ LV119 对齐参考项目：Coil3 自动识别动图 → pageAnimDrawables → ImageView 播放
+                val animDrawable = pageAnimDrawables[realIdx]
+                if (animDrawable != null) {
+                    holder.setAnimDrawable(realIdx, animDrawable)
+                    if (realIdx == currentPage) startAnimIfNotRunning(realIdx)
+                    return
+                }
                 val bmp = bitmapCache[realIdx]
                 if (bmp != null && !bmp.isRecycled) {
-                    // ★ SMB 图片文件夹已 decode 到 Bitmap（不走 setImageFile），SSIV.setImage(bitmap) 同步初始化不闪且能缩放
                     val pageUseSsiv = useSSIV
-                    // 双页裁剪：全图加载到SSIV，视口定位显示左/右半边
                     if (doublePageSplitEnabled && bmp.width > bmp.height) {
                         val showRight = isRtl != doublePageReverseEnabled
                         holder.setImageSplit(bmp, showRight, pageUseSsiv, landscapeZoomEnabled)
@@ -1102,13 +1105,10 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                     }
                     return
                 }
-                // bitmap已回收或不存在，清除缓存重新加载
                 bitmapCache.remove(realIdx)
                 holder.clear()
                 if (!isScrolling) {
                     loadPageAsync(realIdx)
-                    // ★ §24 二代懒预读：未判过的页，异步 peek 这一页；命中动图后会重 bind 到动图路径
-                    ensureAnimKindAsync(realIdx)
                 }
             }
         }
