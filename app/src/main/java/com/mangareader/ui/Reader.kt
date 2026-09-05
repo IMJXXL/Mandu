@@ -576,61 +576,8 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
             }
         }
         viewing = true
-        // ★ §34.5：进卷批量 peek 判定动图卷。
-        //   旧设计 (§24)：webtoon/pager onAnimDetected 单页 peek 累计阈值 → 弹"切翻页"框，
-        //   缺点：(1) 阈值时机被动（用户翻到位后才 pop）(2) pager 自身的动图 workaround 复杂时序带来闪白/回翻白/idx 23 白一系列问题
-        //   新设计 (§34.5)：enterReader 末尾后台并发 peek 全卷所有页，算动图比例 → 比例 × 达阈值 → 弹动图专属视图入口对话框
-        //   确认 → useAnimPager=true → NativeReaderScreen 路由到 AnimPagerReaderView（与 PagerReaderView 并存独立的有自己的状态机）
-        //   拒绝 → 持久化 choice=4，下次再不弹；user 仍能看 PagerReaderView 里 workaround 路径动图（降级兼容）
-        //   优化：≤30 页全 peek；>30 页采样首 N 页（首 10 页 + 等 10 步采样），避免 1000 页全 peek 卡语言。
-        //   choice 已为 3 → 上次同卷确认了进动图视图 → 直接 useAnimPager=true 不再弹
-        //   choice 已为 4 → 上次同卷拒绝过 → 不弹
-        //   ★ 时机：choice 服务于"用户已答"语义；choice==3 持久化后下次同卷直进动图视图，省一次弹窗；
-        //     choice==4 持久化后下次同卷仍走普通 pager（看 workaround 动图 fallback）。
-        // ★ v1.13 T10（用户裁定）：仅 choice==3（已进过动图视图）不再询问；
-        //   其余情况（含历史 choice=4）每次打开都询问——普通模式已支持静态首帧显示
-        if (animDialogChoiceForChapter == 3) {
-            useAnimPager = true
-        } else if (pages.isNotEmpty()) {
-            animPeeking = true
-            scope.launch {
-                try {
-                    // ★ 动图打开提速（2026-08-27）：采样 5→3 页。动图卷动图占比极高，3 页足够判定；
-                    //   第 1 页常为静态封面 → 门限 3→2（比例 ≥60% 不变）。漏弹无损（普通视图有静图兜底）。
-                    //   ★ ANIMT 探针：tag=ANIMT 计时采样全程，装进正式包用于实测定位剩余瓶颈。
-                    val t0 = android.os.SystemClock.elapsedRealtime()
-                    val sampleSize = minOf(3, pages.size)
-                    val sampleIndices = (0 until sampleSize).toList()
-                    var animCount = 0
-                    // 并发 peek 但限制并发度 4（避免磁盘 IO 暴冲）
-                    val sem = Semaphore(4)
-                    val jobs = sampleIndices.map { idx ->
-                        async(Dispatchers.IO) {
-                            sem.withPermit {
-                                try {
-                                    val t1 = android.os.SystemClock.elapsedRealtime()
-                                    val k = engine.peekAnimKindFast(path, pages[idx])
-                                    android.util.Log.i("ANIMT", "peekFast idx=$idx kind=$k ${android.os.SystemClock.elapsedRealtime() - t1}ms bytes=${engine.lastPeekBytes}")
-                                    k
-                                } catch (_: Exception) { com.mangareader.viewer.AnimKind.NONE }
-                            }
-                        }
-                    }
-                    val kinds = jobs.awaitAll()
-                    for (k in kinds) if (k != com.mangareader.viewer.AnimKind.NONE) animCount++
-                    val sampleRatio = if (sampleIndices.isNotEmpty()) animCount.toFloat() / sampleIndices.size else 0f
-                    // ★ 阈值：门限 2（ANIM_PROMPT_THRESHOLD）+ 比例 ≥60%（采 3 页时即 ≥2/3）
-                    if (animCount >= com.mangareader.ui.ReaderParams.ANIM_PROMPT_THRESHOLD && sampleRatio >= 0.60f) {
-                        animSuggestedCount = animCount
-                        showAnimSwitchDialog = true
-                    }
-                    android.util.Log.i("ANIMT", "sample done total=${android.os.SystemClock.elapsedRealtime() - t0}ms animCount=$animCount/$sampleSize")
-                } catch (t: Throwable) {
-                } finally {
-                    animPeeking = false
-                }
-            }
-        }
+        // ★ LV119 对齐：动图由 Coil3 全局 decoders（AnimatedWebP + AnimatedImageDecoder）自动识别，
+        //   不再批量 peek / 弹窗 / 专属动图模式。useAnimPager 恒 false，统一走 PagerReaderView/WebtoonReaderView。
         return pages
     }
 
@@ -1817,54 +1764,6 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
             dismissButton = { TextButton(onClick = { showComplete = false }) { Text("继续浏览") } })
     }
 
-    // ★ §34.5 动图卷专属视图入口对话框 —— 进卷批量 peek 判定动图卷后弹。
-    //   旧的"切翻页"(choice=1) / "保持条漫"(choice=2) 语义：
-    //     - 仅条漫下使用（pager 自身有 workaround 动图播放）
-    //     - 用户点"切翻页" → mode 强切至 FLIP/RTL → PagerReaderView 走 workaround 路径播动图
-    //   新版 §34.5：弹"进入动图视图"(choice=3) / "保持普通视图"(choice=4)。
-    //     - 适用所有 mode（条漫+翻页）— 因为普通翻页 PagerReaderView 的动图 workaround 体验差（闪白等）
-    //     - 选择 3 → useAnimPager=true → NativeReaderScreen 路由到 AnimPagerReaderView
-    //     - 选择 4 → useAnimPager=false → 保持当前 mode 下的普通视图
-    //   旧 choice=1/2 的持久化值含义不变——老数据继续生效（无迁移动作）：
-    //     - choice=1 原切翻页，保留旧 mode 行为（mode 已被切到翻页），不会重弹
-    //     - choice=2 原保持条漫，不会重弹
-    //     - choice=3/4 走新流程
-    if (showAnimSwitchDialog) {
-        AlertDialog(
-            onDismissRequest = { showAnimSwitchDialog = false },
-            title = { Text("检测到动图") },
-            text = { Text("本卷含动图。\n\n普通模式下动图无法正常播放（会显示首帧、闪白或卡顿）。\n是否进入动图专属视图？") },
-            confirmButton = {
-                // ★ "进入动图视图" → choice=3 → useAnimPager=true
-                //   mode 维持用户当前选择 —— AnimPagerReaderView 内部据 verticalPager 参数决定竖向/横向翻页
-                //   条漫模式 (VERT/WEBTOON_GAP) 下进动图视图时按竖向翻页 VERT_PAGER 风格展示
-                TextButton(onClick = {
-                    val chPath = navStack.lastOrNull() ?: book?.filePath ?: ""
-                    useAnimPager = true
-                    animDialogChoiceForChapter = 3
-                    scope.launch {
-                        try {
-                            book?.let { b ->
-                                // ★ v1.11：原 upsertProgress(...cur,false) 会把当前页码/未完成态覆盖进已有进度行
-                                //   （污染源之一）。改用 INSERT OR IGNORE 占位——仅在该卷从无进度行时补建，
-                                //   已有行原样保留，随后 setAnimDialogChoice 纯 UPDATE 只动 choice 列。
-                                dao.preinsertProgressIfAbsent(b.id, chPath)
-                                dao.setAnimDialogChoice(b.id, chPath, 3)
-                            }
-                        } catch (_: Exception) {}
-                    }
-                    showAnimSwitchDialog = false
-                    }) { Text("进入动图视图") }
-            },
-            dismissButton = {
-                // ★ v1.13 T10（用户裁定）："保持普通"不再持久化 choice=4——每次打开该卷仍会询问
-                TextButton(onClick = {
-                    animDialogChoiceForChapter = 4
-                    showAnimSwitchDialog = false
-                    }) { Text("保持普通") }
-            }
-        )
-    }
 
     if (showSrPanel) {
         com.mangareader.ui.SrPanel(

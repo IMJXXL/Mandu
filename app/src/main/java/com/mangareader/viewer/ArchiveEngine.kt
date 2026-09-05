@@ -997,6 +997,55 @@ class ArchiveEngine(private val ctx: Context) {
         return null
     }
 
+    /** ★ LV119 对齐：返回封面原始字节流 + mimeType，让 Coil3 decoders 自动识别动图（GIF/WebP/APNG）。
+     *  仅处理图片文件和压缩包（能返回原始字节的场景）；mobi/pdf 返回 null（fallback 到 loadCover → Bitmap → PNG）。 */
+    fun loadCoverRaw(cover: String): Pair<ByteArray, String>? {
+        if (!cover.startsWith("cv:")) return null
+        try {
+            val parts = cover.removePrefix("cv:").split("|")
+            if (parts.size < 3) return null
+            val auth = parts[0]
+            val treeStr = parts[1]
+            val docId = parts[2]
+            val fileName = if (parts.size >= 4 && parts[3].isNotEmpty()) parts[3] else docId.substringAfterLast("/")
+            val tree = makeTree(auth, treeStr)
+
+            if (fileName.endsWith(".cbz") || fileName.endsWith(".zip") || fileName.endsWith(".epub")) {
+                val uri = DocumentsContract.buildDocumentUriUsingTree(tree, docId)
+                val data = loadFromZip(uri, 0, treeStr)
+                if (data != null) return Pair(data, guessMimeFromBytes(data))
+            } else if (fileName.endsWith(".cbr") || fileName.endsWith(".rar") ||
+                       fileName.endsWith(".cb7") || fileName.endsWith(".7z") ||
+                       fileName.endsWith(".tar") || fileName.endsWith(".cbt") ||
+                       fileName.endsWith(".tgz") || fileName.endsWith(".tbz2") || fileName.endsWith(".txz")) {
+                val uri = DocumentsContract.buildDocumentUriUsingTree(tree, docId)
+                val rawData = when {
+                    fileName.endsWith(".cbr") || fileName.endsWith(".rar") -> loadFromRar(uri, 0)
+                    fileName.endsWith(".tar") || fileName.endsWith(".cbt") ||
+                    fileName.endsWith(".tgz") || fileName.endsWith(".tbz2") || fileName.endsWith(".txz") -> loadFromTar(uri, 0)
+                    else -> loadFrom7z(uri, 0)
+                }
+                if (rawData != null) return Pair(rawData, guessMimeFromBytes(rawData))
+            } else if (isImg(fileName)) {
+                val uri = DocumentsContract.buildDocumentUriUsingTree(tree, docId)
+                val data = try { ctx.contentResolver.openInputStream(uri)?.use { it.readBytes() } } catch (_: Exception) { null }
+                if (data != null) return Pair(data, guessMimeFromBytes(data))
+            }
+        } catch (_: Exception) {}
+        return null
+    }
+
+    private fun guessMimeFromBytes(bytes: ByteArray): String {
+        if (bytes.size < 12) return "image/png"
+        if (bytes[0] == 0x47.toByte() && bytes[1] == 0x49.toByte() && bytes[2] == 0x46.toByte()) return "image/gif"
+        if (bytes[0] == 0x89.toByte() && bytes[1] == 0x50.toByte() && bytes[2] == 0x4E.toByte() && bytes[3] == 0x47.toByte()) return "image/png"
+        if (bytes[0] == 0xFF.toByte() && bytes[1] == 0xD8.toByte()) return "image/jpeg"
+        if (bytes[0] == 0x52.toByte() && bytes[1] == 0x49.toByte() && bytes[2] == 0x46.toByte() && bytes[3] == 0x46.toByte() &&
+            bytes[8] == 0x57.toByte() && bytes[9] == 0x45.toByte() && bytes[10] == 0x42.toByte() && bytes[11] == 0x50.toByte()) return "image/webp"
+        if (bytes[0] == 0x42.toByte() && bytes[1] == 0x4D.toByte()) return "image/bmp"
+        return "image/png"
+    }
+
     private fun loadArchiveCover(auth: String, treeStr: String, docId: String, tree: Uri, coverKey: String): Bitmap? {
         val uri = DocumentsContract.buildDocumentUriUsingTree(tree, docId)
         Log.d(TAG, "loadArchiveCover: uri=$uri")
