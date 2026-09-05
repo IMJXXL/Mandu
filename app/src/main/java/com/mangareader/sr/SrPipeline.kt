@@ -56,7 +56,9 @@ object SrPipeline {
 
     /** 本章是否已有离线批量产物（有就不再实时超分，省算力） */
     @Volatile
-    private var sessionHasBatch = false
+
+    var sessionHasBatch = false
+        private set
 
     /** ★ N1 无缝续读：跨卷切换时暂存用户此前的作用域，beginSession 里恢复
      *  （resetForBook 会把作用域重置为关闭；无缝场景需要保留用户的选择） */
@@ -76,18 +78,23 @@ object SrPipeline {
     /** 在途/排队任务的 Job（翻页让位：取消旧页排队任务） */
     private val pageJobs = java.util.concurrent.ConcurrentHashMap<String, kotlinx.coroutines.Job>()
 
-    /** 作用域切换：关闭=取消在跑任务并把当前页换回原图；开启=按当前设置立刻算当前页并按需预载 */
+    /** 作用域切换：关闭=取消在跑任务并把当前页换回原图；开启=按当前设置立刻算当前页并按需预载。
+     *  ★ 有离线批量产物时：不切换模型（不清缓存）、不实时超分——直接吃离线产物 */
     fun onScopeChanged(newScope: Int) {
         if (newScope == SrUiState.SCOPE_OFF) {
             SrCore.manager.cancelProcessingJobs()
             revertCurrentToOriginal()
             return
         }
-        SrCore.applySettings(sessionBookId)
-        onPageChanged(currentPageIdx, sessionPageList.size)
-        if (sessionActive) {
-            synchronized(originals) { originals["$sessionChapterId:$currentPageIdx"] }
-                ?.let { scheduleInternal(currentPageIdx, it) }
+        if (!sessionHasBatch) {
+            SrCore.applySettings(sessionBookId)
+            onPageChanged(currentPageIdx, sessionPageList.size)
+            if (sessionActive) {
+                synchronized(originals) { originals["$sessionChapterId:$currentPageIdx"] }
+                    ?.let { scheduleInternal(currentPageIdx, it) }
+            }
+        } else {
+            onPageChanged(currentPageIdx, sessionPageList.size)
         }
     }
 
@@ -102,13 +109,18 @@ object SrPipeline {
 
     fun peekOriginal(pageIndex: Int): Bitmap? = synchronized(originals) { originals["$sessionChapterId:$pageIndex"] }
 
-    /** 对比叠层"右侧"取图：超分结果优先；黑白独立模式下退而求其次取黑白优化结果 */
+    /** 对比叠层"右侧"取图：超分结果优先；黑白独立模式下退而求其次取黑白优化结果；
+     *  最后兜底查批量离线产物（手动开超分切换模型后内存缓存键不命中时仍可对比） */
     fun peekSr(pageIndex: Int): Bitmap? {
         SrCore.dispatcher.getSrBitmap(sessionChapterId, pageIndex)?.let { return it }
         if (!SrCore.settings.upscaleEnabled && SrCore.settings.bwEnabled) {
             val key = "bwonly_${sessionChapterId}_${pageIndex}_${SrCore.settings.bwGrayLevels}_${if (SrCore.settings.bwDensityCorrection) 1 else 0}"
             SrCore.manager.getCachedResult(key)?.let { return it }
-            return SrCore.diskCache.get(key)
+            SrCore.diskCache.get(key)?.let { return it }
+        }
+        val chKey = SRQueueItem.chapterKey(sessionBookId, sessionTreeStr)
+        if (SrCore.diskCache.hasBatchChapter(sessionBookTitle, chKey)) {
+            SrCore.diskCache.getBatchPage(sessionBookTitle, chKey, pageIndex)?.let { return it }
         }
         return null
     }
@@ -291,7 +303,7 @@ object SrPipeline {
         if (!isApplicable(meta) || callerBitmap == null) return null
 
         val cid = sessionChapterId
-        synchronized(originals) { originals["$cid:$pageIndex"] = callerBitmap }
+        synchronized(originals) { originals.putIfAbsent("$cid:$pageIndex", callerBitmap) }
         lastUserPage = pageIndex
 
         if (allowSyncDisk) {
@@ -305,10 +317,14 @@ object SrPipeline {
                     SrCore.manager.getCachedResult(key)?.let { return it }
                 }
             }
-            // 磁盘已有结果？只 stat 文件不解码；命中（含批量产物页）交给 pollForResult 异步回填
+            // ★ 有批量离线产物时同步查（直接吃产物，不走异步轮询避免闪烁/对比失效）
+            if (sessionHasBatch) {
+                getCached(pageIndex)?.let { return it }
+            }
+            // 磁盘已有结果？只 stat 文件不解码；命中交给 pollForResult 异步回填
             val diskLikely = runCatching {
-                (SrUiState.scope.intValue > SrUiState.SCOPE_OFF &&
-                    SrCore.diskCache.contains(SrCore.manager.buildCacheKey(cid, pageIndex))) || sessionHasBatch
+                SrUiState.scope.intValue > SrUiState.SCOPE_OFF &&
+                    SrCore.diskCache.contains(SrCore.manager.buildCacheKey(cid, pageIndex))
             }.getOrDefault(false)
             if (diskLikely) {
                 pollForResult(pageIndex) { b -> SrCore.emitReady(cid, pageIndex, b) }

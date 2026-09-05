@@ -1383,8 +1383,8 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
                             isActive = pageBookmarked
                         ) { toggleBookmark() })
                         add(BottomBarAction(Icons.Default.AutoFixHigh, "超分") { showSrPanel = true })
-                        // 超分作用域已开启 → 右侧出现"对比"按钮；开/关两种状态实时切换
-                        if (com.mangareader.sr.SrUiState.scope.intValue > 0) {
+                        // 超分作用域已开启 或 离线批量产物存在 → 出现"对比"按钮
+                        if (com.mangareader.sr.SrUiState.scope.intValue > 0 || com.mangareader.sr.SrPipeline.sessionHasBatch) {
                             add(BottomBarAction(Icons.Default.CompareArrows, if (com.mangareader.sr.SrUiState.compareActive.value) "退出对比" else "对比") {
                                 com.mangareader.sr.SrUiState.compareActive.value = !com.mangareader.sr.SrUiState.compareActive.value
                             })

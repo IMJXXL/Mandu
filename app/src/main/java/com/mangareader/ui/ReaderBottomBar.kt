@@ -42,7 +42,7 @@ fun ReaderBottomBar(
             rows.forEach { rowActions ->
                 Row(
                     Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     rowActions.forEach { action ->
                         Column(
@@ -64,9 +64,6 @@ fun ReaderBottomBar(
                                 maxLines = 1
                             )
                         }
-                    }
-                    repeat(5 - rowActions.size) {
-                        Spacer(Modifier.weight(1f))
                     }
                 }
             }
