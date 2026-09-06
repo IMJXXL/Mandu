@@ -1,0 +1,70 @@
+package com.ehviewer.core.database.dao
+
+import androidx.room.Dao
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
+import androidx.room.Query
+import androidx.room.Transaction
+import com.ehviewer.core.database.model.LocalGalleryEntity
+import kotlinx.coroutines.flow.Flow
+
+@Dao
+interface LocalGalleryDao {
+    @Query("SELECT * FROM LOCAL_GALLERIES ORDER BY TITLE COLLATE NOCASE ASC")
+    fun listFlow(): Flow<List<LocalGalleryEntity>>
+
+    @Query("SELECT * FROM LOCAL_GALLERIES WHERE TITLE LIKE '%' || :keyword || '%' ORDER BY TITLE COLLATE NOCASE ASC")
+    fun searchFlow(keyword: String): Flow<List<LocalGalleryEntity>>
+
+    @Query("SELECT * FROM LOCAL_GALLERIES WHERE ID = :id")
+    suspend fun load(id: Long): LocalGalleryEntity?
+
+    @Query("SELECT * FROM LOCAL_GALLERIES WHERE CONTENT_PATH = :path LIMIT 1")
+    suspend fun loadByContentPath(path: String): LocalGalleryEntity?
+
+    @Query("SELECT * FROM LOCAL_GALLERIES WHERE ROOT_ID = :rootId")
+    suspend fun listByRootId(rootId: Long): List<LocalGalleryEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(galleries: List<LocalGalleryEntity>)
+
+    @Query("DELETE FROM LOCAL_GALLERIES WHERE ROOT_ID = :rootId")
+    suspend fun deleteByRootId(rootId: Long)
+
+    @Query("DELETE FROM LOCAL_GALLERIES WHERE ID IN (:ids)")
+    suspend fun deleteByIds(ids: List<Long>)
+
+    @Query("DELETE FROM LOCAL_GALLERIES WHERE CONTENT_PATH = :contentPath")
+    suspend fun deleteByContentPath(contentPath: String)
+
+    @Query("DELETE FROM LOCAL_GALLERIES")
+    suspend fun deleteAll()
+
+    @Query(
+        """
+        UPDATE LOCAL_GALLERIES SET
+            PAGE_COUNT = CASE WHEN :pageCount > 0 THEN :pageCount ELSE PAGE_COUNT END,
+            COVER_PATH = COALESCE(:coverPath, COVER_PATH)
+        WHERE ID = :id
+        """,
+    )
+    suspend fun updatePageAndCover(id: Long, pageCount: Int, coverPath: String?)
+
+    @Query(
+        """
+        UPDATE LOCAL_GALLERIES SET
+            PAGE_COUNT = CASE WHEN :pageCount > 0 THEN :pageCount ELSE PAGE_COUNT END,
+            COVER_PATH = COALESCE(:coverPath, COVER_PATH)
+        WHERE CONTENT_PATH = :contentPath
+        """,
+    )
+    suspend fun updatePageAndCoverByContentPath(contentPath: String, pageCount: Int, coverPath: String?)
+
+    @Transaction
+    suspend fun replaceForRoot(rootId: Long, galleries: List<LocalGalleryEntity>) {
+        deleteByRootId(rootId)
+        if (galleries.isNotEmpty()) {
+            upsertAll(galleries)
+        }
+    }
+}

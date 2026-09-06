@@ -60,6 +60,10 @@ class App : Application(), SingletonImageLoader.Factory {
 
     override fun onCreate() {
         super.onCreate()
+        // SMB/WebDAV 集成胶水层初始化（任务1.5）：DB 注入 + appCtx 锚点
+        com.mangareader.smbbridge.SmbAppContextBridge.init(this)
+        com.mangareader.smbbridge.SmbDbBridge.mangaDatabase = db
+        com.mangareader.webdavbridge.WebDavDbBridge.mangaDatabase = db
         SignatureVerifier.verify(this, "F6D95465BE7D17C1B3BE2B0C59969C22")
         startBackgroundVerify()
         crashHandler.init()

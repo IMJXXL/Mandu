@@ -208,14 +208,27 @@ class AnimPagerReaderView(context: Context) : FrameLayout(context), ReaderViewDe
         if (currentPage > 0) goToPage(currentPage - 1)
     }
 
-    /** ★ §34.1 单页动图 Drawable 构造——同 PagerReaderView.makeAPNGAnimDrawable，复制以解耦 */
+    /** ★ §34.1 单页动图 Drawable 构造——同 PagerReaderView.makeAnimDrawable，复制以解耦
+     *  （2026-09-05 恢复 v1.2 的 APNG4Android 引擎：全 API 兼容、不被 Coil 包装成 ScaleDrawable） */
     private fun makeAnimDrawable(raw: ByteArray, kind: AnimKind): Drawable? {
         if (kind == AnimKind.NONE) return null
-        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.P) return null
         return try {
-            val source = android.graphics.ImageDecoder.createSource(ByteBuffer.wrap(raw))
-            android.graphics.ImageDecoder.decodeDrawable(source)
-        } catch (_: Exception) { null }
+            val loader = object : com.github.penfeizhou.animation.loader.ByteBufferLoader() {
+                override fun getByteBuffer(): ByteBuffer = ByteBuffer.wrap(raw)
+            }
+            val drawable = when (kind) {
+                AnimKind.WEBP -> com.github.penfeizhou.animation.webp.WebPDrawable(loader)
+                AnimKind.APNG -> com.github.penfeizhou.animation.apng.APNGDrawable(loader)
+                AnimKind.GIF -> com.github.penfeizhou.animation.gif.GifDrawable(loader)
+                AnimKind.NONE -> return null
+            }
+            // ★ §34.1 初始化：构造后同步触发 header 解析（getIntrinsicWidth 阻塞读 header），防首帧 0×0 全白
+            try { drawable.intrinsicWidth } catch (_: Throwable) {}
+            try { drawable.intrinsicHeight } catch (_: Throwable) {}
+            drawable
+        } catch (t: Throwable) {
+            null
+        }
     }
 
     /** ★ §34.1 单页 raw kind peek（suspend）——在 IO 线程做，不能在主线程同步调

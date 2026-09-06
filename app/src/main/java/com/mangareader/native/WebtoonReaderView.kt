@@ -38,6 +38,9 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
     }
     private var engine: ArchiveEngine? = null
     private var treePath = ""
+    /** ★ SMB/WebDAV 页面供给抽象（RemotePageSupply）：非 null 时页面加载走远程会话，ArchiveEngine 不参与 */
+    @Volatile
+    var remotePageSupply: RemotePageSupply? = null
     // 超分：渐进替换事件订阅（release/setup 重建时取消）
     private var srEventJob: kotlinx.coroutines.Job? = null
 
@@ -527,7 +530,10 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
                 }
                 // 所有格式统一走 Java BitmapFactory（正确处理 CMYK/ICC 色彩空间）
                 if (result == null) {
-                    result = engine?.loadPage(pageList[idx], treePath)
+                    // ★ SMB/WebDAV 页面供给抽象：远程会话优先，null 时不回退 engine（路径已被守卫拦截）
+                    val supply = remotePageSupply
+                    result = if (supply != null) supply.loadBitmap(idx)
+                    else engine?.loadPage(pageList[idx], treePath)
                 }
                 result
             }
@@ -613,7 +619,10 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
                         }
                         // 所有格式统一走 Java BitmapFactory（正确处理 CMYK/ICC 色彩空间）
                         if (result == null) {
-                            result = engine?.loadPage(pageList[idx], treePath)
+                            // ★ SMB/WebDAV 页面供给抽象：远程会话优先，null 时不回退 engine
+                            val supply = remotePageSupply
+                            result = if (supply != null) supply.loadBitmap(idx)
+                            else engine?.loadPage(pageList[idx], treePath)
                         }
                     } catch (_: Exception) {}
                     result

@@ -46,7 +46,9 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.graphics.drawable.Drawable
 import coil3.compose.AsyncImage
+import com.hippo.ehviewer.coil.coverThumb
 import com.mangareader.App
 import com.mangareader.Scanner
 import com.mangareader.data.Book
@@ -562,6 +564,10 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                     }
                 }
             } else {
+                // ★ 封面解码尺寸：按列数/边距推导（CoverThumb 规则），避免 600×800 过度解码
+                val thumbDecodePx = com.hippo.ehviewer.coil.CoverThumb.gridDecodePx(
+                    LocalConfiguration.current.screenWidthDp, effectiveCols, 12.dp, 8.dp,
+                )
                 LazyVerticalGrid(columns = GridCells.Fixed(effectiveCols), contentPadding = PaddingValues(12.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     items(books, key = { it.id }, contentType = { "book" }) { b ->
@@ -569,7 +575,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                         val onTap = remember(b.id, isMultiSelect) { { if (isMultiSelect) { selectedBooks = if (b.id in selectedBooks) selectedBooks - b.id else selectedBooks + b.id } else openBookThrottled(b.id, null) } }
                         val onLongClick = remember(b.id) { { showBookInfo = b } }
                         val onDelete = remember(b.id) { { deleteTarget = b } }
-                        BookCard(b, engine, isMultiSelect, b.id in selectedBooks,
+                        BookCard(b, engine, isMultiSelect, b.id in selectedBooks, thumbDecodePx,
                             onToggleSelect = onToggleSelect,
                             onTap = onTap,
                             onLongClick = onLongClick,
@@ -584,7 +590,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun BookCard(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, isSelected: Boolean, onToggleSelect: () -> Unit, onTap: () -> Unit, onLongClick: () -> Unit, onDelete: () -> Unit) {
+private fun BookCard(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, isSelected: Boolean, decodePx: Int, onToggleSelect: () -> Unit, onTap: () -> Unit, onLongClick: () -> Unit, onDelete: () -> Unit) {
     val ctx = LocalContext.current
     // ★ LV119 对齐参考项目：直接用 coverPath (cv:...) 作为 Coil3 model，
     //   CoverFetcher 返回原始字节 → Coil3 decoders 自动识别动图（GIF/WebP/APNG）
@@ -601,19 +607,44 @@ private fun BookCard(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, isS
         .combinedClickable(onClick = onTap, onLongClick = onLongClick)) {
         Box(Modifier.fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)).background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
             if (b.coverPath != null) {
+                // ★ 封面 = 参考项目 coverThumb 管线：按实际格子尺寸(2×)解码 + FILL + INEXACT
+                //   + 分级缓存键 + 关 crossfade；动态封面开 = Coil 动图解码器播放动画
+                //   （帧小才流畅，与参考项目一致）；关 = StaticFirstFrameDecoder 静态首帧
+                val dynOn = ctx.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE)
+                    .getBoolean("dynamic_covers", false)
                 coil3.compose.AsyncImage(
                     model = coil3.request.ImageRequest.Builder(ctx)
                         .data(com.mangareader.viewer.CoverData(b.coverPath))
-                        .size(600, 800)
+                        .coverThumb(
+                            decodePx,
+                            memoryKey = "cover:${b.id}@${b.coverPath}@$dynOn",
+                            diskKey = "${b.coverPath}",
+                        )
+                        .apply { if (!dynOn) decoderFactory(com.mangareader.coil.StaticFirstFrameDecoder.Factory()) }
                         .build(),
                     contentDescription = null,
                     modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
+                    contentScale = ContentScale.Crop,
                 )
             }
             Box(Modifier.fillMaxWidth().height(36.dp).align(Alignment.BottomCenter).background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.5f)))))
             Surface(Modifier.align(Alignment.TopEnd).padding(4.dp), RoundedCornerShape(6.dp), color = status.second.copy(alpha = 0.9f)) {
                 Text(text = status.first, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp), fontSize = 10.sp, color = Color.White)
+            }
+            // ★ 来源角标（任务A）：仅远程书显示，本地书不显示
+            if (b.source == "smb" || b.source == "webdav") {
+                Surface(
+                    Modifier.align(Alignment.TopStart).padding(4.dp),
+                    RoundedCornerShape(6.dp),
+                    color = if (b.source == "smb") Color(0xCC4A7BD4) else Color(0xCC8A5CD4),
+                ) {
+                    Text(
+                        text = if (b.source == "smb") "SMB" else "WebDAV",
+                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                        fontSize = 9.sp,
+                        color = Color.White,
+                    )
+                }
             }
             if (isMultiSelect) {
                 Box(Modifier.align(Alignment.TopStart).padding(4.dp)) {

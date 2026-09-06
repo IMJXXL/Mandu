@@ -25,3 +25,30 @@
 # ★ 超分 JNI 三件套（realesrgan_jni/manga_cleanup 按类名注册 native 方法）：
 #   默认规则虽保 native 方法所在类名，显式冻结整包杜绝 R8 任何合并/改名风险（发布保险）。
 -keep class com.mangareader.sr.** { *; }
+
+# ==================== SMB + WebDAV 集成（smb_embed_lv119 任务9.1/19.1） ====================
+# 拷入的参考项目 com.hippo.ehviewer 包：JNI 桥接（ArchiveStreamBridge 的 nativeRead/nativeSeek
+# 按 JNI 符号注册）、smbj 反射、ktor 序列化符号均需类名/成员名冻结。
+-keep class com.hippo.ehviewer.** { *; }
+-keep class com.ehviewer.core.** { *; }
+-keep class moe.tarsin.** { *; }
+-keep class eu.kanade.tachiyomi.** { *; }
+# smbj（SMB 协议栈：bouncycastle/asn1 反射较重，整包保留）
+-keep class com.hierynomus.** { *; }
+-dontwarn com.hierynomus.**
+# ktor CIO engine（WebDAV；反射构造协程调度器）
+-keep class io.ktor.** { *; }
+-dontwarn io.ktor.**
+# arrow-kt（bracketCase 资源安全）
+-dontwarn io.arrow.**
+# kotlinx-io（参考项目 core/files 依赖）
+-dontwarn kotlinx.io.**
+# Please add these rules to your existing keep rules in order to suppress warnings.
+# This is generated automatically by the Android Gradle plugin.
+-dontwarn javax.el.BeanELResolver
+-dontwarn javax.el.ELContext
+-dontwarn javax.el.ELResolver
+-dontwarn javax.el.ExpressionFactory
+-dontwarn javax.el.FunctionMapper
+-dontwarn javax.el.ValueExpression
+-dontwarn javax.el.VariableMapper

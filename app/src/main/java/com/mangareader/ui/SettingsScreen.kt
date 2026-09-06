@@ -87,6 +87,9 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
     var showReadingSettings by remember { mutableStateOf(false) }
     // 超分队列页（全屏页，不嵌在滚动 Column 里渲染）
     var showSrQueue by remember { mutableStateOf(false) }
+    // ★ SMB/WebDAV 服务器管理入口（smb_embed_lv119 任务2.4/12.5）
+    var showSmbServers by remember { mutableStateOf(false) }
+    var showWebDavServers by remember { mutableStateOf(false) }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
         if (r.resultCode == Activity.RESULT_OK) r.data?.data?.let { uri ->
@@ -328,6 +331,57 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
     ) { padding ->
         Column(modifier = Modifier.padding(padding).verticalScroll(rememberScrollState()).padding(16.dp)) {
             Spacer(Modifier.height(12.dp))
+            // ★ 临时调试：一键导出运行日志（崩溃/ANR/logcat），分享给开发者远程排查（smb_embed_lv119 用户要求）
+            Card(Modifier.fillMaxWidth().clickable {
+                scope.launch {
+                    try {
+                        val ts = java.text.SimpleDateFormat("MMdd_HHmmss", java.util.Locale.getDefault()).format(java.util.Date())
+                        val out = java.io.File(ctx.getExternalFilesDir(null), "log_export_$ts.txt")
+                        withContext(Dispatchers.IO) {
+                            val sb = StringBuilder()
+                            sb.append("=== MangaReader 日志包 $ts ===\n")
+                            runCatching {
+                                val pm = ctx.packageManager.getPackageInfo(ctx.packageName, 0)
+                                sb.append("version: ${pm.versionName} (${pm.longVersionCode})\n")
+                                sb.append("device: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL} API ${android.os.Build.VERSION.SDK_INT}\n")
+                            }
+                            java.io.File(ctx.getExternalFilesDir(null), "crash_logs").listFiles()?.sortedBy { it.name }?.forEach { f ->
+                                sb.append("\n===== crash/${f.name} =====\n").append(runCatching { f.readText() }.getOrDefault("<unreadable>")).append('\n')
+                            }
+                            java.io.File(ctx.getExternalFilesDir(null), "anr_log.txt").takeIf { it.isFile }?.let { f ->
+                                sb.append("\n===== anr_log.txt (tail 400 lines) =====\n")
+                                runCatching { f.readText().lines().takeLast(400).joinToString("\n") }.getOrNull()?.let { sb.append(it).append('\n') }
+                            }
+                            runCatching {
+                                val p = Runtime.getRuntime().exec(arrayOf("logcat", "-d", "-v", "time", "-t", "3000"))
+                                sb.append("\n===== logcat (last 3000 lines) =====\n")
+                                sb.append(p.inputStream.readBytes().toString(Charsets.UTF_8))
+                                p.destroy()
+                            }
+                            out.writeText(sb.toString())
+                        }
+                        val uri = androidx.core.content.FileProvider.getUriForFile(ctx, "com.mangareader.fileprovider", out)
+                        val share = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+                        ctx.startActivity(android.content.Intent.createChooser(share, "分享日志包"))
+                        android.widget.Toast.makeText(ctx, "已生成：${out.absolutePath}", android.widget.Toast.LENGTH_LONG).show()
+                    } catch (e: Throwable) {
+                        android.widget.Toast.makeText(ctx, "导出失败：${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }) {
+                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.BugReport, null, modifier = Modifier.size(24.dp))
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("导出运行日志（临时）", fontSize = 16.sp)
+                        Text("打包崩溃/ANR/logcat 并弹出分享，用于远程排查", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
             Button(onClick = { picker.launch(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply { putExtra("android.content.extra.SHOW_ADVANCED", true) }) }, modifier = Modifier.fillMaxWidth()) {
                 Icon(Icons.Default.Add, null)
                 Spacer(Modifier.width(8.dp))
@@ -646,6 +700,31 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
                 }
             }
 
+            // ★ SMB 服务器管理（spec 5.1；扫描/阅读需 Android 12+，低版本入口可见可配置）
+            Card(Modifier.fillMaxWidth().clickable { showSmbServers = true }) {
+                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Storage, null, modifier = Modifier.size(24.dp))
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("SMB 服务器管理", fontSize = 16.sp)
+                        Text("配置局域网共享并扫描阅读漫画（需要 Android 12+）", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Icon(Icons.Default.ChevronRight, null)
+                }
+            }
+            // ★ WebDAV 服务器管理（spec 5.7；API 26+ 全可用，无版本限制）
+            Card(Modifier.fillMaxWidth().clickable { showWebDavServers = true }) {
+                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Cloud, null, modifier = Modifier.size(24.dp))
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("WebDAV 服务器管理", fontSize = 16.sp)
+                        Text("配置 WebDAV 网盘并在线阅读远端漫画", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Icon(Icons.Default.ChevronRight, null)
+                }
+            }
+
             HorizontalDivider()
             Spacer(Modifier.height(12.dp))
             var personalNoteExpanded by remember { mutableStateOf(false) }
@@ -798,6 +877,12 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
 
     if (showReadingSettings) {
         ReadingSettingsScreen(onBack = { showReadingSettings = false })
+    }
+    if (showSmbServers) {
+        com.mangareader.smbbridge.SmbServersScreen(onBack = { showSmbServers = false })
+    }
+    if (showWebDavServers) {
+        com.mangareader.webdavbridge.WebDavServersScreen(onBack = { showWebDavServers = false })
     }
     if (showDonation) DonationDialog(onDismiss = { showDonation = false })
 }

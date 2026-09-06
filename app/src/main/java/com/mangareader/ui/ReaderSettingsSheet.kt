@@ -273,7 +273,7 @@ private fun ReadingModeTab(config: ReaderConfig, mode: Mode, useAnimPager: Boole
         if (config.doublePageSplit) {
             CheckboxItem("反转双页", config.doublePageReverse) { onConfigChange(config.copy(doublePageReverse = it)) }
         }
-        // CheckboxItem("翻页动画", config.isFlipAnimation) { onConfigChange(config.copy(isFlipAnimation = it)) }
+        CheckboxItem("翻页动画（点击翻页过渡）", config.isFlipAnimation) { onConfigChange(config.copy(isFlipAnimation = it)) }
         Text("以下功能设置后，需重新进入漫画生效", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f), fontSize = 11.sp, modifier = Modifier.padding(start = 4.dp, bottom = 4.dp))
         SliderItem("侧边留白", config.imageMarginH.toFloat(), -20f..50f, 70, "${config.imageMarginH}dp") {
             onConfigChange(config.copy(imageMarginH = it.toInt()))

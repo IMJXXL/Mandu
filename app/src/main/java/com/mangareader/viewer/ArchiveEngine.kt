@@ -109,6 +109,19 @@ class ArchiveEngine(private val ctx: Context) {
     }
 
     data class PageMeta(val index: Int, val source: String, val ext: String, val localIdx: Int = 0, val splitSide: Int = 0, val name: String = "")
+
+    /**
+     * ★ SMB/WebDAV 路径守卫（smb_embed_lv119 任务4.4/14.5）：远程路径严禁进入 ArchiveEngine，
+     * 远程书籍由 smbbridge/webdavbridge 的 RemotePageSupply 会话处理。require 抛出即视为误路由 bug。
+     * 本地路径（a:/d:/z:/content://）零改动。
+     */
+    private fun requireNotRemote(path: String) {
+        require(
+            !path.startsWith("smb:") && !path.startsWith("webdav:") &&
+                !path.startsWith("cv:smb:") && !path.startsWith("cv:webdav:"),
+        ) { "Remote path must not enter ArchiveEngine: ${path.take(48)}" }
+    }
+
     data class Item(val name: String, val auth: String, val tree: String, val doc: String, val dir: Boolean, val subPath: String = "")
     data class ZipDirNode(
         val name: String,
@@ -256,6 +269,7 @@ class ArchiveEngine(private val ctx: Context) {
     }
 
     fun listPages(path: String): List<PageMeta> {
+        requireNotRemote(path)
         synchronized(pageListCache) {
             val cached = pageListCache[path]
             if (cached != null) {
@@ -315,6 +329,7 @@ class ArchiveEngine(private val ctx: Context) {
      * 6 处 source 分支与 loadPage 完全对应：zip(z:) / zip(a:) / rar / 7z / tar / mobi 系 / dir / pdf
      */
     fun loadPageRaw(meta: PageMeta, treeStr: String): ByteArray? {
+        requireNotRemote(treeStr)
         // 一、ZIP + treeStr z:→ NativeEngine.readZipEntry
         if (treeStr.isNotEmpty() && meta.source == "zip") {
 
@@ -409,6 +424,7 @@ class ArchiveEngine(private val ctx: Context) {
      *      原 loadPage 的签名门是"未验证时随机返回 null 导致黑页"，本方法不显示不需此门）
      */
     fun loadPageSize(meta: PageMeta, treeStr: String): IntArray? {
+        requireNotRemote(treeStr)
         // ★ PDF 分路：NativeEngine.pdfGetPageSize 返回 IntArray[width, height]，纯 metadata 不 render
         //   ★★★ 审查修正 1：docKey 必须用 docUri.toString()，不带 "pdf:" 前缀。
         //     理由：CPP 句柄表（pdfium_wrapper.cpp:132 `handles.find(key)`）用 key 直接查表。
@@ -585,6 +601,7 @@ class ArchiveEngine(private val ctx: Context) {
 
 
     fun loadPage(meta: PageMeta, treeStr: String): Bitmap? {
+        requireNotRemote(treeStr)
         // 签名校验：未验证时随机返回 null 导致黑页
         if (!com.mangareader.SignatureVerifier.isVerified && meta.index % 3 == 0) return null
         // For ZIP/EPUB: go straight to loadFromZip (libzip fd-based, skip getNativeArchive)
@@ -830,6 +847,7 @@ class ArchiveEngine(private val ctx: Context) {
     }
 
     fun children(path: String): List<Item> {
+        requireNotRemote(path)
         return try {
             if (path.startsWith("z:")) {
                 android.util.Log.d(TAG, "children z: path=$path")
@@ -936,6 +954,7 @@ class ArchiveEngine(private val ctx: Context) {
     }
 
     fun loadCover(cover: String): Bitmap? {
+        requireNotRemote(cover)
 
         if (!cover.startsWith("cv:")) return null
         synchronized(coverCache) { coverCache[cover]?.let { return it } }
@@ -1001,6 +1020,7 @@ class ArchiveEngine(private val ctx: Context) {
     /** ★ LV119 对齐：返回封面原始字节流 + mimeType，让 Coil3 decoders 自动识别动图（GIF/WebP/APNG）。
      *  仅处理图片文件和压缩包（能返回原始字节的场景）；mobi/pdf 返回 null（fallback 到 loadCover → Bitmap → PNG）。 */
     fun loadCoverRaw(cover: String): Pair<ByteArray, String>? {
+        requireNotRemote(cover)
         if (!cover.startsWith("cv:")) return null
         try {
             val parts = cover.removePrefix("cv:").split("|")
@@ -1197,6 +1217,27 @@ class ArchiveEngine(private val ctx: Context) {
             }
         } catch (_: Exception) {}
         return null
+    }
+
+    /**
+     * ★ ItemCard 动图封面（2026-09-06 补全）：取文件夹子项首页的原始字节。
+     *   coverPath 形如 "z:{auth}|{tree}|{doc}|{subPath}"（ItemCard 构造）；
+     *   复用与 enterReader 完全相同的 listPages + loadPageRaw 链路（本地守卫内），
+     *   子卷是动图（gif/动图webp首页）时返回动图原始字节，Coil 侧据此播放动画。
+     */
+    fun loadItemCoverRaw(coverPath: String): Pair<ByteArray, String>? {
+        requireNotRemote(coverPath)
+        if (!coverPath.startsWith("z:")) return null
+        return try {
+            val body = coverPath.removePrefix("z:")
+            val subPath = body.split('|', limit = 4).getOrNull(3)?.takeIf { it.isNotEmpty() } ?: return null
+            val metas = listPages(subPath)
+            if (metas.isEmpty()) return null
+            val raw = loadPageRaw(metas.first(), subPath) ?: return null
+            Pair(raw, guessMimeFromBytes(raw))
+        } catch (_: Exception) {
+            null
+        }
     }
 
     fun loadCoverForItem(item: Item): Bitmap? {

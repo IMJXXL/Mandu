@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
     <external-files-path name="crash_logs" path="crash_logs/" />
+    <external-files-path name="files_root" path="." />
 </paths>

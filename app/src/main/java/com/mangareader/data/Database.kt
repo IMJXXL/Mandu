@@ -251,6 +251,38 @@ interface MangaDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertBooksBatch(books: List<Book>): List<Long>
 
+    /** ★ SMB/WebDAV 不支持格式下载完成：书籍改写为本地行（spec 5.5.1 规则 4，仅新增不修改既有逻辑） */
+    @Query("UPDATE manga_books SET filePath = :filePath, fileType = :fileType, source = 'local', coverPath = NULL WHERE id = :id")
+    suspend fun rehomeBookToLocal(id: Long, filePath: String, fileType: String)
+
+    /** ★ 删除 SMB 服务器时级联清理其书籍（spec 5.1 级联清理；仅新增） */
+    @Query("DELETE FROM manga_books WHERE source = 'smb' AND filePath LIKE 'smb:' || :serverId || ':%'")
+    suspend fun deleteSmbBooks(serverId: Long)
+
+    /** ★ SMB 书源整源隐藏/显示（对齐本地文件夹的隐藏机制；仅新增） */
+    @Query("UPDATE manga_books SET isHidden = :hidden WHERE source = 'smb' AND filePath LIKE 'smb:' || :serverId || ':%'")
+    suspend fun setSmbBooksHidden(serverId: Long, hidden: Boolean)
+
+    @Query("SELECT COUNT(*) FROM manga_books WHERE source = 'smb' AND filePath LIKE 'smb:' || :serverId || ':%' AND isHidden = 1")
+    suspend fun countSmbHiddenBooks(serverId: Long): Int
+
+    @Query("SELECT * FROM manga_books WHERE source = 'smb' AND filePath LIKE 'smb:' || :serverId || ':%'")
+    suspend fun getSmbBooks(serverId: Long): List<Book>
+
+    @Query("SELECT * FROM manga_books WHERE source = 'webdav' AND filePath LIKE 'webdav:' || :serverId || ':%'")
+    suspend fun getWebDavBooks(serverId: Long): List<Book>
+
+    /** ★ WebDAV 书源整源隐藏/显示（仅新增） */
+    @Query("UPDATE manga_books SET isHidden = :hidden WHERE source = 'webdav' AND filePath LIKE 'webdav:' || :serverId || ':%'")
+    suspend fun setWebDavBooksHidden(serverId: Long, hidden: Boolean)
+
+    @Query("SELECT COUNT(*) FROM manga_books WHERE source = 'webdav' AND filePath LIKE 'webdav:' || :serverId || ':%' AND isHidden = 1")
+    suspend fun countWebDavHiddenBooks(serverId: Long): Int
+
+    /** ★ 删除 WebDAV 服务器时级联清理其书籍（spec 5.7 级联清理；仅新增） */
+    @Query("DELETE FROM manga_books WHERE source = 'webdav' AND filePath LIKE 'webdav:' || :serverId || ':%'")
+    suspend fun deleteWebDavBooks(serverId: Long)
+
     @Update
     suspend fun updateBook(book: Book)
 
@@ -836,12 +868,13 @@ data class ProgressHistoryRow(
 )
 
 @Database(
-    entities = [Book::class, Folder::class, ReadingHistory::class, Bookshelf::class, BookshelfItem::class, Tag::class, TagLink::class, ReadingProgress::class, Bookmark::class],
-    version = 12,
+    entities = [Book::class, Folder::class, ReadingHistory::class, Bookshelf::class, BookshelfItem::class, Tag::class, TagLink::class, ReadingProgress::class, Bookmark::class, com.ehviewer.core.database.model.SmbSourceEntity::class, com.ehviewer.core.database.model.LibraryRootEntity::class, com.ehviewer.core.database.model.LocalGalleryEntity::class, com.ehviewer.core.database.model.WebDavSourceEntity::class],
+    version = 13,
     exportSchema = false
 )
-abstract class MangaDatabase : RoomDatabase() {
+abstract class MangaDatabase : com.ehviewer.core.database.LocalLibraryDatabase() {
     abstract fun mangaDao(): MangaDao
+    abstract override fun smbSourceDao(): com.ehviewer.core.database.dao.SmbSourceDao
 
     companion object {
         @Volatile
@@ -940,13 +973,75 @@ abstract class MangaDatabase : RoomDatabase() {
             }
         }
 
+        // ★ SMB 源表 + 本地库表（DB v13 纯增量，无外键——SMB_SOURCES 独立于 manga_books）
+        //   列名对齐参考项目 com.ehviewer.core.database.model.SmbSourceEntity 的 @ColumnInfo
+        private val MIGRATION_12_13 = object : androidx.room.migration.Migration(12, 13) {
+            override fun migrate(database: androidx.sqlite.db.SupportSQLiteDatabase) {
+                database.execSQL("""
+                    CREATE TABLE IF NOT EXISTS SMB_SOURCES (
+                        ID INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        DISPLAY_NAME TEXT NOT NULL,
+                        HOST TEXT NOT NULL,
+                        PORT INTEGER NOT NULL,
+                        EASYTIER_HOST TEXT NOT NULL DEFAULT '',
+                        SHARE TEXT NOT NULL,
+                        PATH_PREFIX TEXT NOT NULL,
+                        USERNAME TEXT NOT NULL,
+                        DOMAIN TEXT NOT NULL,
+                        ADDED_AT INTEGER NOT NULL,
+                        LAST_OK_AT INTEGER,
+                        LAST_ERROR TEXT
+                    )
+                """.trimIndent())
+                database.execSQL("""
+                    CREATE TABLE IF NOT EXISTS LIBRARY_ROOTS (
+                        ID INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        TREE_URI TEXT NOT NULL,
+                        DISPLAY_NAME TEXT NOT NULL,
+                        ADDED_AT INTEGER NOT NULL,
+                        ROLE INTEGER NOT NULL DEFAULT 1,
+                        ACCESS_MODE INTEGER NOT NULL DEFAULT 0
+                    )
+                """.trimIndent())
+                database.execSQL("""
+                    CREATE TABLE IF NOT EXISTS LOCAL_GALLERIES (
+                        ID INTEGER NOT NULL PRIMARY KEY,
+                        ROOT_ID INTEGER NOT NULL,
+                        RELATIVE_PATH TEXT NOT NULL,
+                        TITLE TEXT NOT NULL,
+                        KIND INTEGER NOT NULL,
+                        PAGE_COUNT INTEGER NOT NULL,
+                        COVER_PATH TEXT,
+                        CONTENT_PATH TEXT NOT NULL,
+                        MTIME INTEGER NOT NULL,
+                        FOREIGN KEY(ROOT_ID) REFERENCES LIBRARY_ROOTS(ID) ON DELETE CASCADE
+                    )
+                """.trimIndent())
+                database.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_LOCAL_GALLERIES_ROOT_ID_RELATIVE_PATH ON LOCAL_GALLERIES(ROOT_ID, RELATIVE_PATH)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_LOCAL_GALLERIES_TITLE ON LOCAL_GALLERIES(TITLE)")
+                database.execSQL("""
+                    CREATE TABLE IF NOT EXISTS WEBDAV_SOURCES (
+                        ID INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        DISPLAY_NAME TEXT NOT NULL,
+                        BASE_URL TEXT NOT NULL,
+                        EASYTIER_HOST TEXT NOT NULL DEFAULT '',
+                        PATH_PREFIX TEXT NOT NULL,
+                        USERNAME TEXT NOT NULL,
+                        ADDED_AT INTEGER NOT NULL,
+                        LAST_OK_AT INTEGER,
+                        LAST_ERROR TEXT
+                    )
+                """.trimIndent())
+            }
+        }
+
         fun getDatabase(context: Context): MangaDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
                     context.applicationContext,
                     MangaDatabase::class.java,
                     "manga_reader_db"
-                ).addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12)
+                ).addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13)
                 .build()
                 INSTANCE = instance
                 instance

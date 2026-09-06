@@ -42,6 +42,9 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
 
     private var engine: ArchiveEngine? = null
     private var treePath: String = ""
+    /** ★ SMB/WebDAV 页面供给抽象（RemotePageSupply）：非 null 时 loadPageAsync 走远程会话，ArchiveEngine 不参与 */
+    @Volatile
+    var remotePageSupply: RemotePageSupply? = null
     // 超分：渐进替换事件订阅（release/setup 重建时取消）
     private var srEventJob: kotlinx.coroutines.Job? = null
 
@@ -92,22 +95,36 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     private val inflightAnimLoads = java.util.Collections.synchronizedSet(HashSet<Int>())
 
     /**
-     * ★ §34.1 动图修复：APNG4Android 旁路 Coil。
-     *   真根因（字节码级定性）：Coil 2 ImageDecoderDecoder.wrapDrawable 会把动图 AnimatedImageDrawable
+     * ★ §34.1 动图修复：APNG4Android 旁路 Coil（2026-09-05 恢复 v1.2 方案，仅本地路径使用）。
+     *   真根因（字节码级定性）：Coil 的 ImageDecoderDecoder.wrapDrawable 会把动图 AnimatedImageDrawable
      *   包进 coil.drawable.ScaleDrawable（implements Animatable，start/stop 转发给 child）——
      *   但 AnimatedImageDrawable 首帧解码前 getIntrinsicWidth/Height 返回 0 → ScaleDrawable.onBoundsChange
      *   算出 0×0 bounds → draw 画到 0×0 区域 → 画面空白（动图确在动但不可见）。
-     *   unwrapAnimatable 剥不掉：Coil 的 ScaleDrawable 自己implements Animatable，循环跳不出。
      *   解法：直接走 APNG4Android 的 WebPDrawable/APNGDrawable/GifDrawable（Java 解码器，全 API 兼容），
      *   FrameAnimationDrawable 自带 Matrix 缩放（setBounds 时自算），不走 Coil 就不被 ScaleDrawable 包装。
      *   参考：EhViewer 自写 Decoder 绕开 Coil wrap；APNG4Android 库本设计即不依赖任何上层 loader。
+     *   （34a6c83 曾换成 ImageDecoder——动图 WebP 需 API 30+ 且行为随系统；用户裁定回退 v1.2 引擎）
      */
-    private fun makeAnimDrawable(raw: ByteArray): Drawable? {
-        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.P) return null
+    private fun makeAnimDrawable(raw: ByteArray, kind: AnimKind): Drawable? {
         return try {
-            val source = android.graphics.ImageDecoder.createSource(ByteBuffer.wrap(raw))
-            android.graphics.ImageDecoder.decodeDrawable(source)
-        } catch (_: Exception) { null }
+            val loader = object : com.github.penfeizhou.animation.loader.ByteBufferLoader() {
+                override fun getByteBuffer(): ByteBuffer = ByteBuffer.wrap(raw)
+            }
+            val drawable = when (kind) {
+                AnimKind.WEBP -> com.github.penfeizhou.animation.webp.WebPDrawable(loader)
+                AnimKind.APNG -> com.github.penfeizhou.animation.apng.APNGDrawable(loader)
+                AnimKind.GIF -> com.github.penfeizhou.animation.gif.GifDrawable(loader)
+                AnimKind.NONE -> return null
+            }
+            // ★ §34.1 初始化步骤（非日志）：drawable 构造后主线程同步触发 decoder 解析 header
+            //   （getIntrinsicWidth 阻塞读 header），拿到 canvas 尺寸后才返回。
+            //   若得到 0 或异常，说明 WebP header 解析失败 → draw 时 bitmap=null → 全白。
+            try { drawable.intrinsicWidth } catch (_: Throwable) {}
+            try { drawable.intrinsicHeight } catch (_: Throwable) {}
+            drawable
+        } catch (t: Throwable) {
+            null
+        }
     }
 
     /**
@@ -116,6 +133,8 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
      *   累计 ≥3 张动图时触发 onAnimDetected 回调（弹"切条漫只能静态看"对话框）
      */
     private fun ensureAnimKindAsync(idx: Int) {
+        // ★ SMB/WebDAV：远程页由 Coil 解码自动识别动图，无需 peek（peek 会撞 ArchiveEngine 守卫）
+        if (remotePageSupply != null) return
         val e = engine ?: return
         val meta = pageList.getOrNull(idx) ?: return
         loadScope.launch {
@@ -148,7 +167,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                             }
                         }
                         val preDrawable = withContext(Dispatchers.IO) {
-                            try { makeAnimDrawable(preRaw) } catch (_: Exception) { null }
+                            try { makeAnimDrawable(preRaw, kind) } catch (_: Exception) { null }
                         }
                         if (preDrawable != null && pageAnimDrawables[idx] == null) {
                             pageAnimDrawables[idx] = preDrawable
@@ -185,7 +204,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         if (cachedRaw != null) {
             loadScope.launch {
                 val drawable = withContext(Dispatchers.IO) {
-                    try { makeAnimDrawable(cachedRaw) } catch (_: Exception) { null }
+                    try { makeAnimDrawable(cachedRaw, kind) } catch (_: Exception) { null }
                 }
                 if (drawable == null) return@launch
                 withContext(Dispatchers.Main) {
@@ -219,7 +238,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                     }
                 }
                 val drawable = withContext(Dispatchers.IO) {
-                    try { makeAnimDrawable(raw) } catch (_: Exception) { null }
+                    try { makeAnimDrawable(raw, kind) } catch (_: Exception) { null }
                 }
                 if (drawable == null) return@launch
                 withContext(Dispatchers.Main) {
@@ -697,9 +716,20 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     }
 
     override fun goToPage(page: Int) {
+        goToPage(page, smooth = false)
+    }
+
+    /**
+     * ★ 修复"点击翻页硬切、翻页动画不显示"（用户反馈 2026-09-06）：
+     *   点击翻页此前恒为 setCurrentItem(pos, false)（瞬移），3D 翻转 PageTransformer 只在
+     *   手指滑动或 smoothScroll 时生效——点击翻页永远硬切。现点击翻页（nextPage/prevPage）
+     *   在翻页动画开启时走 smooth scroll，动画经 transformer 呈现；跳章/进度恢复仍为瞬移。
+     */
+    fun goToPage(page: Int, smooth: Boolean) {
         if (page < 0 || page >= pageList.size) return
         val pos = positionOf(page)
-        viewPager.setCurrentItem(pos.coerceIn(0, pagerAdapter?.itemCount?.minus(1) ?: 0), false)
+        val animate = smooth && flipAnimationEnabled && !verticalPager
+        viewPager.setCurrentItem(pos.coerceIn(0, pagerAdapter?.itemCount?.minus(1) ?: 0), animate)
         preloadAround(page)
     }
 
@@ -730,20 +760,20 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         // navigateToPan: 缩放时先平移到边缘再翻页
         if (panNavigation && tryPanIfZoomed(forward = !isRtl)) return
         if (doublePageMode) {
-            if (shiftDoublePage && currentPage == 0) goToPage(1)
-            else if (currentPage < pageList.size - 1) goToPage(currentPage + 2)
+            if (shiftDoublePage && currentPage == 0) goToPage(1, smooth = true)
+            else if (currentPage < pageList.size - 1) goToPage(currentPage + 2, smooth = true)
         } else {
-            if (currentPage < pageList.size - 1) goToPage(currentPage + 1)
+            if (currentPage < pageList.size - 1) goToPage(currentPage + 1, smooth = true)
         }
     }
     fun prevPage() {
         // navigateToPan: 缩放时先平移到边缘再翻页
         if (panNavigation && tryPanIfZoomed(forward = isRtl)) return
         if (doublePageMode) {
-            if (shiftDoublePage && currentPage <= 1) goToPage(0)
-            else if (currentPage > 0) goToPage(currentPage - 2)
+            if (shiftDoublePage && currentPage <= 1) goToPage(0, smooth = true)
+            else if (currentPage > 0) goToPage(currentPage - 2, smooth = true)
         } else {
-            if (currentPage > 0) goToPage(currentPage - 1)
+            if (currentPage > 0) goToPage(currentPage - 1, smooth = true)
         }
     }
 
@@ -801,10 +831,80 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         inflightLoads[idx] = nowTs
         loadScope.launch {
             try {
-            ensureNativeArchive()
+            // ★ SMB/WebDAV：远程供给会话不使用本地 native archive 句柄
+            if (remotePageSupply == null) ensureNativeArchive()
 
-            // ★ LV119 对齐参考项目：用 Coil3 加载原始字节，decoders 自动识别动图
-            val raw = withContext(Dispatchers.IO) { engine?.loadPageRaw(pageList[idx], treePath) }
+            val supply = remotePageSupply
+            if (supply == null) {
+                // ===== 本地路径（2026-09-05 回退 v1.2 方案：用户裁定 + OOM 修复）=====
+                //   上个会话把本地翻页改成 loadPageRaw 读原图字节 → Coil 再解码（字节+Bitmap 双份内存），
+                //   512MB 堆 OOM 闪退（log_export_0905_214705 实锤：loadDirPageRaw 12~17MB 分配失败）。
+                //   v1.2 静图走 engine.loadPage（原生下采样 Bitmap）；动图走 peek + APNG4Android Drawable。
+                val meta = pageList[idx]
+                // ① 动图：peek 种类 → raw → APNG4Android Drawable → pageAnimDrawables
+                val kind: AnimKind = withContext(Dispatchers.IO) {
+                    runCatching { engine?.peekAnimKindFast(treePath, meta) }.getOrNull() ?: AnimKind.NONE
+                }
+                if (kind != AnimKind.NONE) {
+                    val animRaw = withContext(Dispatchers.IO) {
+                        runCatching { engine?.loadPageRaw(meta, treePath) }.getOrNull()
+                    }
+                    val drawable = animRaw?.let { r ->
+                        withContext(Dispatchers.IO) { runCatching { makeAnimDrawable(r, kind) }.getOrNull() }
+                    }
+                    if (drawable != null && animRaw != null) {
+                        synchronized(animRawCache) {
+                            animRawCache[idx] = animRaw
+                            while (animRawCache.size > 6) {
+                                val it = animRawCache.entries.iterator()
+                                if (it.hasNext()) { it.next(); it.remove() } else break
+                            }
+                        }
+                        pageAnimDrawables[idx] = drawable
+                        if (pageAnimFlags.none { it.pageIdx == idx }) {
+                            pageAnimFlags = pageAnimFlags + AnimFlag(idx, kind)
+                            animatedCount++
+                        }
+                        withContext(Dispatchers.Main) {
+                            val adapterPos = positionOf(idx)
+                            if (adapterPos >= 0 && adapterPos < (pagerAdapter?.itemCount ?: 0)) pagerAdapter?.notifyItemChanged(adapterPos, "anim")
+                        }
+                        return@launch
+                    }
+                    // drawable 构造失败 → 落入下方静图路径（静态首帧兜底，v1.2 同款降级）
+                }
+                // ② 静图：engine.loadPage（原生下采样，防 OOM）
+                var bmp = withContext(Dispatchers.IO) { engine?.loadPage(meta, treePath) }
+                com.mangareader.viewer.ArchiveEngine.d("PagerView", "loaded idx=$idx bmp=${bmp?.width}x${bmp?.height} source=${meta.source}")
+                if (bmp == null || bmp.isRecycled) {
+                    bitmapCache.remove(idx)
+                    return@launch
+                }
+                if (trimWhiteBorder && bmp.width > 10 && bmp.height > 10) {
+                    try {
+                        val trim = com.mangareader.viewer.ImageTrimmer.trimWhiteBorders(bmp, threshold = trimThreshold, whiteRatio = trimWhiteRatio, factor = 0.15f)
+                        bmp = com.mangareader.viewer.ImageTrimmer.applyTrim(bmp, trim)
+                    } catch (_: Exception) {}
+                }
+                try {
+                    val srHit = com.mangareader.sr.SrPipeline.attachOrSchedule(idx, bmp)
+                    if (srHit != null && !srHit.isRecycled) {
+                        bmp = srHit
+                    } else {
+                        com.mangareader.sr.SrPipeline.pollForResult(idx) { b -> injectUpscaledBitmap(idx, b) }
+                    }
+                } catch (_: Exception) {}
+                bitmapCache.put(idx, bmp)
+                withContext(Dispatchers.Main) {
+                    val adapterPos = positionOf(idx)
+                    if (adapterPos >= 0 && adapterPos < (pagerAdapter?.itemCount ?: 0)) pagerAdapter?.notifyItemChanged(adapterPos, "loaded")
+                }
+                return@launch
+            }
+
+            // ===== 远程（SMB/WebDAV）：原始字节 → Coil3 解码（动图自动识别），路径不变 =====
+            //   ★ SMB/WebDAV 页面供给抽象：smb:/webdav: 路径被 ArchiveEngine 守卫拦截，严禁回退 engine
+            val raw = withContext(Dispatchers.IO) { supply.loadPageRaw(idx) }
             if (raw == null) {
                 bitmapCache.remove(idx)
                 return@launch
@@ -1256,12 +1356,10 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                     val w = ssiv.width.toFloat()
                     val h = ssiv.height.toFloat()
                     if (w > 0 && bmp.width > 0) {
-                        val isTablet = ssiv.resources.configuration.smallestScreenWidthDp >= 600
-                        val scale = if (h > 0 && bmp.width > bmp.height && !landscapeZoom && isTablet) {
-                            minOf(w / bmp.width, h / bmp.height)
-                        } else {
-                            w / bmp.width
-                        }
+                        // ★ 初始缩放 = "哪边先到屏幕边界就停"（等比 contain，用户裁定 2026-09-06）：
+                        //   竖屏看竖页与旧 fit-width 完全一致（无变化）；横屏/平板看宽图不再上下溢出裁切。
+                        //   条漫是独立渲染路径（宽度贴满+纵向滚动）不受此影响。
+                        val scale = if (h > 0) minOf(w / bmp.width, h / bmp.height) else w / bmp.width
                         ssiv.setScaleAndCenter(scale, android.graphics.PointF(bmp.width / 2f, bmp.height / 2f))
                     }
                 }

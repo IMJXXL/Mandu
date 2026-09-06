@@ -16,14 +16,17 @@ android {
         applicationId = "com.mangareader"
         minSdk = 26
         targetSdk = 36
-versionCode = 24
-versionName = "1.2"
+versionCode = 27
+versionName = "1.2.3-smb"
 
         externalNativeBuild {
             cmake {
                 cppFlags += ""
                 arguments += "-DANDROID_STL=c++_shared"
                 arguments += "-DCMAKE_BUILD_PARALLEL_LEVEL=1"
+                // ★ Rust 动图 WebP 解码器（task 8 自研）：libwebp-sys2 需 nightly 工具链，
+                //   stable 构建报 E0554——待装 nightly 后再启用；当前动图走 v1.2 弹窗+AnimPager 方案
+                // arguments += "-DENABLE_RUST_WEBP=ON"
                 // QNN SDK 路径（可选；不存在则编译无 NPU 的 sr_engine）
                 val qnnCandidates = listOfNotNull(
                     properties["QNN_SDK_DIR"] as? String,
@@ -79,6 +82,9 @@ versionName = "1.2"
     kotlin {
         compilerOptions {
             jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+            // 拷入的参考项目代码使用实验API（contracts/atomics），全局opt-in避免修改参考文件
+            freeCompilerArgs.add("-opt-in=kotlin.contracts.ExperimentalContracts")
+            freeCompilerArgs.add("-opt-in=kotlin.concurrent.atomics.ExperimentalAtomicApi")
         }
     }
 
@@ -145,6 +151,15 @@ dependencies {
     // zhanghai libarchive-android (open source, Apache 2.0)
     implementation(files("libs/libarchive-android.aar"))
 
+    // ★ §24 P1：APNG4Android source include（2026-09-05 恢复 v1.2 本地动图引擎，用户裁定）
+    //   4 个 module 在 app/lib/apng4android/（penfeizhou 3.0.5 源码，settings.gradle.kts 已 include）
+    implementation(project(":frameanimation"))
+    implementation(project(":apng"))
+    implementation(project(":awebp"))
+    implementation(project(":gif"))
+    // ★ §24 P3c-P8：FrameAnimationDrawable 间接 extends Animatable2Compat，显式声明保证编译可见
+    implementation("androidx.vectordrawable:vectordrawable-animated:1.1.0")
+
     // SMB - smbj (SMB protocol library, same version as reference project)
     implementation("com.hierynomus:smbj:0.14.0")
 
@@ -154,6 +169,36 @@ dependencies {
     // splitties (reference project appCtx dependency, zero-modification compat)
     implementation("com.louiscad.splitties:splitties-appctx:3.0.0")
     implementation("com.louiscad.splitties:splitties-systemservices:3.0.0")
+
+    // kotlinx-io (reference project core/files dependency)
+    implementation("org.jetbrains.kotlinx:kotlinx-io-core:0.9.0")
+
+    // kotlinx-datetime (reference project util dependency)
+    implementation("org.jetbrains.kotlinx:kotlinx-datetime:0.8.0")
+
+    // kotlinx-serialization-cbor (GalleryPreview CborArray)
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-cbor:1.11.0")
+
+    // ktor (WebDAV HTTP client)
+    implementation("io.ktor:ktor-client-core:3.5.0")
+    implementation("io.ktor:ktor-client-android:3.5.0")
+    implementation("io.ktor:ktor-client-cio:3.5.0")
+
+    // Arrow-kt (reference project autoCloseScope/Either/bracketCase)
+    implementation(platform("io.arrow-kt:arrow-stack:2.2.2.1"))
+    implementation("io.arrow-kt:arrow-fx-coroutines")
+    implementation("io.arrow-kt:arrow-functions")
+    implementation("io.arrow-kt:arrow-resilience")
+
+    // logcat (reference project core/util logging)
+    implementation("com.squareup.logcat:logcat:0.4")
+
+    // androidx datastore (reference project preferences)
+    implementation("androidx.datastore:datastore-preferences:1.2.1")
+
+    // androidx paging (reference project DAO paging)
+    implementation("androidx.paging:paging-compose:3.5.0")
+    implementation("androidx.room:room-paging:2.7.0")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 

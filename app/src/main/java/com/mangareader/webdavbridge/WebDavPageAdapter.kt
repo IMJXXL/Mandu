@@ -1,0 +1,149 @@
+package com.mangareader.webdavbridge
+
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import com.hippo.ehviewer.gallery.NavigationKind
+import com.hippo.ehviewer.gallery.PageLoader
+import com.hippo.ehviewer.gallery.ReaderNavigation
+import com.hippo.ehviewer.image.ByteBufferSource
+import com.hippo.ehviewer.image.PathSource
+import com.mangareader.native.RemotePageSupply
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
+
+/**
+ * WebDAV 阅读会话 + 页面供给（design.md 2.2.2 WebDavPageAdapter）。
+ * 与 SmbPageAdapter 同构（design 14.2：adapter 侧统一订阅需求/提取完成信号，无逻辑差异）。
+ */
+class WebDavPageAdapter(
+    @Suppress("unused") private val readerView: android.view.View? = null,
+    private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
+) : RemotePageSupply {
+
+    private var loaderReady = CompletableDeferred<PageLoader>()
+    private val closeSignal = CompletableDeferred<Unit>()
+    private val closed = AtomicBoolean(false)
+
+    @Volatile
+    private var sourceRef: com.hippo.ehviewer.library.ArchiveByteSource? = null
+
+    @Volatile
+    private var pageCountField: Int = 0
+
+    override val pageCount: Int get() = pageCountField
+
+    val source: com.hippo.ehviewer.library.ArchiveByteSource? get() = sourceRef
+
+    suspend fun attach(loader: PageLoader, source: com.hippo.ehviewer.library.ArchiveByteSource?) {
+        sourceRef = source
+        var last = loader.size
+        var stable = 0
+        val t0 = System.currentTimeMillis()
+        while (stable < 2 && System.currentTimeMillis() - t0 < PAGE_SIZE_STABILIZE_TIMEOUT_MS) {
+            delay(250)
+            val s = loader.size
+            if (s == last) stable++ else { last = s; stable = 0 }
+        }
+        pageCountField = last
+        loaderReady.complete(loader)
+    }
+
+    suspend fun awaitReady(): PageLoader = loaderReady.await()
+
+    suspend fun awaitClose() = closeSignal.await()
+
+    fun failAsync(t: Throwable) {
+        if (!loaderReady.isCompleted) loaderReady.completeExceptionally(t)
+        closeSignal.complete(Unit)
+    }
+
+    /** RANGE 降级重开前重置就绪信号（首个 loader 打开失败/中途换源时使用） */
+    fun resetForRetry() {
+        if (!closed.get()) loaderReady = CompletableDeferred()
+    }
+
+    override suspend fun loadPageRaw(index: Int): ByteArray? = withContext(Dispatchers.IO) {
+        try {
+            val loader = loaderReady.await()
+            driveAndAwaitExtract(loader, index)
+            readPageBytes(loader, index)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (t: Throwable) {
+            android.util.Log.w(TAG, "loadPageRaw($index) failed: ${t.message}")
+            null
+        }
+    }
+
+    override suspend fun loadBitmap(index: Int): Bitmap? {
+        val raw = loadPageRaw(index) ?: return null
+        // 大图防护：先解 bounds，超过屏幕短边 2 倍则按比例采样（防远程 8K 大图 OOM）
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(raw, 0, raw.size, bounds)
+        val opts = BitmapFactory.Options()
+        var sample = 1
+        val maxEdge = maxOf(bounds.outWidth, bounds.outHeight)
+        val screenMax = readerView?.resources?.displayMetrics?.let { maxOf(it.widthPixels, it.heightPixels) } ?: 2560
+        while (maxEdge / (sample * 2) >= screenMax * 2) sample *= 2
+        opts.inSampleSize = sample
+        return BitmapFactory.decodeByteArray(raw, 0, raw.size, opts)
+    }
+
+    override suspend fun close() {
+        if (closed.getAndSet(true)) return
+        closeSignal.complete(Unit)
+        delay(150)
+        scope.cancel()
+    }
+
+    private suspend fun driveAndAwaitExtract(loader: PageLoader, index: Int) {
+        val deadline = System.currentTimeMillis() + PAGE_WAIT_TIMEOUT_MS
+        var lastNavigate = 0L
+        while (System.currentTimeMillis() < deadline) {
+            if (isPageAvailable(loader, index)) return
+            val now = System.currentTimeMillis()
+            if (now - lastNavigate > 1500) {
+                lastNavigate = now
+                runCatching { loader.navigate(ReaderNavigation(index, index..index, NavigationKind.Settled)) }
+            }
+            delay(80)
+        }
+        android.util.Log.w(TAG, "page $index extract timeout (${loader.javaClass.simpleName})")
+    }
+
+    private fun isPageAvailable(loader: PageLoader, index: Int): Boolean = try {
+        loader.openSource(index).close()
+        true
+    } catch (_: Exception) {
+        false
+    }
+
+    private fun readPageBytes(loader: PageLoader, index: Int): ByteArray? = try {
+        val src = loader.openSource(index)
+        try {
+            when (src) {
+                is PathSource -> java.io.File(src.source.toString()).takeIf { it.isFile }?.readBytes()
+                is ByteBufferSource -> ByteArray(src.source.remaining()).also { src.source.get(it) }
+                else -> null
+            }
+        } finally {
+            runCatching { src.close() }
+        }
+    } catch (t: Throwable) {
+        android.util.Log.w(TAG, "readPageBytes($index): ${t.message}")
+        null
+    }
+
+    companion object {
+        private const val TAG = "WebDavPageAdapter"
+        private const val PAGE_WAIT_TIMEOUT_MS = 30_000L
+        private const val PAGE_SIZE_STABILIZE_TIMEOUT_MS = 8_000L
+    }
+}

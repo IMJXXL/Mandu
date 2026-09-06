@@ -5,6 +5,7 @@ import android.content.pm.ActivityInfo
 import android.content.Context
 import android.content.SharedPreferences
 import android.graphics.Bitmap
+import android.graphics.drawable.Drawable
 import android.util.Log
 import android.view.View
 import android.widget.FrameLayout
@@ -225,6 +226,30 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
     var saveJob by remember { mutableStateOf<Job?>(null) }
     var activePagerRef by remember { mutableStateOf<com.mangareader.native.PagerReaderView?>(null) }
     var activeWebtoonRef by remember { mutableStateOf<com.mangareader.native.WebtoonReaderView?>(null) }
+
+    // ★ SMB/WebDAV 远程阅读会话（smb_embed_lv119 任务4.3/14.4）：非 null 时阅读器页面走远程供给
+    var smbSession by remember { mutableStateOf<com.mangareader.native.RemotePageSupply?>(null) }
+    // ★ 不支持格式占位（任务6.2/16.2）：filePath to kind("smb"/"webdav")
+    var smbUnsupportedInfo by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var smbDownloadBusy by remember { mutableStateOf(false) }
+
+    // ★ 远程供给挂接：视图随模式切换整体重建（key 五元组），这里响应式重挂到当前活跃视图
+    LaunchedEffect(smbSession, activePagerRef, activeWebtoonRef) {
+        val s = smbSession
+        activePagerRef?.remotePageSupply = s
+        activeWebtoonRef?.remotePageSupply = s
+    }
+    DisposableEffect(smbSession) {
+        val s = smbSession
+        onDispose {
+            // 捕获 effect 创建时的会话：smbSession 已换新时这里关闭的是旧会话
+            if (s != null) {
+                activePagerRef?.remotePageSupply = null
+                activeWebtoonRef?.remotePageSupply = null
+                scope.launch(Dispatchers.IO) { runCatching { s.close() } }
+            }
+        }
+    }
 
     // ★ §24 P9 Compose state：动图对话框
     var showAnimSwitchDialog by remember { mutableStateOf(false) }
@@ -455,6 +480,87 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
         }
     }
 
+    /** 建立远程供给会话：页面元表 + 进度恢复（与本地 completed→跳第1页 语义一致） */
+    fun attachRemoteSession(
+        supply: com.mangareader.native.RemotePageSupply,
+        saved: com.mangareader.data.ReadingProgress?,
+        targetPage: Int,
+    ): List<com.mangareader.viewer.ArchiveEngine.PageMeta> {
+        smbSession = supply
+        val pages = (0 until supply.pageCount.coerceAtLeast(0)).map {
+            com.mangareader.viewer.ArchiveEngine.PageMeta(it, "", "", name = "")
+        }
+        pageList = pages
+        val lastPage = if (saved?.completed == true) 0 else (saved?.lastPage ?: 0)
+        cur = (if (targetPage >= 0) targetPage else lastPage).coerceIn(0, (pages.size - 1).coerceAtLeast(0))
+        viewing = true
+        loading = false
+        return pages
+    }
+    /**
+     * ★ SMB/WebDAV 远程阅读入口（smb_embed_lv119 任务4.1-4.3 / 14.1-14.4）。
+     * Router 返回 Supported → 建供给会话 + 页面元表 + 恢复进度；
+     * Unsupported → 占位 UI（下载按钮）；Blocked/Failed → toast。
+     */
+    suspend fun enterRemoteReader(
+        b: com.mangareader.data.Book,
+        path: String,
+        targetPage: Int,
+        isSmb: Boolean,
+    ): List<com.mangareader.viewer.ArchiveEngine.PageMeta> {
+        loading = true
+        smbUnsupportedInfo = null
+        try {
+            val saved = withContext(Dispatchers.IO) {
+                runCatching { dao.getProgress(b.id, path) }.getOrNull()
+            }
+            val resumePage = if (targetPage >= 0) targetPage else (saved?.lastPage ?: 0)
+            if (isSmb) {
+                when (val r = com.mangareader.smbbridge.SmbBookRouter.openSmbBook(path, resumePage)) {
+                    is com.mangareader.smbbridge.SmbBookRouter.OpenResult.Supported ->
+                        return attachRemoteSession(r.supply, saved, targetPage)
+                    is com.mangareader.smbbridge.SmbBookRouter.OpenResult.Unsupported -> {
+                        smbUnsupportedInfo = path to "smb"
+                        viewing = true
+                        loading = false
+                        return emptyList()
+                    }
+                    is com.mangareader.smbbridge.SmbBookRouter.OpenResult.Blocked -> {
+                        android.widget.Toast.makeText(ctx, "SMB 需要 Android 12+", android.widget.Toast.LENGTH_SHORT).show()
+                        viewing = false; loading = false; return emptyList()
+                    }
+                    is com.mangareader.smbbridge.SmbBookRouter.OpenResult.Failed -> {
+                        android.widget.Toast.makeText(ctx, r.message, android.widget.Toast.LENGTH_SHORT).show()
+                        viewing = false; loading = false; return emptyList()
+                    }
+                }
+            } else {
+                when (val r = com.mangareader.webdavbridge.WebDavBookRouter.openWebDavBook(path, resumePage)) {
+                    is com.mangareader.webdavbridge.WebDavBookRouter.OpenResult.Supported ->
+                        return attachRemoteSession(r.supply, saved, targetPage)
+                    is com.mangareader.webdavbridge.WebDavBookRouter.OpenResult.Unsupported -> {
+                        smbUnsupportedInfo = path to "webdav"
+                        viewing = true
+                        loading = false
+                        return emptyList()
+                    }
+                    is com.mangareader.webdavbridge.WebDavBookRouter.OpenResult.Failed -> {
+                        android.widget.Toast.makeText(ctx, r.message, android.widget.Toast.LENGTH_SHORT).show()
+                        viewing = false; loading = false; return emptyList()
+                    }
+                }
+            }
+        } catch (t: Throwable) {
+            android.util.Log.w("Reader", "enterRemoteReader failed", t)
+            android.widget.Toast.makeText(ctx, "打开失败：${t.message?.take(80)}", android.widget.Toast.LENGTH_SHORT).show()
+            viewing = false
+            loading = false
+            return emptyList()
+        }
+    }
+
+
+
     /**
      * ★ §23 阅读记忆方案 — 统一"进入阅读"入口，对齐 mihon `ReaderViewModel.init` 的恢复语义。
      * 不论从书架直点 / openFolder 进子目录 / openItem 进嵌套 / switchToNext 切下一卷 / TOC 跳章 ——
@@ -467,6 +573,10 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
     /** @param targetPage ≥0 = 书签直跳目标页（覆盖 progress 恢复值）；默认 -1 走既有恢复逻辑 */
     suspend fun enterReader(path: String, targetPage: Int = -1): List<com.mangareader.viewer.ArchiveEngine.PageMeta> {
         val b = book ?: return emptyList()
+        // ★ SMB/WebDAV 分流（smb_embed_lv119 任务4.3/14.4）：远程书走 Router 会话，
+        //   ArchiveEngine（有 smb:/webdav: 路径守卫）不参与；本地路径零改动
+        if (path.startsWith("smb:")) return enterRemoteReader(b, path, targetPage, isSmb = true)
+        if (path.startsWith("webdav:")) return enterRemoteReader(b, path, targetPage, isSmb = false)
         val pages = withContext(Dispatchers.IO) {
             try { engine.listPages(path) } catch (_: Exception) { emptyList() }
         }
@@ -576,8 +686,61 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
             }
         }
         viewing = true
-        // ★ LV119 对齐：动图由 Coil3 全局 decoders（AnimatedWebP + AnimatedImageDecoder）自动识别，
-        //   不再批量 peek / 弹窗 / 专属动图模式。useAnimPager 恒 false，统一走 PagerReaderView/WebtoonReaderView。
+        // ★ §34.5：进卷批量 peek 判定动图卷。
+        //   旧设计 (§24)：webtoon/pager onAnimDetected 单页 peek 累计阈值 → 弹"切翻页"框，
+        //   缺点：(1) 阈值时机被动（用户翻到位后才 pop）(2) pager 自身的动图 workaround 复杂时序带来闪白/回翻白/idx 23 白一系列问题
+        //   新设计 (§34.5)：enterReader 末尾后台并发 peek 全卷所有页，算动图比例 → 比例 × 达阈值 → 弹动图专属视图入口对话框
+        //   确认 → useAnimPager=true → NativeReaderScreen 路由到 AnimPagerReaderView（与 PagerReaderView 并存独立的有自己的状态机）
+        //   拒绝 → 持久化 choice=4，下次再不弹；user 仍能看 PagerReaderView 里 workaround 路径动图（降级兼容）
+        //   优化：≤30 页全 peek；>30 页采样首 N 页（首 10 页 + 等 10 步采样），避免 1000 页全 peek 卡语言。
+        //   choice 已为 3 → 上次同卷确认了进动图视图 → 直接 useAnimPager=true 不再弹
+        //   choice 已为 4 → 上次同卷拒绝过 → 不弹
+        //   ★ 时机：choice 服务于"用户已答"语义；choice==3 持久化后下次同卷直进动图视图，省一次弹窗；
+        //     choice==4 持久化后下次同卷仍走普通 pager（看 workaround 动图 fallback）。
+        // ★ v1.13 T10（用户裁定）：仅 choice==3（已进过动图视图）不再询问；
+        //   其余情况（含历史 choice=4）每次打开都询问——普通模式已支持静态首帧显示
+        if (animDialogChoiceForChapter == 3) {
+            useAnimPager = true
+        } else if (pages.isNotEmpty()) {
+            animPeeking = true
+            scope.launch {
+                try {
+                    // ★ 动图打开提速（2026-08-27）：采样 5→3 页。动图卷动图占比极高，3 页足够判定；
+                    //   第 1 页常为静态封面 → 门限 3→2（比例 ≥60% 不变）。漏弹无损（普通视图有静图兜底）。
+                    //   ★ ANIMT 探针：tag=ANIMT 计时采样全程，装进正式包用于实测定位剩余瓶颈。
+                    val t0 = android.os.SystemClock.elapsedRealtime()
+                    val sampleSize = minOf(3, pages.size)
+                    val sampleIndices = (0 until sampleSize).toList()
+                    var animCount = 0
+                    // 并发 peek 但限制并发度 4（避免磁盘 IO 暴冲）
+                    val sem = Semaphore(4)
+                    val jobs = sampleIndices.map { idx ->
+                        async(Dispatchers.IO) {
+                            sem.withPermit {
+                                try {
+                                    val t1 = android.os.SystemClock.elapsedRealtime()
+                                    val k = engine.peekAnimKindFast(path, pages[idx])
+                                    android.util.Log.i("ANIMT", "peekFast idx=$idx kind=$k ${android.os.SystemClock.elapsedRealtime() - t1}ms bytes=${engine.lastPeekBytes}")
+                                    k
+                                } catch (_: Exception) { com.mangareader.viewer.AnimKind.NONE }
+                            }
+                        }
+                    }
+                    val kinds = jobs.awaitAll()
+                    for (k in kinds) if (k != com.mangareader.viewer.AnimKind.NONE) animCount++
+                    val sampleRatio = if (sampleIndices.isNotEmpty()) animCount.toFloat() / sampleIndices.size else 0f
+                    // ★ 阈值：门限 2（ANIM_PROMPT_THRESHOLD）+ 比例 ≥60%（采 3 页时即 ≥2/3）
+                    if (animCount >= com.mangareader.ui.ReaderParams.ANIM_PROMPT_THRESHOLD && sampleRatio >= 0.60f) {
+                        animSuggestedCount = animCount
+                        showAnimSwitchDialog = true
+                    }
+                    android.util.Log.i("ANIMT", "sample done total=${android.os.SystemClock.elapsedRealtime() - t0}ms animCount=$animCount/$sampleSize")
+                } catch (t: Throwable) {
+                } finally {
+                    animPeeking = false
+                }
+            }
+        }
         return pages
     }
 
@@ -593,6 +756,38 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
         val bid = book?.id
         if (showToc && bid != null) {
             bookmarks = withContext(Dispatchers.IO) { runCatching { dao.getBookmarksForBook(bid) }.getOrDefault(emptyList()) }
+        }
+    }
+    /** ★ 不支持格式下载（任务6.1/16.1）：下载完成 → 书籍改写为本地行 → 直接打开本地阅读 */
+    fun downloadRemoteUnsupported(filePath: String, kind: String) {
+        if (smbDownloadBusy) return
+        smbDownloadBusy = true
+        val b = book
+        scope.launch {
+            val localPath = withContext(Dispatchers.IO) {
+                try {
+                    if (kind == "smb") com.mangareader.smbbridge.SmbUnsupportedFormatHandler.downloadWhole(filePath)
+                    else com.mangareader.webdavbridge.WebDavUnsupportedFormatHandler.downloadWhole(filePath)
+                } catch (t: Throwable) {
+                    android.util.Log.w("Reader", "downloadWhole failed", t); null
+                }
+            }
+            smbDownloadBusy = false
+            if (localPath == null) {
+                android.widget.Toast.makeText(ctx, "下载失败，可重试", android.widget.Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+            android.widget.Toast.makeText(ctx, "下载完成，正在打开…", android.widget.Toast.LENGTH_SHORT).show()
+            // filePath 改写为本地路径（spec 5.5.1 规则 4），本地阅读器直接打开
+            if (b != null) {
+                val ext = localPath.substringAfterLast('.', "").lowercase()
+                withContext(Dispatchers.IO) {
+                    runCatching { dao.rehomeBookToLocal(b.id, localPath, ext) }
+                }
+            }
+            smbUnsupportedInfo = null
+            smbSession?.let { old -> smbSession = null; scope.launch(Dispatchers.IO) { runCatching { old.close() } } }
+            enterReader(localPath)
         }
     }
 
@@ -1532,6 +1727,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
                             doublePageSplit = config.doublePageSplit,
                             verticalPager = verticalPagerEffective,
                             useAnimPager = useAnimPager,
+                            remoteSupply = smbSession,
                             modifier = Modifier.fillMaxSize(),
                             onContainerReady = { readerContainerRef = it },
                             onPageChanged = { newCur ->
@@ -1589,6 +1785,21 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
                             }
                         )
                         } // ★ v1.13 C-3 key(navStack, vertical, isRtl, verticalPager, useAnimPager) end
+                        // ★ SMB/WebDAV 不支持格式占位（任务6.2/16.2）：不透明覆盖层 + 下载按钮
+                        val remoteUnsupported = smbUnsupportedInfo
+                        if (remoteUnsupported != null) {
+                            RemoteUnsupportedOverlay(
+                                kind = remoteUnsupported.second,
+                                busy = smbDownloadBusy,
+                                onDownload = { downloadRemoteUnsupported(remoteUnsupported.first, remoteUnsupported.second) },
+                                onBack = {
+                                    smbUnsupportedInfo = null
+                                    viewing = false
+                                    loading = false
+                                },
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
                         // 超分前后对比叠层（底栏"对比"按钮开启后显示，拖动分割线看原图/超分图）
                         if (viewing) {
                             SrCompareOverlay(
@@ -1765,6 +1976,49 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
     }
 
 
+    //     - 选择 3 → useAnimPager=true → NativeReaderScreen 路由到 AnimPagerReaderView
+    //     - 选择 4 → useAnimPager=false → 保持当前 mode 下的普通视图
+    //   旧 choice=1/2 的持久化值含义不变——老数据继续生效（无迁移动作）：
+    //     - choice=1 原切翻页，保留旧 mode 行为（mode 已被切到翻页），不会重弹
+    //     - choice=2 原保持条漫，不会重弹
+    //     - choice=3/4 走新流程
+    if (showAnimSwitchDialog) {
+        AlertDialog(
+            onDismissRequest = { showAnimSwitchDialog = false },
+            title = { Text("检测到动图") },
+            text = { Text("本卷含动图。\n\n普通模式下动图无法正常播放（会显示首帧、闪白或卡顿）。\n是否进入动图专属视图？") },
+            confirmButton = {
+                // ★ "进入动图视图" → choice=3 → useAnimPager=true
+                //   mode 维持用户当前选择 —— AnimPagerReaderView 内部据 verticalPager 参数决定竖向/横向翻页
+                //   条漫模式 (VERT/WEBTOON_GAP) 下进动图视图时按竖向翻页 VERT_PAGER 风格展示
+                TextButton(onClick = {
+                    val chPath = navStack.lastOrNull() ?: book?.filePath ?: ""
+                    useAnimPager = true
+                    animDialogChoiceForChapter = 3
+                    scope.launch {
+                        try {
+                            book?.let { b ->
+                                // ★ v1.11：原 upsertProgress(...cur,false) 会把当前页码/未完成态覆盖进已有进度行
+                                //   （污染源之一）。改用 INSERT OR IGNORE 占位——仅在该卷从无进度行时补建，
+                                //   已有行原样保留，随后 setAnimDialogChoice 纯 UPDATE 只动 choice 列。
+                                dao.preinsertProgressIfAbsent(b.id, chPath)
+                                dao.setAnimDialogChoice(b.id, chPath, 3)
+                            }
+                        } catch (_: Exception) {}
+                    }
+                    showAnimSwitchDialog = false
+                    }) { Text("进入动图视图") }
+            },
+            dismissButton = {
+                // ★ v1.13 T10（用户裁定）："保持普通"不再持久化 choice=4——每次打开该卷仍会询问
+                TextButton(onClick = {
+                    animDialogChoiceForChapter = 4
+                    showAnimSwitchDialog = false
+                    }) { Text("保持普通") }
+            }
+        )
+    }
+
     if (showSrPanel) {
         com.mangareader.ui.SrPanel(
             bookId = book?.id ?: -1L,
@@ -1924,20 +2178,43 @@ private fun ItemGrid(items: List<ArchiveEngine.Item>, engine: ArchiveEngine, bgC
 
 @Composable
 private fun ItemCard(item: ArchiveEngine.Item, engine: ArchiveEngine, bgColor: Color, progress: List<ReadingProgress>, tap: () -> Unit) {
-    // ★ LV119：文件夹内子项封面仍用 loadCoverForItem + Bitmap（静态），待后续对齐
+    // ★ 动态封面开关（2026-09-06 补全 a1-a7 动图）：开 = z:/cv: 路径走 Coil 动图管线（小尺寸解码）；
+    //   关（默认）= loadCoverForItem 静态 Bitmap（v1.2 行为）
+    val itemCtx = LocalContext.current
+    val dynamicCovers = remember(item.doc, item.subPath) {
+        itemCtx.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE).getBoolean("dynamic_covers", false)
+    }
+    val itemCoverPath = remember(item.auth, item.tree, item.doc, item.subPath) {
+        if (item.subPath.isNotEmpty()) "z:${item.auth}|${item.tree}|${item.doc}|${item.subPath}"
+        else "cv:${item.auth}|${item.tree}|${item.doc}|${item.name}"
+    }
     var cover by remember(item.doc, item.subPath) { mutableStateOf<Bitmap?>(null) }
-    LaunchedEffect(item.doc, item.subPath) {
+    LaunchedEffect(item.doc, item.subPath, dynamicCovers) {
+        // 静态位图始终预载（动图失败时的兜底），动态层由 AsyncImage 覆盖其上
         cover = null
         withContext(Dispatchers.IO) { try { cover = engine.loadCoverForItem(item) } catch (_: Exception) { cover = null } }
     }
     val status = remember(progress, item.name) { com.mangareader.ui.statusForItem(item, progress) }
     Column(Modifier.clip(RoundedCornerShape(12.dp)).clickable(onClick = tap).shadow(4.dp, RoundedCornerShape(12.dp))) {
         Box(Modifier.fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)).background(bgColor.copy(alpha = 0.8f)), contentAlignment = Alignment.Center) {
+            // ★ 动态封面：开 = 静态首帧垫底 + Coil 动图叠加（动图失败/加载中显示静态图，不再空白）；
+            //   关 = 静态首帧。修复（2026-09-06 实测）：原写法动态分支只渲染 AsyncImage，z:/cv: 请求失败即纯空白。
             if (cover != null) {
                 val bitmap = cover!!
                 Canvas(modifier = Modifier.fillMaxSize()) {
                     drawImage(bitmap.asImageBitmap())
                 }
+            }
+            if (dynamicCovers) {
+                coil3.compose.AsyncImage(
+                    model = coil3.request.ImageRequest.Builder(itemCtx)
+                        .data(com.mangareader.viewer.CoverData(itemCoverPath))
+                        .size(com.hippo.ehviewer.coil.CoverThumb.decodePx(itemCtx.resources.displayMetrics.widthPixels / 2))
+                        .build(),
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                )
             }
             Box(Modifier.fillMaxWidth().height(36.dp).align(Alignment.BottomCenter).background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.5f)))))
             // ★ §37(17) 状态徽章——三态都画（已读完绿、阅读中橙、未读红），替代原"文件夹/压缩包"类型标签
@@ -1949,6 +2226,48 @@ private fun ItemCard(item: ArchiveEngine.Item, engine: ArchiveEngine, bgColor: C
             val luminance = bgColor.red * 0.299f + bgColor.green * 0.587f + bgColor.blue * 0.114f
             val textColor = if (luminance > 0.5f) Color(0xFF333333) else Color(0xFFCCCCCC)
             Text(item.name, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, color = textColor)
+        }
+    }
+}
+
+/**
+ * ★ SMB/WebDAV 不支持格式占位（smb_embed_lv119 任务6.2/16.2，spec 5.5/5.11）：
+ * 显示占位图 + "下载到本地后查看"按钮；WebDAV 文案加"此格式需要完整下载"。
+ */
+@Composable
+private fun RemoteUnsupportedOverlay(
+    kind: String,
+    busy: Boolean,
+    onDownload: () -> Unit,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier
+            .background(Color(0xFF141414))
+            .clickable(enabled = false) {},
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Text(
+                text = if (kind == "webdav") "此格式需要完整下载后查看" else "该格式暂不支持在线阅读",
+                color = Color(0xFFDDDDDD),
+                fontSize = 16.sp,
+            )
+            Text(
+                text = "mobi / azw3 等格式需下载到本地后阅读",
+                color = Color(0xFF888888),
+                fontSize = 12.sp,
+            )
+            Button(onClick = onDownload, enabled = !busy) {
+                Text(if (busy) "下载中…" else "下载到本地后查看")
+            }
+            Text(
+                text = "返回书架",
+                color = Color(0xFF9AA7FF),
+                fontSize = 13.sp,
+                modifier = Modifier.clickable { onBack() },
+            )
         }
     }
 }

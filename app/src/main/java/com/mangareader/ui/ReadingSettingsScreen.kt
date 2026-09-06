@@ -176,6 +176,25 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
                 Switch(checked = config.isEinkMode, onCheckedChange = { config = config.copy(isEinkMode = it); config.save(ctx) })
             }
 
+            // ★ 动态封面开关（2026-09-06 用户要求）：默认关=静态首帧（更流畅省电）；
+            //   开启后书架/文件夹子项封面以动图展示。注意"自动放大横向图片"开关在阅读器内设置面板（同一配置已有入口，此处不重复）
+            Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("动态封面", fontSize = 16.sp)
+                    Text("开启后书架与文件夹子项的动图封面会播放动画；关闭（默认）全部显示静态首帧，更流畅省电。重新进入书架后生效", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                // ★ 修复"点不动/墨水屏一点它就开"：组合期直读 SharedPreferences 不会触发重组，
+                //   改为本地状态驱动（写入即时反映，重进本屏时从 prefs 重新初始化）
+                var dynamicCovers by remember { mutableStateOf(prefs.getBoolean("dynamic_covers", false)) }
+                Switch(
+                    checked = dynamicCovers,
+                    onCheckedChange = {
+                        dynamicCovers = it
+                        prefs.edit().putBoolean("dynamic_covers", it).apply()
+                    },
+                )
+            }
+
             // PDF加载质量
             Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
                 Text("PDF加载质量", fontSize = 16.sp)
