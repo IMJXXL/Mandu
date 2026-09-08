@@ -19,6 +19,9 @@ interface RemotePageSupply {
     /** 页数（与阅读器 pageList 一致） */
     val pageCount: Int
 
+    /** 页数增长回调列表；supply 在 loadPageRaw 中检测到 loader.size 增长时逐个调用 */
+    val onPageCountGrow: MutableList<(newCount: Int) -> Unit>
+
     /** 原始页面字节；null = 该页暂不可用（阅读器按加载失败占位处理，不回退 ArchiveEngine） */
     suspend fun loadPageRaw(index: Int): ByteArray?
 

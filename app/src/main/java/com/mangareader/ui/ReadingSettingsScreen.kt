@@ -195,6 +195,23 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
                 )
             }
 
+            // ★ 长按保存图片开关（2026-09-07 用户要求）：默认关——翻页时误触长按会意外保存；
+            //   开启后翻页模式长按页面存相册 Pictures/漫读。条漫模式无长按存图（不受本开关影响）
+            Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("长按保存图片", fontSize = 16.sp)
+                    Text("开启后翻页阅读时长按页面可将当前图保存到相册；默认关闭，避免翻页时误触", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                var longPressSave by remember { mutableStateOf(prefs.getBoolean("long_press_save", false)) }
+                Switch(
+                    checked = longPressSave,
+                    onCheckedChange = {
+                        longPressSave = it
+                        prefs.edit().putBoolean("long_press_save", it).apply()
+                    },
+                )
+            }
+
             // PDF加载质量
             Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
                 Text("PDF加载质量", fontSize = 16.sp)

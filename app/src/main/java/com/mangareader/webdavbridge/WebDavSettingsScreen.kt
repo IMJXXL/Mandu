@@ -1,5 +1,7 @@
 package com.mangareader.webdavbridge
 
+import com.mangareader.smbbridge.CacheEntry
+import com.mangareader.smbbridge.CacheManagementCard
 import com.mangareader.smbbridge.IntRow
 import com.mangareader.smbbridge.SectionCard
 import com.mangareader.smbbridge.SwitchRow
@@ -40,22 +42,20 @@ import kotlinx.coroutines.withContext
  * 响应式：PrefDelegate.valueFlow() collectAsState；写入走 value setter（DataStore 持久化）。
  * 缓存管理卡片：分类容量统计 + 一键清理（原服务器页顶栏入口迁移至此，更具美感）。
  */
+private val WEBDAV_CACHE_ENTRIES = listOf(
+    CacheEntry("WebDAV 页缓存", "整档下载与单页缓存", "cache/webdav_cache"),
+    CacheEntry("WebDAV 浏览缩略图", "浏览目录时图片文件的缩略图", "cache/webdav_thumb_cache"),
+    CacheEntry("流式页缓存", "ZIP/TAR 归档页缓存（本地/SMB/WebDAV 共用）", "cache/archive_pages"),
+    CacheEntry("归档封面缩略图", "归档第一页封面（本地/SMB/WebDAV 共享）", "cache/archive_thumb"),
+    CacheEntry("RAR/7z 提取缓存", "RAR/CBR/7z 归档提取的页文件", "cache/solid_extract"),
+    CacheEntry("PDF/EPUB 提取缓存", "PDF/EPUB 文档提取的页文件", "cache/document_extract"),
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WebDavSettingsScreen(onBack: () -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
-    var cacheSizes by remember { mutableStateOf<List<Triple<String, String, Long>>>(emptyList()) }
-    var clearing by remember { mutableStateOf(false) }
-
-    suspend fun refreshSizes() = withContext(Dispatchers.IO) {
-        cacheSizes = listOf(
-            Triple("webdav_cache", "页缓存 / 整档下载", dirSize(ctx, "cache/webdav_cache")),
-            Triple("webdav_thumb_cache", "书架封面缩略图", dirSize(ctx, "cache/webdav_thumb_cache")),
-            Triple("archive_pages", "流式页缓存（SMB/WebDAV 共用）", dirSize(ctx, "cache/archive_pages")),
-        )
-    }
-    LaunchedEffect(clearing) { refreshSizes() }
 
     Scaffold(
         topBar = {
@@ -114,38 +114,7 @@ fun WebDavSettingsScreen(onBack: () -> Unit) {
                 }
             }
 
-            SectionCard("缓存管理") {
-                cacheSizes.forEach { (dir, label, size) ->
-                    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text(dir, fontSize = 14.sp)
-                            Text(label, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        Text(formatSize(size), fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-                Button(
-                    onClick = {
-                        scope.launch {
-                            clearing = true
-                            withContext(Dispatchers.IO) {
-                                listOf("cache/webdav_cache", "cache/webdav_thumb_cache", "cache/archive_pages").forEach { rel ->
-                                    java.io.File(ctx.applicationInfo.dataDir, rel).deleteRecursively()
-                                }
-                            }
-                            clearing = false
-                        }
-                    },
-                    enabled = !clearing,
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                ) { Text(if (clearing) "清理中…" else "清理全部 SMB 缓存") }
-                Text(
-                    "正在阅读的书不受影响，退出阅读后缓存会按需重建",
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 6.dp),
-                )
-            }
+            CacheManagementCard(ctx, scope, WEBDAV_CACHE_ENTRIES)
 
             Spacer(Modifier.height(24.dp))
         }
@@ -335,12 +304,20 @@ fun showCacheLimitDialog(activity: Activity, current: Int, onPick: (Int) -> Unit
 suspend fun clearServerBookCachesWebDav(serverId: Long, src: com.ehviewer.core.database.model.WebDavSourceEntity?, books: List<com.mangareader.data.Book>) {
     books.forEach { b ->
         val ref = WebDavPaths.parseBookPath(b.filePath) ?: return@forEach
-        val remote = ref.remotePath
-        val rel = remote.substringBefore(':')
+        val remoteRaw = ref.remotePath
+        val zipSplit = com.hippo.ehviewer.library.ZipAsDirListing.splitZipBrowsePath(remoteRaw)
+        val remote = if (zipSplit != null && zipSplit.second.isNotEmpty()) zipSplit.first else remoteRaw
         runCatching {
-            java.io.File(WebDavCache.thumbCachePath(serverId, rel).toString()).delete()
-            java.io.File(WebDavCache.cachePathForRemoteFile(serverId, remote).toString()).delete()
-            java.io.File(com.hippo.ehviewer.library.ArchiveStreamPageCache.dirFor("webdav:$serverId:$remote").toString()).deleteRecursively()
+            val pagePath = WebDavCache.cachePathForRemoteFile(serverId, remote)
+            java.io.File(pagePath.toString()).delete()
+            val uhdrPath = com.hippo.ehviewer.image.hdr.HdrConvertCache.uhdrSiblingOf(pagePath)
+            if (uhdrPath.toString() != pagePath.toString()) java.io.File(uhdrPath.toString()).delete()
+            WebDavCache.markAbsent(pagePath)
+            WebDavCache.markAbsent(uhdrPath)
+            val cacheKey = "webdav:$serverId:$remote"
+            java.io.File(com.hippo.ehviewer.library.ArchiveStreamPageCache.dirFor(cacheKey).toString()).deleteRecursively()
+            java.io.File(com.hippo.ehviewer.library.SolidExtractCache.dirFor(cacheKey).toString()).deleteRecursively()
+            java.io.File(com.hippo.ehviewer.library.DocumentExtractCache.dirFor(cacheKey).toString()).deleteRecursively()
         }
     }
 }

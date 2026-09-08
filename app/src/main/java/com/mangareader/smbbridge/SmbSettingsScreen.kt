@@ -32,22 +32,20 @@ import kotlinx.coroutines.withContext
  * 响应式：PrefDelegate.valueFlow() collectAsState；写入走 value setter（DataStore 持久化）。
  * 缓存管理卡片：分类容量统计 + 一键清理（原服务器页顶栏入口迁移至此，更具美感）。
  */
+private val SMB_CACHE_ENTRIES = listOf(
+    CacheEntry("SMB 页缓存", "整档下载与单页缓存", "cache/smb_cache"),
+    CacheEntry("SMB 浏览缩略图", "浏览目录时图片文件的缩略图", "cache/smb_thumb_cache"),
+    CacheEntry("流式页缓存", "ZIP/TAR 归档页缓存（本地/SMB/WebDAV 共用）", "cache/archive_pages"),
+    CacheEntry("归档封面缩略图", "归档第一页封面（本地/SMB/WebDAV 共享）", "cache/archive_thumb"),
+    CacheEntry("RAR/7z 提取缓存", "RAR/CBR/7z 归档提取的页文件", "cache/solid_extract"),
+    CacheEntry("PDF/EPUB 提取缓存", "PDF/EPUB 文档提取的页文件", "cache/document_extract"),
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SmbSettingsScreen(onBack: () -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
-    var cacheSizes by remember { mutableStateOf<List<Triple<String, String, Long>>>(emptyList()) }
-    var clearing by remember { mutableStateOf(false) }
-
-    suspend fun refreshSizes() = withContext(Dispatchers.IO) {
-        cacheSizes = listOf(
-            Triple("smb_cache", "页缓存 / 整档下载", dirSize(ctx, "cache/smb_cache")),
-            Triple("smb_thumb_cache", "书架封面缩略图", dirSize(ctx, "cache/smb_thumb_cache")),
-            Triple("archive_pages", "流式页缓存（SMB/WebDAV 共用）", dirSize(ctx, "cache/archive_pages")),
-        )
-    }
-    LaunchedEffect(clearing) { refreshSizes() }
 
     Scaffold(
         topBar = {
@@ -110,38 +108,7 @@ fun SmbSettingsScreen(onBack: () -> Unit) {
                 }
             }
 
-            SectionCard("缓存管理") {
-                cacheSizes.forEach { (dir, label, size) ->
-                    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text(dir, fontSize = 14.sp)
-                            Text(label, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        Text(formatSize(size), fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-                Button(
-                    onClick = {
-                        scope.launch {
-                            clearing = true
-                            withContext(Dispatchers.IO) {
-                                listOf("cache/smb_cache", "cache/smb_thumb_cache", "cache/archive_pages").forEach { rel ->
-                                    java.io.File(ctx.applicationInfo.dataDir, rel).deleteRecursively()
-                                }
-                            }
-                            clearing = false
-                        }
-                    },
-                    enabled = !clearing,
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                ) { Text(if (clearing) "清理中…" else "清理全部 SMB 缓存") }
-                Text(
-                    "正在阅读的书不受影响，退出阅读后缓存会按需重建",
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 6.dp),
-                )
-            }
+            CacheManagementCard(ctx, scope, SMB_CACHE_ENTRIES)
 
             Spacer(Modifier.height(24.dp))
         }
@@ -255,6 +222,87 @@ fun formatSize(bytes: Long): String = when {
     else -> "${"%.2f".format(bytes / (1024.0 * 1024.0 * 1024.0))} GB"
 }
 
+data class CacheEntry(val label: String, val subtitle: String, val dirRel: String)
+
+@Composable
+fun CacheManagementCard(
+    ctx: android.content.Context,
+    scope: kotlinx.coroutines.CoroutineScope,
+    entries: List<CacheEntry>,
+) {
+    var sizes by remember { mutableStateOf<Map<String, Long>>(emptyMap()) }
+    var clearingDir by remember { mutableStateOf<String?>(null) }
+    var clearingAll by remember { mutableStateOf(false) }
+    val imageLoader = coil3.SingletonImageLoader.get(ctx)
+
+    suspend fun refreshSizes() = withContext(Dispatchers.IO) {
+        val map = HashMap<String, Long>(entries.size)
+        for (e in entries) map[e.dirRel] = dirSize(ctx, e.dirRel)
+        sizes = map
+    }
+    LaunchedEffect(entries) { refreshSizes() }
+    LaunchedEffect(clearingDir, clearingAll) {
+        if (clearingDir == null && !clearingAll) refreshSizes()
+    }
+
+    SectionCard("缓存管理") {
+        entries.forEach { e ->
+            val size = sizes[e.dirRel] ?: 0L
+            val isClearing = clearingDir == e.dirRel
+            Row(
+                Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(e.label, fontSize = 15.sp)
+                    Text(e.subtitle, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Text(
+                    formatSize(size),
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(end = 8.dp),
+                )
+                TextButton(
+                    onClick = {
+                        scope.launch {
+                            clearingDir = e.dirRel
+                            withContext(Dispatchers.IO) {
+                                java.io.File(ctx.applicationInfo.dataDir, e.dirRel).deleteRecursively()
+                            }
+                            imageLoader.memoryCache?.clear()
+                            clearingDir = null
+                        }
+                    },
+                    enabled = !isClearing && !clearingAll,
+                ) { Text(if (isClearing) "…" else "清理", fontSize = 13.sp) }
+            }
+        }
+        Button(
+            onClick = {
+                scope.launch {
+                    clearingAll = true
+                    withContext(Dispatchers.IO) {
+                        entries.forEach { e ->
+                            java.io.File(ctx.applicationInfo.dataDir, e.dirRel).deleteRecursively()
+                        }
+                    }
+                    imageLoader.memoryCache?.clear()
+                    clearingAll = false
+                }
+            },
+            enabled = !clearingAll && clearingDir == null,
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+        ) { Text(if (clearingAll) "清理中…" else "全部清理") }
+        Text(
+            "正在阅读的书不受影响，退出阅读后缓存会按需重建",
+            fontSize = 11.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 6.dp),
+        )
+    }
+}
+
 // ── 阅读页缓存上限：预设/自定义/无上限（native 单选，与表单同思路） ──
 private val CACHE_LIMIT_OPTIONS = listOf(
     0L to "无上限（不自动清理）",
@@ -331,12 +379,20 @@ fun showCacheLimitDialog(activity: Activity, current: Int, onPick: (Int) -> Unit
 suspend fun clearServerBookCachesSmb(serverId: Long, src: com.ehviewer.core.database.model.SmbSourceEntity?, books: List<com.mangareader.data.Book>) {
     books.forEach { b ->
         val ref = SmbPaths.parseBookPath(b.filePath) ?: return@forEach
-        val remote = if (src?.share?.isBlank() == false) ref.rel else ref.fullRel
-        val rel = remote.substringBefore(':')
+        val remoteRaw = if (src?.share?.isBlank() == false) ref.rel else ref.fullRel
+        val zipSplit = com.hippo.ehviewer.library.ZipAsDirListing.splitZipBrowsePath(remoteRaw)
+        val remote = if (zipSplit != null && zipSplit.second.isNotEmpty()) zipSplit.first else remoteRaw
         runCatching {
-            java.io.File(SmbCache.thumbCachePath(serverId, rel).toString()).delete()
-            java.io.File(SmbCache.cachePathForRemoteFile(serverId, remote).toString()).delete()
-            java.io.File(com.hippo.ehviewer.library.ArchiveStreamPageCache.dirFor("smb:$serverId:$remote").toString()).deleteRecursively()
+            val pagePath = SmbCache.cachePathForRemoteFile(serverId, remote)
+            java.io.File(pagePath.toString()).delete()
+            val uhdrPath = com.hippo.ehviewer.image.hdr.HdrConvertCache.uhdrSiblingOf(pagePath)
+            if (uhdrPath.toString() != pagePath.toString()) java.io.File(uhdrPath.toString()).delete()
+            SmbCache.markAbsent(pagePath)
+            SmbCache.markAbsent(uhdrPath)
+            val cacheKey = "smb:$serverId:$remote"
+            java.io.File(com.hippo.ehviewer.library.ArchiveStreamPageCache.dirFor(cacheKey).toString()).deleteRecursively()
+            java.io.File(com.hippo.ehviewer.library.SolidExtractCache.dirFor(cacheKey).toString()).deleteRecursively()
+            java.io.File(com.hippo.ehviewer.library.DocumentExtractCache.dirFor(cacheKey).toString()).deleteRecursively()
         }
     }
 }

@@ -2083,10 +2083,15 @@ object SmbGateway {
             emptyList()
         }
         val deepNames = deepHidden.mapTo(HashSet()) { it.name }
+        val staleZipShells = if (zipFileNames.isEmpty()) {
+            emptySet()
+        } else {
+            ZipAsDirListing.staleZipDirectoryShellNames(cached, zipFileNames)
+        }
         val cachedZipAsDir = if (zipFileNames.isEmpty()) {
             emptySet()
         } else {
-            ZipAsDirListing.cachedDirectZipAsDirNames(cached)
+            ZipAsDirListing.cachedDirectZipAsDirNames(cached) - staleZipShells
         }
         val newZips = if (zipFileNames.isEmpty()) {
             emptyList()
@@ -2101,7 +2106,9 @@ object SmbGateway {
         } else {
             children.filterNot { it.name in zipFileNames }
         }
-        val zipAdjustedRemoved = plan.removedDirectoryNames - zipFileNames
+        // Stale Directory shells for zip names must be dropped (then reclassified);
+        // non-stale zip rows keep the original protection from removal.
+        val zipAdjustedRemoved = plan.removedDirectoryNames - (zipFileNames - staleZipShells)
         val dirsUnchanged = plan.addedDirectories.isEmpty() && zipAdjustedRemoved.isEmpty()
         if (dirsUnchanged && deepHidden.isEmpty() && newZips.isEmpty()) {
             // Dirs same — still patch surviving file size/mtime; add/drop direct files.

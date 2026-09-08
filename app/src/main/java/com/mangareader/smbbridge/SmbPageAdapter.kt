@@ -16,6 +16,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
@@ -50,6 +51,16 @@ class SmbPageAdapter(
 
     override val pageCount: Int get() = pageCountField
 
+    override val onPageCountGrow: MutableList<(Int) -> Unit> = java.util.concurrent.CopyOnWriteArrayList()
+
+    private fun checkPageCountGrow(loader: PageLoader) {
+        val s = loader.size
+        if (s > pageCountField) {
+            pageCountField = s
+            onPageCountGrow.forEach { runCatching { it(s) } }
+        }
+    }
+
     /** loader 就绪后由会话 block 调用；等待页数稳定（TAR 渐进索引会增长）再放行 */
     suspend fun attach(loader: PageLoader, source: com.hippo.ehviewer.library.ArchiveByteSource?) {
         sourceRef = source
@@ -63,6 +74,12 @@ class SmbPageAdapter(
         }
         pageCountField = last
         loaderReady.complete(loader)
+        loader.onSizeGrown = { newSize ->
+            if (newSize > pageCountField) {
+                pageCountField = newSize
+                onPageCountGrow.forEach { runCatching { it(newSize) } }
+            }
+        }
     }
 
     /** 等待 loader 就绪（供 Router 取 PageLoader 返回 Supported） */
@@ -86,6 +103,8 @@ class SmbPageAdapter(
         try {
             val loader = loaderReady.await()
             driveAndAwaitExtract(loader, index)
+            runCatching { loader.navigate(ReaderNavigation(index, index..index, NavigationKind.Settled)) }
+            checkPageCountGrow(loader)
             readPageBytes(loader, index)
         } catch (e: CancellationException) {
             throw e

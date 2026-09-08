@@ -40,3 +40,14 @@ WebDAV 侧的全部适配都放在 `com.mangareader.webdavbridge` 新建胶水�
 - `WebDavRepository.kt`：`delete()` 接入 `WebDavCache.deleteSourceCache(source.id)`。
 
 `WebDavGateway.kt` / `WebDavArchiveByteSource.kt` / `WebDavPasswordStore.kt` 仍为零修改。
+
+## v1.2.4 变更（2026-09-07 zip 列表重复缺陷修复 —— 同款 slim 修复，与 SMB 平行）
+
+- `WebDavGateway.kt`：slim 路径接入 `ZipAsDirListing.staleZipDirectoryShellNames` ——
+  `cachedZipAsDir -= staleZipShells`（壳不认作有效 zip-as-dir 行 → 同名 zip 进 newZips 重分类）
+  + `zipAdjustedRemoved = removed - (zipFileNames - staleZipShells)`（壳进 removed 被 merge 删）。
+- 共享的 `DirectoryListing.kt` `indexKeepDirectoryNames`（覆盖 SMB/WebDAV/Local 三协议）：
+  zip-as-dir 分支补数 flat FolderGallery 的 zip 根段 → keep 防线不再把新版干净列表
+  误判为"目录全丢"，旧 32 条拖留缓存可被正常覆盖。
+- 根因分析、修复验证（DupProbeTest 9 项 + SmbRealE2eTest 21/21）详见
+  smbbridge/MODIFICATIONS.md 同日章节。

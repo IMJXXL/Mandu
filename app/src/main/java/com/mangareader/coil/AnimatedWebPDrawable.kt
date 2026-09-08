@@ -21,7 +21,7 @@ import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 
-class AnimatedWebPDrawable(private val source: ByteBuffer) : Drawable(), Animatable {
+class AnimatedWebPDrawable(private val source: ByteBuffer, forceInfinite: Boolean = false) : Drawable(), Animatable {
     companion object {
         @Volatile private var nativeAvailable: Boolean? = null
         fun isNativeAvailable(): Boolean = nativeAvailable ?: run {
@@ -48,7 +48,7 @@ class AnimatedWebPDrawable(private val source: ByteBuffer) : Drawable(), Animata
         val packed = nativeGetImageInfo(decoder)
         width = (packed shr 40).toInt()
         height = (packed shr 16 and 0xFFFFFF).toInt()
-        loopCount = (packed and 0xFFFF).toInt()
+        loopCount = if (forceInfinite) 0 else (packed and 0xFFFF).toInt()
         val bitmap = createBitmap(width, height)
         val timestamp = nativeDecodeNextFrame(decoder, false, bitmap)
         check(timestamp != 0) {

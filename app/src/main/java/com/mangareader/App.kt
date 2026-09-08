@@ -60,6 +60,7 @@ class App : Application(), SingletonImageLoader.Factory {
 
     override fun onCreate() {
         super.onCreate()
+        try { System.loadLibrary("archive_stream") } catch (_: Throwable) {}
         // SMB/WebDAV 集成胶水层初始化（任务1.5）：DB 注入 + appCtx 锚点
         com.mangareader.smbbridge.SmbAppContextBridge.init(this)
         com.mangareader.smbbridge.SmbDbBridge.mangaDatabase = db

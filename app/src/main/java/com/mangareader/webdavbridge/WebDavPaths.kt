@@ -1,5 +1,7 @@
 package com.mangareader.webdavbridge
 
+import com.hippo.ehviewer.library.ZipAsDirListing
+
 /**
  * WebDAV 路径解析（design.md 2.2.1 / spec 6.2）。
  *
@@ -32,7 +34,14 @@ object WebDavPaths {
         val idPart = body.substringBefore(':').toLongOrNull() ?: return null
         val rel = body.substringAfter(':', "").trim('/')
         if (rel.isEmpty()) return null
-        val fileName = rel.substringAfterLast('/').substringBefore(':')
+        // zip-as-dir 路径（`dir/file.zip/inner/page.png`）→ ext 用 zip 文件的扩展名
+        val pathBeforeMember = rel.substringBefore(':')
+        val zipSplit = ZipAsDirListing.splitZipBrowsePath(pathBeforeMember)
+        val fileName = if (zipSplit != null && zipSplit.second.isNotEmpty()) {
+            zipSplit.first.substringAfterLast('/')
+        } else {
+            pathBeforeMember.substringAfterLast('/')
+        }
         val ext = fileName.substringAfterLast('.', "").lowercase()
         return WebDavBookRef(serverId = idPart, remotePath = rel, ext = ext)
     }

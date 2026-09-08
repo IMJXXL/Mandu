@@ -17,7 +17,9 @@ import androidx.compose.material.icons.filled.CleaningServices
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material3.*
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -45,7 +47,7 @@ import kotlinx.coroutines.withContext
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SmbServersScreen(onBack: () -> Unit) {
+fun SmbServersScreen(onBack: () -> Unit, onOpenBook: (Long) -> Unit = {}) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val sources by SmbRepository.sourcesFlow().collectAsState(initial = emptyList())
@@ -103,7 +105,7 @@ fun SmbServersScreen(onBack: () -> Unit) {
     }
 
     browsingId?.let { id ->
-        SmbBrowserScreen(serverId = id, onBack = { browsingId = null })
+        SmbBrowserScreen(serverId = id, onBack = { browsingId = null }, onOpenBook = onOpenBook)
         return
     }
 
@@ -113,7 +115,7 @@ fun SmbServersScreen(onBack: () -> Unit) {
     }
 
     if (showWizard) {
-        SmbAddWizardScreen(onBack = { showWizard = false }, onSaved = { showWizard = false })
+        SmbAddWizardScreen(onBack = { showWizard = false }, onSaved = { showWizard = false }, initial = editing)
         return
     }
 
@@ -148,27 +150,43 @@ fun SmbServersScreen(onBack: () -> Unit) {
                 LazyColumn(Modifier.fillMaxSize()) {
                     items(sources, key = { it.id }) { s ->
                         val busy = busyId == s.id
+                        // ★ 任务5：隐藏状态读取（对齐本地 Switch + 状态文字）
+                        val hiddenCount = remember(s.id) { mutableStateOf(0) }
+                        LaunchedEffect(s.id) {
+                            hiddenCount.value = withContext(Dispatchers.IO) {
+                                SmbDbBridge.mangaDatabase?.mangaDao()?.countSmbHiddenBooks(s.id) ?: 0
+                            }
+                        }
+                        val isHidden = hiddenCount.value > 0
                         Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)) {
-                            Column(Modifier.padding(14.dp)) {
-                                Text(s.displayName, fontSize = 16.sp)
-                                Text(
-                                    "smb://${s.host}:${s.port}/${s.share}/${s.pathPrefix}".trimEnd('/'),
-                                    fontSize = 12.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
+                            Column(Modifier.padding(16.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.Storage, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp))
+                                    Spacer(Modifier.width(10.dp))
+                                    Column(Modifier.weight(1f)) {
+                                        Text(s.displayName, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+                                        Text(
+                                            "smb://${s.host}:${s.port}/${s.share}/${s.pathPrefix}".trimEnd('/'),
+                                            fontSize = 11.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                }
+                                Spacer(Modifier.height(8.dp))
                                 val statusColor: Color = when {
                                     s.lastError != null -> MaterialTheme.colorScheme.error
                                     s.lastOkAt != null -> Color(0xFF3A9D5D)
                                     else -> MaterialTheme.colorScheme.onSurfaceVariant
                                 }
                                 val statusText = when {
-                                    s.lastError != null -> "错误：${s.lastError.take(80)}"
-                                    s.lastOkAt != null -> "正常 · 上次成功 " + SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(s.lastOkAt))
-                                    else -> "未测试"
+                                    s.lastError != null -> "● 错误：${s.lastError.take(60)}"
+                                    s.lastOkAt != null -> "● 正常 · ${SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(s.lastOkAt))}"
+                                    else -> "● 未测试"
                                 }
                                 Text(statusText, fontSize = 12.sp, color = statusColor)
+                                Spacer(Modifier.height(10.dp))
                                 @OptIn(ExperimentalLayoutApi::class)
-                                FlowRow(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                     TextButton(
                                         enabled = !busy && SmbVersionGuard.isSupported(),
                                         onClick = {
@@ -176,7 +194,8 @@ fun SmbServersScreen(onBack: () -> Unit) {
                                                 busyId = s.id
                                                 try {
                                                     val n = SmbScanner.scanSmbServer(s.id)
-                                                    Toast.makeText(ctx, "扫描完成，新增 $n 本", Toast.LENGTH_SHORT).show()
+                                                    val msg = if (n == 0) "扫描完成，书架无变化" else "扫描成功：新增 $n 本，封面后台加载中"
+                                                    Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show()
                                                 } catch (t: Throwable) {
                                                     Toast.makeText(ctx, SmbErrors.humanizeSmb(t), Toast.LENGTH_LONG).show()
                                                 } finally {
@@ -192,11 +211,16 @@ fun SmbServersScreen(onBack: () -> Unit) {
                                                 busyId = s.id
                                                 try {
                                                     val password = try { SmbPasswordStore.get(s.id) } catch (_: Throwable) { "" }
-                                                    val ok = runCatching {
-                                                        SmbGateway.listDirectory(s, password, s.pathPrefix)
-                                                    }.isSuccess
-                                                    if (ok) SmbRepository.markOk(s.id) else error("无法连接或列举共享")
-                                                    Toast.makeText(ctx, "连接正常", Toast.LENGTH_SHORT).show()
+                                                    val ok = kotlinx.coroutines.withTimeoutOrNull(5000) {
+                                                        runCatching { SmbGateway.listDirectory(s, password, s.pathPrefix, useCache = false) }.isSuccess
+                                                    } ?: false
+                                                    if (ok) {
+                                                        SmbRepository.markOk(s.id)
+                                                        Toast.makeText(ctx, "连接正常", Toast.LENGTH_SHORT).show()
+                                                    } else {
+                                                        SmbRepository.markError(s.id, "连接超时或失败")
+                                                        Toast.makeText(ctx, "连接失败", Toast.LENGTH_SHORT).show()
+                                                    }
                                                 } catch (t: Throwable) {
                                                     SmbRepository.markError(s.id, t.message ?: "连接失败")
                                                     Toast.makeText(ctx, SmbErrors.humanizeSmb(t), Toast.LENGTH_LONG).show()
@@ -207,34 +231,31 @@ fun SmbServersScreen(onBack: () -> Unit) {
                                         },
                                     ) { Text("测试") }
                                     TextButton(onClick = { browsingId = s.id }) { Text("浏览") }
-                                    TextButton(onClick = { browsingId = s.id }) { Text("浏览") }
-                                    TextButton(
-                                        enabled = !busy,
-                                        onClick = {
-                                            scope.launch {
-                                                busyId = s.id
-                                                try {
-                                                    val anyHidden = SmbDbBridge.mangaDatabase?.mangaDao()?.countSmbHiddenBooks(s.id) ?: 0
-                                                    val target = anyHidden == 0
-                                                    SmbDbBridge.mangaDatabase?.mangaDao()?.setSmbBooksHidden(s.id, target)
-                                                    Toast.makeText(ctx, if (target) "已隐藏该书源全部书籍" else "已恢复显示", Toast.LENGTH_SHORT).show()
-                                                } finally {
-                                                    busyId = null
-                                                }
-                                            }
-                                        },
-                                    ) { Text("隐藏/显示") }
-                                                                        TextButton(onClick = { editing = s; showFormTick++ }) {
+                                    TextButton(onClick = { editing = s; showWizard = true }) {
                                         Icon(Icons.Default.Edit, null, Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text("编辑")
                                     }
                                     TextButton(onClick = { deleting = s }) {
                                         Icon(Icons.Default.Delete, null, Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text("删除")
                                     }
                                 }
+                                Spacer(Modifier.height(4.dp))
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                    Text(if (isHidden) "已隐藏" else "已显示", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Switch(
+                                        checked = !isHidden,
+                                        onCheckedChange = { show ->
+                                            scope.launch(Dispatchers.IO) {
+                                                SmbDbBridge.mangaDatabase?.mangaDao()?.setSmbBooksHidden(s.id, !show)
+                                                hiddenCount.value = SmbDbBridge.mangaDatabase?.mangaDao()?.countSmbHiddenBooks(s.id) ?: 0
+                                            }
+                                        },
+                                    )
+                                }
                             }
                         }
                     }
                 }
+
             }
         }
     }

@@ -322,15 +322,44 @@ object ZipAsDirListing {
         grandPeeks: Map<String, List<RemoteChild>>,
         listZipRoot: (fileName: String) -> ZipRootListing?,
     ): List<BrowseEntryRemote> {
-        val expansion = expandZipFilesAsFakeFolders(children, listZipRoot)
-        val peeks = HashMap<String, List<RemoteChild>>(childPeeks.size + expansion.peeks.size)
+        android.util.Log.w("ZCLASS", "entered zipAsDir=" + Settings.browseZipAsDir.value + " children=" + children.size)
+        if (!Settings.browseZipAsDir.value) {
+            val taggedOff = children.withHiddenFlags(childPeeks)
+            return classifyRemoteListingWithPeeks(currentDirName, taggedOff, childPeeks, grandPeeks)
+        }
+        // ★ 修复（2026-09-06 性能基准实测）：zip 不再伪装成假目录走 LeafGallery promote ——
+        //   那条路径会同时产出 Directory(shell) + FolderGallery，每个 zip 双条目
+        //   （全 zip 目录列表翻倍，16 zip 列 32 条）。改为直接构造 FolderGallery
+        //   （zip 即书，点击即读）；CD 不可读的 zip 保留 ArchiveGallery 原语义。
+        //   真实目录的 promote（shell + gallery 双条目）不受影响。
+        val zipGalleries = ArrayList<BrowseEntryRemote>()
+        val real = ArrayList<RemoteChild>(children.size)
+        for (child in children) {
+            if (child.isDirectory || !isZipArchiveFileName(child.name)) {
+                real += child
+                continue
+            }
+            val listing = listZipRoot(child.name)
+            if (listing == null) {
+                real += child
+                continue
+            }
+            val archive = BrowseEntryRemote.ArchiveGallery(
+                name = child.name,
+                fileName = child.name,
+                size = child.size,
+                lastModifiedMs = child.lastModifiedMs,
+                hidden = child.hidden || isDotHiddenName(child.name),
+            )
+            zipGalleries += folderGalleryForZip(archive, listing)
+        }
+        val peeks = HashMap<String, List<RemoteChild>>(childPeeks.size)
         peeks.putAll(childPeeks)
-        peeks.putAll(expansion.peeks)
-        val grands = HashMap<String, List<RemoteChild>>(grandPeeks.size + expansion.grandPeeks.size)
+        val grands = HashMap<String, List<RemoteChild>>(grandPeeks.size)
         grands.putAll(grandPeeks)
-        grands.putAll(expansion.grandPeeks)
-        val tagged = expansion.children.withHiddenFlags(peeks)
-        return classifyRemoteListingWithPeeks(currentDirName, tagged, peeks, grands)
+        val tagged = real.withHiddenFlags(peeks)
+        val classified = classifyRemoteListingWithPeeks(currentDirName, tagged, peeks, grands)
+        return if (zipGalleries.isEmpty()) classified else classified + zipGalleries
     }
 
     fun folderGalleryForZip(
@@ -541,6 +570,34 @@ object ZipAsDirListing {
             }
         }
         return names
+    }
+
+    /**
+     * Direct zip names whose cached rows are still plain [BrowseEntryRemote.Directory]
+     * shells **paired with a same-name flat FolderGallery** — the legacy promote
+     * duplicate shape (Directory + flat FolderGallery, both rel == name). Slim must
+     * treat these as stale (remove + reclassify), not as valid zip-as-dir rows —
+     * otherwise they pair with the fresh FolderGallery as permanent duplicates
+     * (every zip listed twice: Directory + FolderGallery).
+     *
+     * Tree zips (Directory shell + wrapper FolderGallery rel = `name/Album`) are
+     * **legitimate** and excluded: their Directory shell is the browsable virtual
+     * folder and must not be dropped.
+     */
+    fun staleZipDirectoryShellNames(
+        cached: List<BrowseEntryRemote>,
+        zipFileNames: Set<String>,
+    ): Set<String> {
+        if (zipFileNames.isEmpty()) return emptySet()
+        val flatZipGalleries = cached.asSequence()
+            .filterIsInstance<BrowseEntryRemote.FolderGallery>()
+            .filter { it.relativeName == it.name && it.name in zipFileNames }
+            .mapTo(HashSet()) { it.name }
+        if (flatZipGalleries.isEmpty()) return emptySet()
+        return cached.asSequence()
+            .filterIsInstance<BrowseEntryRemote.Directory>()
+            .filter { it.name in flatZipGalleries && it.relativeName == it.name }
+            .mapTo(HashSet()) { it.name }
     }
 
     /** Direct image basenames under [innerPrefix] (natural sort). */

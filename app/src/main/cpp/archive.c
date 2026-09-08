@@ -219,6 +219,7 @@ static la_ssize_t stream_read_cb(struct archive *a, void *client_data, const voi
         return ARCHIVE_FATAL;
     }
     if ((size_t) g_stream_pos >= archiveSize) {
+        LOGI("stream_read_cb: EOF pos=%zu archiveSize=%zu", (size_t) g_stream_pos, (size_t) archiveSize);
         *buff = NULL;
         return 0;
     }
@@ -238,7 +239,9 @@ static la_ssize_t stream_read_cb(struct archive *a, void *client_data, const voi
         }
         if (left < (int64_t) chunk) chunk = (jint) left;
     }
+    LOGI("stream_read_cb: calling nativeRead chunk=%d pos=%zu", chunk, (size_t) g_stream_pos);
     jbyteArray arr = (*env)->CallObjectMethod(env, g_stream_bridge, g_mid_read, chunk);
+    LOGI("stream_read_cb: nativeRead returned n=%d", arr ? (int)(*env)->GetArrayLength(env, arr) : -1);
     if ((*env)->ExceptionCheck(env)) {
         (*env)->ExceptionDescribe(env);
         (*env)->ExceptionClear(env);
@@ -346,6 +349,16 @@ static uint64_t zip_u64(const uint8_t *p) {
  */
 static jint zip_stream_open_from_cd(jboolean sort_entries, bool cover_only) {
     if (archiveSize < 22) return 0;
+    LOGI("zip_cd: archiveSize=%zu", (size_t)archiveSize);
+    {
+        uint8_t hdr[8];
+        if (stream_pread(hdr, 0, 8) == 8) {
+            LOGI("zip_cd: head[0..7]=%02x %02x %02x %02x %02x %02x %02x %02x",
+                 hdr[0], hdr[1], hdr[2], hdr[3], hdr[4], hdr[5], hdr[6], hdr[7]);
+        } else {
+            LOGI("zip_cd: head read failed");
+        }
+    }
     // ZIP CD is intentionally uncapped (EOCD + CD only — not a full-body walk).
     int64_t saved_limit = stream_scan_limit;
     stream_scan_limit = 0;
@@ -381,6 +394,13 @@ static jint zip_stream_open_from_cd(jboolean sort_entries, bool cover_only) {
         }
         tail_len = want;
 
+        // Debug: log first 8 bytes of tail
+        if (tail_len >= 8) {
+            LOGI("zip_cd: tail[0..7]=%02x %02x %02x %02x %02x %02x %02x %02x pos=%zu",
+                 tail[0], tail[1], tail[2], tail[3], tail[4], tail[5], tail[6], tail[7],
+                 (size_t)(archiveSize - want));
+        }
+
         eocd = -1;
         for (ssize_t i = (ssize_t) tail_len - 22; i >= 0; i--) {
             if (tail[i] == 'P' && tail[i + 1] == 'K' && tail[i + 2] == 5 && tail[i + 3] == 6) {
@@ -391,10 +411,12 @@ static jint zip_stream_open_from_cd(jboolean sort_entries, bool cover_only) {
         if (eocd >= 0) break;
     }
     if (eocd < 0 || !tail) {
+        LOGI("zip_cd: EOCD not found, tail_len=%zu", tail_len);
         free(tail);
         stream_scan_limit = saved_limit;
         return 0;
     }
+    LOGI("zip_cd: EOCD found at offset %zu in tail", (size_t)eocd);
 
     uint32_t cd_size32 = zip_u32(tail + eocd + 12);
     uint32_t cd_off32 = zip_u32(tail + eocd + 16);
@@ -1871,7 +1893,7 @@ Java_com_hippo_ehviewer_jni_ArchiveKt_openSolidSequential(
         return 0;
     }
     use_solid_seq = true;
-    LOGI("Solid sequential open ok (size=%lld)", (long long) size);
+    LOGI("Solid sequential open ok (size=%lld archiveSize=%zu)", (long long) size, (size_t) archiveSize);
     pthread_mutex_unlock(&stream_mutex);
     return 1;
 }
@@ -1894,8 +1916,11 @@ Java_com_hippo_ehviewer_jni_ArchiveKt_solidNextPlayable(JNIEnv *env, jclass thiz
         pthread_mutex_unlock(&stream_mutex);
         return result;
     }
+    LOGI("solidNextPlayable: enter scan from idx=%d", solid_next_index);
     int r;
+    int skip_count = 0;
     while ((r = archive_read_next_header(solid_ctx->arc, &solid_ctx->entry)) == ARCHIVE_OK) {
+        LOGI("solidNextPlayable: header ok idx=%d", solid_next_index);
         if (archive_should_abort()) {
             pthread_mutex_unlock(&stream_mutex);
             return -2;
@@ -1907,11 +1932,20 @@ Java_com_hippo_ehviewer_jni_ArchiveKt_solidNextPlayable(JNIEnv *env, jclass thiz
         if (archive_entry_is_encrypted(solid_ctx->entry))
             need_encrypt = true;
         if (!archive_entry_is_playable(solid_ctx->entry)) {
+            const char *skip_name = archive_entry_pathname(solid_ctx->entry);
+            LOGI("solidNextPlayable: skip non-playable '%s' idx=%d", skip_name ? skip_name : "(null)", solid_next_index);
             // Consume non-image bodies so solid stream advances.
-            if (archive_read_data_skip(solid_ctx->arc) < ARCHIVE_OK && stream_scan_hit_limit) {
-                pthread_mutex_unlock(&stream_mutex);
-                return -1;
+            int skip_r = archive_read_data_skip(solid_ctx->arc);
+            if (skip_r < ARCHIVE_OK) {
+                LOGI("solidNextPlayable: data_skip failed r=%d err='%s' skip_count=%d next_idx=%d",
+                     skip_r, archive_error_string(solid_ctx->arc) ? archive_error_string(solid_ctx->arc) : "(null)",
+                     skip_count, solid_next_index);
+                if (stream_scan_hit_limit) {
+                    pthread_mutex_unlock(&stream_mutex);
+                    return -1;
+                }
             }
+            skip_count++;
             continue;
         }
         const char *name = archive_entry_pathname(solid_ctx->entry);
@@ -1926,16 +1960,21 @@ Java_com_hippo_ehviewer_jni_ArchiveKt_solidNextPlayable(JNIEnv *env, jclass thiz
         // Found a playable member — lift cover scan budget so extract is not aborted.
         stream_scan_limit = 0;
         stream_scan_hit_limit = false;
+        LOGI("solidNextPlayable: found playable idx=%d name='%s' skipped=%d", solid_next_index, solid_name, skip_count);
+        skip_count = 0;
         jint result = solid_next_index;
         pthread_mutex_unlock(&stream_mutex);
         return result;
     }
     if (r == ARCHIVE_EOF || stream_scan_hit_limit) {
+        LOGI("solidNextPlayable: EOF r=%d scan_hit_limit=%d next_idx=%d err='%s'",
+             r, stream_scan_hit_limit, solid_next_index,
+             archive_error_string(solid_ctx->arc) ? archive_error_string(solid_ctx->arc) : "(null)");
         if (r == ARCHIVE_EOF) stream_index_finished_empty = true;
         pthread_mutex_unlock(&stream_mutex);
         return -1;
     }
-    LOGE("%s%s", "solidNextPlayable: ", archive_error_string(solid_ctx->arc));
+    LOGE("solidNextPlayable: FATAL r=%d err='%s'", r, archive_error_string(solid_ctx->arc) ? archive_error_string(solid_ctx->arc) : "(null)");
     pthread_mutex_unlock(&stream_mutex);
     return -2;
 }
@@ -2523,4 +2562,71 @@ Java_com_hippo_ehviewer_jni_ArchiveKt_archiveFdBatch(JNIEnv *env, jclass clazz, 
     archive_entry_free(entry);
     archive_write_close(arc);
     archive_write_free(arc);
+}
+
+/* ── GifUtils JNI (from reference project gifutils.c) ── */
+
+#include <unistd.h>
+#include <sys/stat.h>
+
+#define GIF_HEADER_87A "GIF87a"
+#define GIF_HEADER_89A "GIF89a"
+#define GIF_HEADER_LENGTH 6
+
+static int frame_delay_start_marker = 0x0021F904;
+#define FRAME_DELAY_START_MARKER ((signed char*)(&frame_delay_start_marker))
+#define MINIMUM_FRAME_DELAY 2
+#define DEFAULT_FRAME_DELAY 10
+
+static inline bool gif_check(void *addr) {
+    return !memcmp(addr, GIF_HEADER_87A, GIF_HEADER_LENGTH) ||
+           !memcmp(addr, GIF_HEADER_89A, GIF_HEADER_LENGTH);
+}
+
+static void gif_rewrite(signed char *addr, size_t size) {
+    if (size < 7 || !gif_check(addr)) return;
+    for (size_t i = 0; i < size - 8; i++) {
+        if (addr[i] == FRAME_DELAY_START_MARKER[3] && addr[i + 1] == FRAME_DELAY_START_MARKER[2] &&
+            addr[i + 2] == FRAME_DELAY_START_MARKER[1] &&
+            addr[i + 3] == FRAME_DELAY_START_MARKER[0]) {
+            signed char *end = addr + i + 4;
+            if (end[4] != 0) continue;
+            int frameDelay = end[2] << 8 | end[1];
+            if (frameDelay >= MINIMUM_FRAME_DELAY)
+                break;
+            end[1] = DEFAULT_FRAME_DELAY;
+            end[2] = 0;
+        }
+    }
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_hippo_ehviewer_jni_GifUtilsKt_isGif(JNIEnv *env, jclass clazz, jint fd) {
+    signed char buffer[GIF_HEADER_LENGTH];
+    return read(fd, buffer, GIF_HEADER_LENGTH) == GIF_HEADER_LENGTH &&
+           gif_check(buffer);
+}
+
+JNIEXPORT void JNICALL
+Java_com_hippo_ehviewer_jni_GifUtilsKt_rewriteGifSource(JNIEnv *env, jclass clazz, jobject buffer) {
+    signed char *addr = (*env)->GetDirectBufferAddress(env, buffer);
+    size_t size = (*env)->GetDirectBufferCapacity(env, buffer);
+    gif_rewrite(addr, size);
+}
+
+JNIEXPORT jobject JNICALL
+Java_com_hippo_ehviewer_jni_GifUtilsKt_mmap(JNIEnv *env, jclass clazz, jint fd) {
+    struct stat64 st;
+    fstat64(fd, &st);
+    size_t size = st.st_size;
+    signed char *addr = mmap64(0, size, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
+    if (addr == MAP_FAILED) return NULL;
+    return (*env)->NewDirectByteBuffer(env, addr, size);
+}
+
+JNIEXPORT void JNICALL
+Java_com_hippo_ehviewer_jni_GifUtilsKt_munmap(JNIEnv *env, jclass clazz, jobject buffer) {
+    signed char *addr = (*env)->GetDirectBufferAddress(env, buffer);
+    size_t size = (*env)->GetDirectBufferCapacity(env, buffer);
+    munmap(addr, size);
 }

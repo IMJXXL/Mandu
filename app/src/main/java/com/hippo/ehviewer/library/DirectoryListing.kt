@@ -430,7 +430,17 @@ fun shouldKeepPreviousFolderIndex(
  */
 fun indexKeepDirectoryNames(entries: List<BrowseEntryRemote>, zipAsDir: Boolean): Set<String> {
     val names = cachedDirectDirectoryNames(entries)
-    if (zipAsDir) return names
+    if (zipAsDir) {
+        // Zip-as-dir listings keep zips as flat FolderGallery rows (no Directory shells).
+        // Without counting them, a fresh clean listing looks "directory-less" against a
+        // legacy Directory+FolderGallery duplicate cache and the keep-guard pins the
+        // stale listing forever (every save re-revives the duplicates).
+        val fgZips = entries.asSequence()
+            .filterIsInstance<BrowseEntryRemote.FolderGallery>()
+            .mapNotNull { ZipAsDirListing.zipFileSegment(it.relativeName, it.name) }
+            .toSet()
+        return if (fgZips.isEmpty()) names else names + fgZips
+    }
     return names.filterNotTo(HashSet()) { isZipArchiveFileName(it) }
 }
 

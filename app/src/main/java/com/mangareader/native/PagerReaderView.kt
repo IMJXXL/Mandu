@@ -526,6 +526,17 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         val rtlChanged = this.isRtl != rtl
         val engineChanged = this.engine != engine
         this.engine = engine; this.treePath = treePath; this.pageList = pages; this.isRtl = rtl
+        // SMB/WebDAV solid archive: page count grows as extract progresses
+        remotePageSupply?.onPageCountGrow?.add { newCount ->
+            if (newCount > pageList.size) {
+                val oldSize = pageList.size
+                val grown = pageList + (pageList.size until newCount).map {
+                    ArchiveEngine.PageMeta(it, "", "", name = "")
+                }
+                pageList = grown
+                post { pagerAdapter?.notifyItemRangeInserted(oldSize, newCount - oldSize) }
+            }
+        }
         // 超分渐进替换：订阅引擎完成事件，命中当前章节即原位替换
         srEventJob?.cancel()
         srEventJob = try {
@@ -1052,13 +1063,15 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     }
 
     private fun mergeBitmaps(left: Bitmap, right: Bitmap, gapPx: Int = 0): Bitmap {
-        val w = left.width + right.width + gapPx
-        val h = maxOf(left.height, right.height)
+        val leftSw = if (left.config == Bitmap.Config.HARDWARE) left.copy(Bitmap.Config.ARGB_8888, false) else left
+        val rightSw = if (right.config == Bitmap.Config.HARDWARE) right.copy(Bitmap.Config.ARGB_8888, false) else right
+        val w = leftSw.width + rightSw.width + gapPx
+        val h = maxOf(leftSw.height, rightSw.height)
         val merged = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         val canvas = android.graphics.Canvas(merged)
         canvas.drawColor(pageBgColor)
-        canvas.drawBitmap(left, 0f, (h - left.height) / 2f, null)
-        canvas.drawBitmap(right, (left.width + gapPx).toFloat(), (h - right.height) / 2f, null)
+        canvas.drawBitmap(leftSw, 0f, (h - leftSw.height) / 2f, null)
+        canvas.drawBitmap(rightSw, (leftSw.width + gapPx).toFloat(), (h - rightSw.height) / 2f, null)
         return merged
     }
 
@@ -1186,6 +1199,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 bitmapCache.remove(rightIdx)
                 holder.clear()
                 if (!isScrolling) {
+                    holder.loadingBar?.visibility = View.VISIBLE
                     loadPageAsync(leftIdx)
                     if (rightIdx < pageList.size) loadPageAsync(rightIdx)
                 }
@@ -1213,6 +1227,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 bitmapCache.remove(realIdx)
                 holder.clear()
                 if (!isScrolling) {
+                    holder.loadingBar?.visibility = View.VISIBLE
                     loadPageAsync(realIdx)
                 }
             }
@@ -1285,6 +1300,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                     }
                 })
                 ssv.setImage(com.davemorrissey.labs.subscaleview.ImageSource.bitmap(bmp))
+                ssv.post { loadingBar?.visibility = View.GONE }
             } else {
                 // 不使用 SSIV：用 ImageView FIT_CENTER（同步设 bitmap，无需 loadingBar）
                 loadingBar?.visibility = View.GONE
@@ -1321,6 +1337,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                     }
                 })
                 ssv.setImage(com.davemorrissey.labs.subscaleview.ImageSource.bitmap(bmp))
+                ssv.post { loadingBar?.visibility = View.GONE }
             } else {
                 val halfW = bmp.width / 2
                 val srcX = if (showRight) halfW else 0

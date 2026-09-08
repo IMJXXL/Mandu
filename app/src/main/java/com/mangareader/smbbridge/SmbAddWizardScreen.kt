@@ -33,29 +33,38 @@ import kotlinx.coroutines.withContext
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SmbAddWizardScreen(onBack: () -> Unit, onSaved: () -> Unit) {
+fun SmbAddWizardScreen(onBack: () -> Unit, onSaved: () -> Unit, initial: SmbSourceEntity? = null) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
+    val isEdit = initial != null
 
     var step by remember { mutableStateOf(1) }
     var busy by remember { mutableStateOf(false) }
 
-    // step1 字段
-    var displayName by remember { mutableStateOf("") }
-    var host by remember { mutableStateOf("") }
-    var port by remember { mutableStateOf("445") }
-    var username by remember { mutableStateOf("") }
-    var domain by remember { mutableStateOf("") }
+    // step1 字段（编辑模式预填）
+    var displayName by remember { mutableStateOf(initial?.displayName ?: "") }
+    var host by remember { mutableStateOf(initial?.host ?: "") }
+    var port by remember { mutableStateOf(initial?.port?.toString() ?: "445") }
+    var username by remember { mutableStateOf(initial?.username ?: "") }
+    var domain by remember { mutableStateOf(initial?.domain ?: "") }
     var password by remember { mutableStateOf("") }
 
     // step2/3 状态
     var tempSource by remember { mutableStateOf<SmbSourceEntity?>(null) }
     var shares by remember { mutableStateOf<List<String>>(emptyList()) }
-    var pickedShare by remember { mutableStateOf("") }
-    var dir by remember { mutableStateOf("") }
+    var pickedShare by remember { mutableStateOf(initial?.share ?: "") }
+    var dir by remember { mutableStateOf(initial?.pathPrefix ?: "") }
     var dirEntries by remember { mutableStateOf<List<BrowseEntryRemote>>(emptyList()) }
 
+    // 编辑模式：加载已保存的密码
+    LaunchedEffect(isEdit) {
+        if (isEdit && password.isBlank()) {
+            password = try { com.hippo.ehviewer.smb.SmbPasswordStore.get(initial!!.id) } catch (_: Throwable) { "" }
+        }
+    }
+
     val titles = listOf("1/3 地址与账号", "2/3 选择共享", "3/3 选择目录")
+
 
     suspend fun connect(): Boolean {
         val portNum = port.toIntOrNull() ?: 445
@@ -100,28 +109,53 @@ fun SmbAddWizardScreen(onBack: () -> Unit, onSaved: () -> Unit) {
         busy = false
     }
 
+
     fun save() {
         val src = tempSource ?: return
         busy = true
         scope.launch(Dispatchers.IO) {
             val id = runCatching {
-                SmbRepository.add(
-                    displayName = displayName,
-                    host = host,
-                    port = port.toIntOrNull() ?: 445,
-                    share = pickedShare,
-                    pathPrefix = dir,
-                    username = username,
-                    domain = domain,
-                    password = password,
-                )
+                if (isEdit && initial != null) {
+                    SmbRepository.update(
+                        initial.copy(
+                            displayName = displayName.ifBlank { host },
+                            host = host.trim(),
+                            port = port.toIntOrNull() ?: 445,
+                            share = pickedShare,
+                            pathPrefix = dir,
+                            username = username,
+                            domain = domain,
+                        ),
+                        password = password.takeIf { it.isNotBlank() },
+                    )
+                    initial.id
+                } else {
+                    SmbRepository.add(
+                        displayName = displayName,
+                        host = host,
+                        port = port.toIntOrNull() ?: 445,
+                        share = pickedShare,
+                        pathPrefix = dir,
+                        username = username,
+                        domain = domain,
+                        password = password,
+                    )
+                }
             }.getOrElse {
                 withContext(Dispatchers.Main) { Toast.makeText(ctx, "保存失败：${it.message?.take(60)}", Toast.LENGTH_SHORT).show() }
                 return@launch
             }
+            // ★ 任务3：添加/编辑后自动扫描（用户 2026-09-08 要求）
+            val scanned = runCatching { SmbScanner.scanSmbServer(id) }.getOrNull()
             withContext(Dispatchers.Main) {
                 busy = false
-                Toast.makeText(ctx, "已保存：$pickedShare/$dir（书源 #$id）", Toast.LENGTH_SHORT).show()
+                val msg = if (isEdit) "已更新" else "已保存"
+                val scanMsg = when {
+                    scanned == null -> ""
+                    scanned == 0 -> "，书架无变化"
+                    else -> "，扫描新增 $scanned 本，封面后台加载中"
+                }
+                Toast.makeText(ctx, "$msg：$pickedShare/$dir$scanMsg", Toast.LENGTH_SHORT).show()
                 onSaved()
             }
         }
@@ -132,7 +166,7 @@ fun SmbAddWizardScreen(onBack: () -> Unit, onSaved: () -> Unit) {
             TopAppBar(
                 title = {
                     Column {
-                        Text("添加 SMB 书源", fontSize = 16.sp)
+                        Text(if (isEdit) "编辑 SMB 书源" else "添加 SMB 书源", fontSize = 16.sp)
                         Text(titles[step - 1], fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
                     }
                 },
@@ -184,8 +218,11 @@ fun SmbAddWizardScreen(onBack: () -> Unit, onSaved: () -> Unit) {
                                     .clickable {
                                         pickedShare = share
                                         tempSource = tempSource?.copy(share = share)
-                                        scope.launch { loadDirs("") }
-                                        step = 3
+                                        // ★ 任务2：等 loadDirs 完成后再切 step3，避免空白目录列表
+                                        scope.launch {
+                                            loadDirs("")
+                                            step = 3
+                                        }
                                     }
                                     .padding(horizontal = 4.dp, vertical = 14.dp),
                                 verticalAlignment = Alignment.CenterVertically,
@@ -224,7 +261,7 @@ fun SmbAddWizardScreen(onBack: () -> Unit, onSaved: () -> Unit) {
                         Box(Modifier.fillMaxWidth().height(80.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
                     }
                     LazyColumn(Modifier.weight(1f)) {
-                        items(dirEntries, key = { it.name }) { e ->
+                        items(dirEntries) { e ->
                             if (e is BrowseEntryRemote.Directory) {
                                 Row(
                                     Modifier.fillMaxWidth().clickable {

@@ -14,7 +14,7 @@ import kotlinx.coroutines.withContext
 import okio.Buffer
 
 /** ★ LV119：自定义数据类型，避免 Coil3 内置 String Fetcher 把 cv: 当 URI 解析 */
-data class CoverData(val path: String)
+data class CoverData(val path: String, val dynOn: Boolean = false)
 
 class CoverFetcher(
     private val engine: ArchiveEngine,
@@ -51,13 +51,14 @@ class CoverFetcher(
 
         // ★ SMB/WebDAV 封面分流（任务5.2/15.2）：远程封面委托对应 CoverLoader，
         //   `cv:` 本地前缀逻辑零改动（仅新增分支；远程路径被 ArchiveEngine 守卫拦截，严禁落入下方 engine 调用）
+        //   dynOn=true（动态封面开）→ wantRaw：原始字节路径，GIF/WebP 动图封面可播放
         if (coverPath.startsWith("cv:smb:") || coverPath.startsWith("cv:webdav:")) {
             val raw = withContext(Dispatchers.IO) {
                 try {
                     if (coverPath.startsWith("cv:smb:")) {
-                        com.mangareader.smbbridge.SmbCoverLoader.loadCoverRawSmb(coverPath)
+                        com.mangareader.smbbridge.SmbCoverLoader.loadCoverRawSmb(coverPath, wantRaw = data.dynOn)
                     } else {
-                        com.mangareader.webdavbridge.WebDavCoverLoader.loadCoverRawWebDav(coverPath)
+                        com.mangareader.webdavbridge.WebDavCoverLoader.loadCoverRawWebDav(coverPath, wantRaw = data.dynOn)
                     }
                 } catch (e: Exception) {
                     android.util.Log.w("CoverFetch", "remote cover err: ${e.message}")
@@ -119,5 +120,5 @@ class CoverFetcher(
 }
 
 object CoverDataKeyer : Keyer<CoverData> {
-    override fun key(data: CoverData, options: Options): String = data.path
+    override fun key(data: CoverData, options: Options): String = "${data.path}#dyn=${data.dynOn}"
 }

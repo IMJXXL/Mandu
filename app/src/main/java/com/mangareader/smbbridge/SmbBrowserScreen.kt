@@ -1,6 +1,7 @@
 package com.mangareader.smbbridge
 
 import android.widget.Toast
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.*
@@ -37,7 +38,7 @@ import kotlinx.coroutines.withContext
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
-fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit) {
+fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -> Unit = {}) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var source by remember { mutableStateOf<SmbSourceEntity?>(null) }
@@ -48,12 +49,12 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit) {
     var error by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(serverId) {
+        password = try { SmbPasswordStore.get(serverId) } catch (_: Throwable) { "" }
         source = SmbRepository.load(serverId)
         if (source == null) {
             error = "服务器配置不存在"
             return@LaunchedEffect
         }
-        password = try { SmbPasswordStore.get(serverId) } catch (_: Throwable) { "" }
     }
 
     suspend fun listDir(d: String): List<BrowseEntryRemote> = withContext(Dispatchers.IO) {
@@ -101,16 +102,22 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit) {
         val src = source ?: return
         scope.launch(Dispatchers.IO) {
             val dao = SmbDbBridge.mangaDatabase?.mangaDao() ?: return@launch
-            val book = Book(
-                title = name.substringBeforeLast('.').ifEmpty { name },
-                filePath = SmbPaths.bookPath(src.id, src.share, remote),
-                fileType = ext,
-                coverPath = SmbPaths.coverPath(src.id, src.share, remote),
-                source = "smb",
-            )
-            val row = dao.insertBook(book)
+            val filePath = SmbPaths.bookPath(src.id, src.share, remote)
+            val existing = dao.getBookByPath(filePath)
+            val bookId = if (existing != null) {
+                existing.id
+            } else {
+                val book = Book(
+                    title = name.substringBeforeLast('.').ifEmpty { name },
+                    filePath = filePath,
+                    fileType = ext,
+                    coverPath = SmbPaths.coverPath(src.id, src.share, remote),
+                    source = "smb",
+                )
+                dao.insertBook(book)
+            }
             withContext(Dispatchers.Main) {
-                Toast.makeText(ctx, if (row != -1L) "已加入书架" else "书架中已存在", Toast.LENGTH_SHORT).show()
+                if (bookId > 0) onOpenBook(bookId)
             }
         }
     }
@@ -120,28 +127,28 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit) {
         val remoteDir = if (dir.isEmpty()) dirName else "$dir/$dirName"
         scope.launch(Dispatchers.IO) {
             val dao = SmbDbBridge.mangaDatabase?.mangaDao() ?: return@launch
+            val filePath = SmbPaths.bookPath(src.id, src.share, remoteDir)
+            val existing = dao.getBookByPath(filePath)
+            if (existing != null) {
+                withContext(Dispatchers.Main) { onOpenBook(existing.id) }
+                return@launch
+            }
             val images = listDir(remoteDir)
                 .filter { it !is BrowseEntryRemote.Directory && it !is BrowseEntryRemote.FolderGallery }
                 .filter { it.name.substringAfterLast('.', "").lowercase() in IMAGE_EXTENSIONS }
                 .map { it.name }
-            withContext(Dispatchers.Main) {
-                if (images.isEmpty()) {
-                    Toast.makeText(ctx, "该文件夹不含图片，请进入后选择具体文件", Toast.LENGTH_SHORT).show()
-                } else {
-                    scope.launch(Dispatchers.IO) {
-                        val book = Book(
-                            title = dirName,
-                            filePath = SmbPaths.bookPath(src.id, src.share, remoteDir),
-                            fileType = "",
-                            coverPath = SmbPaths.coverPath(src.id, src.share, "$remoteDir/${images.first()}"),
-                            source = "smb",
-                        )
-                        val row = dao.insertBook(book)
-                        withContext(Dispatchers.Main) {
-                            Toast.makeText(ctx, if (row != -1L) "已加入书架（${images.size} 张图）" else "书架中已存在", Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                }
+            if (images.isEmpty()) {
+                withContext(Dispatchers.Main) { Toast.makeText(ctx, "该文件夹不含图片", Toast.LENGTH_SHORT).show() }
+            } else {
+                val book = Book(
+                    title = dirName,
+                    filePath = filePath,
+                    fileType = "",
+                    coverPath = SmbPaths.coverPath(src.id, src.share, "$remoteDir/${images.first()}"),
+                    source = "smb",
+                )
+                val bookId = dao.insertBook(book)
+                withContext(Dispatchers.Main) { if (bookId > 0) onOpenBook(bookId) }
             }
         }
     }
@@ -176,7 +183,7 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit) {
                     Text("空目录", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 else -> LazyColumn(Modifier.fillMaxSize()) {
-                    items(entries, key = { it.name }) { e ->
+                    items(entries) { e ->
                         when (e) {
                             is BrowseEntryRemote.Directory -> Row(
                                 Modifier.fillMaxWidth()
@@ -189,7 +196,9 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit) {
                                 Text(e.name, fontSize = 15.sp, modifier = Modifier.weight(1f))
                             }
                             is BrowseEntryRemote.FolderGallery -> Row(
-                                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                                Modifier.fillMaxWidth()
+                                    .combinedClickable(onClick = { addFolder(e.relativeName) })
+                                    .padding(horizontal = 16.dp, vertical = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 Icon(Icons.Default.Folder, null, tint = Color(0xFF9DE8B8))
@@ -198,9 +207,8 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit) {
                                     Text(e.name, fontSize = 15.sp)
                                     Text("图片文件夹 · ${e.pageCount} 张", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
-                                TextButton(onClick = { addFolder(e.relativeName) }) { Text("入架") }
                             }
-                            is BrowseEntryRemote.ArchiveGallery -> FileRow(e.name, joinRel(e.fileName), ::addArchive, ::clearBookCaches, Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+                            is BrowseEntryRemote.ArchiveGallery -> FileRow(e.name, joinRel(e.fileName), { addArchive(joinRel(e.fileName), e.name, e.fileName.substringAfterLast('.', "").lowercase()) }, Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
                             is BrowseEntryRemote.VideoFile -> Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Icon(Icons.Default.InsertDriveFile, null, tint = Color.Gray)
                                 Spacer(Modifier.width(12.dp))
@@ -209,7 +217,7 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit) {
                             else -> {
                                 val ext = e.name.substringAfterLast('.', "").lowercase()
                                 if (ext in SmbScanner.SCANNABLE_FORMATS) {
-                                    FileRow(e.name, joinRel(e.name), ::addArchive, ::clearBookCaches, Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+                                    FileRow(e.name, joinRel(e.name), { addArchive(joinRel(e.name), e.name, ext) }, Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
                                 } else {
                                     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                                         Icon(Icons.Default.InsertDriveFile, null, tint = Color.Gray)
@@ -231,17 +239,12 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit) {
 private fun FileRow(
     name: String,
     remotePath: String,
-    addArchive: (String, String, String) -> Unit,
-    clearBookCaches: (String) -> Unit,
+    onOpen: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val ext = remotePath.substringBefore(':').substringAfterLast('.', "").lowercase()
     Row(
-        modifier.fillMaxWidth()
-            .combinedClickable(
-                onClick = {},
-                onLongClick = { clearBookCaches(remotePath) },
-            ),
+        modifier.fillMaxWidth().clickable(onClick = onOpen),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(Icons.Default.InsertDriveFile, null, tint = MaterialTheme.colorScheme.primary)
@@ -250,6 +253,5 @@ private fun FileRow(
             Text(name, fontSize = 15.sp)
             Text(ext.uppercase(), fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        TextButton(onClick = { addArchive(remotePath, name, ext) }) { Text("入架") }
     }
 }

@@ -1,5 +1,7 @@
 package com.mangareader.smbbridge
 
+import com.hippo.ehviewer.library.ZipAsDirListing
+
 /**
  * SMB 路径解析（design.md 2.2.1 / spec 6.2）。
  *
@@ -60,7 +62,14 @@ object SmbPaths {
         val rel = fullRel.substringAfter('/')
         if (rel.isEmpty()) return null
         // 外层文件名：先剥成员后缀（`books/a.zip:inner/page.png` → `books/a.zip`）再取基名
-        val outerName = fullRel.substringBefore(':').substringAfterLast('/')
+        // zip-as-dir 路径（`books/a.zip/inner/page.png`）用 zip 文件的扩展名，不是成员的
+        val pathBeforeMember = fullRel.substringBefore(':')
+        val zipSplit = ZipAsDirListing.splitZipBrowsePath(pathBeforeMember)
+        val outerName = if (zipSplit != null && zipSplit.second.isNotEmpty()) {
+            zipSplit.first.substringAfterLast('/')
+        } else {
+            pathBeforeMember.substringAfterLast('/')
+        }
         val ext = outerName.substringAfterLast('.', "").lowercase()
         return SmbBookRef(serverId = idPart, share = share, rel = rel, fullRel = fullRel, ext = ext)
     }

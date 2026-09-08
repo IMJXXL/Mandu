@@ -116,7 +116,7 @@ private fun HorizontalNavigator(
                     modifier = Modifier.fillMaxWidth(),
                     colors = SliderDefaults.colors(thumbColor = Color(0xFF7C8CF8), activeTrackColor = Color(0xFF7C8CF8))
                 )
-                SliderBubble(bubblePage, bubbleFrac, trackWidth, isRtl)
+
             }
             if (isShowPageNum) Text(
                 if (isRtl) "${currentPage + 1}" else "$totalPages",
@@ -146,7 +146,7 @@ private fun SliderBubble(page: Int, frac: Float, trackWidth: Int, isRtl: Boolean
     val yPx = with(density) { (-30).dp.roundToPx() }
     Surface(
         shape = RoundedCornerShape(6.dp),
-        color = Color(0xCC7C8CF8),
+        color = Color(0xFF7C8CF8),
         modifier = Modifier.offset { IntOffset(xPx, yPx) }
     ) {
         Text(

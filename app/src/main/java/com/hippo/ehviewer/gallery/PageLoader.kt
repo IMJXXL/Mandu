@@ -198,6 +198,10 @@ abstract class PageLoader(
         repeat(initialSize.coerceAtLeast(0)) { add(Page(it)) }
     }
 
+    /** Called on the main looper when [growTo] publishes a larger size. */
+    @Volatile
+    var onSizeGrown: ((newSize: Int) -> Unit)? = null
+
     /** Live page slots; grows with [growTo] for solid lazy lists. */
     override val pages: List<Page> get() = pageList
 
@@ -226,12 +230,14 @@ abstract class PageLoader(
             if (n > sizeState.intValue) {
                 sizeState.intValue = n
                 replan()
+                onSizeGrown?.invoke(n)
             }
         } else {
             pageLoaderMainHandler.post {
                 if (n > sizeState.intValue) {
                     sizeState.intValue = n
                     replan()
+                    onSizeGrown?.invoke(n)
                 }
             }
         }

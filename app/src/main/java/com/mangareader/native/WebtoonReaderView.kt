@@ -298,6 +298,16 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
     override fun setup(engine: ArchiveEngine, treePath: String, pages: List<ArchiveEngine.PageMeta>, startPage: Int, vertical: Boolean, clickFlip: Int, rtl: Boolean, verticalPager: Boolean) {
         val changed = this.pageList.size != pages.size || this.treePath != treePath
         this.engine = engine; this.treePath = treePath; this.pageList = pages; this.currentPage = startPage
+        remotePageSupply?.onPageCountGrow?.add { newCount ->
+            if (newCount > pageList.size) {
+                val oldSize = pageList.size
+                val grown = pageList + (pageList.size until newCount).map {
+                    ArchiveEngine.PageMeta(it, "", "", name = "")
+                }
+                pageList = grown
+                post { adapter?.notifyItemRangeInserted(oldSize, newCount - oldSize) }
+            }
+        }
         // 超分渐进替换：订阅引擎完成事件，命中当前章节即原位替换
         srEventJob?.cancel()
         srEventJob = try {

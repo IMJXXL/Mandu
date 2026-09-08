@@ -18,7 +18,7 @@ import okio.FileSystem
 
 @OptIn(coil3.annotation.ExperimentalCoilApi::class)
 class AnimatedWebPDecoder(private val source: ByteBuffer) : Decoder {
-    override suspend fun decode() = DecodeResult(AnimatedWebPDrawable(source).asImage(), false)
+    override suspend fun decode() = DecodeResult(AnimatedWebPDrawable(source, forceInfinite = true).asImage(), false)
 
     object Factory : Decoder.Factory {
         override fun create(

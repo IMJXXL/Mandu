@@ -12,7 +12,7 @@ object NativeEngine {
         System.loadLibrary("native_renderer")
         System.loadLibrary("native_engine")
         System.loadLibrary("native_reader")
-        try { System.loadLibrary("archive-jni") } catch (_: Throwable) {}
+        try { System.loadLibrary("archive_stream") } catch (_: Throwable) {}
     }
 
     private external fun nativeOpenArchive(path: String): Long

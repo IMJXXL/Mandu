@@ -212,9 +212,7 @@ suspend inline fun <T> useSolidExtractPageLoader(
                     }
 
                     override fun onRequest(index: Int, force: Boolean, orgImg: Boolean) {
-                        // Same high-water as pre-rewrite: each demanded page advances sequential
-                        // extract/listing by preload. [onNavigation] alone stops at the published
-                        // lookahead and never snowballs as [growTo] reveals more members.
+                        android.util.Log.i("SolidExtract", "onRequest idx=$index force=$force prefetchN=$prefetchN")
                         bumpTarget(index + prefetchN)
                         ensureExtract(index, interactive = true) {
                             notifySourceReady(index, orgImg)
@@ -222,7 +220,9 @@ suspend inline fun <T> useSolidExtractPageLoader(
                     }
 
                     override fun onNavigation(demand: ReaderDemand) {
-                        bumpTarget(demand.progressiveDiscoveryTarget(demand.sourceAhead))
+                        val target = demand.progressiveDiscoveryTarget(demand.sourceAhead)
+                        android.util.Log.i("SolidExtract", "onNavigation anchor=${demand.navigation.anchor} visibleEnd=${demand.navigation.visiblePages.last} sourceAhead=${demand.sourceAhead} target=$target")
+                        bumpTarget(target)
                     }
 
                     override fun close() {
@@ -241,7 +241,10 @@ suspend inline fun <T> useSolidExtractPageLoader(
                     }
 
                     private fun bumpTarget(index: Int) {
+                        val old = extractTarget.get()
                         extractTarget.updateAndGet { cur -> maxOf(cur, index) }
+                        val new = extractTarget.get()
+                        android.util.Log.i("SolidExtract", "bumpTarget idx=$index old=$old new=$new")
                     }
 
                     /** In-memory only — safe on main / onRequest. */
@@ -367,11 +370,14 @@ suspend inline fun <T> useSolidExtractPageLoader(
                 hostScope.launch(Dispatchers.IO) {
                     try {
                         var lastTarget = -1
+                        android.util.Log.i("SolidExtract", "bgExtractJob start extractTarget=${extractTarget.get()} isComplete=${engine.isComplete} isAborted=${engine.isAborted}")
                         while (isActive && !engine.isComplete && !engine.isAborted) {
                             val target = extractTarget.get()
                             if (target != lastTarget) {
+                                android.util.Log.i("SolidExtract", "bgExtractJob ensureThrough($target) lastTarget=$lastTarget")
                                 engine.ensureThrough(target)
                                 loader.growTo(engine.listedCount())
+                                android.util.Log.i("SolidExtract", "bgExtractJob done ensureThrough($target) listedCount=${engine.listedCount()} isComplete=${engine.isComplete}")
                                 lastTarget = target
                             } else {
                                 delay(50)
@@ -381,10 +387,11 @@ suspend inline fun <T> useSolidExtractPageLoader(
                                 break
                             }
                         }
+                        android.util.Log.i("SolidExtract", "bgExtractJob exit isComplete=${engine.isComplete} isAborted=${engine.isAborted}")
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Throwable) {
-                        // Mid-exit close under solid extract is expected (not a real fault).
+                        android.util.Log.e("SolidExtract", "bgExtractJob exception", e)
                         if (!engine.isAborted && e !is ArchiveStreamClosedException) {
                             logcat("SolidExtract", e)
                         }

@@ -35,6 +35,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
@@ -48,6 +49,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.cancel
+import okio.Path.Companion.toPath
 import com.mangareader.App
 import com.mangareader.data.Book
 import com.mangareader.data.ReadingHistory
@@ -491,6 +494,13 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
             com.mangareader.viewer.ArchiveEngine.PageMeta(it, "", "", name = "")
         }
         pageList = pages
+        supply.onPageCountGrow.add { newCount ->
+            if (newCount > pageList.size) {
+                pageList = (0 until newCount).map {
+                    com.mangareader.viewer.ArchiveEngine.PageMeta(it, "", "", name = "")
+                }
+            }
+        }
         val lastPage = if (saved?.completed == true) 0 else (saved?.lastPage ?: 0)
         cur = (if (targetPage >= 0) targetPage else lastPage).coerceIn(0, (pages.size - 1).coerceAtLeast(0))
         viewing = true
@@ -559,7 +569,61 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
         }
     }
 
-
+    /**
+     * ★ 本地文件系统路径的归档阅读入口（下载到本地缓存的 mobi/azw3/rar/7z 等）。
+     * ArchiveEngine.listPages 只支持 SAF 路径，文件系统路径走 useArchivePageLoader +
+     * SmbPageAdapter 适配到 Reader UI（与远程阅读器同构）。
+     */
+    suspend fun enterLocalArchiveReader(
+        b: com.mangareader.data.Book,
+        localPath: String,
+        targetPage: Int,
+    ): List<com.mangareader.viewer.ArchiveEngine.PageMeta> {
+        loading = true
+        smbUnsupportedInfo = null
+        try {
+            val saved = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching { dao.getProgress(b.id, localPath) }.getOrNull()
+            }
+            val resumePage = if (targetPage >= 0) targetPage else (saved?.lastPage ?: 0)
+            val adapter = com.mangareader.smbbridge.SmbPageAdapter()
+            val sessionScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
+            sessionScope.launch {
+                try {
+                    com.hippo.ehviewer.gallery.useArchivePageLoader(
+                        file = localPath.toPath(),
+                        info = null,
+                        startPage = resumePage,
+                        passwdProvider = { throw IllegalStateException("该归档需要密码") },
+                    ) { loader ->
+                        adapter.attach(loader, null)
+                        adapter.awaitClose()
+                    }
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (t: Throwable) {
+                    android.util.Log.w("Reader", "local archive open failed", t)
+                    adapter.failAsync(t)
+                } finally {
+                    sessionScope.cancel()
+                }
+            }
+            try {
+                kotlinx.coroutines.withTimeout(45_000L) { adapter.awaitReady() }
+                return attachRemoteSession(adapter, saved, targetPage)
+            } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+                adapter.close()
+                android.widget.Toast.makeText(ctx, "打开超时", android.widget.Toast.LENGTH_SHORT).show()
+                viewing = false; loading = false; return emptyList()
+            }
+        } catch (t: Throwable) {
+            android.util.Log.w("Reader", "enterLocalArchiveReader failed", t)
+            android.widget.Toast.makeText(ctx, "打开失败：${t.message?.take(80)}", android.widget.Toast.LENGTH_SHORT).show()
+            viewing = false
+            loading = false
+            return emptyList()
+        }
+    }
 
     /**
      * ★ §23 阅读记忆方案 — 统一"进入阅读"入口，对齐 mihon `ReaderViewModel.init` 的恢复语义。
@@ -577,6 +641,9 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
         //   ArchiveEngine（有 smb:/webdav: 路径守卫）不参与；本地路径零改动
         if (path.startsWith("smb:")) return enterRemoteReader(b, path, targetPage, isSmb = true)
         if (path.startsWith("webdav:")) return enterRemoteReader(b, path, targetPage, isSmb = false)
+        // ★ 修复：文件系统路径（下载到本地缓存的归档）走 useArchivePageLoader，
+        //   ArchiveEngine.listPages 只支持 SAF 路径（a:/d: 前缀），文件系统路径会返回空。
+        if (path.startsWith("/")) return enterLocalArchiveReader(b, path, targetPage)
         val pages = withContext(Dispatchers.IO) {
             try { engine.listPages(path) } catch (_: Exception) { emptyList() }
         }
@@ -858,13 +925,8 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
                     } catch (_: Exception) { android.widget.Toast.makeText(ctx, "保存失败", android.widget.Toast.LENGTH_SHORT).show() }
                 }
             } else {
-                scope.launch {
-                    try {
-                        val bmp = withContext(Dispatchers.IO) { engine.loadPage(displayPages[idx], navStack.lastOrNull() ?: book?.filePath ?: "") }
-                        val msg = if (bmp != null) withContext(Dispatchers.IO) { savePageFallback(bmp) } else "保存失败"
-                        android.widget.Toast.makeText(ctx, msg, android.widget.Toast.LENGTH_SHORT).show()
-                    } catch (_: Exception) { android.widget.Toast.makeText(ctx, "保存失败", android.widget.Toast.LENGTH_SHORT).show() }
-                }
+                // ★ 权限拒绝不存私有目录（saved_pages 用户无法导出，存了无意义）——明确提示未保存
+                android.widget.Toast.makeText(ctx, "未获得存储权限，未能保存；可在系统设置中授权后重试", android.widget.Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -1618,7 +1680,12 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
             // 内容区域（带 padding）
             Box(Modifier.fillMaxSize().then(if (shouldApplyPadding) Modifier.padding(pad) else Modifier)) {
                 when {
-                    loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Color(0xFF7C8CF8)) }
+                    loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            CircularProgressIndicator(color = Color(0xFF7C8CF8))
+                            Text("正在打开…", color = Color(0xFF888888), fontSize = 13.sp)
+                        }
+                    }
                     errorMsg != null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(errorMsg!!) }
                     viewing && displayPages.isNotEmpty() -> {
                     val safeCur = cur.coerceIn(0, (displayPages.size - 1).coerceAtLeast(0))
@@ -1776,7 +1843,10 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
                                     // ★ N1：翻页/双页/RTL 末端判定统一走共享章末处理器
                                     it.onChapterEnd = handleChapterEnd
                                     it.onPageLongPress = { pageIdx ->
-                                        if (pageIdx in displayPages.indices) savePageAt(pageIdx)
+                                        // ★ 长按保存图片开关（阅读设置，默认关）：关闭时长按静默不响应，避免翻页误触
+                                        if (prefs.getBoolean("long_press_save", false) &&
+                                            pageIdx in displayPages.indices
+                                        ) savePageAt(pageIdx)
                                     }
                                 }
                                 (w as? com.mangareader.native.WebtoonReaderView)?.let {
@@ -2201,16 +2271,33 @@ private fun ItemCard(item: ArchiveEngine.Item, engine: ArchiveEngine, bgColor: C
             //   关 = 静态首帧。修复（2026-09-06 实测）：原写法动态分支只渲染 AsyncImage，z:/cv: 请求失败即纯空白。
             if (cover != null) {
                 val bitmap = cover!!
+                // ★ 复查修复（2026-09-06）：按 ContentScale.Crop 语义缩放居中绘制 ——
+                //   原写法 drawImage 按像素原尺寸画，与组件 0.72 宽高比不匹配时会溢出/留空边。
                 Canvas(modifier = Modifier.fillMaxSize()) {
-                    drawImage(bitmap.asImageBitmap())
+                    val iw = bitmap.width.toFloat()
+                    val ih = bitmap.height.toFloat()
+                    if (iw >= 1f && ih >= 1f) {
+                        val s = maxOf(size.width / iw, size.height / ih)
+                        val dx = (size.width - iw * s) / 2f
+                        val dy = (size.height - ih * s) / 2f
+                        withTransform({
+                            translate(dx, dy)
+                            scale(s, s, pivot = Offset.Zero)
+                        }) {
+                            drawImage(bitmap.asImageBitmap())
+                        }
+                    }
                 }
             }
             if (dynamicCovers) {
-                coil3.compose.AsyncImage(
-                    model = coil3.request.ImageRequest.Builder(itemCtx)
+                val itemCoverRequest = remember(itemCoverPath) {
+                    coil3.request.ImageRequest.Builder(itemCtx)
                         .data(com.mangareader.viewer.CoverData(itemCoverPath))
                         .size(com.hippo.ehviewer.coil.CoverThumb.decodePx(itemCtx.resources.displayMetrics.widthPixels / 2))
-                        .build(),
+                        .build()
+                }
+                coil3.compose.AsyncImage(
+                    model = itemCoverRequest,
                     contentDescription = null,
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop,

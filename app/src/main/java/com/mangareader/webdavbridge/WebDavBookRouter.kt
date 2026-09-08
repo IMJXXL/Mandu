@@ -15,8 +15,10 @@ import com.hippo.ehviewer.library.RemoteArchiveOpen
 import com.hippo.ehviewer.library.RemoteRangeNotSupportedException
 import com.hippo.ehviewer.library.isDocumentFileName
 import com.hippo.ehviewer.library.isEpubFileName
+import com.hippo.ehviewer.library.isImageFileName
 import com.hippo.ehviewer.library.isSolidArchiveFileName
 import com.hippo.ehviewer.library.isTarArchiveFileName
+import com.hippo.ehviewer.library.ZipAsDirListing
 import com.hippo.ehviewer.webdav.WebDavArchiveByteSource
 import com.hippo.ehviewer.webdav.WebDavGateway
 import com.hippo.ehviewer.webdav.WebDavPasswordStore
@@ -148,7 +150,10 @@ object WebDavBookRouter {
         startPage: Int,
         block: suspend (loader: PageLoader, byteSource: ArchiveByteSource?) -> T,
     ) {
-        val remote = ref.remotePath
+        val remoteRaw = ref.remotePath
+        // zip-as-dir 路径（`dir/file.zip/inner/page.webp`）→ 用 zip 文件路径打开归档
+        val zipSplit = ZipAsDirListing.splitZipBrowsePath(remoteRaw)
+        val remote = if (zipSplit != null && zipSplit.second.isNotEmpty()) zipSplit.first else remoteRaw
         val cacheKey = "webdav:${source.id}:$remote"
         val titleHint = remote.substringAfterLast('/').substringBefore(':').ifEmpty { source.displayName }
 
@@ -228,6 +233,19 @@ object WebDavBookRouter {
                 info = null,
                 startPage = startPage,
             ) { loader -> block(loader, byteSource) }
+        } else if (isImageFileName(remote)) {
+            // 独立图片文件（非归档成员）→ 按单图文件夹书加载
+            android.util.Log.i(TAG, "standalone image: remote=$remote")
+            runCatching { byteSource.close() }
+            val parentDir = remote.substringBeforeLast('/', "")
+            val fileName = remote.substringAfterLast('/')
+            useWebDavFolderPageLoader(
+                source = source,
+                remoteDir = parentDir,
+                imageFileNames = listOf(fileName),
+                info = null,
+                startPage = startPage,
+            ) { loader -> block(loader, null) }
         } else {
             useStreamArchivePageLoader(
                 source = byteSource,

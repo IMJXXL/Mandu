@@ -180,3 +180,21 @@
   `keepNoMediaFileStatus` 媒体扫描等 import 与对应 update 函数）。
 - 原因：这些功能依赖参考项目 `ui/` 包的 `keepNoMediaFileStatus` 扩展与 AppCompat 主题
   基建（当轮有意删减），编译必需。SMB/WebDAV/阅读相关设置字段的收集漫读设置页已全部接入。
+
+### 补记：ZipAsDirListing.kt（2026-09-06 下午，性能基准实测发现）→ 2026-09-06 深夜三重缺陷闭环定位 + 修复 + 验证
+- **现象**：全 zip 目录列表每 zip 双条目（Directory×16 + FolderGallery×16 = 32），基准实测 100% 复现。
+- **真根因（三重缺陷闭环，非单一 bug）**：
+  ① 旧版 `expandZipFilesAsFakeFolders` promote 时代把 32 条（Directory shell + FolderGallery 成对）写入磁盘索引缓存；
+  ② 新版 `classifyListingWithZipAsDirs` 已正确输出 16 条 FolderGallery（ZCLASS 探针实锤：`exit real=0 zipGalleries=16 classified=0`），但 `shouldKeepPreviousFolderIndex` 的 `indexKeepDirectoryNames` 在 zip-as-dir 下只数 Directory 行 → 新版列表无 Directory → `nextDirs=空` → 防线误判"目录全丢的差列表" → `keepPrevious=true` → **永远保留磁盘旧 32 条**，新列表存不进、slim 修复成果也被 save 弹回；
+  ③ slim 路径 `zipAdjustedRemoved = removed - zipFileNames` 把 zip 名从待删集合减掉，旧 Directory 行即使 slim 跑了也清不掉（被 ② 遮蔽的次要缺陷）。
+- **修复（4 文件）**：
+  - `ZipAsDirListing.kt` 新增 `staleZipDirectoryShellNames()`：识别 cached 中 zip 名的 Directory 壳（relativeName==name）。
+  - `SmbGateway.kt` / `WebDavGateway.kt` / `LocalFolderListing.kt` slim 路径：`cachedZipAsDir -= staleZipShells`（壳不认作有效 zip-as-dir 行 → 同名 zip 进 newZips 重分类）+ `zipAdjustedRemoved = removed - (zipFileNames - staleZipShells)`（壳进 removed 被 merge 删）。
+  - `DirectoryListing.kt` `indexKeepDirectoryNames` zip-as-dir 分支补数 flat FolderGallery 的 zip 根段（`ZipAsDirListing.zipFileSegment`）→ keep 防线不再误判 → 旧 32 条残留被正常覆盖。
+- **验证（jvmtest 真实 SMB 服务器）**：
+  - `DupProbeTest` 8 项全绿：round0/1/2=16、noCache=16、**d3 拖留自愈：注入 32 条残留 → slim 自愈 → 16 条无重复** ✓
+  - `SmbRealE2eTest` 21/21 全过（真实账号 `-DSMB_REAL_PASS`）✓
+  - 主工程 `:app:testDebugUnitTest` + `:app:assembleDebug` + `:app:assembleRelease`（R8）全过 ✓
+- **状态**：v6 已打包（versionCode 28 / 1.2.4-smb），`X:\漫读v6_debug.apk`（93MB）/ `X:\漫读v6_release.apk`（65MB）。
+- 关联：ItemCard 静态封面 Crop 绘制修复（Reader.kt，漫读自有文件，drawImage 按像素画
+  与 0.72 组件比例不匹配 → withTransform Crop 居中缩放；编译通过）。

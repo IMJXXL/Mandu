@@ -76,7 +76,10 @@ class ArchiveStreamBridge(
                 if (closed.get()) throw ArchiveStreamClosedException(position)
                 throw IOException("archive read error at $position")
             }
-            if (got == 0) return ByteArray(0) // true EOF
+            if (got == 0) {
+                android.util.Log.i("ArchiveStream", "nativeRead EOF: pos=$position fileSize=$fileSize remaining=$remaining n=$n")
+                return ByteArray(0)
+            }
             position += got
             return if (got == n) buf else buf.copyOf(got)
         } catch (e: ArchiveStreamClosedException) {

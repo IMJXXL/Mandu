@@ -14,8 +14,10 @@ import com.hippo.ehviewer.library.IMAGE_EXTENSIONS
 import com.hippo.ehviewer.library.RemoteArchiveOpen
 import com.hippo.ehviewer.library.isDocumentFileName
 import com.hippo.ehviewer.library.isEpubFileName
+import com.hippo.ehviewer.library.isImageFileName
 import com.hippo.ehviewer.library.isSolidArchiveFileName
 import com.hippo.ehviewer.library.isTarArchiveFileName
+import com.hippo.ehviewer.library.ZipAsDirListing
 import com.hippo.ehviewer.smb.SmbArchiveByteSource
 import com.hippo.ehviewer.smb.SmbGateway
 import com.hippo.ehviewer.smb.SmbPasswordStore
@@ -154,7 +156,10 @@ object SmbBookRouter {
         block: suspend (loader: PageLoader, byteSource: ArchiveByteSource?) -> T,
     ) {
         // gateway remote：fixed-share 源用去 share 段的 rel；server-root 源用完整路径（首段即 share）
-        val remote = if (source.share.isBlank()) ref.fullRel else ref.rel
+        val remoteRaw = if (source.share.isBlank()) ref.fullRel else ref.rel
+        // zip-as-dir 路径（`dir/file.zip/inner/page.webp`）→ 用 zip 文件路径打开归档，不是成员路径
+        val zipSplit = ZipAsDirListing.splitZipBrowsePath(remoteRaw)
+        val remote = if (zipSplit != null && zipSplit.second.isNotEmpty()) zipSplit.first else remoteRaw
         val cacheKey = "smb:${source.id}:$remote"
         val titleHint = remote.substringAfterLast('/').substringBefore(':').ifEmpty { source.displayName }
 
@@ -236,7 +241,21 @@ object SmbBookRouter {
                 info = null,
                 startPage = startPage,
             ) { loader -> block(loader, byteSource) }
+        } else if (isImageFileName(remote)) {
+            // 独立图片文件（非归档成员）→ 按单图文件夹书加载
+            android.util.Log.i(TAG, "standalone image: remote=$remote")
+            runCatching { byteSource.close() }
+            val parentDir = remote.substringBeforeLast('/', "")
+            val fileName = remote.substringAfterLast('/')
+            useSmbFolderPageLoader(
+                source = source,
+                remoteDir = parentDir,
+                imageFileNames = listOf(fileName),
+                info = null,
+                startPage = startPage,
+            ) { loader -> block(loader, null) }
         } else {
+            android.util.Log.i("SmbBookRouter", "stream archive path: remote=$remote ext=${ref.ext} size=${runCatching { byteSource.size }.getOrDefault(-1L)}")
             useStreamArchivePageLoader(
                 source = byteSource,
                 cacheKey = cacheKey,

@@ -879,7 +879,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
         ReadingSettingsScreen(onBack = { showReadingSettings = false })
     }
     if (showSmbServers) {
-        com.mangareader.smbbridge.SmbServersScreen(onBack = { showSmbServers = false })
+        com.mangareader.smbbridge.SmbServersScreen(onBack = { showSmbServers = false }, onOpenBook = { id -> onOpenBook?.invoke(id, null) })
     }
     if (showWebDavServers) {
         com.mangareader.webdavbridge.WebDavServersScreen(onBack = { showWebDavServers = false })

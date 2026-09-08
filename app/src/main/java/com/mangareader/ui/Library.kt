@@ -48,7 +48,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import android.graphics.drawable.Drawable
 import coil3.compose.AsyncImage
+import coil3.compose.SubcomposeAsyncImage
 import com.hippo.ehviewer.coil.coverThumb
+import com.hippo.ehviewer.library.naturalCompare
 import com.mangareader.App
 import com.mangareader.Scanner
 import com.mangareader.data.Book
@@ -208,7 +210,10 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
             }
         }
         flow.collect {
-            books = if (sortAsc) it.reversed() else it
+            val ordered = if (sort == SortMode.NAME) {
+                it.sortedWith(Comparator { a, b -> naturalCompare(a.title, b.title) })
+            } else it
+            books = if (sortAsc) ordered.reversed() else ordered
         }
     }
 
@@ -380,9 +385,51 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                     Text("进度: ${b.readPages}/${b.totalPages} 页 ($progress%)")
                     Spacer(Modifier.height(8.dp))
                     Text("文件类型: ${b.fileType.uppercase()}")
+                    Spacer(Modifier.height(8.dp))
+                    Text("来源: ${b.source}")
                 }
             },
-            confirmButton = { TextButton(onClick = { showBookInfo = null }) { Text("关闭") } })
+            confirmButton = { TextButton(onClick = { showBookInfo = null }) { Text("关闭") } },
+            dismissButton = if (b.source == "smb" || b.source == "webdav") {
+                {
+                    TextButton(onClick = {
+                        scope.launch(Dispatchers.IO) {
+                            var freed = 0L
+                            runCatching {
+                                when (b.source) {
+                                    "smb" -> {
+                                        val ref = com.mangareader.smbbridge.SmbPaths.parseBookPath(b.filePath)
+                                        if (ref != null) {
+                                            val src = com.hippo.ehviewer.smb.SmbRepository.load(ref.serverId)
+                                            val remoteRaw = if (src?.share?.isBlank() == false) ref.rel else ref.fullRel
+                                            val zipSplit = com.hippo.ehviewer.library.ZipAsDirListing.splitZipBrowsePath(remoteRaw)
+                                            val remote = if (zipSplit != null && zipSplit.second.isNotEmpty()) zipSplit.first else remoteRaw
+                                            val cacheKey = "smb:${ref.serverId}:$remote"
+                                            freed += clearSmbPageCache(ref.serverId, remote)
+                                            freed += deleteExtractDirs(cacheKey)
+                                        }
+                                    }
+                                    "webdav" -> {
+                                        val ref = com.mangareader.webdavbridge.WebDavPaths.parseBookPath(b.filePath)
+                                        if (ref != null) {
+                                            val remoteRaw = ref.remotePath
+                                            val zipSplit = com.hippo.ehviewer.library.ZipAsDirListing.splitZipBrowsePath(remoteRaw)
+                                            val remote = if (zipSplit != null && zipSplit.second.isNotEmpty()) zipSplit.first else remoteRaw
+                                            val cacheKey = "webdav:${ref.serverId}:$remote"
+                                            freed += clearWebDavPageCache(ref.serverId, remote)
+                                            freed += deleteExtractDirs(cacheKey)
+                                        }
+                                    }
+                                }
+                            }
+                            withContext(Dispatchers.Main) {
+                                Toast.makeText(ctx, "已清除缓存 ${freed / 1024 / 1024} MB", Toast.LENGTH_SHORT).show()
+                                showBookInfo = null
+                            }
+                        }
+                    }) { Text("清除缓存", color = MaterialTheme.colorScheme.error) }
+                }
+            } else null)
     }
 
     Scaffold(
@@ -605,27 +652,45 @@ private fun BookCard(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, isS
 
     Column(Modifier.clip(RoundedCornerShape(12.dp))
         .combinedClickable(onClick = onTap, onLongClick = onLongClick)) {
+        // ★ 远程不支持流式格式（mobi/azw3）→ 第一时间显示"需下载"占位符，不触发封面加载
+        val fileName = b.filePath.substringAfterLast('/').substringBefore(':')
+        val fileExt = fileName.substringAfterLast('.', "").lowercase()
+        val isRemoteUnsupported = (b.source == "smb" || b.source == "webdav") && fileExt in setOf("mobi", "azw3")
+
         Box(Modifier.fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)).background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
-            if (b.coverPath != null) {
-                // ★ 封面 = 参考项目 coverThumb 管线：按实际格子尺寸(2×)解码 + FILL + INEXACT
-                //   + 分级缓存键 + 关 crossfade；动态封面开 = Coil 动图解码器播放动画
-                //   （帧小才流畅，与参考项目一致）；关 = StaticFirstFrameDecoder 静态首帧
-                val dynOn = ctx.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE)
-                    .getBoolean("dynamic_covers", false)
-                coil3.compose.AsyncImage(
-                    model = coil3.request.ImageRequest.Builder(ctx)
-                        .data(com.mangareader.viewer.CoverData(b.coverPath))
-                        .coverThumb(
-                            decodePx,
-                            memoryKey = "cover:${b.id}@${b.coverPath}@$dynOn",
-                            diskKey = "${b.coverPath}",
-                        )
-                        .apply { if (!dynOn) decoderFactory(com.mangareader.coil.StaticFirstFrameDecoder.Factory()) }
-                        .build(),
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop,
-                )
+            when {
+                isRemoteUnsupported -> {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                        Icon(Icons.Filled.Download, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f), modifier = Modifier.size(28.dp))
+                        Text(text = "需下载", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f), modifier = Modifier.padding(top = 4.dp))
+                    }
+                }
+                b.coverPath != null -> {
+                    val dynOn = ctx.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE)
+                        .getBoolean("dynamic_covers", false)
+                    // ★ 2026-09-08：用 AsyncImage + remember(model) 稳定 ImageRequest ——
+                    //   每次重组新建 ImageRequest 会导致 AsyncImage 重启请求、停止动图，
+                    //   动图"播一次就停"。remember 缓存请求，动图持续循环（与参考项目一致）。
+                    // ★ 2026-09-08：去掉 coverLoading 转圈——onState 不可靠（Success 不触发），
+                    //   画面已显示却仍在转圈。封面加载完成图片自然出现，加载中显示背景色。
+                    val coverRequest = remember(b.coverPath, dynOn, decodePx) {
+                        coil3.request.ImageRequest.Builder(ctx)
+                            .data(com.mangareader.viewer.CoverData(b.coverPath, dynOn))
+                            .coverThumb(
+                                decodePx,
+                                memoryKey = "cover:${b.id}@${b.coverPath}@$dynOn",
+                                diskKey = "${b.coverPath}",
+                            )
+                            .apply { if (!dynOn) decoderFactory(com.mangareader.coil.StaticFirstFrameDecoder.Factory()) }
+                            .build()
+                    }
+                    coil3.compose.AsyncImage(
+                        model = coverRequest,
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop,
+                    )
+                }
             }
             Box(Modifier.fillMaxWidth().height(36.dp).align(Alignment.BottomCenter).background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.5f)))))
             Surface(Modifier.align(Alignment.TopEnd).padding(4.dp), RoundedCornerShape(6.dp), color = status.second.copy(alpha = 0.9f)) {
@@ -658,4 +723,57 @@ private fun BookCard(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, isS
             Text(text = b.title, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurface)
         }
     }
+}
+
+/** 删除 SMB 单本页缓存（原始 + HDR .jpg 兄弟），返回释放字节数 */
+private fun clearSmbPageCache(serverId: Long, remote: String): Long {
+    val pagePath = com.hippo.ehviewer.smb.SmbCache.cachePathForRemoteFile(serverId, remote)
+    val pageFile = java.io.File(pagePath.toString())
+    var freed = 0L
+    if (pageFile.isFile) freed += pageFile.length()
+    pageFile.delete()
+    val uhdrPath = com.hippo.ehviewer.image.hdr.HdrConvertCache.uhdrSiblingOf(pagePath)
+    if (uhdrPath.toString() != pagePath.toString()) {
+        val uhdrFile = java.io.File(uhdrPath.toString())
+        if (uhdrFile.isFile) freed += uhdrFile.length()
+        uhdrFile.delete()
+    }
+    com.hippo.ehviewer.smb.SmbCache.markAbsent(pagePath)
+    com.hippo.ehviewer.smb.SmbCache.markAbsent(uhdrPath)
+    return freed
+}
+
+/** 删除 WebDAV 单本页缓存（原始 + HDR .jpg 兄弟），返回释放字节数 */
+private fun clearWebDavPageCache(serverId: Long, remote: String): Long {
+    val pagePath = com.hippo.ehviewer.webdav.WebDavCache.cachePathForRemoteFile(serverId, remote)
+    val pageFile = java.io.File(pagePath.toString())
+    var freed = 0L
+    if (pageFile.isFile) freed += pageFile.length()
+    pageFile.delete()
+    val uhdrPath = com.hippo.ehviewer.image.hdr.HdrConvertCache.uhdrSiblingOf(pagePath)
+    if (uhdrPath.toString() != pagePath.toString()) {
+        val uhdrFile = java.io.File(uhdrPath.toString())
+        if (uhdrFile.isFile) freed += uhdrFile.length()
+        uhdrFile.delete()
+    }
+    com.hippo.ehviewer.webdav.WebDavCache.markAbsent(pagePath)
+    com.hippo.ehviewer.webdav.WebDavCache.markAbsent(uhdrPath)
+    return freed
+}
+
+/** 删除三类提取缓存目录，返回释放字节数 */
+private fun deleteExtractDirs(cacheKey: String): Long {
+    var freed = 0L
+    for (dir in listOf(
+        com.hippo.ehviewer.library.ArchiveStreamPageCache.dirFor(cacheKey),
+        com.hippo.ehviewer.library.SolidExtractCache.dirFor(cacheKey),
+        com.hippo.ehviewer.library.DocumentExtractCache.dirFor(cacheKey),
+    )) {
+        val f = java.io.File(dir.toString())
+        if (f.isDirectory) {
+            f.walkBottomUp().forEach { if (it.isFile) freed += it.length() }
+            f.deleteRecursively()
+        }
+    }
+    return freed
 }
