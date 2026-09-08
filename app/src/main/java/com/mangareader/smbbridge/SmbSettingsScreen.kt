@@ -2,17 +2,23 @@ package com.mangareader.smbbridge
 
 import android.app.Activity
 import android.content.ContextWrapper
+import android.content.Intent
+import android.net.Uri
+import android.provider.DocumentsContract
 import android.text.InputType
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -85,6 +91,58 @@ fun SmbSettingsScreen(onBack: () -> Unit) {
                 IntRow("阅读页缓存预算 (MB)", "流式页缓存的总容量上限", Settings.readCacheSize)
                 IntRow("预加载页数", "当前页之外预取的页数", Settings.preloadImage)
                 IntRow("下载线程数", "整档下载使用的并发连接数", Settings.multiThreadDownload)
+            }
+
+            SectionCard("下载管理") {
+                val downloadPath = Settings.smbDownloadDirPath
+                val pickDirLauncher = rememberLauncherForActivityResult(
+                    ActivityResultContracts.OpenDocumentTree(),
+                ) { uri: Uri? ->
+                    if (uri != null) {
+                        runCatching {
+                            ctx.contentResolver.takePersistableUriPermission(
+                                uri,
+                                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+                            )
+                        }
+                        Settings.smbDownloadDirTreeUri = uri.toString()
+                        val docId = DocumentsContract.getTreeDocumentId(uri)
+                        val path = if (docId.startsWith("primary:")) {
+                            android.os.Environment.getExternalStorageDirectory().absolutePath + "/" + docId.substringAfter("primary:")
+                        } else {
+                            uri.toString()
+                        }
+                        Settings.smbDownloadDirPath = path
+                    }
+                }
+                Row(
+                    Modifier.fillMaxWidth().clickable { pickDirLauncher.launch(null) }.padding(vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("下载路径", fontSize = 15.sp)
+                        Text(
+                            downloadPath ?: "未设置（点击选择）",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Text("选择 ›", fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
+                }
+                if (downloadPath != null) {
+                    TextButton(
+                        onClick = {
+                            Settings.smbDownloadDirTreeUri = null
+                            Settings.smbDownloadDirPath = null
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("清除下载路径", fontSize = 13.sp) }
+                }
+                Text(
+                    "下载的书籍保存到此目录，不会被缓存清理删除。浏览页可批量下载。",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
 
             SectionCard("归档密码") {

@@ -1,6 +1,10 @@
 package com.mangareader.smbbridge
 
+import android.content.Intent
+import android.net.Uri
+import android.provider.DocumentsContract
 import android.widget.Toast
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -9,8 +13,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.InsertDriveFile
+import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -19,9 +26,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+
 import com.ehviewer.core.database.model.SmbSourceEntity
+import com.hippo.ehviewer.Settings
 import com.hippo.ehviewer.library.BrowseEntryRemote
 import com.hippo.ehviewer.library.IMAGE_EXTENSIONS
+import com.hippo.ehviewer.library.RemoteArchiveOpen
 import com.hippo.ehviewer.smb.SmbCache
 import com.hippo.ehviewer.smb.SmbGateway
 import com.hippo.ehviewer.smb.SmbPasswordStore
@@ -35,6 +45,8 @@ import kotlinx.coroutines.withContext
  * SMB 文件夹浏览器（任务 B 补做，2026-09-06）：逐级浏览服务器目录，选择性入架。
  * 与"扫描即全量入架"并存——浏览模式适合只想加某几本/某个文件夹的场景。
  * 入架逻辑与 SmbScanner 完全同构（同一 Book 结构/路径格式/封面路径）。
+ *
+ * ★ 2026-09-08：批量下载功能——多选归档文件 → 下载到用户指定路径 → rehome 为本地书。
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -47,6 +59,11 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -> U
     var entries by remember { mutableStateOf<List<BrowseEntryRemote>>(emptyList()) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+
+    var isMultiSelectMode by remember { mutableStateOf(false) }
+    var selectedRemotes by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var downloadStatus by remember { mutableStateOf<String?>(null) }
+    var showNoDirDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(serverId) {
         password = try { SmbPasswordStore.get(serverId) } catch (_: Throwable) { "" }
@@ -74,7 +91,6 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -> U
 
     fun joinRel(child: String): String = if (dir.isEmpty()) child else "$dir/$child"
 
-    /** ★ 单本缓存清理（任务8扩展）：页/整档缓存 + 缩略图 + 流式页目录 */
     fun clearBookCaches(remote: String) {
         val src = source ?: return
         scope.launch(Dispatchers.IO) {
@@ -97,7 +113,6 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -> U
         }
     }
 
-    /** @param remote 完整前缀空间路径（调用方负责拼接 dir） */
     fun addArchive(remote: String, name: String, ext: String) {
         val src = source ?: return
         scope.launch(Dispatchers.IO) {
@@ -153,21 +168,202 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -> U
         }
     }
 
+    fun extractDownloadable(e: BrowseEntryRemote): Triple<String, String, String>? = when (e) {
+        is BrowseEntryRemote.ArchiveGallery -> Triple(joinRel(e.fileName), e.name, e.fileName.substringAfterLast('.', "").lowercase())
+        is BrowseEntryRemote.RegularFile -> {
+            val ext = e.name.substringAfterLast('.', "").lowercase()
+            if (ext in SmbScanner.SCANNABLE_FORMATS) Triple(joinRel(e.name), e.name, ext) else null
+        }
+        else -> null
+    }
+
+    val allDownloadable = entries.mapNotNull { e -> extractDownloadable(e)?.let { e to it } }
+    val allRemotes = allDownloadable.map { it.second.first }.toSet()
+    val allSelected = selectedRemotes.isNotEmpty() && selectedRemotes.containsAll(allRemotes)
+
+    fun startBatchDownload() {
+        val treeUriStr = Settings.smbDownloadDirTreeUri
+        if (treeUriStr == null) {
+            showNoDirDialog = true
+            return
+        }
+        val src = source ?: return
+        val toDownload = allDownloadable.filter { it.second.first in selectedRemotes }
+        if (toDownload.isEmpty()) return
+
+        scope.launch(Dispatchers.IO) {
+            val dao = SmbDbBridge.mangaDatabase?.mangaDao()
+            val treeUri = Uri.parse(treeUriStr)
+            val treeDocId = DocumentsContract.getTreeDocumentId(treeUri)
+            val canWrite = ctx.contentResolver.persistedUriPermissions.any {
+                it.uri == treeUri && it.isWritePermission
+            }
+            if (!canWrite) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(ctx, "下载目录不可写，请重新设置", Toast.LENGTH_LONG).show()
+                }
+                return@launch
+            }
+            // .nomedia
+            runCatching {
+                val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, treeDocId)
+                var nomediaUri: Uri? = null
+                ctx.contentResolver.query(
+                    childrenUri,
+                    arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME, DocumentsContract.Document.COLUMN_DOCUMENT_ID),
+                    null, null, null,
+                )?.use { c ->
+                    while (c.moveToNext()) {
+                        if (c.getString(0) == ".nomedia") {
+                            nomediaUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, c.getString(1))
+                        }
+                    }
+                }
+                if (nomediaUri == null) {
+                    DocumentsContract.createDocument(ctx.contentResolver, treeUri, "application/octet-stream", ".nomedia")
+                }
+            }
+
+            val total = toDownload.size
+            var done = 0
+            var failed = 0
+            for ((entry, info) in toDownload) {
+                val (remotePath, fileName, ext) = info
+                withContext(Dispatchers.Main) { downloadStatus = "下载中 $done/$total：$fileName" }
+                runCatching {
+                    val remote = if (src.share.isBlank()) remotePath else remotePath.substringAfter('/')
+                    val local = RemoteArchiveOpen.ensureSmbArchive(
+                        source = src,
+                        password = password,
+                        remoteRelativeFile = remote,
+                        allowLarge = true,
+                    )
+                    val srcFile = java.io.File(local.path.toString())
+                    if (!srcFile.exists()) throw java.io.IOException("缓存文件不存在")
+                    // 查找并删除同名文件
+                    val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, treeDocId)
+                    ctx.contentResolver.query(
+                        childrenUri,
+                        arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME, DocumentsContract.Document.COLUMN_DOCUMENT_ID),
+                        null, null, null,
+                    )?.use { c ->
+                        while (c.moveToNext()) {
+                            if (c.getString(0) == fileName) {
+                                val existingUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, c.getString(1))
+                                runCatching { DocumentsContract.deleteDocument(ctx.contentResolver, existingUri) }
+                            }
+                        }
+                    }
+                    // 创建目标文件
+                    val destUri = DocumentsContract.createDocument(ctx.contentResolver, treeUri, "application/octet-stream", fileName)
+                        ?: throw java.io.IOException("无法创建目标文件")
+                    ctx.contentResolver.openOutputStream(destUri)?.use { out ->
+                        srcFile.inputStream().use { it.copyTo(out) }
+                    } ?: throw java.io.IOException("无法打开输出流")
+                    val docId = DocumentsContract.getDocumentId(destUri)
+                    val realPath = if (docId.startsWith("primary:")) {
+                        android.os.Environment.getExternalStorageDirectory().absolutePath + "/" + docId.substringAfter("primary:")
+                    } else {
+                        destUri.toString()
+                    }
+                    if (dao != null) {
+                        val filePath = SmbPaths.bookPath(src.id, src.share, remotePath)
+                        val book = dao.getBookByPath(filePath)
+                        if (book != null) {
+                            dao.rehomeBookToLocal(book.id, realPath, ext)
+                        } else {
+                            dao.insertBook(
+                                Book(
+                                    title = fileName.substringBeforeLast('.').ifEmpty { fileName },
+                                    filePath = realPath,
+                                    fileType = ext,
+                                    source = "local",
+                                ),
+                            )
+                        }
+                    }
+                }.onFailure { t ->
+                    failed++
+                    android.util.Log.w("SmbDownload", "Failed: $fileName", t)
+                }
+                done++
+            }
+            withContext(Dispatchers.Main) {
+                downloadStatus = null
+                isMultiSelectMode = false
+                selectedRemotes = emptySet()
+                val msg = if (failed == 0) "下载完成 $total 本" else "完成 $done/$total，失败 $failed 本"
+                Toast.makeText(ctx, msg, Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
                     Column {
-                        Text(source?.displayName ?: "SMB 浏览", fontSize = 16.sp)
-                        Text("/$dir".ifEmpty { "/" }, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            if (isMultiSelectMode) "已选 ${selectedRemotes.size} 项" else (source?.displayName ?: "SMB 浏览"),
+                            fontSize = 16.sp,
+                        )
+                        if (!isMultiSelectMode) {
+                            Text("/$dir".ifEmpty { "/" }, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     }
                 },
                 navigationIcon = {
                     IconButton(onClick = {
-                        if (dir.isNotEmpty()) dir = dir.substringBeforeLast('/', "") else onBack()
+                        if (isMultiSelectMode) {
+                            isMultiSelectMode = false
+                            selectedRemotes = emptySet()
+                        } else if (dir.isNotEmpty()) {
+                            dir = dir.substringBeforeLast('/', "")
+                        } else {
+                            onBack()
+                        }
                     }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
                 },
+                actions = {
+                    if (isMultiSelectMode) {
+                        IconButton(onClick = {
+                            isMultiSelectMode = false
+                            selectedRemotes = emptySet()
+                        }) { Icon(Icons.Default.Close, "退出多选") }
+                    } else {
+                        IconButton(onClick = { isMultiSelectMode = true }) {
+                            Icon(Icons.Default.SelectAll, "多选")
+                        }
+                    }
+                },
             )
+        },
+        bottomBar = {
+            if (isMultiSelectMode) {
+                BottomAppBar {
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        TextButton(onClick = {
+                            selectedRemotes = if (allSelected) emptySet() else allRemotes
+                        }) {
+                            Icon(Icons.Default.SelectAll, null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text(if (allSelected) "取消全选" else "全选")
+                        }
+                        Button(
+                            onClick = { startBatchDownload() },
+                            enabled = selectedRemotes.isNotEmpty(),
+                        ) {
+                            Icon(Icons.Default.Download, null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("下载 ${selectedRemotes.size}")
+                        }
+                    }
+                }
+            }
         },
     ) { padding ->
         Box(Modifier.padding(padding).fillMaxSize()) {
@@ -184,6 +380,9 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -> U
                 }
                 else -> LazyColumn(Modifier.fillMaxSize()) {
                     items(entries) { e ->
+                        val dl = extractDownloadable(e)
+                        val remotePath = dl?.first
+                        val isSelected = remotePath != null && remotePath in selectedRemotes
                         when (e) {
                             is BrowseEntryRemote.Directory -> Row(
                                 Modifier.fillMaxWidth()
@@ -197,7 +396,10 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -> U
                             }
                             is BrowseEntryRemote.FolderGallery -> Row(
                                 Modifier.fillMaxWidth()
-                                    .combinedClickable(onClick = { addFolder(e.relativeName) })
+                                    .combinedClickable(onClick = {
+                                        if (isMultiSelectMode) return@combinedClickable
+                                        addFolder(e.relativeName)
+                                    })
                                     .padding(horizontal = 16.dp, vertical = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
@@ -208,7 +410,18 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -> U
                                     Text("图片文件夹 · ${e.pageCount} 张", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                             }
-                            is BrowseEntryRemote.ArchiveGallery -> FileRow(e.name, joinRel(e.fileName), { addArchive(joinRel(e.fileName), e.name, e.fileName.substringAfterLast('.', "").lowercase()) }, Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+                            is BrowseEntryRemote.ArchiveGallery -> FileRow(
+                                e.name, joinRel(e.fileName),
+                                isSelected, isMultiSelectMode,
+                                {
+                                    if (isMultiSelectMode && remotePath != null) {
+                                        selectedRemotes = if (isSelected) selectedRemotes - remotePath else selectedRemotes + remotePath
+                                    } else {
+                                        addArchive(joinRel(e.fileName), e.name, e.fileName.substringAfterLast('.', "").lowercase())
+                                    }
+                                },
+                                Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                            )
                             is BrowseEntryRemote.VideoFile -> Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Icon(Icons.Default.InsertDriveFile, null, tint = Color.Gray)
                                 Spacer(Modifier.width(12.dp))
@@ -217,7 +430,18 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -> U
                             else -> {
                                 val ext = e.name.substringAfterLast('.', "").lowercase()
                                 if (ext in SmbScanner.SCANNABLE_FORMATS) {
-                                    FileRow(e.name, joinRel(e.name), { addArchive(joinRel(e.name), e.name, ext) }, Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+                                    FileRow(
+                                        e.name, joinRel(e.name),
+                                        isSelected, isMultiSelectMode,
+                                        {
+                                            if (isMultiSelectMode && remotePath != null) {
+                                                selectedRemotes = if (isSelected) selectedRemotes - remotePath else selectedRemotes + remotePath
+                                            } else {
+                                                addArchive(joinRel(e.name), e.name, ext)
+                                            }
+                                        },
+                                        Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                                    )
                                 } else {
                                     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                                         Icon(Icons.Default.InsertDriveFile, null, tint = Color.Gray)
@@ -230,7 +454,34 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -> U
                     }
                 }
             }
+            // 下载进度
+            downloadStatus?.let { status ->
+                Box(
+                    Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.4f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Card(Modifier.padding(32.dp)) {
+                        Column(
+                            Modifier.padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            CircularProgressIndicator()
+                            Spacer(Modifier.height(16.dp))
+                            Text(status, fontSize = 14.sp)
+                        }
+                    }
+                }
+            }
         }
+    }
+
+    if (showNoDirDialog) {
+        AlertDialog(
+            onDismissRequest = { showNoDirDialog = false },
+            title = { Text("未设置下载路径") },
+            text = { Text("请先在 SMB 设置 → 下载管理 中设置下载路径") },
+            confirmButton = { TextButton(onClick = { showNoDirDialog = false }) { Text("知道了") } },
+        )
     }
 }
 
@@ -239,6 +490,8 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -> U
 private fun FileRow(
     name: String,
     remotePath: String,
+    isSelected: Boolean,
+    showCheckbox: Boolean,
     onOpen: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -247,6 +500,14 @@ private fun FileRow(
         modifier.fillMaxWidth().clickable(onClick = onOpen),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        if (showCheckbox) {
+            Checkbox(
+                checked = isSelected,
+                onCheckedChange = { onOpen() },
+                modifier = Modifier.size(24.dp),
+            )
+            Spacer(Modifier.width(8.dp))
+        }
         Icon(Icons.Default.InsertDriveFile, null, tint = MaterialTheme.colorScheme.primary)
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
