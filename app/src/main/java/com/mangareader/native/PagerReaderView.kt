@@ -1286,21 +1286,18 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 val ssv = ssiv ?: createSsiv().also { container.addView(it); ssiv = it }
                 ssv.visibility = View.VISIBLE
                 iv?.visibility = View.GONE
-                // ★ 占位动画：SSIV setImage(bitmap) 异步 decode+tile 初始化，onReady 之前显示 loadingBar
-                loadingBar?.visibility = View.VISIBLE
+                // ★ 2026-09-08：bitmap 已解码完成，直接隐藏 loadingBar（onReady 不可靠导致转圈不停）
+                loadingBar?.visibility = View.GONE
                 ssv.setOnImageEventListener(object : com.davemorrissey.labs.subscaleview.SubsamplingScaleImageView.DefaultOnImageEventListener() {
                     override fun onReady() {
                         ssv.setOnImageEventListener(null)
-                        loadingBar?.visibility = View.GONE
                         applyScale(ssv, bmp, fitWidth, landscapeZoom)
                     }
                     override fun onImageLoadError(e: Exception) {
                         ssv.setOnImageEventListener(null)
-                        loadingBar?.visibility = View.GONE
                     }
                 })
                 ssv.setImage(com.davemorrissey.labs.subscaleview.ImageSource.bitmap(bmp))
-                ssv.post { loadingBar?.visibility = View.GONE }
             } else {
                 // 不使用 SSIV：用 ImageView FIT_CENTER（同步设 bitmap，无需 loadingBar）
                 loadingBar?.visibility = View.GONE
@@ -1323,21 +1320,18 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 val ssv = ssiv ?: createSsiv().also { container.addView(it); ssiv = it }
                 ssv.visibility = View.VISIBLE
                 iv?.visibility = View.GONE
-                // ★ 占位动画：onReady 之前显示 loadingBar
-                loadingBar?.visibility = View.VISIBLE
+                // ★ 2026-09-08：bitmap 已解码完成，直接隐藏 loadingBar
+                loadingBar?.visibility = View.GONE
                 ssv.setOnImageEventListener(object : com.davemorrissey.labs.subscaleview.SubsamplingScaleImageView.DefaultOnImageEventListener() {
                     override fun onReady() {
                         ssv.setOnImageEventListener(null)
-                        loadingBar?.visibility = View.GONE
                         applySplitScale(ssv, bmp, showRight)
                     }
                     override fun onImageLoadError(e: Exception) {
                         ssv.setOnImageEventListener(null)
-                        loadingBar?.visibility = View.GONE
                     }
                 })
                 ssv.setImage(com.davemorrissey.labs.subscaleview.ImageSource.bitmap(bmp))
-                ssv.post { loadingBar?.visibility = View.GONE }
             } else {
                 val halfW = bmp.width / 2
                 val srcX = if (showRight) halfW else 0

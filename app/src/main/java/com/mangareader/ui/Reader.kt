@@ -1687,6 +1687,19 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
                         }
                     }
                     errorMsg != null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(errorMsg!!) }
+                    smbUnsupportedInfo != null -> {
+                        RemoteUnsupportedOverlay(
+                            kind = smbUnsupportedInfo!!.second,
+                            busy = smbDownloadBusy,
+                            onDownload = { downloadRemoteUnsupported(smbUnsupportedInfo!!.first, smbUnsupportedInfo!!.second) },
+                            onBack = {
+                                smbUnsupportedInfo = null
+                                viewing = false
+                                loading = false
+                            },
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
                     viewing && displayPages.isNotEmpty() -> {
                     val safeCur = cur.coerceIn(0, (displayPages.size - 1).coerceAtLeast(0))
                     if (safeCur != cur) cur = safeCur
@@ -1855,21 +1868,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
                             }
                         )
                         } // ★ v1.13 C-3 key(navStack, vertical, isRtl, verticalPager, useAnimPager) end
-                        // ★ SMB/WebDAV 不支持格式占位（任务6.2/16.2）：不透明覆盖层 + 下载按钮
-                        val remoteUnsupported = smbUnsupportedInfo
-                        if (remoteUnsupported != null) {
-                            RemoteUnsupportedOverlay(
-                                kind = remoteUnsupported.second,
-                                busy = smbDownloadBusy,
-                                onDownload = { downloadRemoteUnsupported(remoteUnsupported.first, remoteUnsupported.second) },
-                                onBack = {
-                                    smbUnsupportedInfo = null
-                                    viewing = false
-                                    loading = false
-                                },
-                                modifier = Modifier.fillMaxSize(),
-                            )
-                        }
+
                         // 超分前后对比叠层（底栏"对比"按钮开启后显示，拖动分割线看原图/超分图）
                         if (viewing) {
                             SrCompareOverlay(
