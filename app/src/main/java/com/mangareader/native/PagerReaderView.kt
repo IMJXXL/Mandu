@@ -1394,6 +1394,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             try { ssiv?.resetScaleAndCenter() } catch (_: Exception) {}
             ssiv?.visibility = View.GONE
             iv?.visibility = View.VISIBLE
+            loadingBar?.visibility = View.GONE
         }
         /** ★ §24 二代动图 set —— 接 drawable，存到 heldAnimDrawable 和全局 pageAnimDrawables，用 ImageView 显示；不 start（翻到这页时 startAnimIfNotRunning 才 start）
          *   ★ Coil 路线后 drawable 是 Animatable（系统 AnimatedDrawable），不强制是 FrameAnimationDrawable */
@@ -1414,6 +1415,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             iv?.visibility = View.VISIBLE
             iv?.scaleType = ImageView.ScaleType.FIT_CENTER
             iv?.setImageDrawable(drawable)
+            loadingBar?.visibility = View.GONE
         }
         /** 清理动图槽：stop 释放 decoder + 从全局 map 删除（用 heldIdx 不是 bindingAdapterPosition）
          *  ★ §34.2 T1 修复：不再调 iv.setImageDrawable(null)——dispose 与后续 setAnimDrawable 之间
