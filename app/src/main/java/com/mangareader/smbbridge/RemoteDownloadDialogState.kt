@@ -100,11 +100,11 @@ object RemoteDownloadDialogState {
         val cachePath = try {
             if (info.kind == "smb")
                 SmbUnsupportedFormatHandler.downloadWhole(info.filePath) { p ->
-                    SmbDownloadQueue.updateTask(taskId) { it.copy(progress = p) }
+                    SmbDownloadQueue.updateProgressFloat(taskId, p)
                 }
             else
                 com.mangareader.webdavbridge.WebDavUnsupportedFormatHandler.downloadWhole(info.filePath) { p ->
-                    SmbDownloadQueue.updateTask(taskId) { it.copy(progress = p) }
+                    SmbDownloadQueue.updateProgressFloat(taskId, p)
                 }
         } catch (t: Throwable) {
             android.util.Log.w("RemoteDL", "downloadWhole failed", t)
@@ -140,7 +140,7 @@ object RemoteDownloadDialogState {
         val treePath = treeUri.lastPathSegment?.removePrefix("tree/") ?: ""
         val auth = treeUri.authority ?: ""
         val safPath = "a:$auth|$treePath|$docId|$ext"
-        val coverPath = "cv:$docId|$fileName"
+        val coverPath = "cv:$auth|$treePath|$docId|$fileName"
 
         val dao = MangaDatabase.getDatabase(ctx).mangaDao()
         val book = withContext(Dispatchers.IO) { dao.getBookById(info.bookId) }

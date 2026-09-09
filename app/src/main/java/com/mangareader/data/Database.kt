@@ -625,6 +625,26 @@ interface MangaDao {
     @Query("SELECT * FROM bookmarks WHERE bookId IN (:bookIds)")
     suspend fun getBookmarksForBooks(bookIds: List<Long>): List<Bookmark>
 
+    // ==================== 下载任务持久化 ====================
+
+    @Query("SELECT * FROM download_tasks ORDER BY createdAt DESC")
+    fun getAllDownloadTasks(): Flow<List<DownloadTaskEntity>>
+
+    @Query("SELECT * FROM download_tasks ORDER BY createdAt DESC")
+    suspend fun getAllDownloadTasksList(): List<DownloadTaskEntity>
+
+    @Insert
+    suspend fun insertDownloadTask(t: DownloadTaskEntity): Long
+
+    @Update
+    suspend fun updateDownloadTask(t: DownloadTaskEntity)
+
+    @Query("DELETE FROM download_tasks WHERE id = :id")
+    suspend fun deleteDownloadTask(id: Long)
+
+    @Query("DELETE FROM download_tasks WHERE status = 'Completed' OR status = 'Failed'")
+    suspend fun clearFinishedDownloadTasks()
+
     // ==================== ★ C1 修复：rescan 四表快照回填 ====================
 
     /** 全字段裸插入回填行（内存合并后调用，IGNORE 仅作防御） */
@@ -873,9 +893,25 @@ data class ProgressHistoryRow(
     val completed: Boolean
 )
 
+@Entity(tableName = "download_tasks", indices = [Index("bookId")])
+data class DownloadTaskEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val title: String,
+    val sourceKind: String,
+    val sourcePath: String,
+    val localPath: String? = null,
+    val status: String = "Queued",
+    val progress: Float = 0f,
+    val error: String? = null,
+    val totalBytes: Long = 0L,
+    val downloadedBytes: Long = 0L,
+    val bookId: Long = 0L,
+    val createdAt: Long = System.currentTimeMillis(),
+)
+
 @Database(
-    entities = [Book::class, Folder::class, ReadingHistory::class, Bookshelf::class, BookshelfItem::class, Tag::class, TagLink::class, ReadingProgress::class, Bookmark::class, com.ehviewer.core.database.model.SmbSourceEntity::class, com.ehviewer.core.database.model.LibraryRootEntity::class, com.ehviewer.core.database.model.LocalGalleryEntity::class, com.ehviewer.core.database.model.WebDavSourceEntity::class],
-    version = 14,
+    entities = [Book::class, Folder::class, ReadingHistory::class, Bookshelf::class, BookshelfItem::class, Tag::class, TagLink::class, ReadingProgress::class, Bookmark::class, com.ehviewer.core.database.model.SmbSourceEntity::class, com.ehviewer.core.database.model.LibraryRootEntity::class, com.ehviewer.core.database.model.LocalGalleryEntity::class, com.ehviewer.core.database.model.WebDavSourceEntity::class, DownloadTaskEntity::class],
+    version = 15,
     exportSchema = false
 )
 abstract class MangaDatabase : com.ehviewer.core.database.LocalLibraryDatabase() {
@@ -1047,13 +1083,35 @@ abstract class MangaDatabase : com.ehviewer.core.database.LocalLibraryDatabase()
             }
         }
 
+        private val MIGRATION_14_15 = object : androidx.room.migration.Migration(14, 15) {
+            override fun migrate(database: androidx.sqlite.db.SupportSQLiteDatabase) {
+                database.execSQL("""
+                    CREATE TABLE IF NOT EXISTS download_tasks (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        title TEXT NOT NULL,
+                        sourceKind TEXT NOT NULL,
+                        sourcePath TEXT NOT NULL,
+                        localPath TEXT,
+                        status TEXT NOT NULL DEFAULT 'Queued',
+                        progress REAL NOT NULL DEFAULT 0,
+                        error TEXT,
+                        totalBytes INTEGER NOT NULL DEFAULT 0,
+                        downloadedBytes INTEGER NOT NULL DEFAULT 0,
+                        bookId INTEGER NOT NULL DEFAULT 0,
+                        createdAt INTEGER NOT NULL DEFAULT 0
+                    )
+                """.trimIndent())
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_download_tasks_bookId ON download_tasks(bookId)")
+            }
+        }
+
         fun getDatabase(context: Context): MangaDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
                     context.applicationContext,
                     MangaDatabase::class.java,
                     "manga_reader_db"
-                ).addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14)
+                ).addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15)
                 .build()
                 INSTANCE = instance
                 instance

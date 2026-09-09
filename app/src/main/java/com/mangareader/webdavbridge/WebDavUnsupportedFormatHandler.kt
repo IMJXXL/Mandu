@@ -52,6 +52,7 @@ object WebDavUnsupportedFormatHandler {
                 password = password,
                 remoteRelativeFile = ref.remotePath,
                 allowLarge = true,
+                onProgress = onProgress,
             )
         }.getOrElse { t ->
             android.util.Log.w("WebDavUnsupported", "downloadWhole failed: ${t.message}")

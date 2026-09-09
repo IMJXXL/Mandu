@@ -8,6 +8,7 @@ import com.hippo.ehviewer.smb.SmbGateway
 import com.hippo.ehviewer.webdav.WebDavCache
 import com.hippo.ehviewer.webdav.WebDavClient
 import okio.Path
+import java.io.OutputStream
 
 /**
  * Result of ensuring a remote archive is on disk for the local archive reader.
@@ -47,6 +48,8 @@ object RemoteArchiveOpen {
         allowLarge: Boolean = false,
         /** Called only when a real network download is about to start. */
         onWillDownload: (suspend () -> Unit)? = null,
+        /** Called with download progress 0f..1f during network transfer. */
+        onProgress: ((Float) -> Unit)? = null,
     ): RemoteArchiveLocal = withIOContext {
         val remote = normalizeRemoteRelative(remoteRelativeFile)
         val cache = SmbCache.cachePathForRemoteFile(source.id, remote)
@@ -63,7 +66,10 @@ object RemoteArchiveOpen {
         onWillDownload?.invoke()
         SmbCache.downloadIfNeeded(cache, originalFileName = null) { out ->
             downloaded = true
-            SmbGateway.downloadFile(source, password, remote, out)
+            val wrapped = if (onProgress != null && size != null && size > 0) {
+                CountingOutputStream(out) { written -> onProgress((written.toFloat() / size).coerceIn(0f, 1f)) }
+            } else out
+            SmbGateway.downloadFile(source, password, remote, wrapped)
         }
         RemoteArchiveLocal(cache, didDownload = downloaded)
     }
@@ -75,6 +81,7 @@ object RemoteArchiveOpen {
         knownSizeBytes: Long? = null,
         allowLarge: Boolean = false,
         onWillDownload: (suspend () -> Unit)? = null,
+        onProgress: ((Float) -> Unit)? = null,
     ): RemoteArchiveLocal = withIOContext {
         val remote = normalizeRemoteRelative(remoteRelativeFile)
         val cache = WebDavCache.cachePathForRemoteFile(source.id, remote)
@@ -82,6 +89,7 @@ object RemoteArchiveOpen {
             WebDavCache.touch(cache)
             return@withIOContext RemoteArchiveLocal(cache, didDownload = false)
         }
+        val size = knownSizeBytes ?: runCatching { WebDavClient.fileSizeOrNull(source, password, remote) }.getOrDefault(null)
         if (knownSizeBytes != null && knownSizeBytes > ARCHIVE_DOWNLOAD_WARN_BYTES && !allowLarge) {
             throw ArchiveTooLargeException(knownSizeBytes)
         }
@@ -89,10 +97,24 @@ object RemoteArchiveOpen {
         onWillDownload?.invoke()
         WebDavCache.downloadIfNeeded(cache, originalFileName = null) { out ->
             downloaded = true
-            WebDavClient.downloadFile(source, password, remote, out)
+            val wrapped = if (onProgress != null && size != null && size > 0) {
+                CountingOutputStream(out) { written -> onProgress((written.toFloat() / size).coerceIn(0f, 1f)) }
+            } else out
+            WebDavClient.downloadFile(source, password, remote, wrapped)
         }
         RemoteArchiveLocal(cache, didDownload = downloaded)
     }
+}
+
+private class CountingOutputStream(
+    private val delegate: OutputStream,
+    private val onCount: (Long) -> Unit,
+) : OutputStream() {
+    private var total = 0L
+    override fun write(b: Int) { delegate.write(b); total++; onCount(total) }
+    override fun write(b: ByteArray, off: Int, len: Int) { delegate.write(b, off, len); total += len; onCount(total) }
+    override fun flush() { delegate.flush() }
+    override fun close() { delegate.close() }
 }
 
 class ArchiveTooLargeException(val sizeBytes: Long) : Exception(

@@ -1,5 +1,8 @@
 package com.mangareader.smbbridge
 
+import android.content.Context
+import com.mangareader.data.DownloadTaskEntity
+import com.mangareader.data.MangaDatabase
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -36,11 +39,39 @@ object SmbDownloadQueue {
     val tasks: StateFlow<List<DownloadTask>> = _tasks.asStateFlow()
 
     private val jobs = mutableMapOf<Long, Job>()
+    private var dao: com.mangareader.data.MangaDao? = null
+
+    fun init(ctx: Context) {
+        if (dao != null) return
+        val d = MangaDatabase.getDatabase(ctx).mangaDao()
+        dao = d
+        scope.launch {
+            val entities = d.getAllDownloadTasksList()
+            val loaded = entities.map { it.toTask() }
+            if (loaded.isNotEmpty()) {
+                nextId = (entities.maxOf { it.id } + 1).coerceAtLeast(nextId)
+                _tasks.value = loaded
+            }
+        }
+    }
+
+    private fun DownloadTaskEntity.toTask() = DownloadTask(
+        id = id, title = title, sourceKind = sourceKind, sourcePath = sourcePath,
+        localPath = localPath, status = runCatching { DownloadStatus.valueOf(status) }.getOrDefault(DownloadStatus.Queued),
+        progress = progress, error = error, totalBytes = totalBytes, downloadedBytes = downloadedBytes, bookId = bookId,
+    )
+
+    private fun DownloadTask.toEntity() = DownloadTaskEntity(
+        id = id, title = title, sourceKind = sourceKind, sourcePath = sourcePath,
+        localPath = localPath, status = status.name, progress = progress, error = error,
+        totalBytes = totalBytes, downloadedBytes = downloadedBytes, bookId = bookId,
+    )
 
     fun enqueue(task: DownloadTask): Long {
         val id = nextId++
         val taskWithId = task.copy(id = id)
         _tasks.value = _tasks.value + taskWithId
+        scope.launch { dao?.insertDownloadTask(taskWithId.toEntity()) }
         return id
     }
 
@@ -66,16 +97,25 @@ object SmbDownloadQueue {
             }
         }
         _tasks.value = _tasks.value.filterNot { it.id == id }
+        scope.launch { dao?.deleteDownloadTask(id) }
     }
 
     fun clearCompleted() {
         val toRemove = _tasks.value.filter { it.status == DownloadStatus.Completed || it.status == DownloadStatus.Failed }
         _tasks.value = _tasks.value.filterNot { it in toRemove }
-        scope.launch { mutex.withLock { toRemove.forEach { jobs.remove(it.id) } } }
+        scope.launch {
+            mutex.withLock { toRemove.forEach { jobs.remove(it.id) } }
+            dao?.clearFinishedDownloadTasks()
+        }
     }
 
     fun updateTask(id: Long, transform: (DownloadTask) -> DownloadTask) {
+        val old = _tasks.value.find { it.id == id }
         _tasks.value = _tasks.value.map { if (it.id == id) transform(it) else it }
+        if (old != null) {
+            val newTask = transform(old)
+            scope.launch { dao?.updateDownloadTask(newTask.toEntity()) }
+        }
     }
 
     fun markCompleted(id: Long, localPath: String) {
@@ -90,6 +130,10 @@ object SmbDownloadQueue {
 
     fun updateProgress(id: Long, downloaded: Long, total: Long) {
         val pct = if (total > 0) (downloaded.toFloat() / total).coerceIn(0f, 1f) else 0f
-        updateTask(id) { it.copy(downloadedBytes = downloaded, totalBytes = total, progress = pct) }
+        _tasks.value = _tasks.value.map { if (it.id == id) it.copy(downloadedBytes = downloaded, totalBytes = total, progress = pct) else it }
+    }
+
+    fun updateProgressFloat(id: Long, p: Float) {
+        _tasks.value = _tasks.value.map { if (it.id == id) it.copy(progress = p) else it }
     }
 }

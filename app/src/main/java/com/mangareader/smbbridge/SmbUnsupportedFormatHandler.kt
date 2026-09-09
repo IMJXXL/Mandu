@@ -57,6 +57,7 @@ object SmbUnsupportedFormatHandler {
                 password = password,
                 remoteRelativeFile = remote,
                 allowLarge = true,
+                onProgress = onProgress,
             )
         }.getOrElse { t ->
             android.util.Log.w("SmbUnsupported", "downloadWhole failed: ${t.message}")

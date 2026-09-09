@@ -65,6 +65,7 @@ class App : Application(), SingletonImageLoader.Factory {
         com.mangareader.smbbridge.SmbAppContextBridge.init(this)
         com.mangareader.smbbridge.SmbDbBridge.mangaDatabase = db
         com.mangareader.webdavbridge.WebDavDbBridge.mangaDatabase = db
+        com.mangareader.smbbridge.SmbDownloadQueue.init(this)
         SignatureVerifier.verify(this, "F6D95465BE7D17C1B3BE2B0C59969C22")
         startBackgroundVerify()
         crashHandler.init()
