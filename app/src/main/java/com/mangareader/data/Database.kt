@@ -252,14 +252,14 @@ interface MangaDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertBooksBatch(books: List<Book>): List<Long>
 
-    /** ★ SMB/WebDAV 下载完成：书籍改写为本地行，保留原 coverPath（远程封面已缓存）。
-     *  originalPath 保存原始远程路径，打不开时可恢复为远程书重新下载。 */
-    @Query("UPDATE manga_books SET originalPath = filePath, filePath = :filePath, fileType = :fileType, source = 'local' WHERE id = :id")
-    suspend fun rehomeBookToLocal(id: Long, filePath: String, fileType: String)
+    /** ★ SMB/WebDAV 下载完成：只记录本地缓存路径到 originalPath，不改 filePath/source/coverPath。
+     *  书仍是远程书，打开时优先检查 originalPath 本地文件是否存在，有则从本地读（离线可读）。 */
+    @Query("UPDATE manga_books SET originalPath = :filePath WHERE id = :id")
+    suspend fun rehomeBookToLocal(id: Long, filePath: String)
 
-    /** ★ 恢复为远程书（本地文件丢失时用户选择重新下载） */
-    @Query("UPDATE manga_books SET filePath = originalPath, source = :source, originalPath = NULL WHERE id = :id")
-    suspend fun restoreBookToRemote(id: Long, source: String)
+    /** ★ 清除本地缓存路径记录（缓存文件被删时） */
+    @Query("UPDATE manga_books SET originalPath = NULL WHERE id = :id")
+    suspend fun restoreBookToRemote(id: Long)
 
     /** ★ 删除 SMB 服务器时级联清理其书籍（spec 5.1 级联清理；仅新增） */
     @Query("DELETE FROM manga_books WHERE source = 'smb' AND filePath LIKE 'smb:' || :serverId || ':%'")

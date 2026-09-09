@@ -127,17 +127,36 @@ suspend inline fun <T> useArchivePageLoader(
                     }
 
                     override fun openSource(index: Int): ImageSource {
+                        val nativeIndex = nat(index)
                         val native = synchronized(extractLock) {
-                            extractToByteBuffer(nat(index))
+                            extractToByteBuffer(nativeIndex)
                         }
-                        checkNotNull(native) { "Extract archive content $index failed!" }
-                        check(native.isDirect)
-                        // Heap copy so sibling closeArchive / cancel cannot UAF Coil on
-                        // DefaultDispatcher (mmap or native malloc still in flight).
-                        val bytes = ByteArray(native.remaining())
-                        native.duplicate().get(bytes)
-                        releaseByteBuffer(native)
-                        return byteBufferSource(ByteBuffer.wrap(bytes)) {}
+                        if (native != null) {
+                            check(native.isDirect)
+                            // Heap copy so sibling closeArchive / cancel cannot UAF Coil on
+                            // DefaultDispatcher (mmap or native malloc still in flight).
+                            val bytes = ByteArray(native.remaining())
+                            native.duplicate().get(bytes)
+                            releaseByteBuffer(native)
+                            return byteBufferSource(ByteBuffer.wrap(bytes)) {}
+                        }
+                        // ★ fallback: libarchive extractToByteBuffer 失败（某些 ZIP entry 压缩方法不支持），
+                        //   用 java.util.zip.ZipFile 按 entry name 随机提取（支持 ZIP64/deflate/store 等）
+                        val entryName = getArchiveFilename(nativeIndex)
+                        val fallbackBytes = try {
+                            java.util.zip.ZipFile(f).use { zf ->
+                                val entry = zf.getEntry(entryName)
+                                if (entry != null) zf.getInputStream(entry).use { it.readBytes() } else null
+                            }
+                        } catch (e: Exception) {
+                            android.util.Log.w("ArchivePageLoader", "ZipFile fallback failed for $entryName: ${e.message}")
+                            null
+                        }
+                        if (fallbackBytes != null) {
+                            android.util.Log.i("ArchivePageLoader", "ZipFile fallback OK for $entryName size=${fallbackBytes.size}")
+                            return byteBufferSource(ByteBuffer.wrap(fallbackBytes)) {}
+                        }
+                        throw IllegalStateException("Extract archive content $index (name=$entryName) failed!")
                     }
 
                     override fun prefetchPages(pages: List<Int>, bounds: IntRange) = Unit

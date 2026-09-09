@@ -587,15 +587,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
         loading = true
         smbUnsupportedInfo = null
         try {
-            // ★ 文件丢失检测：本地文件不存在且有 originalPath → 弹重新下载弹窗
-            val fileExists = withContext(kotlinx.coroutines.Dispatchers.IO) {
-                java.io.File(localPath).exists()
-            }
-            if (!fileExists && b.originalPath != null) {
-                redownloadBook = b
-                showRedownloadDialog = true
-                viewing = false; loading = false; return emptyList()
-            }
+
             val saved = withContext(kotlinx.coroutines.Dispatchers.IO) {
                 runCatching { dao.getProgress(b.id, localPath) }.getOrNull()
             }
@@ -651,10 +643,21 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
     /** @param targetPage ≥0 = 书签直跳目标页（覆盖 progress 恢复值）；默认 -1 走既有恢复逻辑 */
     suspend fun enterReader(path: String, targetPage: Int = -1): List<com.mangareader.viewer.ArchiveEngine.PageMeta> {
         val b = book ?: return emptyList()
-        // ★ SMB/WebDAV 分流（smb_embed_lv119 任务4.3/14.4）：远程书走 Router 会话，
-        //   ArchiveEngine（有 smb:/webdav: 路径守卫）不参与；本地路径零改动
-        if (path.startsWith("smb:")) return enterRemoteReader(b, path, targetPage, isSmb = true)
-        if (path.startsWith("webdav:")) return enterRemoteReader(b, path, targetPage, isSmb = false)
+        // ★ 方案1：远程书优先检查本地缓存（originalPath），归档格式从本地读（离线可读），mobi/azw3 走远程
+        if (path.startsWith("smb:") || path.startsWith("webdav:")) {
+            val cachePath = b.originalPath
+            if (cachePath != null && cachePath.startsWith("/")) {
+                val cacheExists = withContext(Dispatchers.IO) { java.io.File(cachePath).exists() }
+                if (cacheExists) {
+                    // ★ 有缓存文件就走本地读（所有格式），避免 mobi/azw3 走远程又返回 Unsupported 死循环
+                    return enterLocalArchiveReader(b, cachePath, targetPage)
+                } else {
+                    withContext(Dispatchers.IO) { runCatching { dao.restoreBookToRemote(b.id) } }
+                }
+            }
+            return if (path.startsWith("smb:")) enterRemoteReader(b, path, targetPage, isSmb = true)
+                   else enterRemoteReader(b, path, targetPage, isSmb = false)
+        }
         // ★ 修复：文件系统路径（下载到本地缓存的归档）走 useArchivePageLoader，
         //   ArchiveEngine.listPages 只支持 SAF 路径（a:/d: 前缀），文件系统路径会返回空。
         if (path.startsWith("/")) return enterLocalArchiveReader(b, path, targetPage)
@@ -839,11 +842,15 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
             bookmarks = withContext(Dispatchers.IO) { runCatching { dao.getBookmarksForBook(bid) }.getOrDefault(emptyList()) }
         }
     }
-    /** ★ 不支持格式下载（任务6.1/16.1）：下载完成 → 书籍改写为本地行 → 直接打开本地阅读 */
+    /** ★ 不支持格式下载：后台下载到本地缓存，完成后 Toast 提示，不自动进阅读（用户可返回书架） */
     fun downloadRemoteUnsupported(filePath: String, kind: String) {
         if (smbDownloadBusy) return
         smbDownloadBusy = true
         val b = book
+        // ★ 关闭弹窗 + 退出 Reader，让用户回到书架（后台下载）
+        smbUnsupportedInfo = null
+        viewing = false; loading = false
+        smbSession?.let { old -> smbSession = null; scope.launch(Dispatchers.IO) { runCatching { old.close() } } }
         scope.launch {
             val localPath = withContext(Dispatchers.IO) {
                 try {
@@ -858,19 +865,15 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
                 android.widget.Toast.makeText(ctx, "下载失败，可重试", android.widget.Toast.LENGTH_SHORT).show()
                 return@launch
             }
-            android.widget.Toast.makeText(ctx, "下载完成，正在打开…", android.widget.Toast.LENGTH_SHORT).show()
-            // filePath 改写为本地路径（spec 5.5.1 规则 4），本地阅读器直接打开
             if (b != null) {
-                val ext = localPath.substringAfterLast('.', "").lowercase()
                 withContext(Dispatchers.IO) {
-                    runCatching { dao.rehomeBookToLocal(b.id, localPath, ext) }
+                    runCatching { dao.rehomeBookToLocal(b.id, localPath) }
                 }
             }
-            smbUnsupportedInfo = null
-            smbSession?.let { old -> smbSession = null; scope.launch(Dispatchers.IO) { runCatching { old.close() } } }
-            enterReader(localPath)
+            android.widget.Toast.makeText(ctx, "下载完成，点击书籍阅读", android.widget.Toast.LENGTH_SHORT).show()
         }
     }
+
 
     /** 兜底：私有目录（原行为），相册不可见但绝不丢图 */
     fun savePageFallback(bmp: Bitmap): String {
@@ -1702,7 +1705,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
                     }
                     errorMsg != null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(errorMsg!!) }
                     smbUnsupportedInfo != null -> {
-                        Box(Modifier.fillMaxSize().background(Color(0xFF1A1A2E)))
+                        Box(Modifier.fillMaxSize())
                     }
                     viewing && displayPages.isNotEmpty() -> {
                     val safeCur = cur.coerceIn(0, (displayPages.size - 1).coerceAtLeast(0))
@@ -2053,7 +2056,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
                         scope.launch {
                             val origPath = rb.originalPath ?: return@launch
                             val source = if (origPath.startsWith("smb:")) "smb" else "webdav"
-                            withContext(Dispatchers.IO) { dao.restoreBookToRemote(rb.id, source) }
+                            withContext(Dispatchers.IO) { dao.restoreBookToRemote(rb.id) }
                             // 重新加载书籍并进入阅读
                             val refreshed = withContext(Dispatchers.IO) { dao.getBookById(rb.id) }
                             book = refreshed

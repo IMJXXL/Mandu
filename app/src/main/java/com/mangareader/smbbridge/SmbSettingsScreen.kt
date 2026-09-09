@@ -281,10 +281,14 @@ fun CacheManagementCard(
                     onClick = {
                         scope.launch {
                             clearingDir = e.dirRel
+                            // ★ 即时反馈：先设为 0
+                            sizes = sizes.toMutableMap().also { it[e.dirRel] = 0L }
                             withContext(Dispatchers.IO) {
-                                java.io.File(ctx.applicationInfo.dataDir, e.dirRel).deleteRecursively()
+                                val ok = java.io.File(ctx.applicationInfo.dataDir, e.dirRel).deleteRecursively()
+                                if (!ok) android.util.Log.w("CacheMgr", "deleteRecursively failed for ${e.dirRel}")
                             }
                             imageLoader.memoryCache?.clear()
+
                             clearingDir = null
                         }
                     },
@@ -296,12 +300,16 @@ fun CacheManagementCard(
             onClick = {
                 scope.launch {
                     clearingAll = true
+                    // ★ 即时反馈：全部设为 0
+                    sizes = entries.associate { it.dirRel to 0L }
                     withContext(Dispatchers.IO) {
                         entries.forEach { e ->
-                            java.io.File(ctx.applicationInfo.dataDir, e.dirRel).deleteRecursively()
+                            val ok = java.io.File(ctx.applicationInfo.dataDir, e.dirRel).deleteRecursively()
+                            if (!ok) android.util.Log.w("CacheMgr", "deleteRecursively failed for ${e.dirRel}")
                         }
                     }
                     imageLoader.memoryCache?.clear()
+
                     clearingAll = false
                 }
             },

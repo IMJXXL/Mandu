@@ -290,7 +290,7 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -> U
                         val filePath = SmbPaths.bookPath(src.id, src.share, remotePath)
                         val book = dao.getBookByPath(filePath)
                         if (book != null) {
-                            dao.rehomeBookToLocal(book.id, realPath, ext)
+                            dao.rehomeBookToLocal(book.id, realPath)
                         } else {
                             dao.insertBook(
                                 Book(
