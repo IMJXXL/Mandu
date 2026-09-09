@@ -1,0 +1,29 @@
+﻿diff --git a/X:/115/manduAAAAAAA/SMB/LocalViewer-main1.19/LocalViewer-main/app/src/main/AndroidManifest.xml b/X:/115/manduAAAAAAA/SMB/LocalViewer-main0909/LocalViewer-main/app/src/main/AndroidManifest.xml
+index 9952ec5..f8b1289 100644
+--- a/X:/115/manduAAAAAAA/SMB/LocalViewer-main1.19/LocalViewer-main/app/src/main/AndroidManifest.xml
++++ b/X:/115/manduAAAAAAA/SMB/LocalViewer-main0909/LocalViewer-main/app/src/main/AndroidManifest.xml
+@@ -11,6 +11,9 @@
+ 
+     <uses-permission android:name="android.permission.INTERNET" />
+     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
++    <!-- Android 17+: LAN sockets (SMB / local WebDAV) require this runtime permission.
++         Without it, TCP connect fails as TimeoutException instead of a permission error. -->
++    <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
+     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+     <!-- Network streamdoc proxy for external players (SMB/WebDAV movies/PDFs). -->
+     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+@@ -65,6 +68,14 @@
+             <action android:name="android.intent.action.VIEW" />
+             <data android:mimeType="video/x-matroska" />
+         </intent>
++        <!-- Chrome Custom Tabs: detect ephemeral (private) browsing support. -->
++        <intent>
++            <action android:name="android.support.customtabs.action.CustomTabsService" />
++        </intent>
++        <package android:name="com.android.chrome" />
++        <package android:name="com.chrome.beta" />
++        <package android:name="com.chrome.dev" />
++        <package android:name="com.chrome.canary" />
+     </queries>
+ 
+     <application

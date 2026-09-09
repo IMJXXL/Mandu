@@ -1,0 +1,66 @@
+﻿diff --git a/X:/115/manduAAAAAAA/SMB/LocalViewer-main1.19/LocalViewer-main/app/src/main/kotlin/com/hippo/ehviewer/Settings.kt b/X:/115/manduAAAAAAA/SMB/LocalViewer-main0909/LocalViewer-main/app/src/main/kotlin/com/hippo/ehviewer/Settings.kt
+index 478ab72..2a662d8 100644
+--- a/X:/115/manduAAAAAAA/SMB/LocalViewer-main1.19/LocalViewer-main/app/src/main/kotlin/com/hippo/ehviewer/Settings.kt
++++ b/X:/115/manduAAAAAAA/SMB/LocalViewer-main0909/LocalViewer-main/app/src/main/kotlin/com/hippo/ehviewer/Settings.kt
+@@ -129,6 +129,20 @@ object Settings : DataStorePreferences(null) {
+      */
+     val useMedia3Player = boolPref("use_media3_player", true)
+ 
++    /**
++     * When true (default): tap HTML 鈫?loopback HTTP + default browser, serving the
++     * parent directory (relative CSS/JS/images and subdir listings).
++     * When false: tap treats HTML as a regular file (current open-with / streamdoc).
++     */
++    val openHtmlWithBrowser = boolPref("open_html_with_browser", true)
++
++    /**
++     * When true (default) and [openHtmlWithBrowser] is on: tap HTML opens an
++     * isolated Chrome Custom Tab (ephemeral / private, Chrome 136+). Hidden in
++     * settings when HTML-in-browser is off.
++     */
++    val openHtmlInIncognito = boolPref("open_html_in_incognito", true)
++
+     /**
+      * Preferred external video player as flattened [android.content.ComponentName]
+      * (`package/class`). Empty = system chooser. Settings 鈫?General.
+@@ -360,7 +374,7 @@ object Settings : DataStorePreferences(null) {
+      * page). Decode from RAM; leftover files from earlier sessions may still be read.
+      * Local folders already skip a page cache.
+      */
+-    val disableReaderNetworkCache = boolPref("disable_reader_network_cache", false)
++    val disableReaderNetworkCache = boolPref("disable_reader_network_cache", true)
+ 
+     /** Decoded images to keep ahead independently of [preloadImage]. */
+     val readerDecodeAhead = intPref("pref_reader_decode_ahead", 3)
+@@ -436,8 +450,31 @@ object Settings : DataStorePreferences(null) {
+     val saveCrashLog = boolPref("save_crash_log", false)
+     val readCacheSize = intPref("read_cache_size_2", 640)
+     val enableCronet = boolPref("enable_cronet", true)
++
++    /** Cronet QUIC for the main app HTTP client. Stub for WebDAV (unused). */
+     val enableQuic = boolPref("enable_quic", true)
+ 
++    /**
++     * WebDAV HTTP/2 via OkHttp (Advanced). Default on.
++     * Off: Ktor CIO HTTP/1.1. Rebuilds [WebDavClient] on change.
++     */
++    val webDavHttp2 = boolPref("webdav_http2", true).observed {
++        runCatching {
++            com.hippo.ehviewer.webdav.WebDavClient.resetClient()
++            com.hippo.ehviewer.webdav.WebDavClient.resetStickyClient()
++        }
++    }
++
++    /**
++     * WebDAV subfolder PROPFIND / zip-root fan-out (Advanced). Default: 5.
++     */
++    val webDavConcurrentListing = intPref("webdav_concurrent_listing", 5)
++
++    /**
++     * WebDAV parallel page / Range GET fan-out (Advanced). Default: 4.
++     */
++    val webDavDownloadSlots = intPref("webdav_download_slots", 4)
++
+     /**
+      * WebDAV: trust any TLS certificate / skip hostname verify (self-signed LAN HTTPS).
+      * Default off 鈥?normal system trust for https://. Rebuilds [WebDavClient] on change.

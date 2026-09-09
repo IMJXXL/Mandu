@@ -1,0 +1,108 @@
+﻿diff --git a/X:/115/manduAAAAAAA/SMB/LocalViewer-main1.19/LocalViewer-main/app/src/main/kotlin/com/hippo/ehviewer/gallery/WebDavFolderPageLoader.kt b/X:/115/manduAAAAAAA/SMB/LocalViewer-main0909/LocalViewer-main/app/src/main/kotlin/com/hippo/ehviewer/gallery/WebDavFolderPageLoader.kt
+index 72283a6..2a7bfab 100644
+--- a/X:/115/manduAAAAAAA/SMB/LocalViewer-main1.19/LocalViewer-main/app/src/main/kotlin/com/hippo/ehviewer/gallery/WebDavFolderPageLoader.kt
++++ b/X:/115/manduAAAAAAA/SMB/LocalViewer-main0909/LocalViewer-main/app/src/main/kotlin/com/hippo/ehviewer/gallery/WebDavFolderPageLoader.kt
+@@ -16,7 +16,6 @@ import com.hippo.ehviewer.webdav.WebDavArchiveByteSource
+ import com.hippo.ehviewer.webdav.WebDavCache
+ import com.hippo.ehviewer.webdav.WebDavClient
+ import com.hippo.ehviewer.webdav.WebDavPasswordStore
+-import java.io.ByteArrayOutputStream
+ import java.nio.ByteBuffer
+ import java.util.concurrent.ConcurrentHashMap
+ import java.util.concurrent.CopyOnWriteArrayList
+@@ -65,7 +64,9 @@ suspend inline fun <T> useWebDavFolderPageLoader(
+ 
+                 override fun getImageExtension(index: Int) = FileUtils.getExtensionFromFilename(imageFileNames[index])
+ 
+-                override fun save(index: Int, file: Path): Boolean = runCatching {
++                override fun getOriginalImageFileName(index: Int) = imageFileNames[index]
++
++                override fun savePage(index: Int, file: Path): Boolean = runCatching {
+                     ramPages[index]?.let {
+                         java.io.File(file.toString()).writeBytes(it)
+                         return@runCatching true
+@@ -112,17 +113,27 @@ suspend inline fun <T> useWebDavFolderPageLoader(
+                     cancelStaleDownloads(demand.sourcePages, demand.decodedPages)
+                 }
+ 
++                override fun onForeground() {
++                    downloadJobs.cancelAll()
++                    super.onForeground()
++                }
++
+                 private fun isLibHdrCandidate(name: String): Boolean = HdrConvertCache.usesNetworkLibConvert(name)
+ 
+                 private fun cancelStaleDownloads(sourcePages: Set<Int>, decodedPages: Set<Int>) {
+                     readyWaiters.forEach { idx, _ -> if (idx !in decodedPages) readyWaiters.remove(idx) }
+                     ramPages.keys.toList().forEach { idx ->
+-                        if (idx !in sourcePages && idx !in decodedPages) ramPages.remove(idx)
++                        if (idx !in decodedPages) ramPages.remove(idx)
+                     }
+-                    // ConcurrentHashMap.forEach 鈥?avoid entries.toList() iterator race on Android.
+                     downloadJobs.cancelOutside(sourcePages)
+                 }
+ 
++                override fun convertDestPath(index: Int): Path = WebDavCache.cachePath(source.id, remoteDir, imageFileNames[index])
++
++                override fun releaseRamPage(index: Int) {
++                    ramPages.remove(index)
++                }
++
+                 private fun addReadyWaiter(index: Int, onReady: () -> Unit) {
+                     readyWaiters.getOrPut(index) { CopyOnWriteArrayList() }.add(onReady)
+                 }
+@@ -166,7 +177,7 @@ suspend inline fun <T> useWebDavFolderPageLoader(
+                                 dispatchReady(index)
+                                 return@launch
+                             }
+-                            if (skipDisk && WebDavCache.isCachedOnDisk(WebDavCache.resolveReaderPath(cache))) {
++                            if (skipDisk && WebDavCache.isPageCachedOnDisk(cache)) {
+                                 dispatchReady(index)
+                                 return@launch
+                             }
+@@ -177,16 +188,12 @@ suspend inline fun <T> useWebDavFolderPageLoader(
+                             }
+                             slots.withPermit {
+                                 if (skipDisk) {
+-                                    if (ramPages.containsKey(index) ||
+-                                        WebDavCache.isCachedOnDisk(WebDavCache.resolveReaderPath(cache))
+-                                    ) {
++                                    if (ramPages.containsKey(index) || WebDavCache.isPageCachedOnDisk(cache)) {
+                                         dispatchReady(index)
+                                         return@withPermit
+                                     }
+                                     downloadToRam(index)
+-                                    if (ramPages.containsKey(index) ||
+-                                        WebDavCache.isCachedOnDisk(WebDavCache.resolveReaderPath(cache))
+-                                    ) {
++                                    if (ramPages.containsKey(index) || WebDavCache.isPageCachedOnDisk(cache)) {
+                                         dispatchReady(index)
+                                     } else if (readyWaiters.containsKey(index)) {
+                                         notifyPageFailed(index, "WebDAV download incomplete")
+@@ -239,6 +246,8 @@ suspend inline fun <T> useWebDavFolderPageLoader(
+                 private suspend fun downloadToRam(index: Int) {
+                     if (ramPages.containsKey(index)) return
+                     val name = imageFileNames[index]
++                    val cache = WebDavCache.cachePath(source.id, remoteDir, name)
++                    if (WebDavCache.isPageCachedOnDisk(cache)) return
+                     val remote = if (remoteDir.isEmpty()) name else "$remoteDir/$name"
+                     ZipAsDirListing.zipMemberPath(remote)?.let { (zipRel, member) ->
+                         val bytes = ZipMemberCover.extractBytes(
+@@ -247,12 +256,13 @@ suspend inline fun <T> useWebDavFolderPageLoader(
+                         ) {
+                             WebDavArchiveByteSource(source, password, zipRel, pipeline = false)
+                         } ?: error("Cannot extract ZIP member $member from $zipRel")
+-                        ramPages[index] = bytes
++                        if (isDecodedDemand(index)) ramPages[index] = bytes
+                         return
+                     }
+-                    val bos = ByteArrayOutputStream()
+-                    WebDavClient.downloadFile(source, password, remote, bos)
+-                    ramPages[index] = bos.toByteArray()
++                    val sink = RamByteSink()
++                    WebDavClient.downloadFile(source, password, remote, sink)
++                    val bytes = sink.take()
++                    if (isDecodedDemand(index)) ramPages[index] = bytes
+                 }
+             },
+         )

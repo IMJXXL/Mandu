@@ -1,0 +1,18 @@
+﻿diff --git a/X:/115/manduAAAAAAA/SMB/LocalViewer-main1.19/LocalViewer-main/app/src/main/kotlin/com/hippo/ehviewer/gallery/ArchivePageLoader.kt b/X:/115/manduAAAAAAA/SMB/LocalViewer-main0909/LocalViewer-main/app/src/main/kotlin/com/hippo/ehviewer/gallery/ArchivePageLoader.kt
+index eae38df..fc8e4ef 100644
+--- a/X:/115/manduAAAAAAA/SMB/LocalViewer-main1.19/LocalViewer-main/app/src/main/kotlin/com/hippo/ehviewer/gallery/ArchivePageLoader.kt
++++ b/X:/115/manduAAAAAAA/SMB/LocalViewer-main0909/LocalViewer-main/app/src/main/kotlin/com/hippo/ehviewer/gallery/ArchivePageLoader.kt
+@@ -115,7 +115,12 @@ suspend inline fun <T> useArchivePageLoader(
+ 
+                     override fun getImageExtension(index: Int) = getExtension(nat(index))
+ 
+-                    override fun save(index: Int, file: Path) = runCatching {
++                    override fun getOriginalImageFileName(index: Int): String? {
++                        val raw = getArchiveFilename(nat(index))
++                        return raw.substringAfterLast('/').substringAfterLast('\\').ifEmpty { null }
++                    }
++
++                    override fun savePage(index: Int, file: Path) = runCatching {
+                         file.openFileDescriptor("w").use {
+                             synchronized(extractLock) {
+                                 extractToFd(nat(index), it.fd)

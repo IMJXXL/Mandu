@@ -1,0 +1,108 @@
+﻿diff --git a/X:/115/manduAAAAAAA/SMB/LocalViewer-main1.19/LocalViewer-main/app/src/main/kotlin/com/hippo/ehviewer/gallery/SmbFolderPageLoader.kt b/X:/115/manduAAAAAAA/SMB/LocalViewer-main0909/LocalViewer-main/app/src/main/kotlin/com/hippo/ehviewer/gallery/SmbFolderPageLoader.kt
+index b4d0105..161907e 100644
+--- a/X:/115/manduAAAAAAA/SMB/LocalViewer-main1.19/LocalViewer-main/app/src/main/kotlin/com/hippo/ehviewer/gallery/SmbFolderPageLoader.kt
++++ b/X:/115/manduAAAAAAA/SMB/LocalViewer-main0909/LocalViewer-main/app/src/main/kotlin/com/hippo/ehviewer/gallery/SmbFolderPageLoader.kt
+@@ -16,7 +16,6 @@ import com.hippo.ehviewer.smb.SmbCache
+ import com.hippo.ehviewer.smb.SmbGateway
+ import com.hippo.ehviewer.smb.SmbPasswordStore
+ import com.hippo.ehviewer.util.FileUtils
+-import java.io.ByteArrayOutputStream
+ import java.nio.ByteBuffer
+ import java.util.concurrent.ConcurrentHashMap
+ import java.util.concurrent.CopyOnWriteArrayList
+@@ -80,7 +79,9 @@ suspend inline fun <T> useSmbFolderPageLoader(
+ 
+                 override fun getImageExtension(index: Int) = FileUtils.getExtensionFromFilename(imageFileNames[index])
+ 
+-                override fun save(index: Int, file: Path): Boolean = runCatching {
++                override fun getOriginalImageFileName(index: Int) = imageFileNames[index]
++
++                override fun savePage(index: Int, file: Path): Boolean = runCatching {
+                     ramPages[index]?.let {
+                         java.io.File(file.toString()).writeBytes(it)
+                         return@runCatching true
+@@ -133,6 +134,16 @@ suspend inline fun <T> useSmbFolderPageLoader(
+                     cancelStaleDownloads(demand.sourcePages, demand.decodedPages)
+                 }
+ 
++                override fun onForeground() {
++                    downloadJobs.cancelAll()
++                    super.onForeground()
++                    if (!SmbGateway.isSourceConnected(source)) {
++                        scope.launch(Dispatchers.IO) {
++                            SmbGateway.refreshConnectionSignal(source, password)
++                        }
++                    }
++                }
++
+                 /** Restrict prefetch only when download will RAM鈫扷HDR convert. */
+                 private fun isLibHdrCandidate(name: String): Boolean = HdrConvertCache.usesNetworkLibConvert(name)
+ 
+@@ -141,7 +152,7 @@ suspend inline fun <T> useSmbFolderPageLoader(
+                     // cancellation handler cannot resurrect an obsolete interactive transfer.
+                     readyWaiters.forEach { idx, _ -> if (idx !in decodedPages) readyWaiters.remove(idx) }
+                     ramPages.keys.toList().forEach { idx ->
+-                        if (idx !in sourcePages && idx !in decodedPages) ramPages.remove(idx)
++                        if (idx !in decodedPages) ramPages.remove(idx)
+                     }
+                     // ConcurrentHashMap.forEach (BiConsumer) 鈥?never entries/keys iterator.
+                     // Android EntryIterator.next can throw NoSuchElementException under concurrent
+@@ -149,6 +160,12 @@ suspend inline fun <T> useSmbFolderPageLoader(
+                     downloadJobs.cancelOutside(sourcePages)
+                 }
+ 
++                override fun convertDestPath(index: Int): Path = SmbCache.cachePath(source.id, remoteDir, imageFileNames[index])
++
++                override fun releaseRamPage(index: Int) {
++                    ramPages.remove(index)
++                }
++
+                 private fun addReadyWaiter(index: Int, onReady: () -> Unit) {
+                     readyWaiters.getOrPut(index) { CopyOnWriteArrayList() }.add(onReady)
+                 }
+@@ -205,7 +222,7 @@ suspend inline fun <T> useSmbFolderPageLoader(
+                                 dispatchReady(index)
+                                 return@launch
+                             }
+-                            if (skipDisk && SmbCache.isCachedOnDisk(SmbCache.resolveReaderPath(cache))) {
++                            if (skipDisk && SmbCache.isPageCachedOnDisk(cache)) {
+                                 dispatchReady(index)
+                                 return@launch
+                             }
+@@ -227,8 +244,7 @@ suspend inline fun <T> useSmbFolderPageLoader(
+                                 }
+                             }
+                             val ready = if (skipDisk) {
+-                                ramPages.containsKey(index) ||
+-                                    SmbCache.isCachedOnDisk(SmbCache.resolveReaderPath(cache))
++                                ramPages.containsKey(index) || SmbCache.isPageCachedOnDisk(cache)
+                             } else {
+                                 SmbCache.isPageCachedOnDisk(cache)
+                             }
+@@ -278,6 +294,8 @@ suspend inline fun <T> useSmbFolderPageLoader(
+                 private suspend fun downloadToRam(index: Int) {
+                     if (ramPages.containsKey(index)) return
+                     val name = imageFileNames[index]
++                    val cache = SmbCache.cachePath(source.id, remoteDir, name)
++                    if (SmbCache.isPageCachedOnDisk(cache)) return
+                     val rel = if (remoteDir.isEmpty()) name else "$remoteDir/$name"
+                     ZipAsDirListing.zipMemberPath(rel)?.let { (zipRel, member) ->
+                         val bytes = ZipMemberCover.extractBytes(
+@@ -292,12 +310,13 @@ suspend inline fun <T> useSmbFolderPageLoader(
+                                 yieldable = false,
+                             )
+                         } ?: error("Cannot extract ZIP member $member from $zipRel")
+-                        ramPages[index] = bytes
++                        if (isDecodedDemand(index)) ramPages[index] = bytes
+                         return
+                     }
+-                    val bos = ByteArrayOutputStream()
+-                    SmbGateway.downloadFile(source, password, rel, bos)
+-                    ramPages[index] = bos.toByteArray()
++                    val sink = RamByteSink()
++                    SmbGateway.downloadFile(source, password, rel, sink)
++                    val bytes = sink.take()
++                    if (isDecodedDemand(index)) ramPages[index] = bytes
+                 }
+ 
+                 private suspend fun downloadToCache(index: Int) {

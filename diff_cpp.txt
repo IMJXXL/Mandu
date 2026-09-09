@@ -1,0 +1,4 @@
+﻿M	X:/115/manduAAAAAAA/SMB/LocalViewer-main1.19/LocalViewer-main/app/src/main/cpp/avif_hdr.cpp
+M	X:/115/manduAAAAAAA/SMB/LocalViewer-main1.19/LocalViewer-main/app/src/main/cpp/hdr_convert.cpp
+M	X:/115/manduAAAAAAA/SMB/LocalViewer-main1.19/LocalViewer-main/app/src/main/cpp/hdr_encode.h
+M	X:/115/manduAAAAAAA/SMB/LocalViewer-main1.19/LocalViewer-main/app/src/main/cpp/jxl_hdr.cpp

@@ -1,0 +1,2 @@
+﻿M	X:/115/manduAAAAAAA/SMB/LocalViewer-main1.19/LocalViewer-main/app/src/main/rust/test_data/archive_url.html
+M	X:/115/manduAAAAAAA/SMB/LocalViewer-main1.19/LocalViewer-main/app/src/main/rust/test_data/archives_with_funds.html

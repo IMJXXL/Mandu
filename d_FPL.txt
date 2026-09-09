@@ -1,0 +1,38 @@
+﻿diff --git a/X:/115/manduAAAAAAA/SMB/LocalViewer-main1.19/LocalViewer-main/app/src/main/kotlin/com/hippo/ehviewer/gallery/FolderPageLoader.kt b/X:/115/manduAAAAAAA/SMB/LocalViewer-main0909/LocalViewer-main/app/src/main/kotlin/com/hippo/ehviewer/gallery/FolderPageLoader.kt
+index 27c3bf1..7a11dfe 100644
+--- a/X:/115/manduAAAAAAA/SMB/LocalViewer-main1.19/LocalViewer-main/app/src/main/kotlin/com/hippo/ehviewer/gallery/FolderPageLoader.kt
++++ b/X:/115/manduAAAAAAA/SMB/LocalViewer-main0909/LocalViewer-main/app/src/main/kotlin/com/hippo/ehviewer/gallery/FolderPageLoader.kt
+@@ -19,12 +19,19 @@ suspend inline fun <T> useFolderPageLoader(
+     dir: Path,
+     info: GalleryInfo? = null,
+     startPage: Int = 0,
++    imageNames: List<String> = emptyList(),
+     crossinline block: suspend (PageLoader) -> T,
+ ) = autoCloseScope {
+     coroutineScope {
+-        val files = dir.list()
+-            .filter { it.isFile && isImageFileName(it.name) }
+-            .sortedWith { a, b -> naturalCompare(a.name, b.name) }
++        // Browse/photo-grid already classified these names. Join onto [dir] so SAF
++        // trees skip DocumentsContract children queries (MediaStore list is cheap).
++        val files = if (imageNames.isNotEmpty()) {
++            imageNames.map { dir / it }
++        } else {
++            dir.list()
++                .filter { it.isFile && isImageFileName(it.name) }
++                .sortedWith { a, b -> naturalCompare(a.name, b.name) }
++        }
+         check(files.isNotEmpty()) { "Folder has no images: $dir" }
+         val size = files.size
+         val loader = install(
+@@ -35,7 +42,9 @@ suspend inline fun <T> useFolderPageLoader(
+ 
+                 override fun getImageExtension(index: Int) = FileUtils.getExtensionFromFilename(files[index].name)
+ 
+-                override fun save(index: Int, file: Path): Boolean = runCatching {
++                override fun getOriginalImageFileName(index: Int) = files[index].name
++
++                override fun savePage(index: Int, file: Path): Boolean = runCatching {
+                     files[index] sendTo file
+                     true
+                 }.getOrDefault(false)

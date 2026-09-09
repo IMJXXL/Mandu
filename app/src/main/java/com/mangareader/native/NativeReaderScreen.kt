@@ -138,16 +138,10 @@ fun NativeReaderScreen(
     /** ★ SMB/WebDAV 页面供给（design.md 2.2.2）：非 null 时阅读页面走远程会话。
      *   以参数形式在 setup() 之前注入 delegate，消除"setup 早于供给挂接"的竞态窗口。 */
     remoteSupply: com.mangareader.native.RemotePageSupply? = null,
-    /** ★ §34.5：动图卷专用视图——true 时用 AnimPagerReaderView 代替 PagerReaderView。
-     *  Reader.kt 进卷批量 peek 后判定为动图卷，弹对话框让用户选；选"进入动图视图"后置 true 走本视图。
-     *  与 vertical 不冲突：条漫卷下 peek 到动图也会弹窗，弹窗确认后也用 animPager（animPager 自身支持 verticalPager） */
-    useAnimPager: Boolean = false,
     modifier: Modifier = Modifier,
     onPageChanged: (Int) -> Unit = {},
     onToggleUi: () -> Unit = {},
     onViewReady: (webtoonView: View, pagerView: View) -> Unit = { _, _ -> },
-    /** ★ N1：动图卷视图就绪回调——动图卷的无缝续读章末钩子走这里（onViewReady 只给 Pager） */
-    onAnimPagerReady: ((AnimPagerReaderView) -> Unit)? = null,
     /** ★ v1.13 C-2：把内容容器暴露给上层做切换前同步截图（无感模式切换遮罩的数据源） */
     onContainerReady: (FrameLayout) -> Unit = {}
 ) {
@@ -158,15 +152,9 @@ fun NativeReaderScreen(
 
     val webtoonView = remember { WebtoonReaderView(ctx).apply { layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT) } }
     val pagerView = remember { PagerReaderView(ctx).apply { layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT) } }
-    // ★ §34.5：动图卷专用视图——与 pagerView 并存，但渲染时二选一（useAnimPager 决定哪个加进 container）
-    val animPagerView = remember { AnimPagerReaderView(ctx).apply { layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT) } }
 
-    // ★ §34.5：isVertical（条漫）走 webtoonView；useAnimPager（动图卷）走 animPagerView；其余走 pagerView。
-    //   useAnimPager 优先 —— 动图卷不论是条漫还是翻页模式，确认进动图视图后统一走 animPagerView
-    //   （animPagerView 内部 verticalPager 选项自己做竖向/横向翻页切换）。
-    fun activeDelegate(isVerticalNow: Boolean, useAnimPagerNow: Boolean): ReaderViewDelegate =
-        if (isVerticalNow && !useAnimPagerNow) webtoonView
-        else if (useAnimPagerNow) animPagerView
+    fun activeDelegate(isVerticalNow: Boolean): ReaderViewDelegate =
+        if (isVerticalNow) webtoonView
         else pagerView
 
     // Track last released delegate to avoid double release
@@ -180,7 +168,7 @@ fun NativeReaderScreen(
         // 三视图的 trimMemory 一并接线（修复"trimMemory 全项目无调用方"）
         ReaderTrimRegistry.register(webtoonView)
         ReaderTrimRegistry.register(pagerView)
-        ReaderTrimRegistry.register(animPagerView)
+
         onDispose {
             // Compose 逆序 dispose：keyed effect 先 dispose（drain 完成）→ 本 Unit effect 最后兜底
             SrBitmapHandoffBus.recycleStale()
@@ -188,12 +176,12 @@ fun NativeReaderScreen(
         }
     }
 
-    DisposableEffect(treePath, isVertical, isRtl, verticalPager, useAnimPager, remoteSupply) {
+    DisposableEffect(treePath, isVertical, isRtl, verticalPager, remoteSupply) {
         if (firstComposition) {
             savedPage = startPage
             firstComposition = false
         }
-        val delegate = activeDelegate(isVertical, useAnimPager)
+        val delegate = activeDelegate(isVertical)
         // Release previous delegate only once
         val prevDelegate = lastReleasedDelegate
         if (prevDelegate != null && prevDelegate !== delegate) {
@@ -204,10 +192,8 @@ fun NativeReaderScreen(
         delegate.onToggleUi = onToggleUi
         // 先设置颜色再setup，确保adapter创建时用正确颜色
         if (delegate is PagerReaderView) delegate.pageBgColor = pageBgColor
-        if (delegate is AnimPagerReaderView) delegate.pageBgColor = pageBgColor
         if (delegate is WebtoonReaderView) delegate.pageBgColor = pageBgColor
         // ★ SMB/WebDAV：供给必须在 setup 之前挂接——setup 内 preloadAround 会立刻触发 loadPageAsync
-        //   （AnimPagerReaderView 为本地动图专属视图，不接远程供给）
         if (delegate is PagerReaderView) delegate.remotePageSupply = remoteSupply
         if (delegate is WebtoonReaderView) delegate.remotePageSupply = remoteSupply
         // ★ §34.3：verticalPager 传给 pagerView.setup（webtoon 走默认 false 无影响）
@@ -230,7 +216,7 @@ fun NativeReaderScreen(
             delegate.trimWhiteRatio = trimWhiteRatio
         }
         // ★ P0-2：切换交接——本次 setup 后立即从总线接管旧实例移交的位图（跨实例），首帧绑定直接命中缓存
-        android.util.Log.w("NES", "setup delegate=${System.identityHashCode(delegate)} v=$isVertical anim=$useAnimPager vp=$verticalPager tree=$treePath")
+        android.util.Log.w("NES", "setup delegate=${System.identityHashCode(delegate)} v=$isVertical vp=$verticalPager tree=$treePath")
         SrBitmapHandoffBus.take()?.let { h ->
             // ★ F2.3 身份标签：批次归属与当前章不符（切章/换书时 key() 重建的竞态窗口）
             //   不接管并立刻回收旧图防错配，新视图按未命中流程正常解码
@@ -266,7 +252,7 @@ fun NativeReaderScreen(
             savedPage = startPage
             // ★ P0-B5 验证日志（根因修复确认后删除）
             android.util.Log.d("WebtoonRV", "NES -> goToPage($startPage)")
-            activeDelegate(isVertical, useAnimPager).goToPage(startPage)
+            activeDelegate(isVertical).goToPage(startPage)
         }
     }
 
@@ -287,31 +273,20 @@ fun NativeReaderScreen(
             val container = FrameLayout(ctx).apply { layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT) }
             container.addView(webtoonView)
             container.addView(pagerView)
-            container.addView(animPagerView)  // ★ §34.5 第三条路由
             fun syncVis() {
-                webtoonView.visibility = if (isVertical && !useAnimPager) View.VISIBLE else View.GONE
-                pagerView.visibility = if (!isVertical && !useAnimPager) View.VISIBLE else View.GONE
-                animPagerView.visibility = if (useAnimPager) View.VISIBLE else View.GONE
+                webtoonView.visibility = if (isVertical) View.VISIBLE else View.GONE
+                pagerView.visibility = if (!isVertical) View.VISIBLE else View.GONE
             }
             syncVis()
             containerRef = container
-            // ★ §34.5 onViewReady 兼容旧签名 (webtoonView, pagerView) →
-            //   不论 useAnimPager 都传 pagerView 作第二参：Reader.kt 上的 hook（flipAnimation/margin/onChapterEnd/onLongPress）
-            //   都是 PagerReaderView 专属，动图卷下不显示时挂上无副作用；useAnimPager 切回 false 时立即生效。
-            //   AnimPagerReaderView 不需要这些 hook（其内部状态自洽）。
             onViewReady(webtoonView, pagerView)
-            // ★ N1：动图卷就绪钩子（章末无缝续读）
-            onAnimPagerReady?.invoke(animPagerView)
             // ★ v1.13 C-2：容器就绪回调（截图用；draw(container) 只画 VISIBLE 子树，GONE 自动排除）
             onContainerReady(container)
             container
         },
         update = { container ->
-            // ★ §34.5 三视图按状态切显隐
-            //   child0=webtoonView, child1=pagerView, child2=animPagerView
-            container.getChildAt(0).visibility = if (isVertical && !useAnimPager) View.VISIBLE else View.GONE
-            container.getChildAt(1).visibility = if (!isVertical && !useAnimPager) View.VISIBLE else View.GONE
-            container.getChildAt(2).visibility = if (useAnimPager) View.VISIBLE else View.GONE
+            container.getChildAt(0).visibility = if (isVertical) View.VISIBLE else View.GONE
+            container.getChildAt(1).visibility = if (!isVertical) View.VISIBLE else View.GONE
         },
         modifier = modifier
     )
