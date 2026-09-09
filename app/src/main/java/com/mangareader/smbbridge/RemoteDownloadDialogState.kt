@@ -146,7 +146,7 @@ object RemoteDownloadDialogState {
         val book = withContext(Dispatchers.IO) { dao.getBookById(info.bookId) }
         if (book != null) {
             withContext(Dispatchers.IO) {
-                runCatching { dao.updateBook(book.copy(filePath = safPath, source = "local", fileType = ext, coverPath = coverPath)) }
+                runCatching { dao.updateBook(book.copy(filePath = safPath, source = "local", fileType = ext, coverPath = coverPath, originalPath = info.filePath)) }
             }
             coil3.SingletonImageLoader.get(ctx).memoryCache?.clear()
         }

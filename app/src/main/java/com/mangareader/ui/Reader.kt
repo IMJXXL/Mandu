@@ -679,8 +679,14 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
         //     - 点「移除本卷进度」才执行 dao.deleteProgress(b.id, path)——避免误删合法 progress（SAF 临时失败等场景）。
         //     - 默认 viewing=false 不进死态。
         if (pages.isEmpty()) {
-            missingFilePath = path
-            showFileMissingDialog = true
+            // ★ 已下载书本地文件丢失 → 触发恢复为远程书弹窗（originalPath 存在时可重新下载）
+            if (b.originalPath != null) {
+                redownloadBook = b
+                showRedownloadDialog = true
+            } else {
+                missingFilePath = path
+                showFileMissingDialog = true
+            }
             pageList = emptyList()
             cur = 0
             viewing = false
@@ -2065,8 +2071,10 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
                         scope.launch {
                             val origPath = rb.originalPath ?: return@launch
                             val source = if (origPath.startsWith("smb:")) "smb" else "webdav"
-                            withContext(Dispatchers.IO) { dao.restoreBookToRemote(rb.id) }
-                            // 重新加载书籍并进入阅读
+                            val ext = origPath.substringAfterLast('.', "").lowercase()
+                            withContext(Dispatchers.IO) {
+                                dao.updateBook(rb.copy(filePath = origPath, source = source, fileType = ext, originalPath = null, coverPath = null))
+                            }
                             val refreshed = withContext(Dispatchers.IO) { dao.getBookById(rb.id) }
                             book = refreshed
                             redownloadBook = null

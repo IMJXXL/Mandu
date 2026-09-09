@@ -729,7 +729,7 @@ private fun BookCard(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, isS
             Surface(Modifier.align(Alignment.TopEnd).padding(4.dp), RoundedCornerShape(6.dp), color = status.second.copy(alpha = 0.9f)) {
                 Text(text = status.first, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp), fontSize = 10.sp, color = Color.White)
             }
-            // ★ 来源角标（任务A）：仅远程书显示，本地书不显示
+            // ★ 来源角标（任务A）：远程书显示来源，已下载书显示"已下载"来源
             if (b.source == "smb" || b.source == "webdav") {
                 Surface(
                     Modifier.align(Alignment.TopStart).padding(4.dp),
@@ -738,6 +738,20 @@ private fun BookCard(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, isS
                 ) {
                     Text(
                         text = if (b.source == "smb") "SMB" else "WebDAV",
+                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                        fontSize = 9.sp,
+                        color = Color.White,
+                    )
+                }
+            } else if (b.originalPath != null) {
+                val isFromSmb = b.originalPath!!.startsWith("smb:")
+                Surface(
+                    Modifier.align(Alignment.TopStart).padding(4.dp),
+                    RoundedCornerShape(6.dp),
+                    color = if (isFromSmb) Color(0xCC4A7BD4) else Color(0xCC8A5CD4),
+                ) {
+                    Text(
+                        text = if (isFromSmb) "SMB↓" else "WebDAV↓",
                         modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
                         fontSize = 9.sp,
                         color = Color.White,
