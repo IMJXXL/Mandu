@@ -16,7 +16,7 @@ import com.hippo.ehviewer.smb.SmbCache
 import com.hippo.ehviewer.smb.SmbGateway
 import com.hippo.ehviewer.smb.SmbPasswordStore
 import com.hippo.ehviewer.util.FileUtils
-import java.io.ByteArrayOutputStream
+
 import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
@@ -301,9 +301,9 @@ suspend inline fun <T> useSmbFolderPageLoader(
                         ramPages[index] = bytes
                         return
                     }
-                    val bos = ByteArrayOutputStream()
+                    val bos = RamByteSink()
                     SmbGateway.downloadFile(source, password, rel, bos)
-                    ramPages[index] = bos.toByteArray()
+                    ramPages[index] = bos.take()
                 }
 
                 private suspend fun downloadToCache(index: Int) {

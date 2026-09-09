@@ -16,7 +16,7 @@ import com.hippo.ehviewer.webdav.WebDavArchiveByteSource
 import com.hippo.ehviewer.webdav.WebDavCache
 import com.hippo.ehviewer.webdav.WebDavClient
 import com.hippo.ehviewer.webdav.WebDavPasswordStore
-import java.io.ByteArrayOutputStream
+
 import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
@@ -256,9 +256,9 @@ suspend inline fun <T> useWebDavFolderPageLoader(
                         ramPages[index] = bytes
                         return
                     }
-                    val bos = ByteArrayOutputStream()
+                    val bos = RamByteSink()
                     WebDavClient.downloadFile(source, password, remote, bos)
-                    ramPages[index] = bos.toByteArray()
+                    ramPages[index] = bos.take()
                 }
             },
         )
