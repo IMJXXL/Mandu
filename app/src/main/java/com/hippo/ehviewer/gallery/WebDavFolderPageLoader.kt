@@ -65,6 +65,8 @@ suspend inline fun <T> useWebDavFolderPageLoader(
 
                 override fun getImageExtension(index: Int) = FileUtils.getExtensionFromFilename(imageFileNames[index])
 
+                override val prefetchDecodeAhead = false
+
                 override fun save(index: Int, file: Path): Boolean = runCatching {
                     ramPages[index]?.let {
                         java.io.File(file.toString()).writeBytes(it)

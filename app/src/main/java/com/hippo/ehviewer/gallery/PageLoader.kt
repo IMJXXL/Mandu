@@ -333,6 +333,15 @@ abstract class PageLoader(
     /** Source adapters may reprioritize transport/extraction once per navigation update. */
     protected open fun onNavigation(demand: ReaderDemand) = Unit
 
+    /**
+     * True → decode-ahead pages go through [requestDecode] (pre-decode on interactive slot).
+     * False → decode-ahead pages go through [prefetchPages] (download on prefetch slots,
+     * decode on demand when user scrolls to them). Remote loaders (SMB/WebDAV) override
+     * to false so decode-ahead does not compete with the visible page for the single
+     * interactive slot.
+     */
+    protected open val prefetchDecodeAhead: Boolean = true
+
     fun notifyPageWait(index: Int) {
         pages[index].reset()
     }
@@ -498,8 +507,14 @@ abstract class PageLoader(
         prioritizeDecode(demand.decodedPages)
         // Interactive viewport first, then nearest decoded neighbors.
         demand.visibleDecode.forEach(::requestDecode)
-        demand.decodeAhead.forEach(::requestDecode)
-        prefetchAbsent(demand.sourceOnly)
+        if (prefetchDecodeAhead) {
+            demand.decodeAhead.forEach(::requestDecode)
+            prefetchAbsent(demand.sourceOnly)
+        } else {
+            // Remote: download decode-ahead on prefetch slots (parallel with visible page
+            // on interactive slot); decode on demand when user scrolls to them.
+            prefetchAbsent((demand.decodeAhead + demand.sourceOnly).distinct())
+        }
     }
 
     private fun isAutoDecodeAheadFormat(index: Int): Boolean {
