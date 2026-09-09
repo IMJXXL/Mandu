@@ -237,6 +237,10 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
     var smbUnsupportedInfo by remember { mutableStateOf<Pair<String, String>?>(null) }
     var smbDownloadBusy by remember { mutableStateOf(false) }
 
+    // ★ 重新下载弹窗（本地文件丢失，originalPath 存在时可恢复为远程书）
+    var showRedownloadDialog by remember { mutableStateOf(false) }
+    var redownloadBook by remember { mutableStateOf<com.mangareader.data.Book?>(null) }
+
     // ★ 远程供给挂接：视图随模式切换整体重建（key 五元组），这里响应式重挂到当前活跃视图
     LaunchedEffect(smbSession, activePagerRef, activeWebtoonRef) {
         val s = smbSession
@@ -583,6 +587,15 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
         loading = true
         smbUnsupportedInfo = null
         try {
+            // ★ 文件丢失检测：本地文件不存在且有 originalPath → 弹重新下载弹窗
+            val fileExists = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                java.io.File(localPath).exists()
+            }
+            if (!fileExists && b.originalPath != null) {
+                redownloadBook = b
+                showRedownloadDialog = true
+                viewing = false; loading = false; return emptyList()
+            }
             val saved = withContext(kotlinx.coroutines.Dispatchers.IO) {
                 runCatching { dao.getProgress(b.id, localPath) }.getOrNull()
             }
@@ -2024,6 +2037,33 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
                     enabled = !smbDownloadBusy,
                 ) { Text("取消") }
             },
+        )
+    }
+
+    if (showRedownloadDialog) {
+        val rb = redownloadBook
+        AlertDialog(
+            onDismissRequest = { showRedownloadDialog = false; redownloadBook = null },
+            title = { Text("源文件可能丢失") },
+            text = { Text("本地文件不存在。是否恢复为远程书籍？\n恢复后可重新下载或直接在线阅读。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showRedownloadDialog = false
+                    if (rb != null) {
+                        scope.launch {
+                            val origPath = rb.originalPath ?: return@launch
+                            val source = if (origPath.startsWith("smb:")) "smb" else "webdav"
+                            withContext(Dispatchers.IO) { dao.restoreBookToRemote(rb.id, source) }
+                            // 重新加载书籍并进入阅读
+                            val refreshed = withContext(Dispatchers.IO) { dao.getBookById(rb.id) }
+                            book = refreshed
+                            redownloadBook = null
+                            if (refreshed != null) enterReader(refreshed.filePath)
+                        }
+                    }
+                }) { Text("恢复并重新打开") }
+            },
+            dismissButton = { TextButton(onClick = { showRedownloadDialog = false; redownloadBook = null }) { Text("取消") } },
         )
     }
 
