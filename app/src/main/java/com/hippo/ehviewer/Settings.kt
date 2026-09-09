@@ -352,8 +352,8 @@ object Settings : DataStorePreferences(null) {
     val downloadDelay = intPref("download_delay_3", 1000)
     val timeoutSpeed = intPref("timeout_speed_level", 6)
 
-    var smbDownloadDirTreeUri by stringOrNullPref("smb_download_dir_tree_uri")
-    var smbDownloadDirPath by stringOrNullPref("smb_download_dir_path")
+    val smbDownloadDirTreeUri = stringOrNullPref("smb_download_dir_tree_uri")
+    val smbDownloadDirPath = stringOrNullPref("smb_download_dir_path")
 
     /** Source files/pages to download or extract ahead of the reader anchor. */
     val preloadImage = intPref("preload_image_2", 5)

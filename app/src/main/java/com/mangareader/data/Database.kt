@@ -251,8 +251,8 @@ interface MangaDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertBooksBatch(books: List<Book>): List<Long>
 
-    /** ★ SMB/WebDAV 不支持格式下载完成：书籍改写为本地行（spec 5.5.1 规则 4，仅新增不修改既有逻辑） */
-    @Query("UPDATE manga_books SET filePath = :filePath, fileType = :fileType, source = 'local', coverPath = NULL WHERE id = :id")
+    /** ★ SMB/WebDAV 下载完成：书籍改写为本地行，保留原 coverPath（远程封面已缓存） */
+    @Query("UPDATE manga_books SET filePath = :filePath, fileType = :fileType, source = 'local' WHERE id = :id")
     suspend fun rehomeBookToLocal(id: Long, filePath: String, fileType: String)
 
     /** ★ 删除 SMB 服务器时级联清理其书籍（spec 5.1 级联清理；仅新增） */

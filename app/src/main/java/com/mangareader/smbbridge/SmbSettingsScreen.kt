@@ -28,6 +28,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hippo.ehviewer.Settings
+import com.hippo.ehviewer.collectAsState
 import com.hippo.ehviewer.smb.SmbCache
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -94,7 +95,7 @@ fun SmbSettingsScreen(onBack: () -> Unit) {
             }
 
             SectionCard("下载管理") {
-                val downloadPath = Settings.smbDownloadDirPath
+                val downloadPath by Settings.smbDownloadDirPath.collectAsState()
                 val pickDirLauncher = rememberLauncherForActivityResult(
                     ActivityResultContracts.OpenDocumentTree(),
                 ) { uri: Uri? ->
@@ -105,14 +106,14 @@ fun SmbSettingsScreen(onBack: () -> Unit) {
                                 Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
                             )
                         }
-                        Settings.smbDownloadDirTreeUri = uri.toString()
+                        Settings.smbDownloadDirTreeUri.value = uri.toString()
                         val docId = DocumentsContract.getTreeDocumentId(uri)
                         val path = if (docId.startsWith("primary:")) {
                             android.os.Environment.getExternalStorageDirectory().absolutePath + "/" + docId.substringAfter("primary:")
                         } else {
                             uri.toString()
                         }
-                        Settings.smbDownloadDirPath = path
+                        Settings.smbDownloadDirPath.value = path
                     }
                 }
                 Row(
@@ -132,8 +133,8 @@ fun SmbSettingsScreen(onBack: () -> Unit) {
                 if (downloadPath != null) {
                     TextButton(
                         onClick = {
-                            Settings.smbDownloadDirTreeUri = null
-                            Settings.smbDownloadDirPath = null
+                            Settings.smbDownloadDirTreeUri.value = null
+                            Settings.smbDownloadDirPath.value = null
                         },
                         modifier = Modifier.fillMaxWidth(),
                     ) { Text("清除下载路径", fontSize = 13.sp) }

@@ -182,7 +182,7 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -> U
     val allSelected = selectedRemotes.isNotEmpty() && selectedRemotes.containsAll(allRemotes)
 
     fun startBatchDownload() {
-        val treeUriStr = Settings.smbDownloadDirTreeUri
+        val treeUriStr = Settings.smbDownloadDirTreeUri.value
         if (treeUriStr == null) {
             showNoDirDialog = true
             return
