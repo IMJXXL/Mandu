@@ -114,7 +114,7 @@ object RemoteDownloadDialogState {
         val srcFile = java.io.File(cachePath)
         if (!srcFile.exists()) return null
 
-        val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, DocumentsContract.getDocumentId(treeUri))
+        val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, DocumentsContract.getTreeDocumentId(treeUri))
         ctx.contentResolver.query(
             childrenUri,
             arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME, DocumentsContract.Document.COLUMN_DOCUMENT_ID),

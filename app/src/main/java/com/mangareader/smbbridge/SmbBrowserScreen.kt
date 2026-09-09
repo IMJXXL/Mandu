@@ -389,8 +389,7 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -> U
         },
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
-            // ★ 下载路径设置栏（和选择按钮放一起，从 SMB 设置移到浏览页）
-            DownloadPathBar()
+
             Box(Modifier.fillMaxSize().weight(1f)) {
             when {
                 error != null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {

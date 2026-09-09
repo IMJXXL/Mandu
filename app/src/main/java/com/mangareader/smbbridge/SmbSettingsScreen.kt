@@ -26,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hippo.ehviewer.Settings
@@ -100,6 +101,53 @@ fun SmbSettingsScreen(onBack: () -> Unit, onOpenDownloadQueue: () -> Unit = {}) 
                 IntRow("下载线程数", "整档下载使用的并发连接数", Settings.multiThreadDownload)
             }
 
+
+            SectionCard("下载目录") {
+                val downloadPath by Settings.smbDownloadDirPath.collectAsState()
+                val pickDirLauncher = rememberLauncherForActivityResult(
+                    ActivityResultContracts.OpenDocumentTree(),
+                ) { uri: Uri? ->
+                    if (uri != null) {
+                        runCatching {
+                            ctx.contentResolver.takePersistableUriPermission(
+                                uri,
+                                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+                            )
+                        }
+                        Settings.smbDownloadDirTreeUri.value = uri.toString()
+                        val docId = DocumentsContract.getTreeDocumentId(uri)
+                        val path = if (docId.startsWith("primary:")) {
+                            android.os.Environment.getExternalStorageDirectory().absolutePath + "/" + docId.substringAfter("primary:")
+                        } else {
+                            uri.toString()
+                        }
+                        Settings.smbDownloadDirPath.value = path
+                    }
+                }
+                Row(
+                    Modifier.fillMaxWidth().clickable { pickDirLauncher.launch(null) }.padding(vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Default.Folder, null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("全量下载保存路径", fontSize = 15.sp)
+                        Text(
+                            text = downloadPath ?: "未设置（点击选择）",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    if (downloadPath != null) {
+                        TextButton(onClick = {
+                            Settings.smbDownloadDirTreeUri.value = null
+                            Settings.smbDownloadDirPath.value = null
+                        }) { Text("清除", fontSize = 13.sp) }
+                    }
+                }
+            }
 
             SectionCard("归档密码") {
                 var passwds by remember { mutableStateOf(Settings.archivePasswds) }
