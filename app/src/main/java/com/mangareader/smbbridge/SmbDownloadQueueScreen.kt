@@ -24,7 +24,7 @@ import androidx.compose.ui.unit.sp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SmbDownloadQueueScreen(onBack: () -> Unit) {
+fun SmbDownloadQueueScreen(onBack: () -> Unit, onOpenBook: ((Long) -> Unit)? = null) {
     val tasks by SmbDownloadQueue.tasks.collectAsState()
     var taskToDelete by remember { mutableStateOf<DownloadTask?>(null) }
 
@@ -64,6 +64,9 @@ fun SmbDownloadQueueScreen(onBack: () -> Unit) {
                         onPause = { SmbDownloadQueue.pause(task.id) },
                         onResume = { SmbDownloadQueue.resume(task.id) },
                         onDelete = { taskToDelete = task },
+                        onOpen = if (task.status == DownloadStatus.Completed && task.bookId > 0) {
+                            { onOpenBook?.invoke(task.bookId) }
+                        } else null,
                     )
                 }
             }
@@ -107,6 +110,7 @@ private fun DownloadTaskCard(
     onPause: () -> Unit,
     onResume: () -> Unit,
     onDelete: () -> Unit,
+    onOpen: (() -> Unit)? = null,
 ) {
     val statusColor = when (task.status) {
         DownloadStatus.Downloading -> Color(0xFF4CAF50)
@@ -124,7 +128,7 @@ private fun DownloadTaskCard(
     }
 
     Card(
-        Modifier.fillMaxWidth(),
+        Modifier.fillMaxWidth().then(if (onOpen != null) Modifier.clickable { onOpen() } else Modifier),
         shape = RoundedCornerShape(12.dp),
     ) {
         Column(Modifier.padding(16.dp)) {

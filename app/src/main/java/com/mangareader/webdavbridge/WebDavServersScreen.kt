@@ -46,7 +46,7 @@ import kotlinx.coroutines.withContext
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun WebDavServersScreen(onBack: () -> Unit) {
+fun WebDavServersScreen(onBack: () -> Unit, onOpenBook: ((Long) -> Unit)? = null) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val sources by WebDavRepository.sourcesFlow().collectAsState(initial = emptyList())
@@ -105,7 +105,7 @@ fun WebDavServersScreen(onBack: () -> Unit) {
     }
 
     if (showDownloadQueue) {
-        SmbDownloadQueueScreen(onBack = { showDownloadQueue = false })
+        SmbDownloadQueueScreen(onBack = { showDownloadQueue = false }, onOpenBook = onOpenBook)
         return
     }
 

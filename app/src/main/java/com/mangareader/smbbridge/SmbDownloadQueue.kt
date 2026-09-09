@@ -24,6 +24,7 @@ data class DownloadTask(
     val error: String? = null,
     val totalBytes: Long = 0L,
     val downloadedBytes: Long = 0L,
+    val bookId: Long = 0L,
 )
 
 object SmbDownloadQueue {

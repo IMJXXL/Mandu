@@ -112,7 +112,7 @@ fun SmbServersScreen(onBack: () -> Unit, onOpenBook: (Long) -> Unit = {}) {
     }
 
     if (showDownloadQueue) {
-        SmbDownloadQueueScreen(onBack = { showDownloadQueue = false })
+        SmbDownloadQueueScreen(onBack = { showDownloadQueue = false }, onOpenBook = { id -> onOpenBook(id) })
         return
     }
 

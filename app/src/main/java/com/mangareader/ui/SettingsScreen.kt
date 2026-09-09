@@ -882,7 +882,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
         com.mangareader.smbbridge.SmbServersScreen(onBack = { showSmbServers = false }, onOpenBook = { id -> onOpenBook?.invoke(id, null) })
     }
     if (showWebDavServers) {
-        com.mangareader.webdavbridge.WebDavServersScreen(onBack = { showWebDavServers = false })
+        com.mangareader.webdavbridge.WebDavServersScreen(onBack = { showWebDavServers = false }, onOpenBook = { id -> onOpenBook?.invoke(id, null) })
     }
     if (showDonation) DonationDialog(onDismiss = { showDonation = false })
 }
