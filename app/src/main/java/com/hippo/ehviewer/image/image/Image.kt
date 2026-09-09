@@ -19,6 +19,7 @@ package com.hippo.ehviewer.image
 
 import android.graphics.Bitmap
 import android.graphics.ColorSpace
+import android.graphics.drawable.Animatable
 import android.hardware.HardwareBuffer
 import android.os.Build
 import android.util.Log
@@ -87,7 +88,7 @@ import splitties.init.appCtx
  */
 class Image private constructor(
     image: CoilImage,
-    private val src: ImageSource,
+    src: ImageSource,
     /**
      * Lib-direct absolute HDR (no gain map). Combined with [hasGainmap] for window HDR.
      */
@@ -97,12 +98,37 @@ class Image private constructor(
 ) {
     val refcnt = AtomicInt(1)
 
+    /**
+     * Animated drawables need the source until [recycle]. Bitmap pages close it in
+     * [init] so a cache-off [ByteBufferSource] does not pin the compressed file
+     * for the lifetime of [PageStatus.Ready].
+     */
+    private var src: ImageSource? = src
+
     fun pin() = refcnt.updateAndFetch { if (it != 0) it + 1 else 0 } != 0
 
     fun unpin() = (refcnt.decrementAndFetch() == 0).also { if (it) recycle() }
 
     val intrinsicSize = with(image) { IntSize(width, height) }
     val allocationSize = image.size
+
+    /**
+     * LRU weight. HARDWARE bitmaps may report 0 Java bytes; animated drawables
+     * are one-frame in Coil [size] but keep 2+ software frames plus the source.
+     */
+    val estimatedCacheBytes: Long
+        get() {
+            val pixels = intrinsicSize.width.toLong().coerceAtLeast(0) *
+                intrinsicSize.height.toLong().coerceAtLeast(0)
+            val frame = pixels * 4L
+            return when (val img = innerImage) {
+                is DrawableImage -> {
+                    val frames = if (img.drawable is AnimatedWebPDrawable) 2L else 4L
+                    maxOf(img.size, frame * frames)
+                }
+                else -> maxOf(allocationSize, frame)
+            }
+        }
     val hasQrCode = when (image) {
         is BitmapImageWithExtraInfo -> image.hasQrCode
         else -> false
@@ -158,6 +184,12 @@ class Image private constructor(
             else -> 1f
         }
         isWideGamutContent = isWideGamutDirect || bitmapIsWideGamut(image)
+        // AWEBP already copied the buffer into a direct native decoder source.
+        val drawable = (innerImage as? DrawableImage)?.drawable
+        if (innerImage is BitmapImage || drawable is AnimatedWebPDrawable) {
+            this.src?.close()
+            this.src = null
+        }
     }
 
     private fun bitmapIsWideGamut(image: CoilImage): Boolean {
@@ -173,12 +205,16 @@ class Image private constructor(
     private fun recycle() {
         when (val image = innerImage!!) {
             is DrawableImage -> {
-                (image.drawable as? AnimatedWebPDrawable)?.dispose()
-                src.close()
+                val drawable = image.drawable
+                (drawable as? Animatable)?.stop()
+                (drawable as? AnimatedWebPDrawable)?.dispose()
+                drawable.callback = null
+                src?.close()
             }
             is BitmapImage -> image.bitmap.recycle()
         }
         innerImage = null
+        src = null
     }
 
     companion object {
@@ -215,12 +251,17 @@ class Image private constructor(
                         val bytes = ByteArray(n)
                         dup.get(bytes)
                         if (bytes.containsHdrGainMapMarker(n)) return@runCatching true
-                        // Full buffer for ProXDR (archive pages keep whole file in RAM).
+                        // Trailer lives in the last 768 bytes — never copy a 20 MiB page.
                         if (Settings.readerOppoProxdr.value) {
                             val full = src.value.source.asReadOnlyBuffer()
-                            val all = ByteArray(full.remaining())
-                            full.get(all)
-                            return@runCatching OppoProxdr.looksLike(all)
+                            val len = full.remaining()
+                            if (len >= 256) {
+                                val tail = minOf(768, len)
+                                val trailer = ByteArray(tail)
+                                full.position(full.position() + len - tail)
+                                full.get(trailer)
+                                return@runCatching OppoProxdr.looksLike(trailer)
+                            }
                         }
                         false
                     }
@@ -520,9 +561,7 @@ class Image private constructor(
                     src.left().decodeCoil(checkExtraneousAds, forceOriginal)
                 }
             }
-            return Image(image, src).apply {
-                if (innerImage is BitmapImage) src.close()
-            }
+            return Image(image, src)
         }
 
         /**
@@ -537,9 +576,7 @@ class Image private constructor(
                 isHdrContentDirect = result.isHdrContent,
                 contentHdrBoostOverride = result.contentHdrBoost,
                 isWideGamutDirect = result.isWideGamutSource,
-            ).apply {
-                if (innerImage is BitmapImage) src.close()
-            }
+            )
         }
 
         /**

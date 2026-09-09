@@ -195,7 +195,7 @@ suspend inline fun <T> useDocumentExtractPageLoader(
 
                 override fun getImageExtension(index: Int) = engine.extOf(index)
 
-                override fun save(index: Int, file: Path): Boolean = runCatching {
+                override fun savePage(index: Int, file: Path): Boolean = runCatching {
                     val ext = engine.extOf(index) ?: return@runCatching false
                     val path = pagePaths[index]
                         ?: DocumentExtractCache.pagePath(cacheKey, index, ext)
@@ -248,12 +248,12 @@ suspend inline fun <T> useDocumentExtractPageLoader(
 
                 override fun close() {
                     // Snapshot: cancel handlers remove from extractJobs concurrently
-                    // (live CHM.values iter on main â†’ NoSuchElementException).
+                    // (live CHM.values iter on main â†?NoSuchElementException).
                     discoveryJob.getAndSet(null)?.cancel()
                     extractJobs.values.toList().forEach { it.cancel() }
                     extractJobs.clear()
                     readyWaiters.clear()
-                    // Trust in-memory extract map only â€” never stat/write on main (onDispose).
+                    // Trust in-memory extract map only â€?never stat/write on main (onDispose).
                     val count = engine.pageCount
                     val structureComplete = progressiveEngine?.structureComplete ?: true
                     val complete = count > 0 &&
@@ -265,7 +265,7 @@ suspend inline fun <T> useDocumentExtractPageLoader(
                     super.close()
                 }
 
-                /** In-memory only â€” safe on main / onDispose. */
+                /** In-memory only â€?safe on main / onDispose. */
                 private fun isPageMapped(index: Int): Boolean = pagePaths.containsKey(index)
 
                 /** Disk probe; call only from [Dispatchers.IO]. */
@@ -324,7 +324,7 @@ suspend inline fun <T> useDocumentExtractPageLoader(
                     if (interactive) {
                         interactivePending.add(index)
                         // Stop index walk so the mutex frees for this extract. Mapped pages
-                        // return above and must not cancel: growTo â†’ replan re-requests the
+                        // return above and must not cancel: growTo â†?replan re-requests the
                         // current page and used to kill a live page-tree walk.
                         discoveryJob.get()?.cancel()
                     }
@@ -463,7 +463,7 @@ suspend inline fun <T> useDocumentExtractPageLoader(
                                             )
                                         }
                                     } else {
-                                        // No progress: transport blip or true end â€” do not spin hot.
+                                        // No progress: transport blip or true end â€?do not spin hot.
                                         if (interactivePending.isNotEmpty()) {
                                             delay(PDF_INDEX_YIELD_MS)
                                             continue
@@ -627,7 +627,7 @@ internal fun cachedDocumentLoader(
 
         override fun getImageExtension(index: Int) = exts[index]
 
-        override fun save(index: Int, file: Path): Boolean = runCatching {
+        override fun savePage(index: Int, file: Path): Boolean = runCatching {
             val ext = exts[index] ?: return@runCatching false
             val path = DocumentExtractCache.pagePath(cacheKey, index, ext)
             File(path.toString()).copyTo(File(file.toString()), overwrite = true)
@@ -635,7 +635,7 @@ internal fun cachedDocumentLoader(
         }.getOrDefault(false)
 
         override fun openSource(index: Int): ImageSource {
-            // Index already verified complete â€” construct path, no open-time File.stat.
+            // Index already verified complete â€?construct path, no open-time File.stat.
             val ext = exts[index] ?: "bin"
             val path = DocumentExtractCache.pagePath(cacheKey, index, ext)
             return object : PathSource {

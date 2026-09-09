@@ -58,8 +58,8 @@ import okio.Path
  * listed count. Seek bar only lands on listed indices (never past unknown pages).
  *
  * **Resume:**
- * - complete+all-pages â†’ offline [cachedSolidLoader] (no network)
- * - half-cache â†’ seed from `pages/` + `index.json` **before** native open; serve cached
+ * - complete+all-pages â†?offline [cachedSolidLoader] (no network)
+ * - half-cache â†?seed from `pages/` + `index.json` **before** native open; serve cached
  *   pages immediately; open solid only when an uncached page is needed (skip-write past
  *   cached prefix). remoteSize mismatch purges the extract dir.
  */
@@ -111,7 +111,7 @@ suspend inline fun <T> useSolidExtractPageLoader(
             // Disk-first: rebuild list from pages/ even when index.json is missing.
             engine.seedFromDiskIndex()
 
-            // Lazy native open â€” half-cache can show page 0 without touching the network.
+            // Lazy native open â€?half-cache can show page 0 without touching the network.
             // (No local fun: not allowed inside inline.)
             val solidOpen = AtomicBoolean(false)
             val solidOpenMutex = Mutex()
@@ -182,7 +182,7 @@ suspend inline fun <T> useSolidExtractPageLoader(
 
                     override fun getImageExtension(index: Int) = engine.extOf(index)
 
-                    override fun save(index: Int, file: Path): Boolean = runCatching {
+                    override fun savePage(index: Int, file: Path): Boolean = runCatching {
                         val ext = engine.extOf(index) ?: return@runCatching false
                         // Prefer in-memory map (no File.stat on caller thread).
                         val path = pagePaths[index]
@@ -195,8 +195,7 @@ suspend inline fun <T> useSolidExtractPageLoader(
 
                     override fun openSource(index: Int): ImageSource {
                         val ext = engine.extOf(index) ?: "bin"
-                        // notifySourceReady only after markPageExtracted mapped the path â€”
-                        // do not File.length() here (decode may run on main-ish scope).
+                        // notifySourceReady only after markPageExtracted mapped the path â€?                        // do not File.length() here (decode may run on main-ish scope).
                         val path = pagePaths[index]
                             ?: error("Solid page $index not extracted")
                         return object : PathSource {
@@ -231,7 +230,7 @@ suspend inline fun <T> useSolidExtractPageLoader(
                         engine.abort()
                         bgExtractJob.getAndSet(null)?.cancel()
                         // Snapshot first: cancel handlers remove from extractJobs concurrently.
-                        // Live CHM.values iteration on main (Compose dispose) â†’ NoSuchElementException.
+                        // Live CHM.values iteration on main (Compose dispose) â†?NoSuchElementException.
                         extractJobs.values.toList().forEach { it.cancel() }
                         extractJobs.clear()
                         readyWaiters.clear()
@@ -247,7 +246,7 @@ suspend inline fun <T> useSolidExtractPageLoader(
                         android.util.Log.i("SolidExtract", "bumpTarget idx=$index old=$old new=$new")
                     }
 
-                    /** In-memory only â€” safe on main / onRequest. */
+                    /** In-memory only â€?safe on main / onRequest. */
                     private fun isPageMapped(index: Int): Boolean = pagePaths.containsKey(index)
 
                     /** Disk probe; call only from [Dispatchers.IO]. Prefers engine readdir set. */
@@ -263,7 +262,7 @@ suspend inline fun <T> useSolidExtractPageLoader(
                     }
 
                     /**
-                     * Page [index] is ready â€” map path, grow list, optional cover, fire decode
+                     * Page [index] is ready â€?map path, grow list, optional cover, fire decode
                      * waiters. Does **not** File.stat (StrictMode); callers already extracted
                      * or [probePageOnDisk]'d on IO.
                      */
@@ -290,7 +289,7 @@ suspend inline fun <T> useSolidExtractPageLoader(
                         if (index < 0) return
                         if (onReady != null) {
                             readyWaiters.getOrPut(index) { CopyOnWriteArrayList() }.add(onReady)
-                            // Already mapped (bg extract finished) â€” decode now, no disk I/O.
+                            // Already mapped (bg extract finished) â€?decode now, no disk I/O.
                             if (isPageMapped(index)) {
                                 markPageExtracted(index)
                                 return
@@ -308,7 +307,7 @@ suspend inline fun <T> useSolidExtractPageLoader(
                                     return@launch
                                 }
                                 // May run behind bg ensureThrough(target); onPageReady fires
-                                // waiters for intermediate pages as each lands â€” do not wait
+                                // waiters for intermediate pages as each lands â€?do not wait
                                 // for the whole batch before decoding the visible page.
                                 engine.ensureThrough(index)
                                 if (probePageOnDisk(index) || isPageMapped(index)) {
@@ -321,7 +320,7 @@ suspend inline fun <T> useSolidExtractPageLoader(
                                 }
                             } catch (e: CancellationException) {
                                 // Re-queue only for in-session job races (lost putIfAbsent).
-                                // On reader exit / archive preempt, hostScope is cancelled â€” do not restart.
+                                // On reader exit / archive preempt, hostScope is cancelled â€?do not restart.
                                 if (hostScope.isActive &&
                                     (
                                         extractJobs[index] == coroutineContext[Job] ||
@@ -340,7 +339,7 @@ suspend inline fun <T> useSolidExtractPageLoader(
                                 }
                                 throw e
                             } catch (e: Throwable) {
-                                // Leave mid-flight: abort + source.close â†’ quiet closed/IO; do not
+                                // Leave mid-flight: abort + source.close â†?quiet closed/IO; do not
                                 // log or fail pages that are already going away with the reader.
                                 if (engine.isAborted || e is ArchiveStreamClosedException) {
                                     readyWaiters.remove(index)
@@ -423,7 +422,7 @@ suspend inline fun <T> useSolidExtractPageLoader(
     }
 }
 
-/** Cached complete solid extract â€” folder-like pages from disk, no native open. */
+/** Cached complete solid extract â€?folder-like pages from disk, no native open. */
 fun cachedSolidLoader(
     scope: CoroutineScope,
     cacheKey: String,
@@ -446,7 +445,7 @@ fun cachedSolidLoader(
 
         override fun getImageExtension(index: Int) = exts[index]
 
-        override fun save(index: Int, file: Path): Boolean = runCatching {
+        override fun savePage(index: Int, file: Path): Boolean = runCatching {
             val ext = exts[index] ?: return@runCatching false
             val path = SolidExtractCache.pagePath(cacheKey, index, ext)
             File(path.toString()).copyTo(File(file.toString()), overwrite = true)
@@ -454,7 +453,7 @@ fun cachedSolidLoader(
         }.getOrDefault(false)
 
         override fun openSource(index: Int): ImageSource {
-            // Paths are known from index â€” no File.stat (open-path O(n) was killing resume).
+            // Paths are known from index â€?no File.stat (open-path O(n) was killing resume).
             val ext = exts[index] ?: "bin"
             val path = SolidExtractCache.pagePath(cacheKey, index, ext)
             return object : PathSource {
@@ -489,13 +488,13 @@ class SolidExtractEngine(
     private val mutex = Mutex()
     private val members = CopyOnWriteArrayList<SolidExtractCache.Member>()
 
-    /** O(1) ext lookup â€” avoid linear scan + [SolidExtractCache.extensionFor] disk. */
+    /** O(1) ext lookup â€?avoid linear scan + [SolidExtractCache.extensionFor] disk. */
     private val memberExt = ConcurrentHashMap<Int, String>()
     private val memberUnc = ConcurrentHashMap<Int, Long>()
 
     /**
      * Pages known present under `pages/` (readdir once at seed + updated on extract).
-     * Skip path trusts this â€” no File.stat per member.
+     * Skip path trusts this â€?no File.stat per member.
      */
     private val onDisk = ConcurrentHashMap.newKeySet<Int>()
 
@@ -524,8 +523,8 @@ class SolidExtractEngine(
 
     /**
      * Page count for the reader: max known index + 1 (solid indices are 0..n-1).
-     * Not [members.size] â€” half-cache from readdir must allow seek to the highest cached page.
-     * O(1) â€” never iterate ConcurrentHashMap keys (Android EntryIterator races).
+     * Not [members.size] â€?half-cache from readdir must allow seek to the highest cached page.
+     * O(1) â€?never iterate ConcurrentHashMap keys (Android EntryIterator races).
      */
     fun listedCount(): Int = maxKnownIndex.get() + 1
 
@@ -586,7 +585,7 @@ class SolidExtractEngine(
     }
 
     suspend fun ensureThrough(index: Int) {
-        // Fast path: already cached â€” no native open, no lock contention with skip walks.
+        // Fast path: already cached â€?no native open, no lock contention with skip walks.
         if (index in onDisk) return
         // Need solid session only when extracting or skip-walking past cache.
         nativeOpener?.invoke()
@@ -617,7 +616,7 @@ class SolidExtractEngine(
                         break
                     }
                     n in onDisk -> {
-                        // Already extracted last session â€” advance solid cursor only.
+                        // Already extracted last session â€?advance solid cursor only.
                         if (!memberExt.containsKey(n)) {
                             val ext = solidCurrentExtension().ifBlank { "bin" }
                             rememberMember(
@@ -686,7 +685,7 @@ class SolidExtractEngine(
     }
 
     fun persistIndex(complete: Boolean, async: Boolean = false) {
-        // Snapshot ConcurrentHashMaps â€” live key iteration races with extract/seed
+        // Snapshot ConcurrentHashMaps â€?live key iteration races with extract/seed
         // and has thrown NoSuchElementException on Android EntryIterator.
         val extSnap = HashMap(memberExt)
         val uncSnap = HashMap(memberUnc)
@@ -718,7 +717,7 @@ class SolidExtractEngine(
 
     /**
      * Extract current solid member to a temp file; publish only if complete.
-     * Reader exit closes the network mid-[solidExtractCurrentToFd] â€” native may still
+     * Reader exit closes the network mid-[solidExtractCurrentToFd] â€?native may still
      * return success with a truncated body; we refuse to rename half images into cache.
      */
     private fun extractCurrentToCache(index: Int, ext: String, expectedSize: Long) {

@@ -32,7 +32,7 @@ import okio.Path
 
 /**
  * SMB folder reader with seek-friendly downloads:
- * - Host pool multiplexes ops ([SmbGateway.maxConcurrentOpsPerHost] â‰ˆ sessions Ã— ops/session).
+ * - Host pool multiplexes ops ([SmbGateway.maxConcurrentOpsPerHost] â‰?sessions Ã— ops/session).
  * - One reserved interactive slot for [onRequest]; prefetch uses the remaining slots
  *   so a seek does not wait behind every prefetch transfer.
  * - Per-file mutex in [SmbCache] joins overlapping downloads (small jump / prefetch race).
@@ -64,7 +64,7 @@ suspend inline fun <T> useSmbFolderPageLoader(
         // B1 convert mode: cap concurrent lib downloads (full convert is serial in
         // HdrConvertCache.fullConvertSlots). Direct-Bitmap uses normal prefetchSlots.
         val libHdrPrefetchSlots = Semaphore(2)
-        // In-flight downloads by page index â€” join small-jump overlap, cancel large jumps.
+        // In-flight downloads by page index â€?join small-jump overlap, cancel large jumps.
         val downloadJobs = KeyedJobRegistry<Int>()
 
         /** UI/decode callbacks waiting for [index] to land in [SmbCache]. */
@@ -86,7 +86,7 @@ suspend inline fun <T> useSmbFolderPageLoader(
                 override fun getImageExtension(index: Int) = FileUtils.getExtensionFromFilename(imageFileNames[index])
 
 
-                override fun save(index: Int, file: Path): Boolean = runCatching {
+                override fun savePage(index: Int, file: Path): Boolean = runCatching {
                     ramPages[index]?.let {
                         java.io.File(file.toString()).writeBytes(it)
                         return@runCatching true
@@ -149,7 +149,7 @@ suspend inline fun <T> useSmbFolderPageLoader(
                     ramPages.keys.toList().forEach { idx ->
                         if (idx !in sourcePages && idx !in decodedPages) ramPages.remove(idx)
                     }
-                    // ConcurrentHashMap.forEach (BiConsumer) â€” never entries/keys iterator.
+                    // ConcurrentHashMap.forEach (BiConsumer) â€?never entries/keys iterator.
                     // Android EntryIterator.next can throw NoSuchElementException under concurrent
                     // put/remove; dual-page fires two onRequest close together.
                     downloadJobs.cancelOutside(sourcePages)
@@ -169,8 +169,8 @@ suspend inline fun <T> useSmbFolderPageLoader(
                  * Start or join a download for [index].
                  * - Small jump / same page: reuses the existing job; [onReady] is queued.
                  * - Interactive: uses reserved pool capacity so seek does not queue behind prefetch.
-                 * - Always completes waiters: success â†’ notifySourceReady; fail/cancel with waiters
-                 *   â†’ retry once or [notifyPageFailed] (never silent forever-spinner).
+                 * - Always completes waiters: success â†?notifySourceReady; fail/cancel with waiters
+                 *   â†?retry once or [notifyPageFailed] (never silent forever-spinner).
                  */
                 private fun ensureDownload(
                     index: Int,
@@ -181,7 +181,7 @@ suspend inline fun <T> useSmbFolderPageLoader(
                     val name = imageFileNames[index]
                     val cache = SmbCache.cachePath(source.id, remoteDir, name)
                     val skipDisk = Settings.disableReaderNetworkCache.value
-                    // Never probe disk here â€” onRequest/retryPage run on main (lifecycle
+                    // Never probe disk here â€?onRequest/retryPage run on main (lifecycle
                     // ON_RESUME). Memory-only skip for prefetch when known present.
                     if (onReady == null && !skipDisk && SmbCache.isPageCached(cache)) {
                         return
@@ -268,7 +268,7 @@ suspend inline fun <T> useSmbFolderPageLoader(
                                 }
                             }
                         } finally {
-                            // Only remove *this* job â€” a replacement may already be registered.
+                            // Only remove *this* job â€?a replacement may already be registered.
                             downloadJobs.release(index, coroutineContext[Job])
                         }
                     }
@@ -276,7 +276,7 @@ suspend inline fun <T> useSmbFolderPageLoader(
                     if (ownsSlot) {
                         job.start()
                     } else {
-                        // Lost the race â€” keep the owner; waiters are already registered.
+                        // Lost the race â€?keep the owner; waiters are already registered.
                         job.cancel()
                     }
                 }

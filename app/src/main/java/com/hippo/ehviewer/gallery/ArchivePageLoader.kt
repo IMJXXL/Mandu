@@ -70,7 +70,7 @@ suspend inline fun <T> useArchivePageLoader(
         coroutineScope {
             val pfd = install(file.openFileDescriptor("r"))
             // sortEntries: EH downloads with real gallery info keep pack order; local / zip sort by name.
-            // Must not key only on info==null — local archives now pass GalleryInfo for read progress.
+            // Must not key only on info==null �?local archives now pass GalleryInfo for read progress.
             val sortEntries = info == null ||
                 isZipArchiveFileName(file.name) ||
                 info.token == com.hippo.ehviewer.library.LOCAL_GALLERY_TOKEN ||
@@ -115,7 +115,7 @@ suspend inline fun <T> useArchivePageLoader(
 
                     override fun getImageExtension(index: Int) = getExtension(nat(index))
 
-                    override fun save(index: Int, file: Path) = runCatching {
+                    override fun savePage(index: Int, file: Path) = runCatching {
                         file.openFileDescriptor("w").use {
                             synchronized(extractLock) {
                                 extractToFd(nat(index), it.fd)
@@ -140,8 +140,7 @@ suspend inline fun <T> useArchivePageLoader(
                             releaseByteBuffer(native)
                             return byteBufferSource(ByteBuffer.wrap(bytes)) {}
                         }
-                        // ★ fallback: libarchive extractToByteBuffer 失败（某些 ZIP entry 压缩方法不支持），
-                        //   用 java.util.zip.ZipFile 按 entry name 随机提取（支持 ZIP64/deflate/store 等）
+                        // �?fallback: libarchive extractToByteBuffer 失败（某�?ZIP entry 压缩方法不支持）�?                        //   �?java.util.zip.ZipFile �?entry name 随机提取（支�?ZIP64/deflate/store 等）
                         val entryName = getArchiveFilename(nativeIndex)
                         val fallbackBytes = try {
                             java.util.zip.ZipFile(f).use { zf ->

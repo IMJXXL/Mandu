@@ -70,7 +70,7 @@ suspend inline fun <T> useZipFolderPageLoader(
 
                 override fun getImageExtension(index: Int) = FileUtils.getExtensionFromFilename(imageNames[index])
 
-                override fun save(index: Int, file: Path): Boolean = runCatching {
+                override fun savePage(index: Int, file: Path): Boolean = runCatching {
                     if (Settings.disableReaderNetworkCache.value) {
                         File(file.toString()).writeBytes(
                             session.pageBytes(zipKey, prefix, imageNames, index),

@@ -42,14 +42,14 @@ suspend inline fun <T> useFolderPageLoader(
 
                 override fun getImageExtension(index: Int) = FileUtils.getExtensionFromFilename(files[index].name)
 
-                override fun save(index: Int, file: Path): Boolean = runCatching {
+                override fun savePage(index: Int, file: Path): Boolean = runCatching {
                     files[index] sendTo file
                     true
                 }.getOrDefault(false)
 
                 override fun openSource(index: Int): ImageSource {
                     val path = files[index]
-                    // Lib HDR/SDR â†’ Coil-ready file in DisplaySource.ensureReady (PageLoader).
+                    // Lib HDR/SDR â†?Coil-ready file in DisplaySource.ensureReady (PageLoader).
                     return object : PathSource {
                         override val source = path
                         override val type by lazy {

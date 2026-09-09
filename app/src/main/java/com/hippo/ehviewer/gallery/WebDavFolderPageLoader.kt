@@ -31,7 +31,7 @@ import moe.tarsin.kt.install
 import okio.Path
 
 /**
- * WebDAV folder reader â€” same waiter/prefetch shape as SMB, without TCP pool.
+ * WebDAV folder reader â€?same waiter/prefetch shape as SMB, without TCP pool.
  * HTTP client multiplexes; download fan-out is capped inside [WebDavClient].
  * Convert-mode lib-HDR/avif: interactive + 1 prefetch (B1 depth 2).
  * Direct-Bitmap mode: same prefetch slots as non-lib (cache original only).
@@ -71,7 +71,7 @@ suspend inline fun <T> useWebDavFolderPageLoader(
                 override fun getImageExtension(index: Int) = FileUtils.getExtensionFromFilename(imageFileNames[index])
 
 
-                override fun save(index: Int, file: Path): Boolean = runCatching {
+                override fun savePage(index: Int, file: Path): Boolean = runCatching {
                     ramPages[index]?.let {
                         java.io.File(file.toString()).writeBytes(it)
                         return@runCatching true
@@ -125,7 +125,7 @@ suspend inline fun <T> useWebDavFolderPageLoader(
                     ramPages.keys.toList().forEach { idx ->
                         if (idx !in sourcePages && idx !in decodedPages) ramPages.remove(idx)
                     }
-                    // ConcurrentHashMap.forEach â€” avoid entries.toList() iterator race on Android.
+                    // ConcurrentHashMap.forEach â€?avoid entries.toList() iterator race on Android.
                     downloadJobs.cancelOutside(sourcePages)
                 }
 
@@ -148,7 +148,7 @@ suspend inline fun <T> useWebDavFolderPageLoader(
                     val name = imageFileNames[index]
                     val cache = WebDavCache.cachePath(source.id, remoteDir, name)
                     val skipDisk = Settings.disableReaderNetworkCache.value
-                    // Never probe disk here â€” onRequest/retryPage run on main (lifecycle).
+                    // Never probe disk here â€?onRequest/retryPage run on main (lifecycle).
                     if (onReady == null && !skipDisk && WebDavCache.isPageCached(cache)) {
                         return
                     }
