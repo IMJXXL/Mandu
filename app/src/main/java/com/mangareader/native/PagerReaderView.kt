@@ -842,15 +842,14 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         val nowTs = android.os.SystemClock.uptimeMillis()
         val pitTs = inflightLoads[idx]
         if (pitTs != null && nowTs - pitTs < 5000L) {
-            // ★ 2026-09-09 跳页调度：已 inflight 的页再次被请求（如 preloadAround 对当前页）也要抢焦点——
-            //   场景：onBind 先绑 954 再绑 953 → 焦点停在 953；preloadAround(954) 请求被 5s 去重 drop，
-            //   若不抢焦点 953 会独占 loader 先加载出来
-            remotePageSupply?.onFocus(idx)
+            // ★ 2026-09-09 v3 调度：只有当前页请求才切焦点——预载页（preloadAround ±5 / onBind ±2）
+            //   绝不抢焦点，否则 preloadAround 循环后焦点漂移到最后一页，当前页反而被冷落
+            if (remotePageSupply != null && idx == currentPage) remotePageSupply?.onFocus(idx)
             ArchiveEngine.d("Dedup", "drop idx=$idx age=${nowTs - pitTs}ms")
             return
         }
         inflightLoads[idx] = nowTs
-        remotePageSupply?.onFocus(idx)
+        if (remotePageSupply != null && idx == currentPage) remotePageSupply?.onFocus(idx)
         val job = loadScope.launch {
             try {
             // ★ SMB/WebDAV：远程供给会话不使用本地 native archive 句柄
@@ -1001,6 +1000,11 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         if (isScrolling) return
         // ★ 2026-09-09 跳页调度：先取消窗口外 inflight（跳页 1→954 时释放远端下载资源给 954）
         prioritizeLoad(centerIdx)
+        // ★ 2026-09-09 v3 调度：当前页立即成为 loader 焦点——用户需求"当前页绝对优先，
+        //   加载出来后预载才继续，换页则焦点切换"。navigate(焦点页) 的预取窗口(sourceAhead)
+        //   会自动带上 ±5 预载页；loader 内部 interactive slot 保留给焦点页。
+        //   centerIdx 始终是用户所在页（onPageSelected/navigateToPage 传入），无条件切换安全。
+        if (remotePageSupply != null) remotePageSupply?.onFocus(centerIdx)
         // 超分联动：报当前页；只有"整本"作用域下才前后预载
         try { com.mangareader.sr.SrPipeline.onPageChanged(centerIdx, pageList.size) } catch (_: Exception) {}
         if (doublePageMode) {

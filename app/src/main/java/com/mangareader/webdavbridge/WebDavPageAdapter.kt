@@ -103,11 +103,13 @@ class WebDavPageAdapter(
     }
 
     override suspend fun loadPageRaw(index: Int): ByteArray? = withContext(Dispatchers.IO) {
-
         try {
             val loader = loaderReady.await()
-            driveAndAwaitExtract(loader, index) ?: return@withContext null
-            runCatching { loader.navigate(ReaderNavigation(index, index..index, NavigationKind.Settled)) }
+            driveAndAwaitExtract(loader, index)
+            // ★ 只有焦点页驱动 loader navigate（非焦点页零干预，靠 navigate(焦点页) 的预取窗口覆盖）
+            if (focusIndex == -1 || focusIndex == index) {
+                runCatching { loader.navigate(ReaderNavigation(index, index..index, NavigationKind.Settled)) }
+            }
             checkPageCountGrow(loader)
             readPageBytes(loader, index)
         } catch (e: CancellationException) {
@@ -139,24 +141,24 @@ class WebDavPageAdapter(
         scope.cancel()
     }
 
-    /** 驱动参考项目 demand 机制并等待该页提取完成（openSource 不再抛"未提取"）；
-     *  ★ 返回 null = 被新焦点页取代（让位，不占用 loader 资源） */
-    private suspend fun driveAndAwaitExtract(loader: PageLoader, index: Int): Unit? {
+    /** 驱动参考项目 demand 机制并等待该页提取完成（openSource 不再抛"未提取"）。
+     *  ★ 2026-09-09 v3 调度：非焦点页不让位、不驱动 navigate——纯等待 loader 对焦点页
+     *  navigate 的预取窗口把它带上（对齐参考项目 interactive slot + prefetch slot 分离）。 */
+    private suspend fun driveAndAwaitExtract(loader: PageLoader, index: Int) {
         val deadline = System.currentTimeMillis() + PAGE_WAIT_TIMEOUT_MS
         var lastNavigate = 0L
         while (System.currentTimeMillis() < deadline) {
-            if (focusIndex != -1 && focusIndex != index) return null // ★ 让位（-1=未启用焦点机制不让位）
-            if (isPageAvailable(loader, index)) return Unit
+            if (isPageAvailable(loader, index)) return
             val now = System.currentTimeMillis()
             if (now - lastNavigate > 1500) {
                 lastNavigate = now
-                if (focusIndex != -1 && focusIndex != index) return null
-                runCatching { loader.navigate(ReaderNavigation(index, index..index, NavigationKind.Settled)) }
+                if (focusIndex == -1 || focusIndex == index) {
+                    runCatching { loader.navigate(ReaderNavigation(index, index..index, NavigationKind.Settled)) }
+                }
             }
             delay(80)
         }
         android.util.Log.w(TAG, "page $index extract timeout (${loader.javaClass.simpleName})")
-        return Unit
     }
 
     private fun isPageAvailable(loader: PageLoader, index: Int): Boolean = try {
