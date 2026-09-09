@@ -18,6 +18,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -50,7 +51,7 @@ private val SMB_CACHE_ENTRIES = listOf(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SmbSettingsScreen(onBack: () -> Unit) {
+fun SmbSettingsScreen(onBack: () -> Unit, onOpenDownloadQueue: () -> Unit = {}) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
 
@@ -59,6 +60,11 @@ fun SmbSettingsScreen(onBack: () -> Unit) {
             TopAppBar(
                 title = { Text("SMB 设置") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") } },
+                actions = {
+                    IconButton(onClick = onOpenDownloadQueue) {
+                        Icon(Icons.Default.Download, "下载队列")
+                    }
+                },
             )
         },
     ) { padding ->
@@ -94,57 +100,6 @@ fun SmbSettingsScreen(onBack: () -> Unit) {
                 IntRow("下载线程数", "整档下载使用的并发连接数", Settings.multiThreadDownload)
             }
 
-            SectionCard("下载管理") {
-                val downloadPath by Settings.smbDownloadDirPath.collectAsState()
-                val pickDirLauncher = rememberLauncherForActivityResult(
-                    ActivityResultContracts.OpenDocumentTree(),
-                ) { uri: Uri? ->
-                    if (uri != null) {
-                        runCatching {
-                            ctx.contentResolver.takePersistableUriPermission(
-                                uri,
-                                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
-                            )
-                        }
-                        Settings.smbDownloadDirTreeUri.value = uri.toString()
-                        val docId = DocumentsContract.getTreeDocumentId(uri)
-                        val path = if (docId.startsWith("primary:")) {
-                            android.os.Environment.getExternalStorageDirectory().absolutePath + "/" + docId.substringAfter("primary:")
-                        } else {
-                            uri.toString()
-                        }
-                        Settings.smbDownloadDirPath.value = path
-                    }
-                }
-                Row(
-                    Modifier.fillMaxWidth().clickable { pickDirLauncher.launch(null) }.padding(vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text("下载路径", fontSize = 15.sp)
-                        Text(
-                            downloadPath ?: "未设置（点击选择）",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Text("选择 ›", fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
-                }
-                if (downloadPath != null) {
-                    TextButton(
-                        onClick = {
-                            Settings.smbDownloadDirTreeUri.value = null
-                            Settings.smbDownloadDirPath.value = null
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) { Text("清除下载路径", fontSize = 13.sp) }
-                }
-                Text(
-                    "下载的书籍保存到此目录，不会被缓存清理删除。浏览页可批量下载。",
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
 
             SectionCard("归档密码") {
                 var passwds by remember { mutableStateOf(Settings.archivePasswds) }

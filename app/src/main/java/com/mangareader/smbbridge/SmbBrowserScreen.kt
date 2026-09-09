@@ -4,6 +4,8 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.DocumentsContract
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -26,9 +28,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.style.TextOverflow
 
 import com.ehviewer.core.database.model.SmbSourceEntity
 import com.hippo.ehviewer.Settings
+import com.hippo.ehviewer.collectAsState
 import com.hippo.ehviewer.library.BrowseEntryRemote
 import com.hippo.ehviewer.library.IMAGE_EXTENSIONS
 import com.hippo.ehviewer.library.RemoteArchiveOpen
@@ -366,7 +370,10 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -> U
             }
         },
     ) { padding ->
-        Box(Modifier.padding(padding).fillMaxSize()) {
+        Column(Modifier.padding(padding).fillMaxSize()) {
+            // ★ 下载路径设置栏（和选择按钮放一起，从 SMB 设置移到浏览页）
+            DownloadPathBar()
+            Box(Modifier.fillMaxSize().weight(1f)) {
             when {
                 error != null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -473,13 +480,14 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -> U
                 }
             }
         }
-    }
+        }
+        }
 
     if (showNoDirDialog) {
         AlertDialog(
             onDismissRequest = { showNoDirDialog = false },
             title = { Text("未设置下载路径") },
-            text = { Text("请先在 SMB 设置 → 下载管理 中设置下载路径") },
+            text = { Text("请先在浏览页设置下载路径") },
             confirmButton = { TextButton(onClick = { showNoDirDialog = false }) { Text("知道了") } },
         )
     }
@@ -513,6 +521,64 @@ private fun FileRow(
         Column(Modifier.weight(1f)) {
             Text(name, fontSize = 15.sp)
             Text(ext.uppercase(), fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun DownloadPathBar() {
+    val ctx = LocalContext.current
+    val downloadPath by Settings.smbDownloadDirPath.collectAsState()
+    val pickDirLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocumentTree(),
+    ) { uri: Uri? ->
+        if (uri != null) {
+            runCatching {
+                ctx.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+                )
+            }
+            Settings.smbDownloadDirTreeUri.value = uri.toString()
+            val docId = DocumentsContract.getTreeDocumentId(uri)
+            val path = if (docId.startsWith("primary:")) {
+                android.os.Environment.getExternalStorageDirectory().absolutePath + "/" + docId.substringAfter("primary:")
+            } else {
+                uri.toString()
+            }
+            Settings.smbDownloadDirPath.value = path
+        }
+    }
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+    ) {
+        Row(
+            Modifier.fillMaxWidth().clickable { pickDirLauncher.launch(null) }.padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Default.Folder, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.width(8.dp))
+            Column(Modifier.weight(1f)) {
+                Text("下载路径", fontSize = 13.sp)
+                Text(
+                    text = downloadPath ?: "未设置（点击选择）",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (downloadPath != null) {
+                TextButton(
+                    onClick = {
+                        Settings.smbDownloadDirTreeUri.value = null
+                        Settings.smbDownloadDirPath.value = null
+                    },
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                ) { Text("清除", fontSize = 12.sp) }
+            }
+            Text("选择 ›", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
         }
     }
 }

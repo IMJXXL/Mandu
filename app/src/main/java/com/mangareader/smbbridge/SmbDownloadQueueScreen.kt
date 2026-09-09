@@ -1,0 +1,204 @@
+package com.mangareader.smbbridge
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SmbDownloadQueueScreen(onBack: () -> Unit) {
+    val tasks by SmbDownloadQueue.tasks.collectAsState()
+    var taskToDelete by remember { mutableStateOf<DownloadTask?>(null) }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("下载队列") },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") } },
+                actions = {
+                    val hasFinished = tasks.any { it.status == DownloadStatus.Completed || it.status == DownloadStatus.Failed }
+                    if (hasFinished) {
+                        TextButton(onClick = { SmbDownloadQueue.clearCompleted() }) {
+                            Text("清空已完成")
+                        }
+                    }
+                },
+            )
+        },
+    ) { padding ->
+        if (tasks.isEmpty()) {
+            Box(Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("队列为空", fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.height(8.dp))
+                    Text("在浏览页多选书籍后点击下载", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+                }
+            }
+        } else {
+            LazyColumn(
+                Modifier.padding(padding).fillMaxSize(),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                items(tasks, key = { it.id }) { task ->
+                    DownloadTaskCard(
+                        task = task,
+                        onPause = { SmbDownloadQueue.pause(task.id) },
+                        onResume = { SmbDownloadQueue.resume(task.id) },
+                        onDelete = { taskToDelete = task },
+                    )
+                }
+            }
+        }
+    }
+
+    taskToDelete?.let { task ->
+        AlertDialog(
+            onDismissRequest = { taskToDelete = null },
+            title = { Text("删除任务") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("「${task.title}」")
+                    if (task.status == DownloadStatus.Completed && task.localPath != null) {
+                        Text("同时删除已下载的文件？", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            },
+            confirmButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (task.status == DownloadStatus.Completed && task.localPath != null) {
+                        TextButton(onClick = {
+                            SmbDownloadQueue.remove(task.id, deleteFile = true)
+                            taskToDelete = null
+                        }) { Text("删除文件", color = MaterialTheme.colorScheme.error) }
+                    }
+                    TextButton(onClick = {
+                        SmbDownloadQueue.remove(task.id, deleteFile = false)
+                        taskToDelete = null
+                    }) { Text("仅删任务") }
+                }
+            },
+            dismissButton = { TextButton(onClick = { taskToDelete = null }) { Text("取消") } },
+        )
+    }
+}
+
+@Composable
+private fun DownloadTaskCard(
+    task: DownloadTask,
+    onPause: () -> Unit,
+    onResume: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    val statusColor = when (task.status) {
+        DownloadStatus.Downloading -> Color(0xFF4CAF50)
+        DownloadStatus.Paused -> Color(0xFFFF9800)
+        DownloadStatus.Completed -> Color(0xFF2196F3)
+        DownloadStatus.Failed -> Color(0xFFE57373)
+        DownloadStatus.Queued -> Color(0xFF9E9E9E)
+    }
+    val statusText = when (task.status) {
+        DownloadStatus.Downloading -> "下载中"
+        DownloadStatus.Paused -> "已暂停"
+        DownloadStatus.Completed -> "已完成"
+        DownloadStatus.Failed -> "失败"
+        DownloadStatus.Queued -> "排队中"
+    }
+
+    Card(
+        Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+    ) {
+        Column(Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        task.title,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = statusColor.copy(alpha = 0.15f),
+                        ) {
+                            Text(
+                                statusText,
+                                fontSize = 11.sp,
+                                color = statusColor,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            )
+                        }
+                        if (task.totalBytes > 0) {
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                "${formatBytes(task.downloadedBytes)} / ${formatBytes(task.totalBytes)}",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+                // Action buttons
+                when (task.status) {
+                    DownloadStatus.Downloading, DownloadStatus.Queued -> {
+                        IconButton(onClick = onPause, modifier = Modifier.size(36.dp)) {
+                            Icon(Icons.Default.Pause, "暂停", modifier = Modifier.size(18.dp))
+                        }
+                    }
+                    DownloadStatus.Paused, DownloadStatus.Failed -> {
+                        IconButton(onClick = onResume, modifier = Modifier.size(36.dp)) {
+                            Icon(Icons.Default.PlayArrow, "继续", modifier = Modifier.size(18.dp))
+                        }
+                    }
+                    else -> {}
+                }
+                IconButton(onClick = onDelete, modifier = Modifier.size(36.dp)) {
+                    Icon(Icons.Default.Delete, "删除", modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            // Progress bar
+            if (task.status == DownloadStatus.Downloading || task.status == DownloadStatus.Paused) {
+                Spacer(Modifier.height(8.dp))
+                LinearProgressIndicator(
+                    progress = { task.progress },
+                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(2.dp)),
+                )
+            }
+            if (task.error != null) {
+                Spacer(Modifier.height(4.dp))
+                Text(task.error, fontSize = 11.sp, color = MaterialTheme.colorScheme.error, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+        }
+    }
+}
+
+private fun formatBytes(bytes: Long): String {
+    if (bytes <= 0) return "0 B"
+    val units = arrayOf("B", "KB", "MB", "GB")
+    var size = bytes.toDouble()
+    var unit = 0
+    while (size >= 1024 && unit < units.size - 1) { size /= 1024; unit++ }
+    return "${"%.1f".format(size)} ${units[unit]}"
+}

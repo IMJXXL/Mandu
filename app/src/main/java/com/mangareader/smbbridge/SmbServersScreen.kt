@@ -59,6 +59,7 @@ fun SmbServersScreen(onBack: () -> Unit, onOpenBook: (Long) -> Unit = {}) {
     var deleting by remember { mutableStateOf<SmbSourceEntity?>(null) }
     var busyId by remember { mutableStateOf<Long?>(null) }
     var showSettings by remember { mutableStateOf(false) }
+    var showDownloadQueue by remember { mutableStateOf(false) }
 
     // 表单触发：tick 变化时弹原生对话框（Compose 侧只做导航，不承载输入）
     LaunchedEffect(showFormTick) {
@@ -109,8 +110,13 @@ fun SmbServersScreen(onBack: () -> Unit, onOpenBook: (Long) -> Unit = {}) {
         return
     }
 
+    if (showDownloadQueue) {
+        SmbDownloadQueueScreen(onBack = { showDownloadQueue = false })
+        return
+    }
+
     if (showSettings) {
-        SmbSettingsScreen(onBack = { showSettings = false })
+        SmbSettingsScreen(onBack = { showSettings = false }, onOpenDownloadQueue = { showDownloadQueue = true })
         return
     }
 
