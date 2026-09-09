@@ -1,6 +1,0 @@
-﻿
-M	X:/115/manduAAAAAAA/SMB/LocalViewer-main1.19/LocalViewer-main/app/build.gradle.kts
-M	X:/115/manduAAAAAAA/SMB/LocalViewer-main1.19/LocalViewer-main/app/src/main/AndroidManifest.xml
-M	X:/115/manduAAAAAAA/SMB/LocalViewer-main1.19/LocalViewer-main/gradle/libs.versions.toml
-
-
