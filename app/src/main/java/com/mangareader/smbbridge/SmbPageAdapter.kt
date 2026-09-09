@@ -116,7 +116,7 @@ class SmbPageAdapter(
     }
 
     override suspend fun loadPageRaw(index: Int): ByteArray? = withContext(Dispatchers.IO) {
-        focusIndex = index
+
         try {
             val loader = loaderReady.await()
             driveAndAwaitExtract(loader, index) ?: return@withContext null
@@ -159,12 +159,12 @@ class SmbPageAdapter(
         val deadline = System.currentTimeMillis() + PAGE_WAIT_TIMEOUT_MS
         var lastNavigate = 0L
         while (System.currentTimeMillis() < deadline) {
-            if (focusIndex != index) return null // ★ 让位：新焦点页已接管 loader
+            if (focusIndex != -1 && focusIndex != index) return null // ★ 让位：新焦点页已接管 loader（-1=未启用焦点机制不让位）
             if (isPageAvailable(loader, index)) return Unit
             val now = System.currentTimeMillis()
             if (now - lastNavigate > 1500) {
                 lastNavigate = now
-                if (focusIndex != index) return null
+                if (focusIndex != -1 && focusIndex != index) return null
                 runCatching { loader.navigate(ReaderNavigation(index, index..index, NavigationKind.Settled)) }
             }
             delay(80)
