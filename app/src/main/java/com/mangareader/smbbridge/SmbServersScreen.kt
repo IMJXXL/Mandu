@@ -1,10 +1,5 @@
 package com.mangareader.smbbridge
 
-import android.app.Activity
-import android.text.InputType
-import android.widget.EditText
-import android.widget.LinearLayout
-import android.widget.ScrollView
 import android.widget.Toast
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -13,7 +8,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.CleaningServices
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Delete
@@ -56,55 +50,10 @@ fun SmbServersScreen(onBack: () -> Unit, onOpenBook: (Long) -> Unit = {}) {
     var editing by remember { mutableStateOf<SmbSourceEntity?>(null) }
     var browsingId by remember { mutableStateOf<Long?>(null) }
     var showWizard by remember { mutableStateOf(false) }
-    var showFormTick by remember { mutableStateOf(0) }
     var deleting by remember { mutableStateOf<SmbSourceEntity?>(null) }
     var busyId by remember { mutableStateOf<Long?>(null) }
     var showSettings by remember { mutableStateOf(false) }
     var showDownloadQueue by remember { mutableStateOf(false) }
-
-    // 表单触发：tick 变化时弹原生对话框（Compose 侧只做导航，不承载输入）
-    LaunchedEffect(showFormTick) {
-        if (showFormTick > 0) {
-            // 解包 ContextWrapper 链拿 Activity（LocalContext 可能是 ContextThemeWrapper）
-            var actCtx = ctx
-            while (actCtx !is Activity && actCtx is android.content.ContextWrapper) actCtx = actCtx.baseContext
-            (actCtx as? Activity)?.let { activity ->
-                showSmbServerForm(activity, editing) { values, initial ->
-                    scope.launch {
-                        runCatching {
-                            if (initial == null) {
-                                SmbRepository.add(
-                                    displayName = values[0],
-                                    host = values[1],
-                                    port = values[2].toIntOrNull() ?: 445,
-                                    share = values[3],
-                                    pathPrefix = values[4],
-                                    username = values[5],
-                                    domain = values[6],
-                                    password = values[7],
-                                )
-                            } else {
-                                SmbRepository.update(
-                                    initial.copy(
-                                        displayName = values[0].ifBlank { values[1] },
-                                        host = values[1].trim(),
-                                        port = values[2].toIntOrNull() ?: 445,
-                                        share = values[3],
-                                        pathPrefix = values[4],
-                                        username = values[5],
-                                        domain = values[6],
-                                    ),
-                                    password = values[7].takeIf { it.isNotBlank() },
-                                )
-                            }
-                        }
-                        editing = null
-                    }
-                }
-            }
-            showFormTick = 0
-        }
-    }
 
     browsingId?.let { id ->
         SmbBrowserScreen(serverId = id, onBack = { browsingId = null }, onOpenBook = onOpenBook)
@@ -296,75 +245,3 @@ fun SmbServersScreen(onBack: () -> Unit, onOpenBook: (Long) -> Unit = {}) {
     }
 }
 
-/**
- * 原生表单对话框（spec 5.1.1 规则 3：host 非空、port 1-65535、share 非空）。
- * onSave 收到 8 个字段值 + 编辑对象；校验失败不关闭对话框并 Toast 提示。
- */
-private fun showSmbServerForm(
-    activity: Activity,
-    initial: SmbSourceEntity?,
-    onSave: (List<String>, SmbSourceEntity?) -> Unit,
-) {
-    fun dp(v: Int): Int = (v * activity.resources.displayMetrics.density).toInt()
-
-    fun makeField(hint: String, value: String, password: Boolean = false, numeric: Boolean = false): EditText {
-        return EditText(activity).apply {
-            this.hint = hint
-            setText(value)
-            setSingleLine(true)
-            if (password) transformationMethod = android.text.method.PasswordTransformationMethod.getInstance()
-            if (numeric) inputType = InputType.TYPE_CLASS_NUMBER
-            setPadding(dp(14), dp(12), dp(14), dp(12))
-        }
-    }
-
-    val fields = listOf(
-        makeField("显示名（可选）", initial?.displayName ?: ""),
-        makeField("主机地址 *", initial?.host ?: ""),
-        makeField("端口 *", initial?.port?.toString() ?: "445", numeric = true),
-        makeField("共享名 *", initial?.share ?: ""),
-        makeField("起始路径（可选，如 comics/）", initial?.pathPrefix ?: ""),
-        makeField("用户名（可选）", initial?.username ?: ""),
-        makeField("域（可选）", initial?.domain ?: ""),
-        makeField(if (initial == null) "密码" else "密码（留空保持不变）", "", password = true),
-    )
-
-    val box = LinearLayout(activity).apply {
-        orientation = LinearLayout.VERTICAL
-        setPadding(dp(20), dp(10), dp(20), 0)
-        fields.forEachIndexed { i, et ->
-            addView(et)
-            if (i < fields.size - 1) addView(android.widget.Space(activity), LinearLayout.LayoutParams(1, dp(8)))
-        }
-    }
-    val scroll = ScrollView(activity).apply { addView(box) }
-
-    val dialog = android.app.AlertDialog.Builder(activity)
-        .setTitle(if (initial == null) "添加 SMB 服务器" else "编辑 SMB 服务器")
-        .setView(scroll)
-        .setPositiveButton("保存", null)
-        .setNegativeButton("取消", null)
-        .create()
-
-    dialog.setOnShowListener {
-        dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-            val values = fields.map { it.text.toString().trim() }
-            val portNum = values[2].toIntOrNull()
-            val invalid = when {
-                values[1].isBlank() -> "主机地址"
-                portNum == null || portNum !in 1..65535 -> "端口"
-                values[3].isBlank() -> "共享名"
-                else -> null
-            }
-            if (invalid != null) {
-                Toast.makeText(activity, "$invalid 无效", Toast.LENGTH_SHORT).show()
-            } else {
-                onSave(values, initial)
-                dialog.dismiss()
-            }
-        }
-        // 主机字段自动聚焦（原生 EditText 在 MIUI 上焦点/键盘可靠）
-        fields[1].post { fields[1].requestFocus() }
-    }
-    dialog.show()
-}

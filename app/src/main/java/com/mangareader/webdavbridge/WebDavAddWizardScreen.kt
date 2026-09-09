@@ -110,8 +110,14 @@ fun WebDavAddWizardScreen(onBack: () -> Unit, onSaved: () -> Unit) {
             }
             withContext(Dispatchers.Main) {
                 busy = false
-                Toast.makeText(ctx, "已保存书源 #$savedId，目录 /$dir", Toast.LENGTH_SHORT).show()
+                Toast.makeText(ctx, "已保存书源 #$savedId，正在扫描…", Toast.LENGTH_SHORT).show()
                 onSaved()
+            }
+            runCatching {
+                val n = WebDavScanner.scanWebDavServer(savedId)
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(ctx, "扫描完成：新增 $n 本", Toast.LENGTH_SHORT).show()
+                }
             }
         }
     }

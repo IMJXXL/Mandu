@@ -40,9 +40,12 @@ object SmbDownloadQueue {
 
     private val jobs = mutableMapOf<Long, Job>()
     private var dao: com.mangareader.data.MangaDao? = null
+    private var appCtx: Context? = null
+    private var downloadFn: (suspend (taskId: Long, task: DownloadTask, ctx: Context) -> String?)? = null
 
     fun init(ctx: Context) {
         if (dao != null) return
+        appCtx = ctx.applicationContext
         val d = MangaDatabase.getDatabase(ctx).mangaDao()
         dao = d
         scope.launch {
@@ -53,6 +56,10 @@ object SmbDownloadQueue {
                 _tasks.value = loaded
             }
         }
+    }
+
+    fun setDownloadFn(fn: suspend (taskId: Long, task: DownloadTask, ctx: Context) -> String?) {
+        downloadFn = fn
     }
 
     private fun DownloadTaskEntity.toTask() = DownloadTask(
@@ -67,21 +74,44 @@ object SmbDownloadQueue {
         totalBytes = totalBytes, downloadedBytes = downloadedBytes, bookId = bookId,
     )
 
-    fun enqueue(task: DownloadTask): Long {
+    fun enqueue(task: DownloadTask, autoStart: Boolean = true): Long {
         val id = nextId++
-        val taskWithId = task.copy(id = id)
+        val taskWithId = task.copy(id = id, status = DownloadStatus.Downloading)
         _tasks.value = _tasks.value + taskWithId
         scope.launch { dao?.insertDownloadTask(taskWithId.toEntity()) }
+        if (autoStart) startDownloadJob(id, taskWithId)
         return id
     }
 
+    private fun startDownloadJob(id: Long, task: DownloadTask) {
+        val fn = downloadFn ?: return
+        val ctx = appCtx ?: return
+        jobs[id]?.cancel()
+        jobs[id] = scope.launch {
+            try {
+                updateTask(id) { it.copy(status = DownloadStatus.Downloading, error = null) }
+                val result = fn(id, task, ctx)
+                if (result != null) {
+                    markCompleted(id, result)
+                } else {
+                    val cur = _tasks.value.find { it.id == id }
+                    if (cur?.status != DownloadStatus.Failed) markFailed(id, "下载失败")
+                }
+            } catch (t: Throwable) {
+                markFailed(id, t.message ?: "下载失败")
+            }
+            mutex.withLock { jobs.remove(id) }
+        }
+    }
+
     fun pause(id: Long) {
-        scope.launch { mutex.withLock { jobs[id]?.cancel() } }
+        scope.launch { mutex.withLock { jobs[id]?.cancel(); jobs.remove(id) } }
         updateTask(id) { it.copy(status = DownloadStatus.Paused) }
     }
 
     fun resume(id: Long) {
-        updateTask(id) { it.copy(status = DownloadStatus.Queued) }
+        val task = _tasks.value.find { it.id == id } ?: return
+        startDownloadJob(id, task)
     }
 
     fun cancel(id: Long) {

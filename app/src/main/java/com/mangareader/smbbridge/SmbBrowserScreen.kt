@@ -81,7 +81,7 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -> U
     suspend fun listDir(d: String): List<BrowseEntryRemote> = withContext(Dispatchers.IO) {
         val src = source ?: return@withContext emptyList()
         runCatching { SmbGateway.listDirectory(src, password, d) }
-            .onFailure { error = it.message?.take(120) ?: "列目录失败" }
+            .onFailure { error = SmbErrors.humanizeSmb(it).take(120) }
             .getOrDefault(emptyList())
     }
 
@@ -240,8 +240,9 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -> U
                         id = 0,
                         title = fileName.substringBeforeLast('.').ifEmpty { fileName },
                         sourceKind = "smb",
-                        sourcePath = remotePath,
-                    )
+                        sourcePath = SmbPaths.bookPath(src.id, src.share, remotePath),
+                    ),
+                    autoStart = false,
                 )
                 queueIds[remotePath] = qid
             }

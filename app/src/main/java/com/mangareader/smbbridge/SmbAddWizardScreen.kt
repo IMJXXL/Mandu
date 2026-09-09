@@ -211,6 +211,14 @@ fun SmbAddWizardScreen(onBack: () -> Unit, onSaved: () -> Unit, initial: SmbSour
                     if (busy) {
                         Box(Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
                     }
+                    if (!busy && shares.isEmpty()) {
+                        Text(
+                            "未发现共享，请检查主机地址和凭据",
+                            fontSize = 14.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(16.dp),
+                        )
+                    }
                     LazyColumn {
                         items(shares, key = { it }) { share ->
                             Row(

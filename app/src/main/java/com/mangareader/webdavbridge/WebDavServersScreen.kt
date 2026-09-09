@@ -100,7 +100,7 @@ fun WebDavServersScreen(onBack: () -> Unit, onOpenBook: ((Long) -> Unit)? = null
     }
 
     browsingId?.let { id ->
-        WebDavBrowserScreen(serverId = id, onBack = { browsingId = null })
+        WebDavBrowserScreen(serverId = id, onBack = { browsingId = null }, onOpenBook = onOpenBook ?: {})
         return
     }
 
@@ -110,7 +110,7 @@ fun WebDavServersScreen(onBack: () -> Unit, onOpenBook: ((Long) -> Unit)? = null
     }
 
     if (showSettings) {
-        WebDavSettingsScreen(onBack = { showSettings = false })
+        WebDavSettingsScreen(onBack = { showSettings = false }, onOpenDownloadQueue = { showSettings = false; showDownloadQueue = true })
         return
     }
 
@@ -143,6 +143,13 @@ fun WebDavServersScreen(onBack: () -> Unit, onOpenBook: ((Long) -> Unit)? = null
                 LazyColumn(Modifier.fillMaxSize()) {
                     items(sources, key = { it.id }) { s ->
                         val busy = busyId == s.id
+                        val hiddenCount = remember(s.id) { mutableStateOf(0) }
+                        LaunchedEffect(s.id) {
+                            hiddenCount.value = withContext(Dispatchers.IO) {
+                                WebDavDbBridge.mangaDatabase?.mangaDao()?.countWebDavHiddenBooks(s.id) ?: 0
+                            }
+                        }
+                        val isHidden = hiddenCount.value > 0
                         Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)) {
                             Column(Modifier.padding(14.dp)) {
                                 Text(s.displayName, fontSize = 16.sp)
@@ -200,29 +207,25 @@ fun WebDavServersScreen(onBack: () -> Unit, onOpenBook: ((Long) -> Unit)? = null
                                         },
                                     ) { Text("测试") }
                                     TextButton(onClick = { browsingId = s.id }) { Text("浏览") }
-                                    TextButton(onClick = { browsingId = s.id }) { Text("浏览") }
-                                    TextButton(
-                                        enabled = !busy,
-                                        onClick = {
-                                            scope.launch {
-                                                busyId = s.id
-                                                try {
-                                                    val anyHidden = WebDavDbBridge.mangaDatabase?.mangaDao()?.countWebDavHiddenBooks(s.id) ?: 0
-                                                    val target = anyHidden == 0
-                                                    WebDavDbBridge.mangaDatabase?.mangaDao()?.setWebDavBooksHidden(s.id, target)
-                                                    Toast.makeText(ctx, if (target) "已隐藏该书源全部书籍" else "已恢复显示", Toast.LENGTH_SHORT).show()
-                                                } finally {
-                                                    busyId = null
-                                                }
-                                            }
-                                        },
-                                    ) { Text("隐藏/显示") }
-                                                                        TextButton(onClick = { editing = s; showFormTick++ }) {
+                                    TextButton(onClick = { editing = s; showFormTick++ }) {
                                         Icon(Icons.Default.Edit, null, Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text("编辑")
                                     }
                                     TextButton(onClick = { deleting = s }) {
                                         Icon(Icons.Default.Delete, null, Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text("删除")
                                     }
+                                }
+                                Spacer(Modifier.height(4.dp))
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                    Text(if (isHidden) "已隐藏" else "已显示", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Switch(
+                                        checked = !isHidden,
+                                        onCheckedChange = { show ->
+                                            scope.launch(Dispatchers.IO) {
+                                                WebDavDbBridge.mangaDatabase?.mangaDao()?.setWebDavBooksHidden(s.id, !show)
+                                                hiddenCount.value = WebDavDbBridge.mangaDatabase?.mangaDao()?.countWebDavHiddenBooks(s.id) ?: 0
+                                            }
+                                        },
+                                    )
                                 }
                             }
                         }
