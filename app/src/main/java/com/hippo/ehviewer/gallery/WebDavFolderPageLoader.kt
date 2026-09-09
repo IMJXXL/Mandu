@@ -63,6 +63,11 @@ suspend inline fun <T> useWebDavFolderPageLoader(
                         ?: remoteDir.substringAfterLast('/').ifEmpty { source.displayName }
                 }
 
+                override fun close() {
+                    downloadJobs.cancelAll()
+                    super.close()
+                }
+
                 override fun getImageExtension(index: Int) = FileUtils.getExtensionFromFilename(imageFileNames[index])
 
 

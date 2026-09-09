@@ -63,6 +63,11 @@ suspend inline fun <T> useZipFolderPageLoader(
                         }
                 }
 
+                override fun close() {
+                    session.close()
+                    super.close()
+                }
+
                 override fun getImageExtension(index: Int) = FileUtils.getExtensionFromFilename(imageNames[index])
 
                 override fun save(index: Int, file: Path): Boolean = runCatching {
@@ -127,20 +132,32 @@ internal fun zipFolderPageCached(zipKey: String, prefix: String, fileName: Strin
 internal class ZipFolderExtractSession(
     private val openSource: () -> ArchiveByteSource,
 ) : AutoCloseable {
+    private val lock = Any()
     private var source: ArchiveByteSource? = null
     private var directory: ZipCentralDirectory? = null
+    private var closed = false
 
     fun cd(): ZipCentralDirectory? {
-        directory?.let { return it }
-        val src = runCatching { openSource() }.getOrNull() ?: return null
-        val opened = ZipCentralDirectory.open(src)
-        if (opened == null) {
-            runCatching { src.close() }
-            return null
+        synchronized(lock) {
+            if (closed) return null
+            directory?.let { return it }
         }
-        source = src
-        directory = opened
-        return opened
+        val src = synchronized(lock) {
+            if (closed) return null
+            directory?.let { return it }
+            source ?: runCatching { openSource() }.getOrNull()?.also { source = it }
+        } ?: return null
+        val opened = ZipCentralDirectory.open(src)
+        synchronized(lock) {
+            if (closed) return null
+            if (opened == null) {
+                source = null
+                runCatching { src.close() }
+                return null
+            }
+            directory = opened
+            return opened
+        }
     }
 
     fun ensurePage(
@@ -182,9 +199,11 @@ internal class ZipFolderExtractSession(
     }
 
     override fun close() {
-        directory = null
-        val src = source
-        source = null
+        val src = synchronized(lock) {
+            closed = true
+            directory = null
+            source.also { source = null }
+        }
         if (src != null) runCatching { src.close() }
     }
 }
