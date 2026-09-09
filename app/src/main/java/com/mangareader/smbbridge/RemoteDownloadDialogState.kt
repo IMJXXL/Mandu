@@ -148,6 +148,7 @@ object RemoteDownloadDialogState {
             withContext(Dispatchers.IO) {
                 runCatching { dao.updateBook(book.copy(filePath = safPath, source = "local", fileType = ext, coverPath = coverPath)) }
             }
+            coil3.SingletonImageLoader.get(ctx).memoryCache?.clear()
         }
         return safPath
     }
