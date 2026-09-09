@@ -32,7 +32,7 @@ import okio.Path
 
 /**
  * SMB folder reader with seek-friendly downloads:
- * - Host pool multiplexes ops ([SmbGateway.maxConcurrentOpsPerHost] â‰?sessions Ã— ops/session).
+ * - Host pool multiplexes ops ([SmbGateway.maxConcurrentOpsPerHost] ï¿½?sessions Ã— ops/session).
  * - One reserved interactive slot for [onRequest]; prefetch uses the remaining slots
  *   so a seek does not wait behind every prefetch transfer.
  * - Per-file mutex in [SmbCache] joins overlapping downloads (small jump / prefetch race).
@@ -64,7 +64,7 @@ suspend inline fun <T> useSmbFolderPageLoader(
         // B1 convert mode: cap concurrent lib downloads (full convert is serial in
         // HdrConvertCache.fullConvertSlots). Direct-Bitmap uses normal prefetchSlots.
         val libHdrPrefetchSlots = Semaphore(2)
-        // In-flight downloads by page index â€?join small-jump overlap, cancel large jumps.
+        // In-flight downloads by page index ï¿½?join small-jump overlap, cancel large jumps.
         val downloadJobs = KeyedJobRegistry<Int>()
 
         /** UI/decode callbacks waiting for [index] to land in [SmbCache]. */
@@ -81,6 +81,16 @@ suspend inline fun <T> useSmbFolderPageLoader(
                 override fun close() {
                     downloadJobs.cancelAll()
                     super.close()
+                }
+
+                override fun onForeground() {
+                    downloadJobs.cancelAll()
+                    super.onForeground()
+                    if (!SmbGateway.isSourceConnected(source)) {
+                        scope.launch(Dispatchers.IO) {
+                            SmbGateway.refreshConnectionSignal(source, password)
+                        }
+                    }
                 }
 
                 override fun getImageExtension(index: Int) = FileUtils.getExtensionFromFilename(imageFileNames[index])
@@ -147,9 +157,9 @@ suspend inline fun <T> useSmbFolderPageLoader(
                     // cancellation handler cannot resurrect an obsolete interactive transfer.
                     readyWaiters.forEach { idx, _ -> if (idx !in decodedPages) readyWaiters.remove(idx) }
                     ramPages.keys.toList().forEach { idx ->
-                        if (idx !in sourcePages && idx !in decodedPages) ramPages.remove(idx)
+                        if (idx !in decodedPages) ramPages.remove(idx)
                     }
-                    // ConcurrentHashMap.forEach (BiConsumer) â€?never entries/keys iterator.
+                    // ConcurrentHashMap.forEach (BiConsumer) ï¿½?never entries/keys iterator.
                     // Android EntryIterator.next can throw NoSuchElementException under concurrent
                     // put/remove; dual-page fires two onRequest close together.
                     downloadJobs.cancelOutside(sourcePages)
@@ -169,8 +179,8 @@ suspend inline fun <T> useSmbFolderPageLoader(
                  * Start or join a download for [index].
                  * - Small jump / same page: reuses the existing job; [onReady] is queued.
                  * - Interactive: uses reserved pool capacity so seek does not queue behind prefetch.
-                 * - Always completes waiters: success â†?notifySourceReady; fail/cancel with waiters
-                 *   â†?retry once or [notifyPageFailed] (never silent forever-spinner).
+                 * - Always completes waiters: success ï¿½?notifySourceReady; fail/cancel with waiters
+                 *   ï¿½?retry once or [notifyPageFailed] (never silent forever-spinner).
                  */
                 private fun ensureDownload(
                     index: Int,
@@ -181,7 +191,7 @@ suspend inline fun <T> useSmbFolderPageLoader(
                     val name = imageFileNames[index]
                     val cache = SmbCache.cachePath(source.id, remoteDir, name)
                     val skipDisk = Settings.disableReaderNetworkCache.value
-                    // Never probe disk here â€?onRequest/retryPage run on main (lifecycle
+                    // Never probe disk here ï¿½?onRequest/retryPage run on main (lifecycle
                     // ON_RESUME). Memory-only skip for prefetch when known present.
                     if (onReady == null && !skipDisk && SmbCache.isPageCached(cache)) {
                         return
@@ -268,7 +278,7 @@ suspend inline fun <T> useSmbFolderPageLoader(
                                 }
                             }
                         } finally {
-                            // Only remove *this* job â€?a replacement may already be registered.
+                            // Only remove *this* job ï¿½?a replacement may already be registered.
                             downloadJobs.release(index, coroutineContext[Job])
                         }
                     }
@@ -276,7 +286,7 @@ suspend inline fun <T> useSmbFolderPageLoader(
                     if (ownsSlot) {
                         job.start()
                     } else {
-                        // Lost the race â€?keep the owner; waiters are already registered.
+                        // Lost the race ï¿½?keep the owner; waiters are already registered.
                         job.cancel()
                     }
                 }
@@ -284,6 +294,8 @@ suspend inline fun <T> useSmbFolderPageLoader(
                 private suspend fun downloadToRam(index: Int) {
                     if (ramPages.containsKey(index)) return
                     val name = imageFileNames[index]
+                    val cache = SmbCache.cachePath(source.id, remoteDir, name)
+                    if (SmbCache.isPageCachedOnDisk(cache)) return
                     val rel = if (remoteDir.isEmpty()) name else "$remoteDir/$name"
                     ZipAsDirListing.zipMemberPath(rel)?.let { (zipRel, member) ->
                         val bytes = ZipMemberCover.extractBytes(
@@ -298,12 +310,13 @@ suspend inline fun <T> useSmbFolderPageLoader(
                                 yieldable = false,
                             )
                         } ?: error("Cannot extract ZIP member $member from $zipRel")
-                        ramPages[index] = bytes
+                        if (isDecodedDemand(index)) ramPages[index] = bytes
                         return
                     }
-                    val bos = RamByteSink()
-                    SmbGateway.downloadFile(source, password, rel, bos)
-                    ramPages[index] = bos.take()
+                    val sink = RamByteSink()
+                    SmbGateway.downloadFile(source, password, rel, sink)
+                    val bytes = sink.take()
+                    if (isDecodedDemand(index)) ramPages[index] = bytes
                 }
 
                 private suspend fun downloadToCache(index: Int) {

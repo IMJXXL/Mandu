@@ -31,7 +31,7 @@ import moe.tarsin.kt.install
 import okio.Path
 
 /**
- * WebDAV folder reader â€?same waiter/prefetch shape as SMB, without TCP pool.
+ * WebDAV folder reader ï¿½?same waiter/prefetch shape as SMB, without TCP pool.
  * HTTP client multiplexes; download fan-out is capped inside [WebDavClient].
  * Convert-mode lib-HDR/avif: interactive + 1 prefetch (B1 depth 2).
  * Direct-Bitmap mode: same prefetch slots as non-lib (cache original only).
@@ -66,6 +66,11 @@ suspend inline fun <T> useWebDavFolderPageLoader(
                 override fun close() {
                     downloadJobs.cancelAll()
                     super.close()
+                }
+
+                override fun onForeground() {
+                    downloadJobs.cancelAll()
+                    super.onForeground()
                 }
 
                 override fun getImageExtension(index: Int) = FileUtils.getExtensionFromFilename(imageFileNames[index])
@@ -123,9 +128,9 @@ suspend inline fun <T> useWebDavFolderPageLoader(
                 private fun cancelStaleDownloads(sourcePages: Set<Int>, decodedPages: Set<Int>) {
                     readyWaiters.forEach { idx, _ -> if (idx !in decodedPages) readyWaiters.remove(idx) }
                     ramPages.keys.toList().forEach { idx ->
-                        if (idx !in sourcePages && idx !in decodedPages) ramPages.remove(idx)
+                        if (idx !in decodedPages) ramPages.remove(idx)
                     }
-                    // ConcurrentHashMap.forEach â€?avoid entries.toList() iterator race on Android.
+                    // ConcurrentHashMap.forEach ï¿½?avoid entries.toList() iterator race on Android.
                     downloadJobs.cancelOutside(sourcePages)
                 }
 
@@ -148,7 +153,7 @@ suspend inline fun <T> useWebDavFolderPageLoader(
                     val name = imageFileNames[index]
                     val cache = WebDavCache.cachePath(source.id, remoteDir, name)
                     val skipDisk = Settings.disableReaderNetworkCache.value
-                    // Never probe disk here â€?onRequest/retryPage run on main (lifecycle).
+                    // Never probe disk here ï¿½?onRequest/retryPage run on main (lifecycle).
                     if (onReady == null && !skipDisk && WebDavCache.isPageCached(cache)) {
                         return
                     }
@@ -245,6 +250,8 @@ suspend inline fun <T> useWebDavFolderPageLoader(
                 private suspend fun downloadToRam(index: Int) {
                     if (ramPages.containsKey(index)) return
                     val name = imageFileNames[index]
+                    val cache = WebDavCache.cachePath(source.id, remoteDir, name)
+                    if (WebDavCache.isPageCachedOnDisk(cache)) return
                     val remote = if (remoteDir.isEmpty()) name else "$remoteDir/$name"
                     ZipAsDirListing.zipMemberPath(remote)?.let { (zipRel, member) ->
                         val bytes = ZipMemberCover.extractBytes(
@@ -253,12 +260,13 @@ suspend inline fun <T> useWebDavFolderPageLoader(
                         ) {
                             WebDavArchiveByteSource(source, password, zipRel, pipeline = false)
                         } ?: error("Cannot extract ZIP member $member from $zipRel")
-                        ramPages[index] = bytes
+                        if (isDecodedDemand(index)) ramPages[index] = bytes
                         return
                     }
-                    val bos = RamByteSink()
-                    WebDavClient.downloadFile(source, password, remote, bos)
-                    ramPages[index] = bos.take()
+                    val sink = RamByteSink()
+                    WebDavClient.downloadFile(source, password, remote, sink)
+                    val bytes = sink.take()
+                    if (isDecodedDemand(index)) ramPages[index] = bytes
                 }
             },
         )
