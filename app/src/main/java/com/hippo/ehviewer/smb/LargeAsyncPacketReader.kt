@@ -30,6 +30,7 @@ internal class LargeAsyncPacketReader<D : PacketData<*>>(
     private val channel: AsynchronousSocketChannel,
     private val packetFactory: PacketFactory<D>,
     private val handler: PacketReceiver<D>,
+    private val onChannelDead: () -> Unit = {},
 ) {
     private val stopped = AtomicBoolean(false)
     private var remoteHost: String = ""
@@ -104,6 +105,12 @@ internal class LargeAsyncPacketReader<D : PacketData<*>>(
         } else {
             logcat("LargeAsyncPacketReader", exc)
         }
+        // smbj Connection.isConnected stays true unless we flip this; a dead TCP
+        // would otherwise occupy the host pool cap forever.
+        runCatching { onChannelDead() }
+        // Fail in-flight smbj promises. Without this, READ/QUERY waiters hang until
+        // soTimeout (120s) and the reader keeps the dead job instead of opening a new TCP.
+        runCatching { handler.handleError(exc) }
         runCatching { channel.close() }
     }
 }

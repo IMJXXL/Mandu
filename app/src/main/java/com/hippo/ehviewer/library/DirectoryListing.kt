@@ -287,8 +287,20 @@ sealed interface BrowseEntryRemote {
          */
         val coverFileName: String? = null,
         override val lastModifiedMs: Long = 0L,
+        override val size: Long = 0L,
         override val hidden: Boolean = false,
         override val virtual: Boolean = false,
+        /**
+         * Slim live listing did not include this direct folder. Keep classified
+         * rows and descendant index keys; UI hides the folder until a later slim
+         * hit recovers it (clears this flag without re-peeking).
+         */
+        val unreachable: Boolean = false,
+        /**
+         * Zip-as-dir: live zip file size/mtime no longer match this row. Interiors
+         * stay until the user enters; enter then re-reads EOCD and clears the mark.
+         */
+        val zipStale: Boolean = false,
     ) : BrowseEntryRemote
 
     data class FolderGallery(
@@ -342,13 +354,23 @@ sealed interface BrowseEntryRemote {
  * Difference between the cached folder roots and one live listing of the current
  * directory. Only [addedDirectories] need the normal child/leaf classification scan.
  * Direct files are reconciled separately via [replaceSlimDirectFilesFromLive].
+ *
+ * Slim "not in live listing" uses [unreachableDirectoryNames] (keep rows + index keys).
+ * [removedDirectoryNames] still **drops** parent-listing rows (hidden-dir reclassify).
  */
 data class RemoteDirectorySlimPlan(
     val addedDirectories: List<RemoteChild>,
-    val removedDirectoryNames: Set<String>,
+    val removedDirectoryNames: Set<String> = emptySet(),
+    /** Newly missing direct folders — mark [BrowseEntryRemote.Directory.unreachable]. */
+    val unreachableDirectoryNames: Set<String> = emptySet(),
+    /** Previously unreachable folders seen again — clear the flag, keep classification. */
+    val recoveredDirectoryNames: Set<String> = emptySet(),
 ) {
     val isUnchanged: Boolean
-        get() = addedDirectories.isEmpty() && removedDirectoryNames.isEmpty()
+        get() = addedDirectories.isEmpty() &&
+            removedDirectoryNames.isEmpty() &&
+            unreachableDirectoryNames.isEmpty() &&
+            recoveredDirectoryNames.isEmpty()
 }
 
 /** Direct (single-segment) child folder names from a classified listing. */
@@ -358,16 +380,28 @@ fun cachedDirectDirectoryNames(cachedEntries: List<BrowseEntryRemote>): Set<Stri
     .filter { it.isNotEmpty() && '/' !in it }
     .toSet()
 
+/** Direct child folders already marked unreachable in the classified listing. */
+fun cachedUnreachableDirectoryNames(cachedEntries: List<BrowseEntryRemote>): Set<String> = cachedEntries.asSequence()
+    .filterIsInstance<BrowseEntryRemote.Directory>()
+    .filter { it.unreachable }
+    .map { it.relativeName.replace('\\', '/').trim('/') }
+    .filter { it.isNotEmpty() && '/' !in it }
+    .toSet()
+
 /**
  * Compare direct child folders without peeking any of them. Every direct folder has
  * one real [BrowseEntryRemote.Directory] whose [BrowseEntryRemote.Directory.relativeName]
  * is a single segment; promoted virtual rows use multi-segment paths.
+ *
+ * Missing live names are **not** treated as deletes: they are [unreachableDirectoryNames]
+ * unless already marked. A later slim hit recovers them without adding to [addedDirectories].
  */
 fun planRemoteDirectorySlimRefresh(
     cachedEntries: List<BrowseEntryRemote>,
     liveChildren: List<RemoteChild>,
 ): RemoteDirectorySlimPlan {
     val cachedDirectoryNames = cachedDirectDirectoryNames(cachedEntries)
+    val alreadyUnreachable = cachedUnreachableDirectoryNames(cachedEntries)
     val liveDirectories = liveChildren.asSequence()
         .filter { it.isDirectory && !isProtectedSystemName(it.name) }
         .associateBy { it.name }
@@ -375,19 +409,21 @@ fun planRemoteDirectorySlimRefresh(
         .filterKeys { it !in cachedDirectoryNames }
         .values
         .toList()
+    val missing = cachedDirectoryNames - liveDirectories.keys
     return RemoteDirectorySlimPlan(
         addedDirectories = added,
-        removedDirectoryNames = cachedDirectoryNames - liveDirectories.keys,
+        unreachableDirectoryNames = missing - alreadyUnreachable,
+        recoveredDirectoryNames = alreadyUnreachable intersect liveDirectories.keys,
     )
 }
 
 /**
- * True when a slim live listing is too sparse to treat as deletions.
+ * True when a slim live listing is too sparse to treat as missing folders.
  *
  * `listChildrenLenient` maps ACCESS_DENIED / PATH_NOT_FOUND to an empty list, and
  * EasyTier/VPN reconnect can PROPFIND/QUERY_DIRECTORY a share that is not ready yet.
- * Applying [RemoteDirectorySlimPlan.removedDirectoryNames] would then delete every
- * descendant key from [NetworkFolderIndexCache].
+ * Applying [RemoteDirectorySlimPlan.unreachableDirectoryNames] would then hide every
+ * child folder until they reappear in a later listing.
  */
 fun isUntrustedSlimLiveListing(
     cachedEntries: List<BrowseEntryRemote>,
@@ -430,17 +466,7 @@ fun shouldKeepPreviousFolderIndex(
  */
 fun indexKeepDirectoryNames(entries: List<BrowseEntryRemote>, zipAsDir: Boolean): Set<String> {
     val names = cachedDirectDirectoryNames(entries)
-    if (zipAsDir) {
-        // Zip-as-dir listings keep zips as flat FolderGallery rows (no Directory shells).
-        // Without counting them, a fresh clean listing looks "directory-less" against a
-        // legacy Directory+FolderGallery duplicate cache and the keep-guard pins the
-        // stale listing forever (every save re-revives the duplicates).
-        val fgZips = entries.asSequence()
-            .filterIsInstance<BrowseEntryRemote.FolderGallery>()
-            .mapNotNull { ZipAsDirListing.zipFileSegment(it.relativeName, it.name) }
-            .toSet()
-        return if (fgZips.isEmpty()) names else names + fgZips
-    }
+    if (zipAsDir) return names
     return names.filterNotTo(HashSet()) { isZipArchiveFileName(it) }
 }
 
@@ -603,9 +629,11 @@ private fun archiveGalleryKey(entry: BrowseEntryRemote.ArchiveGallery): String {
 }
 
 /**
- * Drop every cached row derived from a deleted direct folder, then add fully classified
- * rows for new folders. Existing folders keep their cached metadata; direct files are
- * refreshed afterward by [replaceSlimDirectFilesFromLive].
+ * Drop rows for [RemoteDirectorySlimPlan.removedDirectoryNames] (reclassify), mark
+ * [RemoteDirectorySlimPlan.unreachableDirectoryNames] without dropping them or their
+ * promotions, and recover [RemoteDirectorySlimPlan.recoveredDirectoryNames] in place.
+ * Existing folders keep their cached metadata; direct files are refreshed afterward
+ * by [replaceSlimDirectFilesFromLive].
  */
 fun mergeRemoteDirectorySlimRefresh(
     cachedEntries: List<BrowseEntryRemote>,
@@ -638,12 +666,24 @@ fun mergeRemoteDirectorySlimRefresh(
         return normalizedPath(path).takeIf { it.isNotEmpty() && '/' !in it }
     }
 
+    fun applyUnreachableFlags(entry: BrowseEntryRemote): BrowseEntryRemote {
+        if (entry !is BrowseEntryRemote.Directory) return entry
+        val path = normalizedPath(entry.relativeName)
+        if (path.isEmpty() || '/' in path) return entry
+        return when (path) {
+            in plan.unreachableDirectoryNames -> entry.copy(unreachable = true)
+            in plan.recoveredDirectoryNames -> entry.copy(unreachable = false)
+            else -> entry
+        }
+    }
+
     val merged = buildList(cachedEntries.size + addedEntries.size) {
-        cachedEntries.filterTo(this) { entry ->
+        cachedEntries.mapNotNullTo(this) { entry ->
             val root = folderRoot(entry)
             val directFile = directFileName(entry)
-            (root == null || root !in plan.removedDirectoryNames) &&
-                (directFile == null || directFile !in addedDirectoryNames)
+            if (root != null && root in plan.removedDirectoryNames) return@mapNotNullTo null
+            if (directFile != null && directFile in addedDirectoryNames) return@mapNotNullTo null
+            applyUnreachableFlags(entry)
         }
         addAll(addedEntries)
     }
@@ -658,12 +698,35 @@ fun mergeRemoteDirectorySlimRefresh(
     return preferCompleteFolderGalleries(cachedEntries, sorted)
 }
 
+/** Direct-folder root of a classified row (`Videos` from `Videos/leaf`). */
+fun browseEntryFolderRoot(entry: BrowseEntryRemote): String? {
+    fun normalizedPath(path: String): String = path.replace('\\', '/').trim('/')
+    val path = when (entry) {
+        is BrowseEntryRemote.Directory -> entry.relativeName
+        is BrowseEntryRemote.FolderGallery -> entry.relativeName
+        is BrowseEntryRemote.ArchiveGallery -> entry.parentRelativeName
+        is BrowseEntryRemote.VideoFile -> entry.fileName.takeIf { '/' in normalizedPath(it) }
+        is BrowseEntryRemote.RegularFile -> entry.fileName.takeIf { '/' in normalizedPath(it) }
+    } ?: return null
+    return normalizedPath(path).takeIf { it.isNotEmpty() }?.substringBefore('/')
+}
+
+/** True when this row is an unreachable folder or a promotion under one. */
+fun BrowseEntryRemote.isUnderUnreachableFolder(unreachableRoots: Set<String>): Boolean {
+    if (this is BrowseEntryRemote.Directory && unreachable) return true
+    if (unreachableRoots.isEmpty()) return false
+    val root = browseEntryFolderRoot(this) ?: return false
+    return root in unreachableRoots
+}
+
 /**
  * Reconcile **direct** files against the live parent listing while keeping the composed
  * cache shape:
- * - surviving archive/video/regular rows: **patch size/mtime only** (no reclassify)
+ * - surviving archive/video/regular rows (including loose images): **patch size/mtime only**
+ * - zip-as-dir Directory rows: patch live zip size/mtime and set [BrowseEntryRemote.Directory.zipStale]
  * - missing direct files: drop
  * - new non-image files: classify only the delta
+ * - new images: RegularFile rows (Folder mode) + current-dir FolderGallery (Photo mode)
  * - current-dir image gallery (`relativeName` ""): rebuild name list from live images
  * - promoted multi-segment rows / child galleries: keep
  */
@@ -690,7 +753,32 @@ fun replaceSlimDirectFilesFromLive(
 
     for (entry in merged) {
         when (entry) {
-            is BrowseEntryRemote.Directory -> dirs += entry
+            is BrowseEntryRemote.Directory -> {
+                val zipName = ZipAsDirListing.zipFileSegment(
+                    entry.relativeName.ifEmpty { entry.name },
+                    entry.name,
+                )
+                val live = zipName?.let { liveByName[it] }
+                if (live != null) {
+                    seenDirectNames += zipName
+                    val size = live.size.takeIf { it > 0L } ?: entry.size
+                    val mtime = live.lastModifiedMs.takeIf { it > 0L } ?: entry.lastModifiedMs
+                    val changed =
+                        (live.size > 0L && entry.size > 0L && live.size != entry.size) ||
+                            (
+                                live.lastModifiedMs > 0L &&
+                                    entry.lastModifiedMs > 0L &&
+                                    live.lastModifiedMs != entry.lastModifiedMs
+                                )
+                    dirs += entry.copy(
+                        size = size,
+                        lastModifiedMs = mtime,
+                        zipStale = entry.zipStale || changed,
+                    )
+                } else {
+                    dirs += entry
+                }
+            }
             is BrowseEntryRemote.FolderGallery -> {
                 val rel = norm(entry.relativeName)
                 if (rel.isNotEmpty()) {
@@ -740,15 +828,11 @@ fun replaceSlimDirectFilesFromLive(
                     val live = liveByName[path]
                     if (live != null) {
                         seenDirectNames += path
-                        // Images belong in the current-dir FolderGallery, not as RegularFile.
-                        if (isImageFileName(path)) {
-                            // Drop stray image RegularFile; gallery rebuild covers it.
-                        } else {
-                            regularFiles += entry.copy(
-                                size = live.size,
-                                lastModifiedMs = live.lastModifiedMs,
-                            )
-                        }
+                        regularFiles += entry.copy(
+                            size = live.size,
+                            lastModifiedMs = live.lastModifiedMs,
+                            hidden = live.hidden || isDotHiddenName(path),
+                        )
                     }
                 }
             }
@@ -756,9 +840,8 @@ fun replaceSlimDirectFilesFromLive(
     }
 
     // Classify only brand-new non-image files (archives / videos / other).
-    val newNonImage = liveFiles.filter {
-        it.name !in seenDirectNames && !isImageFileName(it.name)
-    }
+    val newFiles = liveFiles.filter { it.name !in seenDirectNames }
+    val newNonImage = newFiles.filter { !isImageFileName(it.name) }
     if (newNonImage.isNotEmpty()) {
         val added = classifyRemoteListingWithPeeks(
             currentDirName = currentDirName.ifEmpty { "Gallery" },
@@ -775,10 +858,19 @@ fun replaceSlimDirectFilesFromLive(
             }
         }
     }
+    for (img in newFiles) {
+        if (!isImageFileName(img.name)) continue
+        regularFiles += BrowseEntryRemote.RegularFile(
+            name = img.name,
+            size = img.size,
+            lastModifiedMs = img.lastModifiedMs,
+            hidden = img.hidden || isDotHiddenName(img.name),
+        )
+    }
 
     // Current-dir gallery from live image basenames (no per-file reclassify).
     val imageNames = liveFiles.asSequence()
-        .filter { isImageFileName(it.name) }
+        .filter { isImageFileName(it.name) && !(it.hidden || isDotHiddenName(it.name)) }
         .map { it.name }
         .sortedWith { a, b -> naturalCompare(a, b) }
         .toList()
@@ -1350,6 +1442,16 @@ fun classifyRemoteListingWithPeeks(
         }
     }
 
+    val childSizeByName = HashMap<String, Long>(entries.size)
+    for (e in entries) {
+        if (e.size > 0L) childSizeByName[e.name] = e.size
+    }
+    if (childSizeByName.isNotEmpty()) {
+        for (i in dirs.indices) {
+            val sz = childSizeByName[dirs[i].name] ?: continue
+            if (dirs[i].size != sz) dirs[i] = dirs[i].copy(size = sz)
+        }
+    }
     dirs.sortWith { a, b -> naturalCompare(a.name, b.name) }
     leafGalleries.sortWith { a, b -> naturalCompare(a.name, b.name) }
     archives.sortWith { a, b -> naturalCompare(a.name, b.name) }
@@ -1548,7 +1650,7 @@ fun classifyRemoteListing(
  * classify on a huge comic library stuck as Empty shells.
  */
 fun isShallowIncompleteListing(entries: List<BrowseEntryRemote>): Boolean {
-    val dirs = entries.filterIsInstance<BrowseEntryRemote.Directory>()
+    val dirs = entries.filterIsInstance<BrowseEntryRemote.Directory>().filterNot { it.unreachable }
     if (dirs.isEmpty()) return false
     return dirs.all {
         it.presence == DirPresence.Pending || it.presence == DirPresence.Empty

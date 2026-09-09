@@ -17,6 +17,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -97,17 +98,20 @@ class SmbArchiveByteSource(
             val (zipRel, memberRel) = zipMember
             raw = null
             inner = openZipContainedFileSource("smb:${source.id}:$zipRel", memberRel) {
+                // Honor the outer flags. Video already windows in VideoDirectLink
+                // (2 MiB × 28). Forcing readahead here slides a 16 MiB array on every
+                // inflater/64 KiB ZIP read → LOS GC storm and 4K never starts.
                 SmbArchiveByteSource(
                     source = source,
                     password = password,
                     remoteRelativeFile = zipRel,
-                    pipeline = false,
+                    pipeline = pipeline,
                     yieldable = yieldable,
                     stickySession = stickySession,
                     httpStickyPool = httpStickyPool,
                     httpStickyWait = httpStickyWait,
-                    videoPlay = false,
-                    readahead = true,
+                    videoPlay = videoPlay,
+                    readahead = readahead,
                 )
             }
         } else {
@@ -146,6 +150,13 @@ class SmbArchiveByteSource(
 
     override fun dropQueuedReads() {
         raw?.dropQueuedReads()
+    }
+
+    /** Re-open the remote handle after the browse pool's TCP died in the background. */
+    fun requestReconnect() {
+        raw?.requestReconnect()
+        val nested = inner as? SmbArchiveByteSource
+        if (nested != null && nested !== this) nested.requestReconnect()
     }
 
     override fun close() = inner.close()
@@ -289,9 +300,16 @@ private class KeepOpenSmbFileSource(
                                                 runBatch(op)
                                             }
                                         } else {
-                                            for (op in ops) {
-                                                runBatch(op)
-                                            }
+                                            // Do not iterate until ops.close(): that held the host-pool
+                                            // slot for the whole zip-as-dir reader session. Release
+                                            // after a short idle; the worker re-opens on next demand.
+                                            drainUntilIdle(
+                                                channel = ops,
+                                                idleMs = BROWSE_IDLE_RELEASE_MS,
+                                                isActive = { isActive && !closed.get() },
+                                                handle = { runBatch(it) },
+                                            )
+                                            if (!ops.isEmpty) demand.trySend(Unit)
                                         }
                                     }
                                 } finally {
@@ -381,6 +399,11 @@ private class KeepOpenSmbFileSource(
         }
     }
 
+    /** Re-open the remote handle after the browse pool's TCP died in the background. */
+    fun requestReconnect() {
+        if (!closed.get()) demand.trySend(Unit)
+    }
+
     override val size: Long
         get() {
             if (closed.get() && !sizeReady.isCompleted) {
@@ -461,10 +484,16 @@ private class KeepOpenSmbFileSource(
         const val STICKY_IDLE_PING_MS = 45_000L
 
         /**
-         * Per-op size for smbj. Use a large chunk so an 8 MiB readahead window is only a
-         * few READ requests (keeps multi-credit SMB3 busy instead of 64 KiB chatter).
+         * Browse-pool keep-open: drop the host-pool borrow after this idle so zip-as-dir
+         * page viewing does not pin an op slot until the reader closes.
          */
-        const val READ_CHUNK = 2 * 1024 * 1024
+        const val BROWSE_IDLE_RELEASE_MS = 2_000L
+
+        /**
+         * SMB2/3 READ size. 1 MiB matches [SmbSequentialCopy] and typical max read;
+         * a 2 MiB video block is two credits in flight instead of one stop-and-wait.
+         */
+        const val READ_CHUNK = 1024 * 1024
 
         /** Outstanding SMB READs on one handle (credits / message IDs). */
         const val READ_PIPELINE = 4
@@ -508,36 +537,42 @@ private class KeepOpenSmbFileSource(
             if (len <= READ_CHUNK) {
                 return file.read(buf, fileOffset, off, len)
             }
-            val starts = ArrayList<Int>()
-            val sizes = ArrayList<Int>()
-            var pos = 0
-            while (pos < len) {
-                val n = minOf(READ_CHUNK, len - pos)
-                starts.add(pos)
-                sizes.add(n)
-                pos += n
-            }
-            val got = IntArray(sizes.size)
-            coroutineScope {
-                for (i in sizes.indices) {
-                    launch(Dispatchers.IO) {
-                        got[i] = file.read(
-                            buf,
-                            fileOffset + starts[i],
-                            off + starts[i],
-                            sizes[i],
-                        )
+            var filled = 0
+            while (filled < len) {
+                val remain = len - filled
+                val batch = ArrayList<Int>(READ_PIPELINE)
+                var batchBytes = 0
+                while (batch.size < READ_PIPELINE && batchBytes < remain) {
+                    val chunk = minOf(READ_CHUNK, remain - batchBytes)
+                    if (chunk <= 0) break
+                    batch.add(chunk)
+                    batchBytes += chunk
+                }
+                val got = IntArray(batch.size)
+                coroutineScope {
+                    var pos = filled
+                    for (i in batch.indices) {
+                        val at = pos
+                        val chunk = batch[i]
+                        launch(Dispatchers.IO) {
+                            got[i] = file.read(buf, fileOffset + at, off + at, chunk)
+                        }
+                        pos += chunk
                     }
                 }
+                var short = false
+                for (i in batch.indices) {
+                    val piece = got[i]
+                    if (piece <= 0) return if (filled > 0) filled else piece
+                    filled += piece
+                    if (piece < batch[i]) {
+                        short = true
+                        break
+                    }
+                }
+                if (short) continue
             }
-            var total = 0
-            for (i in sizes.indices) {
-                val n = got[i]
-                if (n <= 0) break
-                total += n
-                if (n < sizes[i]) break
-            }
-            return total
+            return filled
         }
 
         private fun isShareClosedError(e: Throwable): Boolean {
@@ -556,5 +591,24 @@ private class KeepOpenSmbFileSource(
             }
             return false
         }
+    }
+}
+
+/**
+ * Consume [channel] until it is idle for [idleMs] or closed.
+ * Used so browse-pool keep-open returns from [SmbGateway.withOpenFile] and releases
+ * the host-pool slot instead of holding it until the archive source is closed.
+ */
+internal suspend fun <T> drainUntilIdle(
+    channel: ReceiveChannel<T>,
+    idleMs: Long,
+    isActive: () -> Boolean = { true },
+    handle: suspend (T) -> Unit,
+) {
+    while (isActive()) {
+        val item = withTimeoutOrNull(idleMs) {
+            channel.receiveCatching().getOrNull()
+        } ?: channel.tryReceive().getOrNull() ?: return
+        handle(item)
     }
 }

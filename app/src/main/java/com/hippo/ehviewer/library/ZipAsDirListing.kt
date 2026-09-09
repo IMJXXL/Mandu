@@ -306,7 +306,7 @@ object ZipAsDirListing {
             for ((leaf, leafPeek) in listing.grandPeeks) {
                 grandPeeks["${child.name}/$leaf"] = leafPeek
             }
-            out += child.copy(isDirectory = true, size = 0L)
+            out += child.copy(isDirectory = true)
         }
         return ZipFakeFolderExpansion(out, peeks, grandPeeks)
     }
@@ -322,44 +322,15 @@ object ZipAsDirListing {
         grandPeeks: Map<String, List<RemoteChild>>,
         listZipRoot: (fileName: String) -> ZipRootListing?,
     ): List<BrowseEntryRemote> {
-        android.util.Log.w("ZCLASS", "entered zipAsDir=" + Settings.browseZipAsDir.value + " children=" + children.size)
-        if (!Settings.browseZipAsDir.value) {
-            val taggedOff = children.withHiddenFlags(childPeeks)
-            return classifyRemoteListingWithPeeks(currentDirName, taggedOff, childPeeks, grandPeeks)
-        }
-        // ★ 修复（2026-09-06 性能基准实测）：zip 不再伪装成假目录走 LeafGallery promote ——
-        //   那条路径会同时产出 Directory(shell) + FolderGallery，每个 zip 双条目
-        //   （全 zip 目录列表翻倍，16 zip 列 32 条）。改为直接构造 FolderGallery
-        //   （zip 即书，点击即读）；CD 不可读的 zip 保留 ArchiveGallery 原语义。
-        //   真实目录的 promote（shell + gallery 双条目）不受影响。
-        val zipGalleries = ArrayList<BrowseEntryRemote>()
-        val real = ArrayList<RemoteChild>(children.size)
-        for (child in children) {
-            if (child.isDirectory || !isZipArchiveFileName(child.name)) {
-                real += child
-                continue
-            }
-            val listing = listZipRoot(child.name)
-            if (listing == null) {
-                real += child
-                continue
-            }
-            val archive = BrowseEntryRemote.ArchiveGallery(
-                name = child.name,
-                fileName = child.name,
-                size = child.size,
-                lastModifiedMs = child.lastModifiedMs,
-                hidden = child.hidden || isDotHiddenName(child.name),
-            )
-            zipGalleries += folderGalleryForZip(archive, listing)
-        }
-        val peeks = HashMap<String, List<RemoteChild>>(childPeeks.size)
+        val expansion = expandZipFilesAsFakeFolders(children, listZipRoot)
+        val peeks = HashMap<String, List<RemoteChild>>(childPeeks.size + expansion.peeks.size)
         peeks.putAll(childPeeks)
-        val grands = HashMap<String, List<RemoteChild>>(grandPeeks.size)
+        peeks.putAll(expansion.peeks)
+        val grands = HashMap<String, List<RemoteChild>>(grandPeeks.size + expansion.grandPeeks.size)
         grands.putAll(grandPeeks)
-        val tagged = real.withHiddenFlags(peeks)
-        val classified = classifyRemoteListingWithPeeks(currentDirName, tagged, peeks, grands)
-        return if (zipGalleries.isEmpty()) classified else classified + zipGalleries
+        grands.putAll(expansion.grandPeeks)
+        val tagged = expansion.children.withHiddenFlags(peeks)
+        return classifyRemoteListingWithPeeks(currentDirName, tagged, peeks, grands)
     }
 
     fun folderGalleryForZip(
@@ -384,12 +355,32 @@ object ZipAsDirListing {
         )
     }
 
+    /**
+     * Pending zip/cbz directory rows for a parent listing that has not parsed EOCD yet.
+     * Lets Folder/Galleries paint real dirs while zip CDs are still in flight.
+     */
+    fun pendingZipDirectoryRows(children: List<RemoteChild>): List<BrowseEntryRemote.Directory> {
+        if (!Settings.browseZipAsDir.value) return emptyList()
+        return children.mapNotNull { child ->
+            if (child.isDirectory || !isZipArchiveFileName(child.name)) return@mapNotNull null
+            BrowseEntryRemote.Directory(
+                name = child.name,
+                hasVideo = false,
+                hasGallery = false,
+                presence = DirPresence.Pending,
+                lastModifiedMs = child.lastModifiedMs,
+                size = child.size,
+                hidden = child.hidden || isDotHiddenName(child.name),
+            )
+        }
+    }
+
     /** Shallow paint: zip/cbz files become Pending directories (no CD yet). */
     fun zipFilesAsPendingDirectories(children: List<RemoteChild>): List<RemoteChild> {
         if (children.none { !it.isDirectory && isZipArchiveFileName(it.name) }) return children
         return children.map { child ->
             if (!child.isDirectory && isZipArchiveFileName(child.name)) {
-                child.copy(isDirectory = true, size = 0L)
+                child.copy(isDirectory = true)
             } else {
                 child
             }
@@ -572,32 +563,35 @@ object ZipAsDirListing {
         return names
     }
 
-    /**
-     * Direct zip names whose cached rows are still plain [BrowseEntryRemote.Directory]
-     * shells **paired with a same-name flat FolderGallery** — the legacy promote
-     * duplicate shape (Directory + flat FolderGallery, both rel == name). Slim must
-     * treat these as stale (remove + reclassify), not as valid zip-as-dir rows —
-     * otherwise they pair with the fresh FolderGallery as permanent duplicates
-     * (every zip listed twice: Directory + FolderGallery).
-     *
-     * Tree zips (Directory shell + wrapper FolderGallery rel = `name/Album`) are
-     * **legitimate** and excluded: their Directory shell is the browsable virtual
-     * folder and must not be dropped.
-     */
-    fun staleZipDirectoryShellNames(
-        cached: List<BrowseEntryRemote>,
-        zipFileNames: Set<String>,
-    ): Set<String> {
-        if (zipFileNames.isEmpty()) return emptySet()
-        val flatZipGalleries = cached.asSequence()
-            .filterIsInstance<BrowseEntryRemote.FolderGallery>()
-            .filter { it.relativeName == it.name && it.name in zipFileNames }
-            .mapTo(HashSet()) { it.name }
-        if (flatZipGalleries.isEmpty()) return emptySet()
-        return cached.asSequence()
-            .filterIsInstance<BrowseEntryRemote.Directory>()
-            .filter { it.name in flatZipGalleries && it.relativeName == it.name }
-            .mapTo(HashSet()) { it.name }
+    fun isZipAsDirStale(parentEntries: List<BrowseEntryRemote>?, zipFileName: String): Boolean {
+        if (parentEntries == null || zipFileName.isEmpty()) return false
+        val want = zipFileName.substringAfterLast('/').substringAfterLast('\\')
+        return parentEntries.any { entry ->
+            entry is BrowseEntryRemote.Directory &&
+                entry.zipStale &&
+                zipFileSegment(entry.relativeName.ifEmpty { entry.name }, entry.name) == want
+        }
+    }
+
+    fun clearZipAsDirStale(
+        parentEntries: List<BrowseEntryRemote>,
+        zipFileName: String,
+    ): List<BrowseEntryRemote> {
+        val want = zipFileName.substringAfterLast('/').substringAfterLast('\\')
+        var changed = false
+        val out = ArrayList<BrowseEntryRemote>(parentEntries.size)
+        for (entry in parentEntries) {
+            if (entry is BrowseEntryRemote.Directory &&
+                entry.zipStale &&
+                zipFileSegment(entry.relativeName.ifEmpty { entry.name }, entry.name) == want
+            ) {
+                changed = true
+                out += entry.copy(zipStale = false)
+            } else {
+                out += entry
+            }
+        }
+        return if (changed) out else parentEntries
     }
 
     /** Direct image basenames under [innerPrefix] (natural sort). */
@@ -765,7 +759,9 @@ object ZipAsDirListing {
                 hasVideo = false,
                 hasGallery = true,
                 presence = if (inner.isEmpty()) DirPresence.LeafImages else DirPresence.PromotedShell,
-                coverFileName = if (inner.isEmpty()) entry.coverFileName else null,
+                // Inner albums: store `Album/01.jpg` so parent-listing dir thumbs
+                // resolve via [zipAsDirCoverParts] (basename alone misses the prefix).
+                coverFileName = entry.coverFileName?.let { joinPrefix(inner, it) },
                 hidden = entry.hidden,
             )
             if (extra == null) extra = ArrayList()

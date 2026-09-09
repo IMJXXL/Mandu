@@ -363,7 +363,7 @@ object Settings : DataStorePreferences(null) {
      * page). Decode from RAM; leftover files from earlier sessions may still be read.
      * Local folders already skip a page cache.
      */
-    val disableReaderNetworkCache = boolPref("disable_reader_network_cache", false)
+    val disableReaderNetworkCache = boolPref("disable_reader_network_cache", true)
 
     /** Decoded images to keep ahead independently of [preloadImage]. */
     val readerDecodeAhead = intPref("pref_reader_decode_ahead", 3)
@@ -449,6 +449,16 @@ object Settings : DataStorePreferences(null) {
     val webDavInsecureTls = boolPref("webdav_insecure_tls", false).observed {
         runCatching { com.hippo.ehviewer.webdav.WebDavClient.resetClient() }
     }
+
+    /**
+     * WebDAV subfolder PROPFIND / zip-root fan-out (Advanced). Default: 5.
+     */
+    val webDavConcurrentListing = intPref("webdav_concurrent_listing", 5)
+
+    /**
+     * WebDAV parallel page / Range GET fan-out (Advanced). Default: 4.
+     */
+    val webDavDownloadSlots = intPref("webdav_download_slots", 4)
 
     /**
      * Slim FGS for external HTTP / streamdoc.

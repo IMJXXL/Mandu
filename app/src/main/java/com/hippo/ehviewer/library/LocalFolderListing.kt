@@ -96,7 +96,11 @@ object LocalFolderListing {
             return ZipAsDirListing.materializeLocal(zipAbs, inner, remote)
         }
 
-        if (useCache) {
+        val zipName = zipRel.substringAfterLast('/').substringAfterLast('\\')
+        val parentEntries = parentListingForZip(rootId, rootPath, configKey, zipRel)
+        val stale = ZipAsDirListing.isZipAsDirStale(parentEntries, zipName)
+
+        if (useCache && !stale) {
             val cached = BrowseSession.getLocalCachedListing(ramKey)
                 ?: configKey?.let { key ->
                     NetworkFolderIndexCache.loadLocal(rootId, key, virtualDir)?.let { entries ->
@@ -109,11 +113,14 @@ object LocalFolderListing {
                 onCached?.invoke(materialized)
                 return@withContext materialized
             }
-        } else {
+        } else if (!useCache) {
             BrowseSession.invalidateLocalListing(ramKey)
         }
+        if (stale) {
+            BrowseSession.invalidateLocalZipListingsUnder(rootId, zipRel)
+            NetworkFolderIndexCache.removeLocalUnder(rootId, zipRel)
+        }
 
-        val zipName = zipRel.substringAfterLast('/').substringAfterLast('\\')
         val tree = withLocalZipCentralDirectory(zipPath) { cd ->
             ZipAsDirListing.classifyAllVirtualFolders(cd, zipName)
         } ?: return@withContext null
@@ -122,6 +129,9 @@ object LocalFolderListing {
             persistZipVirtualFolderTree(rootId, configKey, zipRel, tree)
         } else {
             BrowseSession.putLocalListing(ramKey, tree[treeKey].orEmpty(), sessionCurrent = true)
+        }
+        if (stale && parentEntries != null) {
+            clearZipAsDirStaleOnParent(rootId, rootPath, configKey, zipRel, zipName, parentEntries)
         }
         val remote = BrowseSession.getLocalCachedListing(ramKey)?.entries
             ?: tree[treeKey].orEmpty()
@@ -214,12 +224,7 @@ object LocalFolderListing {
                 val shouldQuickScan =
                     Settings.networkFolderIndexQuickScan.value && !cached.sessionCurrent
                 if (!shouldQuickScan) return@withContext materialized
-                // Shallow stubs must upgrade via full peeks, not slim.
-                if (isShallowIncompleteListing(filledRemote)) {
-                    // Fall through to cold shallow→deep path below (invalidate so we do not
-                    // re-hit this branch with the same stub).
-                    BrowseSession.invalidateLocalListing(pathKey)
-                } else {
+                if (!isShallowIncompleteListing(filledRemote)) {
                     return@withContext try {
                         val refresh = listDirectorySlim(
                             effective,
@@ -236,15 +241,12 @@ object LocalFolderListing {
                             }
                             return@withContext materialized
                         }
-                        val toKeep = if (refresh.entries != filledRemote ||
-                            refresh.removedDirectoryNames.isNotEmpty()
-                        ) {
+                        val toKeep = if (refresh.entries != filledRemote) {
                             NetworkFolderIndexCache.saveLocal(
                                 rootId,
                                 configKey,
                                 relativeDir,
                                 refresh.entries,
-                                refresh.removedDirectoryNames,
                             )
                         } else {
                             refresh.entries
@@ -270,7 +272,11 @@ object LocalFolderListing {
             BrowseSession.invalidateLocalListing(pathKey)
         }
 
-        BrowseSession.getLocalListing(pathKey)?.let { return@withContext it }
+        BrowseSession.getLocalListing(pathKey)?.let { listed ->
+            if (BrowseSession.isLocalListingSessionCurrent(pathKey)) {
+                return@withContext listed
+            }
+        }
         // Cold miss: shallow-first (one list → paint), then deferred peeks.
         val previous = BrowseSession.getLocalCachedListing(pathKey)?.entries
         val t0 = System.nanoTime()
@@ -313,20 +319,7 @@ object LocalFolderListing {
                 val stored =
                     NetworkFolderIndexCache.saveLocal(rootId, configKey, relativeDir, fromRam)
                 BrowseSession.putLocalListing(pathKey, stored, sessionCurrent = true)
-                ZipAsDirListing.persistFolderIndexes(
-                    parentRelativeDir = relativeDir,
-                    interiors = zipInteriors,
-                    save = { dir, entries ->
-                        NetworkFolderIndexCache.saveLocal(rootId, configKey, dir, entries)
-                    },
-                    putRam = { dir, entries ->
-                        BrowseSession.putLocalListing(
-                            BrowseSession.localZipListingKey(rootId, dir),
-                            entries,
-                            sessionCurrent = true,
-                        )
-                    },
-                )
+                persistZipVirtualInteriors(rootId, configKey, relativeDir, zipInteriors)
                 logcat("FolderIndex") {
                     "Local deep classify root=$rootId dir=$relativeDir " +
                         "entries=${stored.size} ms=${(System.nanoTime() - t1) / 1_000_000}"
@@ -369,7 +362,6 @@ object LocalFolderListing {
         if (isUntrustedSlimLiveListing(cached, children)) {
             return SlimRefresh(cached, emptySet(), persist = false)
         }
-        persistZipAsDirTreesFromListing(dir, children, rootId, configKey, relativeDir)
         val plan = planRemoteDirectorySlimRefresh(cached, children)
         val zipFileNames = if (Settings.browseZipAsDir.value) {
             ZipAsDirListing.zipFileNames(children)
@@ -382,15 +374,10 @@ object LocalFolderListing {
             emptyList()
         }
         val deepNames = deepHidden.mapTo(HashSet()) { it.name }
-        val staleZipShells = if (zipFileNames.isEmpty()) {
-            emptySet()
-        } else {
-            ZipAsDirListing.staleZipDirectoryShellNames(cached, zipFileNames)
-        }
         val cachedZipAsDir = if (zipFileNames.isEmpty()) {
             emptySet()
         } else {
-            ZipAsDirListing.cachedDirectZipAsDirNames(cached) - staleZipShells
+            ZipAsDirListing.cachedDirectZipAsDirNames(cached)
         }
         val newZips = if (zipFileNames.isEmpty()) {
             emptyList()
@@ -399,48 +386,46 @@ object LocalFolderListing {
         }
         val toClassify = (plan.addedDirectories + deepHidden + newZips).distinctBy { it.name }
         val dirName = dir.name.ifEmpty { "Gallery" }
-        val liveForFiles = if (zipFileNames.isEmpty()) {
-            children
-        } else {
-            children.filterNot { it.name in zipFileNames }
-        }
-        // Stale Directory shells for zip names must be dropped (then reclassified);
-        // non-stale zip rows keep the original protection from removal.
-        val zipAdjustedRemoved = plan.removedDirectoryNames - (zipFileNames - staleZipShells)
-        val dirsUnchanged = plan.addedDirectories.isEmpty() && zipAdjustedRemoved.isEmpty()
+        val zipAdjustedUnreachable = plan.unreachableDirectoryNames - zipFileNames
+        val recovered = plan.recoveredDirectoryNames
+        val dirsUnchanged = plan.addedDirectories.isEmpty() &&
+            zipAdjustedUnreachable.isEmpty() &&
+            recovered.isEmpty()
         if (dirsUnchanged && deepHidden.isEmpty() && newZips.isEmpty()) {
             // Dirs same — still patch surviving file size/mtime; add/drop direct files.
-            // Zip-as-dir files are excluded so slim does not re-add ArchiveGallery rows.
+            // Cached zip-as-dir dirs consume the live zip file (size/mtime + stale mark).
             return SlimRefresh(
                 entries = withLocalArchivePageCounts(
                     dir,
-                    replaceSlimDirectFilesFromLive(cached, liveForFiles, dirName),
+                    replaceSlimDirectFilesFromLive(cached, children, dirName),
                 ),
                 removedDirectoryNames = emptySet(),
             )
         }
         // Drop shallow hidden shells (via removedDirectoryNames) then re-add full classify.
+        // Missing live dirs are marked unreachable — descendant index keys stay.
         // Keep cached zip-as-dir Directory/FolderGallery rows: live listing still has the file.
         val effectivePlan = RemoteDirectorySlimPlan(
             addedDirectories = toClassify,
-            removedDirectoryNames = zipAdjustedRemoved + deepNames,
+            removedDirectoryNames = deepNames,
+            unreachableDirectoryNames = zipAdjustedUnreachable,
+            recoveredDirectoryNames = recovered,
         )
+        val zipInteriors = ConcurrentHashMap<String, List<BrowseEntryRemote>>()
         val addedEntries = if (toClassify.isEmpty()) {
             emptyList()
         } else {
-            classifyDirectoryChildren(dir, preferMediaStore, toClassify)
+            classifyDirectoryChildren(dir, preferMediaStore, toClassify, zipInteriors)
         }
+        persistZipVirtualInteriors(rootId, configKey, relativeDir, zipInteriors)
         val merged = replaceSlimDirectFilesFromLive(
             mergeRemoteDirectorySlimRefresh(cached, effectivePlan, addedEntries),
-            liveForFiles,
+            children,
             dirName,
         )
-        zipAdjustedRemoved.forEach { name ->
-            BrowseSession.invalidateLocalRawChildren(BrowseSession.pathKey(dir / name))
-        }
         return SlimRefresh(
             entries = withLocalArchivePageCounts(dir, merged),
-            removedDirectoryNames = zipAdjustedRemoved,
+            removedDirectoryNames = emptySet(),
         )
     }
 
@@ -461,10 +446,12 @@ object LocalFolderListing {
         val peeks = ConcurrentHashMap<String, List<RemoteChild>>()
         if (dirsToPeek.isNotEmpty()) {
             runParallel(dirsToPeek) { c ->
+                // MediaStore never indexes archives. SAF-mode peeks must always take the
+                // DocumentsContract remainder, or a dir with images+zips is tagged as an
+                // image leaf and the folder (and its archives) disappear from Folder view.
                 peeks[c.name] = listChildrenRemote(
                     dir / c.name,
                     preferMediaStore,
-                    includeSafRemainder = !shouldSkipSafPeek(dir / c.name, preferMediaStore),
                 )
             }
         }
@@ -491,7 +478,6 @@ object LocalFolderListing {
                 grandPeeks[leafRel] = listChildrenRemote(
                     leafDir,
                     preferMediaStore,
-                    includeSafRemainder = !shouldSkipSafPeek(leafDir, preferMediaStore),
                 )
             }
         }
@@ -550,8 +536,23 @@ object LocalFolderListing {
         zipRel: String,
         interiors: Map<String, List<BrowseEntryRemote>>,
     ) {
+        persistZipVirtualInteriors(
+            rootId,
+            configKey,
+            ZipAsDirListing.parentRelative(zipRel),
+            interiors,
+        )
+    }
+
+    private suspend fun persistZipVirtualInteriors(
+        rootId: Long,
+        configKey: String,
+        parentRelativeDir: String,
+        interiors: Map<String, List<BrowseEntryRemote>>,
+    ) {
+        if (interiors.isEmpty()) return
         ZipAsDirListing.persistFolderIndexes(
-            parentRelativeDir = ZipAsDirListing.parentRelative(zipRel),
+            parentRelativeDir = parentRelativeDir,
             interiors = interiors,
             save = { dir, entries ->
                 NetworkFolderIndexCache.saveLocal(rootId, configKey, dir, entries)
@@ -566,31 +567,42 @@ object LocalFolderListing {
         )
     }
 
-    private suspend fun persistZipAsDirTreesFromListing(
-        dir: Path,
-        children: List<RemoteChild>,
+    private suspend fun parentListingForZip(
         rootId: Long,
-        configKey: String,
-        relativeDir: String,
+        rootPath: Path?,
+        configKey: String?,
+        zipRel: String,
+    ): List<BrowseEntryRemote>? {
+        val parent = ZipAsDirListing.parentRelative(zipRel)
+        if (rootPath != null) {
+            val parentPath = if (parent.isEmpty()) rootPath else rootPath.resolveRelative(parent)
+            BrowseSession.getLocalCachedListing(BrowseSession.pathKey(parentPath))?.entries?.let { return it }
+        }
+        return configKey?.let { NetworkFolderIndexCache.loadLocal(rootId, it, parent) }
+    }
+
+    private suspend fun clearZipAsDirStaleOnParent(
+        rootId: Long,
+        rootPath: Path?,
+        configKey: String?,
+        zipRel: String,
+        zipName: String,
+        parentEntries: List<BrowseEntryRemote>,
     ) {
-        if (!Settings.browseZipAsDir.value) return
-        val interiors = ConcurrentHashMap<String, List<BrowseEntryRemote>>()
-        zipRootListings(dir, children, interiors)
-        if (interiors.isEmpty()) return
-        ZipAsDirListing.persistFolderIndexes(
-            parentRelativeDir = relativeDir,
-            interiors = interiors,
-            save = { d, entries ->
-                NetworkFolderIndexCache.saveLocal(rootId, configKey, d, entries)
-            },
-            putRam = { d, entries ->
-                BrowseSession.putLocalListing(
-                    BrowseSession.localZipListingKey(rootId, d),
-                    entries,
-                    sessionCurrent = true,
-                )
-            },
-        )
+        val cleared = ZipAsDirListing.clearZipAsDirStale(parentEntries, zipName)
+        if (cleared === parentEntries) return
+        val parent = ZipAsDirListing.parentRelative(zipRel)
+        if (configKey != null) {
+            NetworkFolderIndexCache.saveLocal(rootId, configKey, parent, cleared)
+        }
+        if (rootPath != null) {
+            val parentPath = if (parent.isEmpty()) rootPath else rootPath.resolveRelative(parent)
+            BrowseSession.putLocalListing(
+                BrowseSession.pathKey(parentPath),
+                cleared,
+                sessionCurrent = true,
+            )
+        }
     }
 
     private fun <T> runParallel(items: List<T>, block: (T) -> Unit) {
@@ -608,46 +620,13 @@ object LocalFolderListing {
     private fun listChildrenRemote(
         dir: Path,
         preferMediaStore: Boolean,
-        includeSafRemainder: Boolean = true,
     ): List<RemoteChild> {
         val path = resolveBrowsePath(dir, preferMediaStore = preferMediaStore)
-        if (!includeSafRemainder) {
-            return mediaStoreRemoteChildren(path)
-        }
         return BrowseSession.rememberLocalRawChildren(BrowseSession.pathKey(path)) {
             // Raw list: `.nomedia` dirs are tagged after child peeks (same as SMB),
             // so we do not SAF-list every subdirectory twice.
             path.listBrowseChildrenRaw().map { it.toRemoteChild() }
         }
-    }
-
-    /**
-     * MediaStore-only peek for a SAF child that the index already listed. Not written
-     * to [BrowseSession] raw-children cache — entering the folder still SAF-lists
-     * archives.
-     */
-    private fun mediaStoreRemoteChildren(path: Path): List<RemoteChild> {
-        val ms = when {
-            path.isMediaStorePath() -> path
-            else -> tryConvertSafPathToMediaStore(path) ?: return emptyList()
-        }
-        return MediaStoreFs.listChildren(ms).map { child ->
-            RemoteChild(
-                name = child.name,
-                isDirectory = child.isDirectory,
-                path = child.name,
-                size = child.size,
-                lastModifiedMs = child.lastModifiedMs,
-                hidden = isDotHiddenName(child.name),
-                readOnly = false,
-                mimeType = child.mimeType,
-            )
-        }
-    }
-
-    private fun shouldSkipSafPeek(dir: Path, preferMediaStore: Boolean): Boolean {
-        if (preferMediaStore) return false
-        return dir.mediaStoreOverlayNonEmpty()
     }
 
     private fun BrowseChild.toRemoteChild() = RemoteChild(
@@ -685,7 +664,9 @@ fun materializeLocalEntries(
 ): List<BrowseEntry> {
     // Re-apply zip-as-dir preference so RAM/disk cache respects the current toggle.
     val entries = ZipAsDirListing.applyZipAsDirPreferenceLocal(remote, baseDir)
-    return entries.map { entry ->
+    val unreachable = cachedUnreachableDirectoryNames(entries)
+    return entries.mapNotNull { entry ->
+        if (entry.isUnderUnreachableFolder(unreachable)) return@mapNotNull null
         when (entry) {
             is BrowseEntryRemote.Directory -> {
                 val zipSeg = if (Settings.browseZipAsDir.value) {

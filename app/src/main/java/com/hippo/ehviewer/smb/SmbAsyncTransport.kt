@@ -11,6 +11,8 @@ import com.hierynomus.smbj.SmbConfig
 import com.hierynomus.smbj.transport.TransportLayerFactory
 import com.hierynomus.smbj.transport.tcp.async.AsyncDirectTcpTransport
 import com.hierynomus.smbj.transport.tcp.async.AsyncPacketReader
+import com.hippo.ehviewer.util.LocalNetworkPermission
+import java.io.IOException
 import java.net.Inet4Address
 import java.net.InetAddress
 import java.net.InetSocketAddress
@@ -152,6 +154,11 @@ internal object SmbAsyncTransport {
         private val inner: AsyncDirectTcpTransport<SMBPacketData<*>, SMBPacket<*, *>>,
     ) : TransportLayer<SMBPacket<*, *>> by inner {
         override fun connect(remoteAddress: InetSocketAddress) {
+            try {
+                LocalNetworkPermission.requireGranted()
+            } catch (e: IOException) {
+                throw TransportException.Wrapper.wrap(e)
+            }
             val resolved = resolve(remoteAddress)
             val channel = socketChannel(inner)
                 ?: throw TransportException("async transport has no socketChannel")
@@ -199,7 +206,10 @@ internal object SmbAsyncTransport {
             logcat { "SmbAsyncTransport: no handlers (${e.message}) — 9KiB smbj reader" }
             return null
         }
-        return LargeAsyncPacketReader(channel, handlers.packetFactory, handlers.receiver)
+        val connected = connectedField.get(transport) as AtomicBoolean
+        return LargeAsyncPacketReader(channel, handlers.packetFactory, handlers.receiver) {
+            connected.set(false)
+        }
     }
 
     private fun socketChannel(transport: AsyncDirectTcpTransport<*, *>): AsynchronousSocketChannel? = runCatching { socketChannelField.get(transport) as AsynchronousSocketChannel }.getOrElse { e ->
