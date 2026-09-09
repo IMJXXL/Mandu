@@ -28,6 +28,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.size
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
@@ -1688,17 +1689,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
                     }
                     errorMsg != null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(errorMsg!!) }
                     smbUnsupportedInfo != null -> {
-                        RemoteUnsupportedOverlay(
-                            kind = smbUnsupportedInfo!!.second,
-                            busy = smbDownloadBusy,
-                            onDownload = { downloadRemoteUnsupported(smbUnsupportedInfo!!.first, smbUnsupportedInfo!!.second) },
-                            onBack = {
-                                smbUnsupportedInfo = null
-                                viewing = false
-                                loading = false
-                            },
-                            modifier = Modifier.fillMaxSize(),
-                        )
+                        Box(Modifier.fillMaxSize().background(Color(0xFF1A1A2E)))
                     }
                     viewing && displayPages.isNotEmpty() -> {
                     val safeCur = cur.coerceIn(0, (displayPages.size - 1).coerceAtLeast(0))
@@ -2003,6 +1994,37 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
                 showErrorDialog = false; try { back() } catch (_: Exception) {}
             } }) { Text("移除", color = MaterialTheme.colorScheme.error) } },
             dismissButton = { TextButton(onClick = { showErrorDialog = false }) { Text("保留") } })
+    }
+
+    if (smbUnsupportedInfo != null) {
+        val info = smbUnsupportedInfo!!
+        AlertDialog(
+            onDismissRequest = { if (!smbDownloadBusy) { smbUnsupportedInfo = null; viewing = false; loading = false } },
+            title = { Text("需要全量下载") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("此格式（mobi / azw3 等）需要完整下载到本地后才能查看。")
+                    if (smbDownloadBusy) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                            Text("正在下载…", fontSize = 13.sp, color = Color(0xFF888888))
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { downloadRemoteUnsupported(info.first, info.second) },
+                    enabled = !smbDownloadBusy,
+                ) { Text(if (smbDownloadBusy) "下载中…" else "下载") }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { smbUnsupportedInfo = null; viewing = false; loading = false },
+                    enabled = !smbDownloadBusy,
+                ) { Text("取消") }
+            },
+        )
     }
 
     // ★ ④ 修复：单卷缺失友好提示。区别 showErrorDialog（整本 / CASCADE 删所有 progress）：本弹窗只删本卷 progress。
@@ -2316,44 +2338,4 @@ private fun ItemCard(item: ArchiveEngine.Item, engine: ArchiveEngine, bgColor: C
     }
 }
 
-/**
- * ★ SMB/WebDAV 不支持格式占位（smb_embed_lv119 任务6.2/16.2，spec 5.5/5.11）：
- * 显示占位图 + "下载到本地后查看"按钮；WebDAV 文案加"此格式需要完整下载"。
- */
-@Composable
-private fun RemoteUnsupportedOverlay(
-    kind: String,
-    busy: Boolean,
-    onDownload: () -> Unit,
-    onBack: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Box(
-        modifier
-            .background(Color(0xFF141414))
-            .clickable(enabled = false) {},
-        contentAlignment = Alignment.Center,
-    ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            Text(
-                text = if (kind == "webdav") "此格式需要完整下载后查看" else "该格式暂不支持在线阅读",
-                color = Color(0xFFDDDDDD),
-                fontSize = 16.sp,
-            )
-            Text(
-                text = "mobi / azw3 等格式需下载到本地后阅读",
-                color = Color(0xFF888888),
-                fontSize = 12.sp,
-            )
-            Button(onClick = onDownload, enabled = !busy) {
-                Text(if (busy) "下载中…" else "下载到本地后查看")
-            }
-            Text(
-                text = "返回书架",
-                color = Color(0xFF9AA7FF),
-                fontSize = 13.sp,
-                modifier = Modifier.clickable { onBack() },
-            )
-        }
-    }
-}
+
