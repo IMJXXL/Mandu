@@ -2610,6 +2610,7 @@ Java_com_hippo_ehviewer_jni_GifUtilsKt_isGif(JNIEnv *env, jclass clazz, jint fd)
 JNIEXPORT void JNICALL
 Java_com_hippo_ehviewer_jni_GifUtilsKt_rewriteGifSource(JNIEnv *env, jclass clazz, jobject buffer) {
     signed char *addr = (*env)->GetDirectBufferAddress(env, buffer);
+    if (!addr) return;
     size_t size = (*env)->GetDirectBufferCapacity(env, buffer);
     gif_rewrite(addr, size);
 }
