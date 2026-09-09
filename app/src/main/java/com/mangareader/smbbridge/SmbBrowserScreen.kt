@@ -231,8 +231,24 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -> U
             val total = toDownload.size
             var done = 0
             var failed = 0
+            // ★ 入队：每个下载任务注册到 SmbDownloadQueue
+            val queueIds = mutableMapOf<String, Long>()
             for ((entry, info) in toDownload) {
                 val (remotePath, fileName, ext) = info
+                val qid = SmbDownloadQueue.enqueue(
+                    DownloadTask(
+                        id = 0,
+                        title = fileName.substringBeforeLast('.').ifEmpty { fileName },
+                        sourceKind = "smb",
+                        sourcePath = remotePath,
+                    )
+                )
+                queueIds[remotePath] = qid
+            }
+            for ((entry, info) in toDownload) {
+                val (remotePath, fileName, ext) = info
+                val qid = queueIds[remotePath]
+                if (qid != null) SmbDownloadQueue.updateTask(qid) { it.copy(status = DownloadStatus.Downloading) }
                 withContext(Dispatchers.Main) { downloadStatus = "下载中 $done/$total：$fileName" }
                 runCatching {
                     val remote = if (src.share.isBlank()) remotePath else remotePath.substringAfter('/')
@@ -286,9 +302,11 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -> U
                             )
                         }
                     }
+                    if (qid != null) SmbDownloadQueue.markCompleted(qid, realPath)
                 }.onFailure { t ->
                     failed++
                     android.util.Log.w("SmbDownload", "Failed: $fileName", t)
+                    if (qid != null) SmbDownloadQueue.markFailed(qid, t.message ?: "下载失败")
                 }
                 done++
             }
