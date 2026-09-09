@@ -649,15 +649,23 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
             if (cachePath != null && cachePath.startsWith("/")) {
                 val cacheExists = withContext(Dispatchers.IO) { java.io.File(cachePath).exists() }
                 if (cacheExists) {
-                    // ★ 有缓存文件就走本地读（所有格式），避免 mobi/azw3 走远程又返回 Unsupported 死循环
                     return enterLocalArchiveReader(b, cachePath, targetPage)
                 } else {
                     withContext(Dispatchers.IO) { runCatching { dao.restoreBookToRemote(b.id) } }
                 }
             }
+            val downloading = com.mangareader.smbbridge.SmbDownloadQueue.tasks.value.find {
+                it.sourcePath == path && (it.status == com.mangareader.smbbridge.DownloadStatus.Downloading || it.status == com.mangareader.smbbridge.DownloadStatus.Queued)
+            }
+            if (downloading != null) {
+                android.widget.Toast.makeText(ctx, "正在下载中，请稍候…", android.widget.Toast.LENGTH_SHORT).show()
+                viewing = false; loading = false
+                return emptyList()
+            }
             return if (path.startsWith("smb:")) enterRemoteReader(b, path, targetPage, isSmb = true)
                    else enterRemoteReader(b, path, targetPage, isSmb = false)
         }
+
         // ★ 修复：文件系统路径（下载到本地缓存的归档）走 useArchivePageLoader，
         //   ArchiveEngine.listPages 只支持 SAF 路径（a:/d: 前缀），文件系统路径会返回空。
         if (path.startsWith("/")) return enterLocalArchiveReader(b, path, targetPage)
