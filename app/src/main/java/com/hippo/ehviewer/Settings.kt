@@ -451,6 +451,17 @@ object Settings : DataStorePreferences(null) {
     }
 
     /**
+     * WebDAV HTTP/2 via OkHttp (Advanced). Default on.
+     * Off: Ktor CIO HTTP/1.1. Rebuilds [WebDavClient] on change.
+     */
+    val webDavHttp2 = boolPref("webdav_http2", true).observed {
+        runCatching {
+            com.hippo.ehviewer.webdav.WebDavClient.resetClient()
+            com.hippo.ehviewer.webdav.WebDavClient.resetStickyClient()
+        }
+    }
+
+    /**
      * WebDAV subfolder PROPFIND / zip-root fan-out (Advanced). Default: 5.
      */
     val webDavConcurrentListing = intPref("webdav_concurrent_listing", 5)
