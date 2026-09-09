@@ -651,6 +651,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
                 if (cacheExists) {
                     return enterLocalArchiveReader(b, cachePath, targetPage)
                 } else {
+                    android.widget.Toast.makeText(ctx, "本地缓存文件已丢失，需重新下载", android.widget.Toast.LENGTH_SHORT).show()
                     withContext(Dispatchers.IO) { runCatching { dao.restoreBookToRemote(b.id) } }
                 }
             }

@@ -46,7 +46,7 @@ object RemoteDownloadDialogState {
         val treeUriStr = Settings.smbDownloadDirTreeUri.value
         if (treeUriStr.isNullOrEmpty()) {
             _dialogState.value = null
-            Toast.makeText(ctx, "请先在浏览页设置下载目录", Toast.LENGTH_LONG).show()
+            Toast.makeText(ctx, "请先在 SMB 设置 → 下载目录 中设置保存路径", Toast.LENGTH_LONG).show()
             return
         }
 
@@ -128,7 +128,9 @@ object RemoteDownloadDialogState {
             }
         }
 
-        val destUri = DocumentsContract.createDocument(ctx.contentResolver, treeUri, "application/octet-stream", fileName)
+        val treeDocId = DocumentsContract.getTreeDocumentId(treeUri)
+        val parentDocUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, treeDocId)
+        val destUri = DocumentsContract.createDocument(ctx.contentResolver, parentDocUri, "application/octet-stream", fileName)
             ?: return null
         ctx.contentResolver.openOutputStream(destUri)?.use { out ->
             srcFile.inputStream().use { it.copyTo(out) }
@@ -138,12 +140,13 @@ object RemoteDownloadDialogState {
         val treePath = treeUri.lastPathSegment?.removePrefix("tree/") ?: ""
         val auth = treeUri.authority ?: ""
         val safPath = "a:$auth|$treePath|$docId|$ext"
+        val coverPath = "cv:$docId|$fileName"
 
         val dao = MangaDatabase.getDatabase(ctx).mangaDao()
         val book = withContext(Dispatchers.IO) { dao.getBookById(info.bookId) }
         if (book != null) {
             withContext(Dispatchers.IO) {
-                runCatching { dao.updateBook(book.copy(filePath = safPath, source = "local", fileType = ext)) }
+                runCatching { dao.updateBook(book.copy(filePath = safPath, source = "local", fileType = ext, coverPath = coverPath)) }
             }
         }
         return safPath
