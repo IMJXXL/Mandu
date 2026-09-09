@@ -49,9 +49,25 @@ class SmbPageAdapter(
     @Volatile
     private var pageCountField: Int = 0
 
+    /** ★ 焦点页（2026-09-09 跳页调度）：最近一次请求的 index；只有焦点页允许驱动 loader，
+     *  非焦点页的等待协程让位返回 null——对齐参考项目 interactiveSlots 保留机制 */
+    @Volatile
+    private var focusIndex: Int = -1
+
     override val pageCount: Int get() = pageCountField
 
     override val onPageCountGrow: MutableList<(Int) -> Unit> = java.util.concurrent.CopyOnWriteArrayList()
+
+    /** ★ 焦点切换：设焦点并立即 navigate 新锚点（取消旧焦点页的下载/提取需求） */
+    override fun onFocus(index: Int) {
+        focusIndex = index
+        scope.launch {
+            runCatching {
+                val loader = loaderReady.await()
+                loader.navigate(ReaderNavigation(index, index..index, NavigationKind.Settled))
+            }
+        }
+    }
 
     private fun checkPageCountGrow(loader: PageLoader) {
         val s = loader.size
@@ -100,9 +116,10 @@ class SmbPageAdapter(
     }
 
     override suspend fun loadPageRaw(index: Int): ByteArray? = withContext(Dispatchers.IO) {
+        focusIndex = index
         try {
             val loader = loaderReady.await()
-            driveAndAwaitExtract(loader, index)
+            driveAndAwaitExtract(loader, index) ?: return@withContext null
             runCatching { loader.navigate(ReaderNavigation(index, index..index, NavigationKind.Settled)) }
             checkPageCountGrow(loader)
             readPageBytes(loader, index)
@@ -136,20 +153,24 @@ class SmbPageAdapter(
         scope.cancel()
     }
 
-    /** 驱动参考项目 demand 机制并等待该页提取完成（openSource 不再抛"未提取"） */
-    private suspend fun driveAndAwaitExtract(loader: PageLoader, index: Int) {
+    /** 驱动参考项目 demand 机制并等待该页提取完成（openSource 不再抛"未提取"）；
+     *  ★ 返回 null = 被新焦点页取代（让位，不占用 loader 资源） */
+    private suspend fun driveAndAwaitExtract(loader: PageLoader, index: Int): Unit? {
         val deadline = System.currentTimeMillis() + PAGE_WAIT_TIMEOUT_MS
         var lastNavigate = 0L
         while (System.currentTimeMillis() < deadline) {
-            if (isPageAvailable(loader, index)) return
+            if (focusIndex != index) return null // ★ 让位：新焦点页已接管 loader
+            if (isPageAvailable(loader, index)) return Unit
             val now = System.currentTimeMillis()
             if (now - lastNavigate > 1500) {
                 lastNavigate = now
+                if (focusIndex != index) return null
                 runCatching { loader.navigate(ReaderNavigation(index, index..index, NavigationKind.Settled)) }
             }
             delay(80)
         }
         android.util.Log.w(TAG, "page $index extract timeout (${loader.javaClass.simpleName})")
+        return Unit
     }
 
     private fun isPageAvailable(loader: PageLoader, index: Int): Boolean = try {

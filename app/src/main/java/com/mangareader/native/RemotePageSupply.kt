@@ -28,6 +28,14 @@ interface RemotePageSupply {
     /** 解码后的位图；null = 该页暂不可用 */
     suspend fun loadBitmap(index: Int): Bitmap?
 
+    /**
+     * ★ 焦点页通知（2026-09-09 跳页调度修复）：阅读器每次发起某页加载请求时调用
+     * （含 inflight 去重 drop 的场景）。实现方应把 loader 需求焦点切到该页——
+     * 对齐参考项目 interactiveSlots=Semaphore(1) + promote to interactive：
+     * 跳页 1→954 时 954 立即独占 loader，旧页（953）的等待协程让位返回 null。
+     */
+    fun onFocus(index: Int) {}
+
     /** 释放远程会话（close loader/source）；阅读器 release 时调用 */
     suspend fun close()
 }

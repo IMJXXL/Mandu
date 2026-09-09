@@ -72,6 +72,9 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     var imageMarginH: Int = 0
 
     private var loadScope: CoroutineScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+
+    /** ★ 跳页调度（2026-09-09）：inflight 加载 job 注册表，prioritizeLoad 取消窗口外 job 释放 IO 资源 */
+    private val loadJobs = java.util.concurrent.ConcurrentHashMap<Int, kotlinx.coroutines.Job>()
     private val decodeSemaphore = Semaphore(2)
     private val archiveMutex = Mutex()
 
@@ -428,6 +431,8 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                     com.mangareader.viewer.ArchiveEngine.d("PagerView", "onPageSelected pos=$position pageIdx=$pageIdx realPos=$realPos rtl=$isRtl double=$doublePageMode total=${pageList.size} curPage=$currentPage")
                     if (realPos in pageList.indices && realPos != currentPage) {
                         currentPage = realPos; onPageChanged?.invoke(currentPage)
+                        // ★ 2026-09-09 跳页调度：翻页选中即取消远端 inflight，不等 IDLE
+                        prioritizeLoad(realPos)
                         // ★ N1：双页模式最后跨页 realPos 可能是 N-2（奇偶错位），末页判据放宽到倒数第二页；
                         //   模式切换窗口内（layoutSwitchPending）抑制章末回调，防并发闪退
                         if (!layoutSwitchPending) {
@@ -553,6 +558,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             this.currentPage = startPage
             loadScope.cancel()
             loadScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+            loadJobs.clear() // ★ 调度修复：旧 scope 的 job 全部作废，注册表同步清空
             // ★ ⑧ 最小修复：切章 clear 前 recycle 所有 bitmap，避免裸 clear 导致 Bitmap 泄漏（内存只涨不回收）
             clearBitmapCacheRecycling()
             // ★ §24 二代 Bug#6：切卷时必须清空动图状态——否则上一卷的 pageAnimDrawables 不释放（decoder/内存泄露）、
@@ -836,11 +842,16 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         val nowTs = android.os.SystemClock.uptimeMillis()
         val pitTs = inflightLoads[idx]
         if (pitTs != null && nowTs - pitTs < 5000L) {
+            // ★ 2026-09-09 跳页调度：已 inflight 的页再次被请求（如 preloadAround 对当前页）也要抢焦点——
+            //   场景：onBind 先绑 954 再绑 953 → 焦点停在 953；preloadAround(954) 请求被 5s 去重 drop，
+            //   若不抢焦点 953 会独占 loader 先加载出来
+            remotePageSupply?.onFocus(idx)
             ArchiveEngine.d("Dedup", "drop idx=$idx age=${nowTs - pitTs}ms")
             return
         }
         inflightLoads[idx] = nowTs
-        loadScope.launch {
+        remotePageSupply?.onFocus(idx)
+        val job = loadScope.launch {
             try {
             // ★ SMB/WebDAV：远程供给会话不使用本地 native archive 句柄
             if (remotePageSupply == null) ensureNativeArchive()
@@ -889,6 +900,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 com.mangareader.viewer.ArchiveEngine.d("PagerView", "loaded idx=$idx bmp=${bmp?.width}x${bmp?.height} source=${meta.source}")
                 if (bmp == null || bmp.isRecycled) {
                     bitmapCache.remove(idx)
+                    inflightLoads.remove(idx) // ★ 允许立即重试（失败/取消场景不留 5s 去重窗口）
                     return@launch
                 }
                 if (trimWhiteBorder && bmp.width > 10 && bmp.height > 10) {
@@ -918,6 +930,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             val raw = withContext(Dispatchers.IO) { supply.loadPageRaw(idx) }
             if (raw == null) {
                 bitmapCache.remove(idx)
+                inflightLoads.remove(idx) // ★ 让位/失败允许立即重试（新焦点页接管后翻回可重载）
                 return@launch
             }
             val loader = coil3.SingletonImageLoader.get(context)
@@ -961,12 +974,33 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                     if (adapterPos >= 0 && adapterPos < (pagerAdapter?.itemCount ?: 0)) pagerAdapter?.notifyItemChanged(adapterPos, "loaded")
                 }
             }
-            } finally { if (inflightLoads[idx] == nowTs) inflightLoads.remove(idx) }
+            } finally {
+                if (inflightLoads[idx] == nowTs) inflightLoads.remove(idx)
+                (kotlin.coroutines.coroutineContext[kotlinx.coroutines.Job])?.let { loadJobs.remove(idx, it) }
+            }
+        }
+        loadJobs[idx] = job
+    }
+
+    /** ★ 跳页调度（2026-09-09，对齐参考项目 prioritizeDecode/cancelStaleDownloads）：
+     *  取消锚点 ±8 窗口外的 inflight 加载 job，释放 IO/下载资源给当前页；
+     *  正常阅读窗口（preloadAround ±5 + 双页 spread ±3）不受影响。 */
+    private fun prioritizeLoad(anchorIdx: Int) {
+        val window = (anchorIdx - 8)..(anchorIdx + 8)
+        loadJobs.entries.removeAll { (idx, job) ->
+            if (!job.isActive) true
+            else if (idx !in window) {
+                job.cancel()
+                inflightLoads.remove(idx)
+                true
+            } else false
         }
     }
 
     private fun preloadAround(centerIdx: Int) {
         if (isScrolling) return
+        // ★ 2026-09-09 跳页调度：先取消窗口外 inflight（跳页 1→954 时释放远端下载资源给 954）
+        prioritizeLoad(centerIdx)
         // 超分联动：报当前页；只有"整本"作用域下才前后预载
         try { com.mangareader.sr.SrPipeline.onPageChanged(centerIdx, pageList.size) } catch (_: Exception) {}
         if (doublePageMode) {
@@ -1020,6 +1054,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         animatedCount = 0
 
         loadScope.cancel()
+        loadJobs.clear() // ★ 调度修复：release 时注册表同步清空
         inflightLoads.clear() // ★ 白屏工单任务3
         nativeArchive?.close()
         nativeArchive = null
