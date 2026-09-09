@@ -535,9 +535,9 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
                     is com.mangareader.smbbridge.SmbBookRouter.OpenResult.Supported ->
                         return attachRemoteSession(r.supply, saved, targetPage)
                     is com.mangareader.smbbridge.SmbBookRouter.OpenResult.Unsupported -> {
-                        smbUnsupportedInfo = path to "smb"
-                        viewing = true
-                        loading = false
+                        com.mangareader.smbbridge.RemoteDownloadDialogState.showDialog(path, "smb", b.id, b.title)
+                        viewing = false; loading = false
+                        back()
                         return emptyList()
                     }
                     is com.mangareader.smbbridge.SmbBookRouter.OpenResult.Blocked -> {
@@ -554,9 +554,9 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
                     is com.mangareader.webdavbridge.WebDavBookRouter.OpenResult.Supported ->
                         return attachRemoteSession(r.supply, saved, targetPage)
                     is com.mangareader.webdavbridge.WebDavBookRouter.OpenResult.Unsupported -> {
-                        smbUnsupportedInfo = path to "webdav"
-                        viewing = true
-                        loading = false
+                        com.mangareader.smbbridge.RemoteDownloadDialogState.showDialog(path, "webdav", b.id, b.title)
+                        viewing = false; loading = false
+                        back()
                         return emptyList()
                     }
                     is com.mangareader.webdavbridge.WebDavBookRouter.OpenResult.Failed -> {

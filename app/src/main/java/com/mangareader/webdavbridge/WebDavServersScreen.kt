@@ -14,6 +14,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CleaningServices
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -26,6 +27,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ehviewer.core.database.model.WebDavSourceEntity
+import com.mangareader.smbbridge.SmbDownloadQueueScreen
 import com.mangareader.smbbridge.SmbErrors
 import com.hippo.ehviewer.webdav.WebDavClient
 import com.hippo.ehviewer.webdav.WebDavPasswordStore
@@ -56,6 +58,7 @@ fun WebDavServersScreen(onBack: () -> Unit) {
     var deleting by remember { mutableStateOf<WebDavSourceEntity?>(null) }
     var busyId by remember { mutableStateOf<Long?>(null) }
     var showSettings by remember { mutableStateOf(false) }
+    var showDownloadQueue by remember { mutableStateOf(false) }
 
     LaunchedEffect(showFormTick) {
         if (showFormTick > 0) {
@@ -101,6 +104,11 @@ fun WebDavServersScreen(onBack: () -> Unit) {
         return
     }
 
+    if (showDownloadQueue) {
+        SmbDownloadQueueScreen(onBack = { showDownloadQueue = false })
+        return
+    }
+
     if (showSettings) {
         WebDavSettingsScreen(onBack = { showSettings = false })
         return
@@ -119,6 +127,7 @@ fun WebDavServersScreen(onBack: () -> Unit) {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
                 },
                 actions = {
+                    IconButton(onClick = { showDownloadQueue = true }) { Icon(Icons.Default.Download, "下载队列") }
                     IconButton(onClick = { showSettings = true }) { Icon(Icons.Default.Settings, "WebDAV 设置") }
                     IconButton(onClick = { showWizard = true }) { Icon(Icons.Default.Add, "添加服务器（向导）") }
                 },

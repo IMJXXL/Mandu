@@ -14,6 +14,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CleaningServices
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -133,6 +134,7 @@ fun SmbServersScreen(onBack: () -> Unit, onOpenBook: (Long) -> Unit = {}) {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
                 },
                 actions = {
+                    IconButton(onClick = { showDownloadQueue = true }) { Icon(Icons.Default.Download, "下载队列") }
                     IconButton(onClick = { showSettings = true }) { Icon(Icons.Default.Settings, "SMB 设置") }
                     IconButton(onClick = { showWizard = true }) { Icon(Icons.Default.Add, "添加服务器（向导）") }
                 },

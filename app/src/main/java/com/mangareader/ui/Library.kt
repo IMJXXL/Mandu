@@ -633,6 +633,39 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
         }
     }
     if (showDonation) DonationDialog(onDismiss = { showDonation = false })
+
+    val remoteDownloadInfo by com.mangareader.smbbridge.RemoteDownloadDialogState.dialogState.collectAsState()
+    val remoteDownloadBusy by com.mangareader.smbbridge.RemoteDownloadDialogState.downloadBusy.collectAsState()
+    if (remoteDownloadInfo != null) {
+        val info = remoteDownloadInfo!!
+        AlertDialog(
+            onDismissRequest = { if (!remoteDownloadBusy) com.mangareader.smbbridge.RemoteDownloadDialogState.dismissDialog() },
+            title = { Text("需要全量下载") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("此格式（mobi / azw3 等）需要完整下载到本地后才能查看。")
+                    if (remoteDownloadBusy) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                            Text("正在下载…", fontSize = 13.sp, color = Color(0xFF888888))
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { com.mangareader.smbbridge.RemoteDownloadDialogState.startDownload(ctx) },
+                    enabled = !remoteDownloadBusy,
+                ) { Text(if (remoteDownloadBusy) "下载中…" else "下载") }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { com.mangareader.smbbridge.RemoteDownloadDialogState.dismissDialog() },
+                    enabled = !remoteDownloadBusy,
+                ) { Text("取消") }
+            },
+        )
+    }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
