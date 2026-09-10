@@ -686,33 +686,25 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
                             )
                         }
                     }
-                }
-            }
-            }
-
-            item {
-            Spacer(Modifier.height(12.dp))
-            }
-            item {
-            // 主题选择
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.Palette, null, modifier = Modifier.size(24.dp))
-                Spacer(Modifier.width(12.dp))
-                Text("主题", fontSize = 16.sp)
-            }
-            Spacer(Modifier.height(8.dp))
-            val currentThemeOrdinal = prefs.getInt("app_theme", 0)
-            val dynamicColorEnabled = prefs.getBoolean("dynamic_color", false)
-            val currentDarkMode = prefs.getString("dark_mode", "SYSTEM") ?: "SYSTEM"
-            val previewIsDark = when (currentDarkMode) {
-                "LIGHT" -> false
-                "DARK" -> true
-                else -> {
-                    val nightMode = ctx.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK
-                    nightMode == android.content.res.Configuration.UI_MODE_NIGHT_YES
-                }
-            }
-            androidx.compose.foundation.lazy.LazyRow(
+                    Spacer(Modifier.height(16.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Palette, null, modifier = Modifier.size(24.dp))
+                        Spacer(Modifier.width(12.dp))
+                        Text("主题", fontSize = 16.sp)
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    val currentThemeOrdinal = prefs.getInt("app_theme", 0)
+                    val dynamicColorEnabled = prefs.getBoolean("dynamic_color", false)
+                    val currentDarkMode = prefs.getString("dark_mode", "SYSTEM") ?: "SYSTEM"
+                    val previewIsDark = when (currentDarkMode) {
+                        "LIGHT" -> false
+                        "DARK" -> true
+                        else -> {
+                            val nightMode = ctx.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK
+                            nightMode == android.content.res.Configuration.UI_MODE_NIGHT_YES
+                        }
+                    }
+                    androidx.compose.foundation.lazy.LazyRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp)
@@ -779,6 +771,8 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
                             Text(theme.label, fontSize = 10.sp, maxLines = 1, color = if (isSelected) themePrimary else MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
+                }
+            }
                 }
             }
             }
@@ -897,25 +891,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
             Spacer(Modifier.height(16.dp))
             }
             item {
-            Text("阅读统计", style = MaterialTheme.typography.titleMedium)
-            }
-            item {
-            Spacer(Modifier.height(8.dp))
-            }
-            item {
-            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
-                Column(Modifier.padding(16.dp)) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text("漫画总数", fontSize = 14.sp); Text("$totalBooks", fontSize = 14.sp, fontWeight = FontWeight.Bold) }
-                    Spacer(Modifier.height(8.dp))
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text("已阅读", fontSize = 14.sp); Text("$readBooks", fontSize = 14.sp, fontWeight = FontWeight.Bold) }
-                }
-            }
-            }
 
-            item {
-            Spacer(Modifier.height(16.dp))
-            }
-            item {
 
             Card(Modifier.fillMaxWidth().clickable { showAbout = true }) {
                 Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
