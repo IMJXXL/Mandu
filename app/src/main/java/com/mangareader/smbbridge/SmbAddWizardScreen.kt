@@ -104,7 +104,7 @@ fun SmbAddWizardScreen(onBack: () -> Unit, onSaved: () -> Unit, initial: SmbSour
         val src = tempSource ?: return
         busy = true
         dirEntries = withContext(Dispatchers.IO) {
-            runCatching { SmbGateway.listDirectory(src, password, d) }.getOrDefault(emptyList())
+            runCatching { SmbGateway.listDirectory(src, password, d, useCache = false) }.getOrDefault(emptyList())
         }
         busy = false
     }
