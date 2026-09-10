@@ -49,19 +49,10 @@ private fun HorizontalNavigator(
     val textColor = if (luminance > 0.5f) Color.Black else Color.White
     val surfaceColor = bgColor.copy(alpha = 0.85f)
 
-    // ★ v1.11 P0-B6 节流提交：Slider 拖动实时预览保留，但 onPageChange 提交限频 ≥300ms
-    //   （实机堆栈实锤：误触/快拖时 dispatchRawDelta 以 20ms/次 连发 → goToPage 风暴拉扯画面）。
-    //   松手 onValueChangeFinished 无条件补发 pendingPage 最终值，保证落点精确不丢步。
-    var lastEmit by remember { mutableLongStateOf(0L) }
-    var lastChange by remember { mutableLongStateOf(android.os.SystemClock.elapsedRealtime()) }
-    var throttleMs by remember { mutableIntStateOf(150) }
-    // ★ 丝滑二期：拖动每帧只写普通数组（非 state → 零重组）；气泡用隔离小组件（重组范围最小）
+    // ★ 对齐参考项目：无显式节流，无预解码，onValueChange 直接提交
+    //   参考项目用 collectLatest + animateScrollToPage 隐式防抖，
+    //   我们用 Compose 批量状态更新 + 异步页面加载实现同样效果。
     val pendingRef = remember { intArrayOf(currentPage) }
-    val previewPageRef = remember { intArrayOf(-1) }
-    val previewAtRef = remember { longArrayOf(0L) }
-    var bubblePage by remember { mutableIntStateOf(-1) }
-    var bubbleFrac by remember { mutableFloatStateOf(0f) }
-    var trackWidth by remember { mutableIntStateOf(0) }
 
     Surface(color = surfaceColor, shape = RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp), modifier = modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -77,39 +68,16 @@ private fun HorizontalNavigator(
                 color = textColor, fontSize = 13.sp, modifier = Modifier.width(36.dp)
             )
             val sliderValue = if (isRtl) ((totalPages - 1 - currentPage).coerceAtLeast(0)).toFloat() else currentPage.toFloat()
-            Box(Modifier.weight(1f).onSizeChanged { trackWidth = it.width }) {
+            Box(Modifier.weight(1f)) {
                 Slider(
                     value = sliderValue,
                     onValueChange = { v ->
                         val newPage = if (isRtl) (totalPages - 1 - v.toInt()).coerceIn(0, (totalPages - 1).coerceAtLeast(0)) else v.toInt().coerceIn(0, (totalPages - 1).coerceAtLeast(0))
-                        val now = android.os.SystemClock.elapsedRealtime()
-                        val frameInterval = now - lastChange
-                        lastChange = now
-                        if (frameInterval in 20..100) {
-                            throttleMs = (throttleMs * 1.4f).toInt().coerceAtMost(300)
-                        } else if (frameInterval < 20 && now - lastEmit > throttleMs) {
-                            // ★ 丝滑对齐：下限 40ms（mhark 同款）
-                            throttleMs = (throttleMs * 0.85f).toInt().coerceAtLeast(40)
-                        }
                         pendingRef[0] = newPage
-                        // 页码气泡：只重算局部状态（气泡小组件单独重组）
-                        bubblePage = newPage
-                        bubbleFrac = if (totalPages <= 1) 0f else (v / (totalPages - 1).toFloat().coerceAtLeast(1f)).coerceIn(0f, 1f)
-                        // 预解码预览：页变化 + ≥80ms 双守卫（此前每帧全量 preloadAround 是拖动卡顿主因）
-                        if (onPreviewPage != null && newPage != previewPageRef[0] && now - previewAtRef[0] >= 80) {
-                            previewPageRef[0] = newPage
-                            previewAtRef[0] = now
-                            onPreviewPage(newPage)
-                        }
-                        if (now - lastEmit >= throttleMs) {
-                            lastEmit = now
-                            onPageChange(newPage)
-                        }
+                        onPageChange(newPage)
                     },
                     onValueChangeFinished = {
-                        // 松手无条件提交最终值（节流可能吞掉最后一步），同值重复回调无害
                         onPageChange(pendingRef[0])
-                        bubblePage = -1
                         onSliderFinished()
                     },
                     valueRange = 0f..(totalPages - 1).toFloat().coerceAtLeast(1f),

@@ -29,7 +29,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mangareader.viewer.ArchiveEngine
 import com.mangareader.viewer.NaturalComparator
-import com.hippo.ehviewer.coil.coverThumb
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -76,25 +75,14 @@ fun ReaderItemGrid(
 
 @Composable
 private fun ReaderItemCard(item: ArchiveEngine.Item, engine: ArchiveEngine, tap: () -> Unit) {
-    val ctx = LocalContext.current
-    val prefs = remember { ctx.getSharedPreferences("manga_reader", Context.MODE_PRIVATE) }
-    val dynOn = prefs.getBoolean("dynamic_covers", false)
-    val decodePx = remember { com.hippo.ehviewer.coil.CoverThumb.decodePx(256) }
-    val coverRequest = remember(item.doc, item.subPath, dynOn, decodePx) {
-        coil3.request.ImageRequest.Builder(ctx)
-            .data(com.mangareader.viewer.ItemCoverData(item, dynOn))
-            .coverThumb(decodePx, memoryKey = "item:${item.auth}|${item.tree}|${item.doc}|${item.subPath}@$dynOn", diskKey = "item:${item.auth}|${item.tree}|${item.doc}|${item.subPath}")
-            .apply { if (!dynOn) decoderFactory(com.mangareader.coil.StaticFirstFrameDecoder.Factory()) }
-            .build()
+    var cover by remember(item.doc, item.subPath) { mutableStateOf<Bitmap?>(null) }
+    LaunchedEffect(item.doc, item.subPath) {
+        cover = null
+        withContext(Dispatchers.IO) { try { cover = engine.loadCoverForItem(item) } catch (_: Exception) { cover = null } }
     }
     Column(Modifier.clip(RoundedCornerShape(12.dp)).clickable(onClick = tap).shadow(4.dp, RoundedCornerShape(12.dp))) {
         Box(Modifier.fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)).background(Color(0xFF2A2A2A)), contentAlignment = Alignment.Center) {
-            coil3.compose.AsyncImage(
-                model = coverRequest,
-                contentDescription = item.name,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop,
-            )
+            cover?.let { Image(bitmap = it.asImageBitmap(), contentDescription = item.name, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
             Box(Modifier.fillMaxWidth().height(36.dp).align(Alignment.BottomCenter).background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.5f)))))
             val badgeColor = if (item.dir) Color(0xFFFFB74D) else Color(0xFF7C8CF8)
             Surface(Modifier.align(Alignment.TopEnd).padding(4.dp), RoundedCornerShape(6.dp), color = badgeColor.copy(alpha = 0.9f)) {
