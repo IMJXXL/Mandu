@@ -5,14 +5,10 @@ import android.content.pm.ActivityInfo
 import android.content.Context
 import android.content.SharedPreferences
 import android.graphics.Bitmap
-import android.graphics.RenderEffect as AndroidRenderEffect
-import android.graphics.Shader
 import android.graphics.drawable.Drawable
-import android.os.Build
 import android.util.Log
 import android.view.View
 import android.widget.FrameLayout
-import androidx.compose.ui.graphics.asComposeRenderEffect
 import com.hippo.ehviewer.util.setReaderColorMode
 import com.hippo.ehviewer.util.restoreColorMode
 
@@ -1647,10 +1643,8 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
     ) { pad ->
         val shouldApplyPadding = !config.isImmersiveMode || ui || !viewing
         Box(Modifier.fillMaxSize().background(bgColor)) {
-            // 内容区域（带 padding）— UI 显示时加磨砂玻璃模糊（API 31+）
-            val contentBlur = ui && viewing && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-            Box(Modifier.fillMaxSize().then(if (shouldApplyPadding) Modifier.padding(pad) else Modifier)
-                .then(if (contentBlur) Modifier.graphicsLayer { renderEffect = AndroidRenderEffect.createBlurEffect(12f, 12f, Shader.TileMode.CLAMP).asComposeRenderEffect() } else Modifier)) {
+            // 内容区域（带 padding）
+            Box(Modifier.fillMaxSize().then(if (shouldApplyPadding) Modifier.padding(pad) else Modifier)) {
                 when {
                     loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
