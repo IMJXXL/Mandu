@@ -47,8 +47,9 @@ class MainActivity : ComponentActivity() {
             }
             val themeOrdinal = prefs.getInt("app_theme", 0)
             val currentTheme = AppTheme.entries.getOrNull(themeOrdinal) ?: AppTheme.BLUE
+            val dynamicColor = prefs.getBoolean("dynamic_color", false)
 
-            Theme(dark = dark, appTheme = currentTheme) {
+            Theme(dark = dark, appTheme = currentTheme, dynamicColor = dynamicColor) {
                 val nav = rememberNavController()
 
                 // ★ 免疫沉浸式：只要当前屏幕不是阅读器，状态栏强制可见。

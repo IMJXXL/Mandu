@@ -1,8 +1,12 @@
 package com.mangareader.ui
 
+import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.dynamicDarkColorScheme
+import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.LocalContext
 import com.mangareader.ui.theme.*
 
 enum class AppTheme(val label: String) {
@@ -163,10 +167,16 @@ fun Theme(
     dark: Boolean = isSystemInDarkTheme(),
     appTheme: AppTheme = AppTheme.BLUE,
     isAmoled: Boolean = false,
+    dynamicColor: Boolean = false,
     content: @Composable () -> Unit
 ) {
-    val scheme = colorSchemes[appTheme]?.getColorScheme(dark, isAmoled)
-        ?: colorSchemes[AppTheme.BLUE]!!.getColorScheme(dark, isAmoled)
+    val scheme = if (dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        val ctx = LocalContext.current
+        if (dark) dynamicDarkColorScheme(ctx) else dynamicLightColorScheme(ctx)
+    } else {
+        colorSchemes[appTheme]?.getColorScheme(dark, isAmoled)
+            ?: colorSchemes[AppTheme.BLUE]!!.getColorScheme(dark, isAmoled)
+    }
     MaterialTheme(colorScheme = scheme, content = content)
 }
 

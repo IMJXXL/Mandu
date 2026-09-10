@@ -689,6 +689,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
             Text("主题", fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(horizontal = 4.dp))
             Spacer(Modifier.height(8.dp))
             val currentThemeOrdinal = prefs.getInt("app_theme", 0)
+            val dynamicColorEnabled = prefs.getBoolean("dynamic_color", false)
             val currentDarkMode = prefs.getString("dark_mode", "SYSTEM") ?: "SYSTEM"
             val previewIsDark = when (currentDarkMode) {
                 "LIGHT" -> false
@@ -703,13 +704,54 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp)
             ) {
+                item {
+                    val isSelected = dynamicColorEnabled
+                    val dynAvailable = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S
+                    Card(
+                        modifier = Modifier.width(72.dp).clickable {
+                            if (dynAvailable) {
+                                prefs.edit().putBoolean("dynamic_color", true).apply()
+                                (ctx as? android.app.Activity)?.recreate()
+                            } else {
+                                android.widget.Toast.makeText(ctx, "动态色彩需 Android 12+", android.widget.Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                            else MaterialTheme.colorScheme.surfaceVariant
+                        ),
+                        border = if (isSelected) androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null
+                    ) {
+                        Column(Modifier.padding(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Box(
+                                Modifier.size(32.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+                                    .background(androidx.compose.ui.graphics.Brush.linearGradient(listOf(
+                                        androidx.compose.ui.graphics.Color(0xFF6750A4),
+                                        androidx.compose.ui.graphics.Color(0xFF6200EE),
+                                        androidx.compose.ui.graphics.Color(0xFF03DAC6)
+                                    )))
+                            ) {
+                                if (isSelected) {
+                                    androidx.compose.material3.Icon(
+                                        androidx.compose.material.icons.Icons.Default.Check,
+                                        null,
+                                        modifier = Modifier.size(20.dp).align(Alignment.Center),
+                                        tint = androidx.compose.ui.graphics.Color.White
+                                    )
+                                }
+                            }
+                            Spacer(Modifier.height(4.dp))
+                            Text("动态色彩", fontSize = 10.sp, maxLines = 1, color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
                 items(com.mangareader.ui.AppTheme.entries.size) { index ->
                     val theme = com.mangareader.ui.AppTheme.entries[index]
-                    val isSelected = currentThemeOrdinal == index
+                    val isSelected = !dynamicColorEnabled && currentThemeOrdinal == index
                     val themePrimary = com.mangareader.ui.getThemePrimaryColor(theme, previewIsDark)
                     Card(
                         modifier = Modifier.width(72.dp).clickable {
-                            prefs.edit().putInt("app_theme", index).apply()
+                            prefs.edit().putInt("app_theme", index).putBoolean("dynamic_color", false).apply()
                             (ctx as? android.app.Activity)?.recreate()
                         },
                         colors = CardDefaults.cardColors(
