@@ -27,3 +27,5 @@ crash-logs/
 .codegraph/
 app/libs/*.bak
 .tmp_old_pager.kt
+
+tmp_db/
