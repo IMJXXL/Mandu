@@ -37,7 +37,7 @@ object SmbScanner {
      */
     suspend fun scanSmbServer(sourceId: Long, onProgress: ((Int) -> Unit)? = null): Int =
         withContext(Dispatchers.IO) {
-            if (!SmbVersionGuard.isSupported()) return@withContext 0
+
             val source = SmbRepository.load(sourceId) ?: return@withContext 0
             val password = try { SmbPasswordStore.get(source.id) } catch (_: Throwable) { "" }
 

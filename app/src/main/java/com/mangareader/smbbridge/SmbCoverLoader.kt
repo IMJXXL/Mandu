@@ -36,7 +36,7 @@ object SmbCoverLoader {
     private val dedup = java.util.concurrent.ConcurrentHashMap<String, Mutex>()
 
     suspend fun loadCoverRawSmb(coverPath: String, wantRaw: Boolean = false): Pair<ByteArray, String>? = withContext(Dispatchers.IO) {
-        if (!SmbVersionGuard.isSupported()) return@withContext null
+
         val ref = SmbPaths.parseCoverPath(coverPath) ?: return@withContext null
         if (SmbUnsupportedFormatHandler.isUnsupported(ref.ext)) return@withContext null
 

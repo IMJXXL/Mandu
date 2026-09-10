@@ -138,7 +138,7 @@ fun SmbServersScreen(onBack: () -> Unit, onOpenBook: (Long) -> Unit = {}) {
                                 @OptIn(ExperimentalLayoutApi::class)
                                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                     TextButton(
-                                        enabled = !busy && SmbVersionGuard.isSupported(),
+                                        enabled = !busy,
                                         onClick = {
                                             scope.launch {
                                                 busyId = s.id

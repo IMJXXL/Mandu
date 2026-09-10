@@ -32,7 +32,7 @@ object SmbUnsupportedFormatHandler {
         filePath: String,
         onProgress: ((Float) -> Unit)? = null,
     ): String? = withContext(Dispatchers.IO) {
-        if (!SmbVersionGuard.isSupported()) return@withContext null
+
         val ref = SmbPaths.parseBookPath(filePath) ?: return@withContext null
         val source = SmbRepository.load(ref.serverId) ?: return@withContext null
         val password = try { SmbPasswordStore.get(source.id) } catch (_: Throwable) { "" }

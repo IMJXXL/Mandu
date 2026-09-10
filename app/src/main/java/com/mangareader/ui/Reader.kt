@@ -537,10 +537,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
                         back()
                         return emptyList()
                     }
-                    is com.mangareader.smbbridge.SmbBookRouter.OpenResult.Blocked -> {
-                        android.widget.Toast.makeText(ctx, "SMB 需要 Android 12+", android.widget.Toast.LENGTH_SHORT).show()
-                        viewing = false; loading = false; return emptyList()
-                    }
+
                     is com.mangareader.smbbridge.SmbBookRouter.OpenResult.Failed -> {
                         android.widget.Toast.makeText(ctx, r.message, android.widget.Toast.LENGTH_SHORT).show()
                         viewing = false; loading = false; return emptyList()

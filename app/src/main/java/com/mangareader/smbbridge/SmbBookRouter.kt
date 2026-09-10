@@ -62,15 +62,11 @@ object SmbBookRouter {
         /** 不支持格式（mobi/azw3）：UI 显示占位 + 下载按钮 */
         object Unsupported : OpenResult
 
-        /** API < 31：UI 提示 "SMB 需要 Android 12+" */
-        object Blocked : OpenResult
-
         /** 打开失败：UI 提示 message */
         class Failed(val message: String) : OpenResult
     }
 
     suspend fun openSmbBook(filePath: String, startPage: Int = 0): OpenResult = withContext(Dispatchers.IO) {
-        if (!SmbVersionGuard.isSupported()) return@withContext OpenResult.Blocked
         val ref = SmbPaths.parseBookPath(filePath) ?: return@withContext OpenResult.Failed("无效的 SMB 路径")
         if (SmbUnsupportedFormatHandler.isUnsupported(ref.ext)) return@withContext OpenResult.Unsupported
         val source = SmbRepository.load(ref.serverId)
