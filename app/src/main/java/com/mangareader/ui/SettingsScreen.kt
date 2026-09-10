@@ -21,6 +21,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -329,8 +330,12 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") } })
         }
     ) { padding ->
-        Column(modifier = Modifier.padding(padding).verticalScroll(rememberScrollState()).padding(16.dp)) {
+        var showAbout by remember { mutableStateOf(false) }
+        LazyColumn(modifier = Modifier.padding(padding).fillMaxSize().padding(16.dp)) {
+            item {
             Spacer(Modifier.height(12.dp))
+            }
+            item {
             // ★ 临时调试：一键导出运行日志（崩溃/ANR/logcat），分享给开发者远程排查（smb_embed_lv119 用户要求）
             Card(Modifier.fillMaxWidth().clickable {
                 scope.launch {
@@ -382,12 +387,16 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
                     }
                 }
             }
+            }
+            item {
             Button(onClick = { picker.launch(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply { putExtra("android.content.extra.SHOW_ADVANCED", true) }) }, modifier = Modifier.fillMaxWidth()) {
                 Icon(Icons.Default.Add, null)
                 Spacer(Modifier.width(8.dp))
                 Text("导入文件夹")
             }
+            }
 
+            item {
             // ★ §37 扫描时校验压缩包内容开关 —— 默认关闭，保持扫描速度；
             //   开启后扫描会对每个 .zip/.cbz 文件打开内部 entry 验证至少含一张图才收，
             //   避免"纳*save.zip 这种非漫画 archive 被误认成漫画"。
@@ -416,10 +425,18 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
                     }
                 }
             }
+            }
 
+            item {
             Spacer(Modifier.height(16.dp))
+            }
+            item {
             Text("已导入文件夹", fontSize = 16.sp, fontWeight = FontWeight.Medium)
+            }
+            item {
             Spacer(Modifier.height(8.dp))
+            }
+            item {
             if (folders.isEmpty()) {
                 Text("还没有导入文件夹", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
@@ -508,15 +525,27 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
                     }
                 }
             }
+            }
 
+            item {
             Spacer(Modifier.height(24.dp))
+            }
+            item {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text("书架管理", fontSize = 16.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
                 TextButton(onClick = { showCreateShelf = true }) { Text("+ 新建", color = MaterialTheme.colorScheme.primary) }
             }
+            }
+            item {
             Spacer(Modifier.height(8.dp))
+            }
+            item {
             Text("长按拖动排序", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            item {
             Spacer(Modifier.height(4.dp))
+            }
+            item {
             if (bookshelves.isEmpty()) Text("还没有书架", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             else {
                 var draggedIndex by remember { mutableIntStateOf(-1) }
@@ -577,11 +606,21 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
                     }
                 }
             }
+            }
 
+            item {
             HorizontalDivider()
+            }
+            item {
             Spacer(Modifier.height(24.dp))
+            }
+            item {
             Text("显示", fontSize = 18.sp, fontWeight = FontWeight.Medium)
+            }
+            item {
             Spacer(Modifier.height(12.dp))
+            }
+            item {
             var globalHide by remember { mutableStateOf(prefs.getBoolean("global_hide", false)) }
             Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
@@ -594,7 +633,9 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
                     Toast.makeText(ctx, if (newHide) "已全局隐藏" else "已取消全局隐藏", Toast.LENGTH_SHORT).show()
                 })
             }
+            }
 
+            item {
             Row(Modifier.fillMaxWidth().padding(vertical = 12.dp).clickable { showDonation = true },
                 horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
@@ -603,12 +644,22 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
                 }
                 Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
             }
+            }
 
+            item {
             HorizontalDivider()
+            }
+            item {
             Spacer(Modifier.height(24.dp))
+            }
+            item {
             Text("外观（待完善）", fontSize = 18.sp, fontWeight = FontWeight.Medium)
+            }
+            item {
             Spacer(Modifier.height(12.dp))
+            }
 
+            item {
             // 暗色模式切换
             var darkMode by remember { mutableStateOf(prefs.getString("dark_mode", "SYSTEM") ?: "SYSTEM") }
             Text("暗色模式", fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(horizontal = 4.dp))
@@ -628,8 +679,12 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
                     )
                 }
             }
+            }
 
+            item {
             Spacer(Modifier.height(12.dp))
+            }
+            item {
             // 主题选择
             Text("主题", fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(horizontal = 4.dp))
             Spacer(Modifier.height(8.dp))
@@ -671,11 +726,21 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
                     }
                 }
             }
+            }
 
+            item {
             HorizontalDivider()
+            }
+            item {
             Spacer(Modifier.height(24.dp))
+            }
+            item {
             Text("阅读", fontSize = 18.sp, fontWeight = FontWeight.Medium)
+            }
+            item {
             Spacer(Modifier.height(12.dp))
+            }
+            item {
             Card(Modifier.fillMaxWidth().clickable { showReadingSettings = true }) {
                 Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.MenuBook, null, modifier = Modifier.size(24.dp))
@@ -687,6 +752,8 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
                     Icon(Icons.Default.ChevronRight, null)
                 }
             }
+            }
+            item {
             // 超分队列（批量离线超分进度与产物管理；超分主开关在阅读器底栏，不在阅读设置）
             Card(Modifier.fillMaxWidth().clickable { showSrQueue = true }) {
                 Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -699,7 +766,9 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
                     Icon(Icons.Default.ChevronRight, null)
                 }
             }
+            }
 
+            item {
             // ★ SMB 服务器管理（spec 5.1；扫描/阅读需 Android 12+，低版本入口可见可配置）
             Card(Modifier.fillMaxWidth().clickable { showSmbServers = true }) {
                 Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -712,6 +781,8 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
                     Icon(Icons.Default.ChevronRight, null)
                 }
             }
+            }
+            item {
             // ★ WebDAV 服务器管理（spec 5.7；API 26+ 全可用，无版本限制）
             Card(Modifier.fillMaxWidth().clickable { showWebDavServers = true }) {
                 Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -724,9 +795,15 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
                     Icon(Icons.Default.ChevronRight, null)
                 }
             }
+            }
 
+            item {
             HorizontalDivider()
+            }
+            item {
             Spacer(Modifier.height(12.dp))
+            }
+            item {
             var personalNoteExpanded by remember { mutableStateOf(false) }
             Card(
                 Modifier.fillMaxWidth().clickable { personalNoteExpanded = !personalNoteExpanded },
@@ -764,11 +841,21 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
                     }
                 }
             }
+            }
 
+            item {
             HorizontalDivider()
+            }
+            item {
             Spacer(Modifier.height(24.dp))
+            }
+            item {
             Text("阅读统计", fontSize = 18.sp, fontWeight = FontWeight.Medium)
+            }
+            item {
             Spacer(Modifier.height(12.dp))
+            }
+            item {
             Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
                 Column(Modifier.padding(16.dp)) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text("漫画总数", fontSize = 14.sp); Text("$totalBooks", fontSize = 14.sp, fontWeight = FontWeight.Bold) }
@@ -776,10 +863,16 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text("已阅读", fontSize = 14.sp); Text("$readBooks", fontSize = 14.sp, fontWeight = FontWeight.Bold) }
                 }
             }
+            }
 
+            item {
             HorizontalDivider()
+            }
+            item {
             Spacer(Modifier.height(24.dp))
-            var showAbout by remember { mutableStateOf(false) }
+            }
+            item {
+
             Card(Modifier.fillMaxWidth().clickable { showAbout = true }) {
                 Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.Info, null, modifier = Modifier.size(24.dp))
@@ -791,7 +884,9 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
                     Icon(Icons.Default.ChevronRight, null)
                 }
             }
+            }
 
+            item {
             if (showAbout) {
                 AlertDialog(
                     onDismissRequest = { showAbout = false },
@@ -862,6 +957,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
                         TextButton(onClick = { showAbout = false }) { Text("确定") }
                     }
                 )
+            }
             }
         }
     }
