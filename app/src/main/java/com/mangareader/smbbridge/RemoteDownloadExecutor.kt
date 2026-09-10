@@ -74,31 +74,26 @@ object RemoteDownloadExecutor {
         out.use { o -> srcFile.inputStream().use { it.copyTo(o) } }
 
         val docId = DocumentsContract.getDocumentId(destUri)
-        val realPath = if (docId.startsWith("primary:")) {
-            android.os.Environment.getExternalStorageDirectory().absolutePath + "/" + docId.substringAfter("primary:")
-        } else {
-            destUri.toString()
-        }
         val treePath = treeUri.lastPathSegment?.removePrefix("tree/") ?: ""
         val auth = treeUri.authority ?: ""
+        val ext = fileName.substringAfterLast('.', "").lowercase()
+        val safPath = "a:$auth|$treePath|$docId|$ext"
         val localCoverPath = "cv:$auth|$treePath|$docId|$fileName"
 
         val dao = MangaDatabase.getDatabase(ctx).mangaDao()
         if (task.bookId > 0) {
-            runCatching { dao.rehomeBookToLocal(task.bookId, realPath) }
             val book = dao.getBookById(task.bookId)
             if (book != null) {
-                runCatching { dao.updateBook(book.copy(coverPath = localCoverPath)) }
+                runCatching { dao.updateBook(book.copy(filePath = safPath, source = "local", fileType = ext, coverPath = localCoverPath, originalPath = task.sourcePath)) }
                 coil3.SingletonImageLoader.get(ctx).memoryCache?.clear()
             }
         } else {
             val book = dao.getBookByPath(task.sourcePath)
             if (book != null) {
-                runCatching { dao.rehomeBookToLocal(book.id, realPath) }
-                runCatching { dao.updateBook(book.copy(coverPath = localCoverPath)) }
+                runCatching { dao.updateBook(book.copy(filePath = safPath, source = "local", fileType = ext, coverPath = localCoverPath, originalPath = task.sourcePath)) }
                 coil3.SingletonImageLoader.get(ctx).memoryCache?.clear()
             }
         }
-        realPath
+        safPath
     }
 }
