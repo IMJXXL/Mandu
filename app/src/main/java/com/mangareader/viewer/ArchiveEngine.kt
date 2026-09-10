@@ -1251,12 +1251,15 @@ class ArchiveEngine(private val ctx: Context) {
         if (item.dir) {
             val child = DocumentsContract.buildChildDocumentsUriUsingTree(tree, item.doc)
             var found = false
+            val subDirs = mutableListOf<Pair<String, String>>()
             ctx.contentResolver.query(child, null, null, null, null)?.use { c ->
                 val ni = c.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
                 val ii = c.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+                val mi = c.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE)
                 while (c.moveToNext()) {
                     val n = c.getString(ni) ?: continue
                     val id = c.getString(ii) ?: continue
+                    val mime = if (mi >= 0) c.getString(mi) ?: "" else ""
                     if (isImg(n)) {
                         found = true
                         val imgUri = DocumentsContract.buildDocumentUriUsingTree(tree, id)
@@ -1281,6 +1284,7 @@ class ArchiveEngine(private val ctx: Context) {
                             }
                         }
                     }
+                    if (mime == DocumentsContract.Document.MIME_TYPE_DIR) subDirs.add(n to id)
                 }
             }
             if (!found) {
@@ -1299,6 +1303,10 @@ class ArchiveEngine(private val ctx: Context) {
                         saveCoverToDisk(coverKey, bmp)
                         return bmp
                     }
+                }
+                for ((_, subId) in subDirs.sortedWith { a, b -> a.first.compareTo(b.first) }) {
+                    val bmp = findFirstCoverInSubDirs(tree, subId, coverKey, 1)
+                    if (bmp != null) return bmp
                 }
             }
             return null
@@ -1366,6 +1374,50 @@ class ArchiveEngine(private val ctx: Context) {
                     }
                 }
             }
+        }
+        return null
+    }
+
+    private fun findFirstCoverInSubDirs(tree: Uri, folderDocId: String, coverKey: String, depth: Int): Bitmap? {
+        if (depth > 5) return null
+        val child = DocumentsContract.buildChildDocumentsUriUsingTree(tree, folderDocId)
+        val subDirs = mutableListOf<Pair<String, String>>()
+        ctx.contentResolver.query(child, null, null, null, null)?.use { c ->
+            val ni = c.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+            val ii = c.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+            val mi = c.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE)
+            while (c.moveToNext()) {
+                val n = c.getString(ni) ?: continue
+                val id = c.getString(ii) ?: continue
+                val mime = if (mi >= 0) c.getString(mi) ?: "" else ""
+                if (isImg(n)) {
+                    val imgUri = DocumentsContract.buildDocumentUriUsingTree(tree, id)
+                    val data = try { ctx.contentResolver.openInputStream(imgUri)?.use { it.readBytes() } } catch (_: Exception) { null }
+                    if (data != null) {
+                        val bmp = decodeCoverBitmap(data)
+                        if (bmp != null) {
+                            saveCoverToDisk(coverKey, bmp)
+                            return bmp
+                        }
+                    }
+                } else if (isComic(n)) {
+                    val arcUri = DocumentsContract.buildDocumentUriUsingTree(tree, id)
+                    val data = try { loadFromZip(arcUri, 0) } catch (_: Exception) { null }
+                    if (data != null) {
+                        val bmp = decodeCoverBitmap(data)
+                        if (bmp != null) {
+                            saveCoverToDisk(coverKey, bmp)
+                            return bmp
+                        }
+                    }
+                } else if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
+                    subDirs.add(n to id)
+                }
+            }
+        }
+        for ((_, subId) in subDirs.sortedWith { a, b -> a.first.compareTo(b.first) }) {
+            val bmp = findFirstCoverInSubDirs(tree, subId, coverKey, depth + 1)
+            if (bmp != null) return bmp
         }
         return null
     }
