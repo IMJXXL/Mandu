@@ -78,11 +78,10 @@ class AnimatedWebPDrawable(private val source: ByteBuffer) : Drawable(), Animata
     }.apply {
         invokeOnCompletion { cause ->
             when (cause) {
-                null -> if (reset) {
-                    runnable.run()
-                } else {
-                    scheduleSelf(runnable, timeToShowNextFrame)
-                }
+                null -> scheduleSelf(
+                    runnable,
+                    if (reset) SystemClock.uptimeMillis() else timeToShowNextFrame,
+                )
                 !is CancellationException -> logcat(cause)
             }
         }
@@ -98,6 +97,22 @@ class AnimatedWebPDrawable(private val source: ByteBuffer) : Drawable(), Animata
             }
         }
         canvas.drawBitmap(currentFrame.bitmap, null, bounds, paint)
+    }
+
+    override fun setVisible(visible: Boolean, restart: Boolean): Boolean {
+        val changed = super.setVisible(visible, restart)
+        if (!changed && !restart) return false
+        when {
+            !visible -> unscheduleSelf(runnable)
+            restart || decodeJob == null -> {
+                stop()
+                start()
+            }
+            else -> {
+                if (decodeJob == null) start() else invalidateSelf()
+            }
+        }
+        return changed
     }
 
     @Deprecated("Deprecated in Java")
@@ -124,8 +139,9 @@ class AnimatedWebPDrawable(private val source: ByteBuffer) : Drawable(), Animata
     override fun isRunning() = decodeJob != null
 
     override fun start() {
-        if (decodeJob == null) {
-            decodeJob = decodeNextFrame(true)
+        when {
+            decodeJob == null -> decodeJob = decodeNextFrame(true)
+            decodeJob?.isCompleted == true -> invalidateSelf()
         }
     }
 
@@ -136,10 +152,13 @@ class AnimatedWebPDrawable(private val source: ByteBuffer) : Drawable(), Animata
     }
 
     fun dispose() {
+        stop()
         runBlocking {
             decodeScope.coroutineContext.job.cancelAndJoin()
         }
         nativeDestroyDecoder(decoder)
+        if (!currentFrame.bitmap.isRecycled) currentFrame.bitmap.recycle()
+        if (!nextFrame.bitmap.isRecycled) nextFrame.bitmap.recycle()
     }
 }
 
