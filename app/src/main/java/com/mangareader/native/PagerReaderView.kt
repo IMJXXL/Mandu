@@ -616,11 +616,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     }
 
     fun setFitScreen(enabled: Boolean) {
-        if (this.fitScreenEnabled == enabled) return
         this.fitScreenEnabled = enabled
-        val rv = viewPager.getChildAt(0) as? androidx.recyclerview.widget.RecyclerView ?: return
-        val vh = rv.findViewHolderForAdapterPosition(viewPager.currentItem) as? PagerViewHolder ?: return
-        vh.reapplyScale()
     }
 
     fun setTrimWhiteBorder(trim: Boolean, threshold: Int = trimThreshold, whiteRatio: Float = trimWhiteRatio) {
@@ -1403,11 +1399,6 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             ssiv.setScaleAndCenter(targetScale, android.graphics.PointF(centerX, centerY))
         }
 
-        fun reapplyScale() {
-            val bmp = heldBitmap ?: return
-            val ssv = ssiv ?: return
-            if (ssv.isReady) applyScale(ssv, bmp, false, landscapeZoomEnabled)
-        }
 
         private fun applyScale(ssiv: PagerSSIV, bmp: Bitmap, fitWidth: Boolean, landscapeZoom: Boolean) {
             if (!ssiv.isReady || ssiv.width <= 0) {

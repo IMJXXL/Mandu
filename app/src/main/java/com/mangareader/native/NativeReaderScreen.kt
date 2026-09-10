@@ -248,12 +248,6 @@ fun NativeReaderScreen(
         }
     }
 
-    LaunchedEffect(fitScreen, landscapeZoom) {
-        if (pagerView is PagerReaderView) {
-            pagerView.setFitScreen(fitScreen)
-            pagerView.setLandscapeZoom(landscapeZoom)
-        }
-    }
 
     LaunchedEffect(startPage) {
         android.util.Log.d("WebtoonRV", "NES LaunchedEffect startPage=$startPage savedPage=$savedPage")
