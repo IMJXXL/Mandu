@@ -88,8 +88,18 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     @Volatile private var pageAnimFlags: List<AnimFlag> = emptyList()
     @Volatile private var animatedCount: Int = 0
     /** 持有"正在播"的动图 Drawable（idx -> drawable），同时最多一个 isRunning（当前页）
-     *  ★ 改用 coil AnimatedImageDecoder 路线后，drawable 是 Android 系统 AnimatedDrawable（Animatable） */
-    private val pageAnimDrawables = java.util.LinkedHashMap<Int, Drawable>()
+     *  ★ 改用 coil AnimatedImageDecoder 路线后，drawable 是 Android 系统 AnimatedDrawable（Animatable）
+     *  ★ LRU 淘汰：上限 7 页（可见 ±附近），超出时淘汰最旧条目并 stop 释放解码器。
+     *    对齐参考项目 LruCache 字节预算淘汰——原无上限 LinkedHashMap 导致 40 解码器累积 OOM。 */
+    private val pageAnimDrawables = object : java.util.LinkedHashMap<Int, Drawable>(16, 0.75f, false) {
+        override fun removeEldestEntry(eldest: Map.Entry<Int, Drawable>): Boolean {
+            if (size > 7) {
+                try { (eldest.value as? android.graphics.drawable.Animatable)?.stop() } catch (_: Throwable) {}
+                return true
+            }
+            return false
+        }
+    }
     @Volatile private var currentPlayingAnimIdx: Int = -1
     /** P9 弹窗 hook：用户切条漫遇动图时由 Reader.kt 弹"只能静态看，是否切换"对话框 */
     var onAnimDetected: ((animatedCount: Int) -> Unit)? = null
@@ -1097,7 +1107,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 bitmapCache.remove(k)
             }
         }
-        // ★ F3.4：低内存补收动图缓冲（pageAnimDrawables 无上限 + animRawCache 自估可上百 MB，原版完全不收）。
+        // ★ F3.4：低内存补收动图缓冲（pageAnimDrawables 已有 LRU 上限 7 + animRawCache 自估可上百 MB）。
         //   当前页动图会停帧，重绑自动重建恢复；CRITICAL 一下就把在途标记一并清了。
         try {
             synchronized(pageAnimDrawables) {
