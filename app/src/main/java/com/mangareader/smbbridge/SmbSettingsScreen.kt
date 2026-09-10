@@ -21,6 +21,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material3.*
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -56,7 +57,9 @@ fun SmbSettingsScreen(onBack: () -> Unit, onOpenDownloadQueue: () -> Unit = {}) 
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
 
+    val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
     Scaffold(
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             TopAppBar(
                 title = { Text("SMB 设置") },
@@ -66,6 +69,7 @@ fun SmbSettingsScreen(onBack: () -> Unit, onOpenDownloadQueue: () -> Unit = {}) 
                         Icon(Icons.Default.Download, "下载队列")
                     }
                 },
+                scrollBehavior = scrollBehavior,
             )
         },
     ) { padding ->
