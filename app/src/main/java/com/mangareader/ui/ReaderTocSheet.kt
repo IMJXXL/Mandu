@@ -270,10 +270,10 @@ fun ReaderTocSheet(
                         val cur = currentNavStack.lastOrNull() ?: ""
                         val isCurrent = viewing && item.subPath.isNotEmpty() && (cur.endsWith(item.subPath) && (cur.length == item.subPath.length || cur[cur.length - item.subPath.length - 1] == '/' || cur[cur.length - item.subPath.length - 1] == '\\'))
                         val status = remember(progress, item.name) { statusForItem(item, progress) }
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = if (isCurrent) MaterialTheme.colorScheme.primary.copy(alpha = 0.3f) else MaterialTheme.colorScheme.surfaceVariant,
-                            onClick = {
+                        Column(
+                            Modifier.clip(RoundedCornerShape(8.dp))
+                                .background(if (isCurrent) MaterialTheme.colorScheme.primary.copy(alpha = 0.3f) else MaterialTheme.colorScheme.surfaceVariant)
+                                .clickable {
                                     if (item.dir && item.subPath.isNotEmpty()) {
                                         val currentPath = currentNavStack.firstOrNull() ?: ""
                                         if (currentPath.startsWith("z:")) {
@@ -294,9 +294,7 @@ fun ReaderTocSheet(
                                     }
                                     onDismiss()
                                 }
-                        ) {
-                        Column(
-                            Modifier.padding(8.dp),
+                                .padding(8.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopEnd) {
@@ -329,7 +327,6 @@ fun ReaderTocSheet(
                             )
                             Spacer(Modifier.height(4.dp))
                             Text(item.name, color = MaterialTheme.colorScheme.onSurface, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        }
                         }
                     }
                 }

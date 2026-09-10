@@ -2233,7 +2233,7 @@ private fun ItemCard(item: ArchiveEngine.Item, engine: ArchiveEngine, bgColor: C
         withContext(Dispatchers.IO) { try { cover = engine.loadCoverForItem(item) } catch (_: Exception) { cover = null } }
     }
     val status = remember(progress, item.name) { com.mangareader.ui.statusForItem(item, progress) }
-    Column(Modifier.clickable(onClick = tap).shadow(4.dp, RoundedCornerShape(12.dp))) {
+    Column(Modifier.clip(RoundedCornerShape(12.dp)).clickable(onClick = tap).shadow(4.dp, RoundedCornerShape(12.dp))) {
         Box(Modifier.fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)).background(bgColor.copy(alpha = 0.8f)), contentAlignment = Alignment.Center) {
             // ★ 动态封面：开 = 静态首帧垫底 + Coil 动图叠加（动图失败/加载中显示静态图，不再空白）；
             //   关 = 静态首帧。修复（2026-09-06 实测）：原写法动态分支只渲染 AsyncImage，z:/cv: 请求失败即纯空白。
