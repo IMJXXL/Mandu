@@ -555,12 +555,16 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
                 bookshelves.forEachIndexed { index, shelf ->
                     val maxUp = index * itemHeight
                     val maxDown = (bookshelves.size - 1 - index) * itemHeight
-                    val offset = if (draggedIndex == index) dragOffset.coerceIn(-maxUp, maxDown) else 0f
                     Surface(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(vertical = 2.dp)
-                            .graphicsLayer { translationY = offset * density }
+                            .graphicsLayer {
+                                if (draggedIndex == index) {
+                                    translationY = dragOffset.coerceIn(-maxUp, maxDown) * density
+                                    shadowElevation = 8f
+                                }
+                            }
                             .pointerInput(index, bookshelves.size) {
                                 detectDragGesturesAfterLongPress(
                                     onDragStart = { draggedIndex = index },
@@ -665,12 +669,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
             var darkMode by remember { mutableStateOf(prefs.getString("dark_mode", "SYSTEM") ?: "SYSTEM") }
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.DarkMode, null, modifier = Modifier.size(24.dp))
-                        Spacer(Modifier.width(12.dp))
-                        Text("暗色模式", fontSize = 16.sp)
-                    }
-                    Spacer(Modifier.height(8.dp))
+
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         listOf("亮色" to "LIGHT", "暗色" to "DARK", "系统" to "SYSTEM").forEach { (label, value) ->
                             FilterChip(
@@ -687,11 +686,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
                         }
                     }
                     Spacer(Modifier.height(16.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Palette, null, modifier = Modifier.size(24.dp))
-                        Spacer(Modifier.width(12.dp))
-                        Text("主题", fontSize = 16.sp)
-                    }
+
                     Spacer(Modifier.height(8.dp))
                     val currentThemeOrdinal = prefs.getInt("app_theme", 0)
                     val dynamicColorEnabled = prefs.getBoolean("dynamic_color", false)
