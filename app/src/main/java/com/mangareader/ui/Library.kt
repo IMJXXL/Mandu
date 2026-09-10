@@ -703,22 +703,15 @@ private fun BookCard(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, isS
                     }
                 }
                 b.coverPath != null -> {
-                    val dynOn = ctx.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE)
-                        .getBoolean("dynamic_covers", false)
-                    // ★ 2026-09-08：用 AsyncImage + remember(model) 稳定 ImageRequest ——
-                    //   每次重组新建 ImageRequest 会导致 AsyncImage 重启请求、停止动图，
-                    //   动图"播一次就停"。remember 缓存请求，动图持续循环（与参考项目一致）。
-                    // ★ 2026-09-08：去掉 coverLoading 转圈——onState 不可靠（Success 不触发），
-                    //   画面已显示却仍在转圈。封面加载完成图片自然出现，加载中显示背景色。
-                    val coverRequest = remember(b.coverPath, dynOn, decodePx) {
+                    val coverRequest = remember(b.coverPath, decodePx) {
                         coil3.request.ImageRequest.Builder(ctx)
-                            .data(com.mangareader.viewer.CoverData(b.coverPath, dynOn))
+                            .data(com.mangareader.viewer.CoverData(b.coverPath))
                             .coverThumb(
                                 decodePx,
-                                memoryKey = "cover:${b.id}@${b.coverPath}@$dynOn",
+                                memoryKey = "cover:${b.id}@${b.coverPath}",
                                 diskKey = "${b.coverPath}",
                             )
-                            .apply { if (!dynOn) decoderFactory(com.mangareader.coil.StaticFirstFrameDecoder.Factory()) }
+                            .decoderFactory(com.mangareader.coil.StaticFirstFrameDecoder.Factory())
                             .build()
                     }
                     coil3.compose.AsyncImage(

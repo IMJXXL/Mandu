@@ -180,23 +180,7 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
             item {
                 Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text("动态封面", fontSize = 16.sp)
-                        Text("开启后书架与文件夹子项的动图封面会播放动画；关闭（默认）全部显示静态首帧，更流畅省电。重新进入书架后生效", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    var dynamicCovers by remember { mutableStateOf(prefs.getBoolean("dynamic_covers", false)) }
-                    Switch(
-                        checked = dynamicCovers,
-                        onCheckedChange = {
-                            dynamicCovers = it
-                            prefs.edit().putBoolean("dynamic_covers", it).apply()
-                        },
-                    )
-                }
-            }
 
-            item {
-                Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
                         Text("长按保存图片", fontSize = 16.sp)
                         Text("开启后翻页阅读时长按页面可将当前图保存到相册；默认关闭，避免翻页时误触", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }

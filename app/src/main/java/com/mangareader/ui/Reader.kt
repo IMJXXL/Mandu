@@ -2214,27 +2214,16 @@ private fun ItemGrid(items: List<ArchiveEngine.Item>, engine: ArchiveEngine, bgC
 
 @Composable
 private fun ItemCard(item: ArchiveEngine.Item, engine: ArchiveEngine, bgColor: Color, progress: List<ReadingProgress>, tap: () -> Unit) {
-    // ★ 动态封面开关（2026-09-06 补全 a1-a7 动图）：开 = z:/cv: 路径走 Coil 动图管线（小尺寸解码）；
-    //   关（默认）= loadCoverForItem 静态 Bitmap（v1.2 行为）
-    val itemCtx = LocalContext.current
-    val dynamicCovers = remember(item.doc, item.subPath) {
-        itemCtx.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE).getBoolean("dynamic_covers", false)
-    }
-    val itemCoverPath = remember(item.auth, item.tree, item.doc, item.subPath) {
-        if (item.subPath.isNotEmpty()) "z:${item.auth}|${item.tree}|${item.doc}|${item.subPath}"
-        else "cv:${item.auth}|${item.tree}|${item.doc}|${item.name}"
-    }
+
     var cover by remember(item.doc, item.subPath) { mutableStateOf<Bitmap?>(null) }
-    LaunchedEffect(item.doc, item.subPath, dynamicCovers) {
-        // 静态位图始终预载（动图失败时的兜底），动态层由 AsyncImage 覆盖其上
+    LaunchedEffect(item.doc, item.subPath) {
         cover = null
         withContext(Dispatchers.IO) { try { cover = engine.loadCoverForItem(item) } catch (_: Exception) { cover = null } }
     }
     val status = remember(progress, item.name) { com.mangareader.ui.statusForItem(item, progress) }
     Column(Modifier.clip(RoundedCornerShape(12.dp)).clickable(onClick = tap).shadow(4.dp, RoundedCornerShape(12.dp))) {
         Box(Modifier.fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)).background(bgColor.copy(alpha = 0.8f)), contentAlignment = Alignment.Center) {
-            // ★ 动态封面：开 = 静态首帧垫底 + Coil 动图叠加（动图失败/加载中显示静态图，不再空白）；
-            //   关 = 静态首帧。修复（2026-09-06 实测）：原写法动态分支只渲染 AsyncImage，z:/cv: 请求失败即纯空白。
+
             if (cover != null) {
                 val bitmap = cover!!
                 // ★ 复查修复（2026-09-06）：按 ContentScale.Crop 语义缩放居中绘制 ——
@@ -2255,20 +2244,7 @@ private fun ItemCard(item: ArchiveEngine.Item, engine: ArchiveEngine, bgColor: C
                     }
                 }
             }
-            if (dynamicCovers) {
-                val itemCoverRequest = remember(itemCoverPath) {
-                    coil3.request.ImageRequest.Builder(itemCtx)
-                        .data(com.mangareader.viewer.CoverData(itemCoverPath))
-                        .size(com.hippo.ehviewer.coil.CoverThumb.decodePx(itemCtx.resources.displayMetrics.widthPixels / 2))
-                        .build()
-                }
-                coil3.compose.AsyncImage(
-                    model = itemCoverRequest,
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop,
-                )
-            }
+
             Box(Modifier.fillMaxWidth().height(36.dp).align(Alignment.BottomCenter).background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.5f)))))
             // ★ §37(17) 状态徽章——三态都画（已读完绿、阅读中橙、未读红），替代原"文件夹/压缩包"类型标签
             Surface(Modifier.align(Alignment.TopEnd).padding(4.dp), RoundedCornerShape(6.dp), color = status.color.copy(alpha = 0.9f)) {
