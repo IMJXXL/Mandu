@@ -470,6 +470,21 @@ class ArchiveEngine(private val ctx: Context) {
 
     /** §24 P3 dir 分支：loadDirPage 返回 Bitmap，这里补一个返回 ByteArray 的同款函数（直接读图字节） */
     private fun loadDirPageRaw(tree: Uri, meta: PageMeta, treeStr: String): ByteArray? {
+        // ★ 真实路径快速路径：FileInputStream 跳过 SAF Binder IPC
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R
+            && android.os.Environment.isExternalStorageManager()) {
+            try {
+                val docUri = if (meta.ext.isNotEmpty()) {
+                    DocumentsContract.buildDocumentUriUsingTree(tree, meta.ext)
+                } else {
+                    DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
+                }
+                val realFile = getRealFile(docUri)
+                if (realFile != null && realFile.exists() && realFile.length() > 0) {
+                    return realFile.readBytes()
+                }
+            } catch (_: Exception) {}
+        }
         // 复用 loadDirPage 的 URI 构造，但直接读文件字节而非 decode
         try {
             val docUri = if (meta.ext.isNotEmpty()) {
@@ -497,7 +512,7 @@ class ArchiveEngine(private val ctx: Context) {
         private set
 
     suspend fun peekAnimKindFast(treeStr: String, meta: PageMeta): AnimKind {
-        // dir 源：ContentResolver 流式读头部（不落全文件）
+        // dir 源：流式读头部（不落全文件）
         if (meta.source == "dir") {
             try {
                 val p = parsePath(treeStr) ?: return peekAnimKindFallback(treeStr, meta)
@@ -509,9 +524,16 @@ class ArchiveEngine(private val ctx: Context) {
                 }
                 val head = ByteArray(64 * 1024)
                 var off = 0
-                ctx.contentResolver.openInputStream(docUri)?.use { ins ->
+                // ★ 真实路径快速路径：FileInputStream 跳过 SAF Binder IPC（1068 页 × 200ms → ~0）
+                val stream = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R
+                    && android.os.Environment.isExternalStorageManager()) {
+                    val rf = getRealFile(docUri)
+                    if (rf != null && rf.exists() && rf.length() > 0) java.io.FileInputStream(rf) else null
+                } else null
+                val ins = stream ?: ctx.contentResolver.openInputStream(docUri)
+                ins?.use { s ->
                     while (off < head.size) {
-                        val n = ins.read(head, off, head.size - off)
+                        val n = s.read(head, off, head.size - off)
                         if (n <= 0) break
                         off += n
                         val k = animKindFromHead(head, off)
@@ -1422,7 +1444,92 @@ class ArchiveEngine(private val ctx: Context) {
         return null
     }
 
+    /** ★ 解析目录 URI 到真实路径（getRealFile 是为文件设计的，对目录会找子文件导致返回 null）
+     *  先试 primary: 路径直构（零 Binder IPC），再 fallback _data 查询（一次 Binder，适配非 primary 存储） */
+    private fun resolveRealDir(uri: Uri): File? {
+        try {
+            val docId = DocumentsContract.getDocumentId(uri)
+            if (docId.startsWith("primary:")) {
+                val relPath = docId.removePrefix("primary:")
+                val f = File("/storage/emulated/0/$relPath")
+                if (f.exists() && f.isDirectory) return f
+            }
+        } catch (_: Exception) {}
+        try {
+            ctx.contentResolver.query(uri, arrayOf("_data"), null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val idx = cursor.getColumnIndex("_data")
+                    if (idx >= 0) {
+                        val path = cursor.getString(idx)
+                        if (path != null) {
+                            val f = File(path)
+                            if (f.exists() && f.isDirectory) return f
+                        }
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+        return null
+    }
+
+    /** ★ 真实路径快速列举：仅当 MANAGE_EXTERNAL_STORAGE 可用且目录可解析为真实路径时生效 */
+    private fun scanDirFast(tree: Uri, doc: String): List<PageMeta>? {
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.R) return null
+        if (!android.os.Environment.isExternalStorageManager()) return null
+        try {
+            val dirUri = DocumentsContract.buildDocumentUriUsingTree(tree, doc)
+            val dirFile = resolveRealDir(dirUri) ?: return null
+            if (!dirFile.exists() || !dirFile.isDirectory) return null
+            val files = dirFile.listFiles() ?: return null
+            val imgs = mutableListOf<File>()
+            val arcs = mutableListOf<File>()
+            for (f in files) {
+                val n = f.name
+                if (isImg(n)) imgs.add(f)
+                else if (isComic(n)) arcs.add(f)
+            }
+            if (imgs.isEmpty() && arcs.isEmpty()) return null
+            val pages = mutableListOf<PageMeta>()
+            if (imgs.isNotEmpty()) {
+                val sorted = imgs.sortedWith(Comparator<File> { a, b ->
+                    com.mangareader.zip.CommonsZipHelper.compareNatural(a.name, b.name)
+                })
+                sorted.forEachIndexed { i, f ->
+                    val childDocId = "$doc/${f.name}"
+                    pages.add(PageMeta(i, "dir", childDocId))
+                }
+            } else {
+                arcs.sortedWith(Comparator<File> { a, b ->
+                    com.mangareader.zip.CommonsZipHelper.compareNatural(a.name, b.name)
+                }).forEach { f ->
+                    val childDocId = "$doc/${f.name}"
+                    val ext = f.name.substringAfterLast(".").lowercase()
+                    when (ext) {
+                        "cbz", "zip", "epub" -> {
+                            val arcUri = DocumentsContract.buildDocumentUriUsingTree(tree, childDocId)
+                            val count = try { listZipPages(arcUri).size } catch (_: Exception) { 0 }
+                            for (localI in 0 until count) pages.add(PageMeta(pages.size, "zip", childDocId, localI))
+                        }
+                        "pdf" -> {
+                            val arcUri = DocumentsContract.buildDocumentUriUsingTree(tree, childDocId)
+                            val count = try { countPdfPages(arcUri) } catch (_: Exception) { 0 }
+                            for (localI in 0 until count) pages.add(PageMeta(pages.size, "pdf", childDocId, localI))
+                        }
+                    }
+                }
+            }
+            d(TAG, "scanDirFast: ${pages.size} pages from ${dirFile.absolutePath}")
+            return pages
+        } catch (e: Exception) {
+            Log.d(TAG, "scanDirFast fallback to SAF: ${e.message}")
+            return null
+        }
+    }
+
     private fun scanDir(tree: Uri, doc: String): List<PageMeta> {
+        // ★ 真实路径快速路径：File.listFiles 跳过 SAF Binder IPC（~50ms vs ~2000ms）
+        val fastResult = scanDirFast(tree, doc)
+        if (fastResult != null) return fastResult
         val pages = mutableListOf<PageMeta>()
         try {
             val child = DocumentsContract.buildChildDocumentsUriUsingTree(tree, doc)
