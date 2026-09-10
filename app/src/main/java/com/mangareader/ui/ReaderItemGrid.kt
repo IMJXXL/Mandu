@@ -80,7 +80,7 @@ private fun ReaderItemCard(item: ArchiveEngine.Item, engine: ArchiveEngine, tap:
         cover = null
         withContext(Dispatchers.IO) { try { cover = engine.loadCoverForItem(item) } catch (_: Exception) { cover = null } }
     }
-    Column(Modifier.clip(RoundedCornerShape(12.dp)).clickable(onClick = tap).shadow(4.dp, RoundedCornerShape(12.dp))) {
+    Column(Modifier.clickable(onClick = tap).shadow(4.dp, RoundedCornerShape(12.dp))) {
         Box(Modifier.fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)).background(Color(0xFF2A2A2A)), contentAlignment = Alignment.Center) {
             cover?.let { Image(bitmap = it.asImageBitmap(), contentDescription = item.name, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
             Box(Modifier.fillMaxWidth().height(36.dp).align(Alignment.BottomCenter).background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.5f)))))

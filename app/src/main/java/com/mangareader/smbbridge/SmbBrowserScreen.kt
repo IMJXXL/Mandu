@@ -404,7 +404,7 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -> U
                     Text("空目录", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 else -> LazyColumn(Modifier.fillMaxSize()) {
-                    items(entries) { e ->
+                    items(entries, key = { e -> e.name }) { e ->
                         val dl = extractDownloadable(e)
                         val remotePath = dl?.first
                         val isSelected = remotePath != null && remotePath in selectedRemotes

@@ -196,7 +196,7 @@ fun SrQueueScreen(onBack: () -> Unit, onOpenBook: ((Long, String) -> Unit)? = nu
                         fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            items(queue) { item ->
+            items(queue, key = { item -> item.chapterKey }) { item ->
                 Card(Modifier.fillMaxWidth()) {
                     Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                         srCover(item.bookId, item.path)
@@ -227,7 +227,7 @@ fun SrQueueScreen(onBack: () -> Unit, onOpenBook: ((Long, String) -> Unit)? = nu
                     Text("点任意章直接去看", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
                 }
             }
-            items(completed) { ch ->
+            items(completed, key = { ch -> ch.path }) { ch ->
                 Card(
                     Modifier.fillMaxWidth().clickable(enabled = onOpenBook != null) {
                         // 直接进入这本已超分书的阅读（离线产物阅读时自动生效）

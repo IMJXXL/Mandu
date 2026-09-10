@@ -3,6 +3,7 @@ package com.mangareader.ui
 import android.content.pm.ActivityInfo
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -72,10 +73,13 @@ private fun TsyChipRow(items: List<Pair<String, Any>>, selected: Any, onSelect: 
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         items.forEach { (label, value) ->
             val isSelected = value == selected
-            Box(modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(if (isSelected) chipSelected else chipBg)
-                .then(if (isSelected) Modifier.border(1.dp, accent, RoundedCornerShape(8.dp)) else Modifier.border(1.dp, border, RoundedCornerShape(8.dp)))
-                .clickable { onSelect(value) }.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                Text(label, fontSize = 13.sp, color = if (isSelected) accent else text)
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = if (isSelected) chipSelected else chipBg,
+                border = BorderStroke(1.dp, if (isSelected) accent else border),
+                onClick = { onSelect(value) }
+            ) {
+                Text(label, fontSize = 13.sp, color = if (isSelected) accent else text, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
             }
         }
     }

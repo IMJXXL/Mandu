@@ -269,7 +269,7 @@ fun SmbAddWizardScreen(onBack: () -> Unit, onSaved: () -> Unit, initial: SmbSour
                         Box(Modifier.fillMaxWidth().height(80.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
                     }
                     LazyColumn(Modifier.weight(1f)) {
-                        items(dirEntries) { e ->
+                        items(dirEntries, key = { e -> e.name }) { e ->
                             if (e is BrowseEntryRemote.Directory) {
                                 Row(
                                     Modifier.fillMaxWidth().clickable {
