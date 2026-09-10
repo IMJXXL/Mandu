@@ -79,14 +79,24 @@ object RemoteDownloadExecutor {
         } else {
             destUri.toString()
         }
+        val treePath = treeUri.lastPathSegment?.removePrefix("tree/") ?: ""
+        val auth = treeUri.authority ?: ""
+        val localCoverPath = "cv:$auth|$treePath|$docId|$fileName"
 
         val dao = MangaDatabase.getDatabase(ctx).mangaDao()
         if (task.bookId > 0) {
             runCatching { dao.rehomeBookToLocal(task.bookId, realPath) }
+            val book = dao.getBookById(task.bookId)
+            if (book != null) {
+                runCatching { dao.updateBook(book.copy(coverPath = localCoverPath)) }
+                coil3.SingletonImageLoader.get(ctx).memoryCache?.clear()
+            }
         } else {
             val book = dao.getBookByPath(task.sourcePath)
             if (book != null) {
                 runCatching { dao.rehomeBookToLocal(book.id, realPath) }
+                runCatching { dao.updateBook(book.copy(coverPath = localCoverPath)) }
+                coil3.SingletonImageLoader.get(ctx).memoryCache?.clear()
             }
         }
         realPath
