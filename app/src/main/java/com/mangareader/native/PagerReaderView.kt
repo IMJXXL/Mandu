@@ -616,7 +616,10 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     }
 
     fun setFitScreen(enabled: Boolean) {
+        if (this.fitScreenEnabled == enabled) return
         this.fitScreenEnabled = enabled
+        val pos = positionOf(currentPage).coerceIn(0, (pagerAdapter?.itemCount ?: 1) - 1)
+        pagerAdapter?.notifyItemChanged(pos)
     }
 
     fun setTrimWhiteBorder(trim: Boolean, threshold: Int = trimThreshold, whiteRatio: Float = trimWhiteRatio) {
