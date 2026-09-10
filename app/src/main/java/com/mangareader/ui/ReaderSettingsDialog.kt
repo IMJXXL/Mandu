@@ -109,7 +109,7 @@ private fun TsyCheckbox(label: String, checked: Boolean, onCheckedChange: (Boole
             contentAlignment = Alignment.Center) {
             if (checked) Text("✓", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
         }
-        Text(label, fontSize = 14.sp, color = text)
+        Text(label, fontSize = 13.sp, color = text)
     }
 }
 

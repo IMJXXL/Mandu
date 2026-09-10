@@ -261,7 +261,7 @@ private fun CoverThumb(coverPath: String?, chPath: String? = null) {
         contentScale = ContentScale.Crop,
         modifier = Modifier.size(width = 46.dp, height = 62.dp)
             .clip(RoundedCornerShape(6.dp))
-            .background(Color(0x22888888))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.13f))
     )
 }
 
