@@ -599,7 +599,7 @@ object Settings : DataStorePreferences(null) {
      * Does **not** disable convert (JXR/PQ/JXL → Ultra HDR) or gain-map decode —
      * those always run so files open; off = SDR base presentation without window HDR.
      */
-    val readerHdrDisplay = boolPref("pref_reader_hdr_display", true)
+    val readerHdrDisplay = boolPref("pref_reader_hdr_display", false)
 
     /**
      * OPPO / OnePlus / realme **ProXDR** HEIC: after platform HEIC decode, attach
