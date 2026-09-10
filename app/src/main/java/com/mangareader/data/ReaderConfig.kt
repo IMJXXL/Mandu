@@ -33,6 +33,7 @@ data class ReaderConfig(
     val pageLayout: PageLayout = PageLayout.SINGLE,
     val useSSIV: Boolean = true,
     val landscapeZoom: Boolean = false,
+    val fitScreen: Boolean = true,
     val panNavigation: Boolean = true,
     val doublePageShift: Int = 0,
     val doublePageSplit: Boolean = false,
@@ -83,6 +84,7 @@ data class ReaderConfig(
             putString("${prefix}pageLayout", pageLayout.name)
             putBoolean("${prefix}useSSIV", useSSIV)
             putBoolean("${prefix}landscapeZoom", landscapeZoom)
+            putBoolean("${prefix}fitScreen", fitScreen)
             putBoolean("${prefix}panNavigation", panNavigation)
             putInt("${prefix}doublePageShift", doublePageShift)
             putBoolean("${prefix}doublePageSplit", doublePageSplit)
@@ -128,6 +130,7 @@ data class ReaderConfig(
                 pageLayout = try { PageLayout.valueOf(prefs.getString("${prefix}pageLayout", "SINGLE")!!) } catch (_: Exception) { PageLayout.SINGLE },
                 useSSIV = prefs.getBoolean("${prefix}useSSIV", true),
                 landscapeZoom = prefs.getBoolean("${prefix}landscapeZoom", false),
+                fitScreen = prefs.getBoolean("${prefix}fitScreen", true),
                 panNavigation = prefs.getBoolean("${prefix}panNavigation", true),
                 doublePageShift = prefs.getInt("${prefix}doublePageShift", 0),
                 doublePageSplit = prefs.getBoolean("${prefix}doublePageSplit", false),

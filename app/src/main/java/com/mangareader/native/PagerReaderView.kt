@@ -63,6 +63,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     private var shiftDoublePage = false
     private var useSSIV = true
     private var landscapeZoomEnabled = true
+    private var fitScreenEnabled = true
     private var trimWhiteBorder = false
     private var trimThreshold: Int = 220
     private var trimWhiteRatio: Float = 0.90f
@@ -612,6 +613,10 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
 
     fun setLandscapeZoom(enabled: Boolean) {
         this.landscapeZoomEnabled = enabled
+    }
+
+    fun setFitScreen(enabled: Boolean) {
+        this.fitScreenEnabled = enabled
     }
 
     fun setTrimWhiteBorder(trim: Boolean, threshold: Int = trimThreshold, whiteRatio: Float = trimWhiteRatio) {
@@ -1406,10 +1411,9 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                     val w = ssiv.width.toFloat()
                     val h = ssiv.height.toFloat()
                     if (w > 0 && bmp.width > 0) {
-                        // ★ 初始缩放 = "哪边先到屏幕边界就停"（等比 contain，用户裁定 2026-09-06）：
-                        //   竖屏看竖页与旧 fit-width 完全一致（无变化）；横屏/平板看宽图不再上下溢出裁切。
-                        //   条漫是独立渲染路径（宽度贴满+纵向滚动）不受此影响。
-                        val scale = if (h > 0) minOf(w / bmp.width, h / bmp.height) else w / bmp.width
+                        // fitScreen=true（默认）：等比 contain（哪边先到屏幕边界就停），完整不裁切
+                        // fitScreen=false：fit-width（贴满宽度，竖图可能上下裁切）
+                        val scale = if (fitScreenEnabled && h > 0) minOf(w / bmp.width, h / bmp.height) else w / bmp.width
                         ssiv.setScaleAndCenter(scale, android.graphics.PointF(bmp.width / 2f, bmp.height / 2f))
                     }
                 }
@@ -1506,7 +1510,9 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                             val w = ssv.width.toFloat(); val h = ssv.height.toFloat()
                             if (w > 0 && sw > 0) {
                                 val isTablet = ssv.resources.configuration.smallestScreenWidthDp >= 600
-                                val scale = if (h > 0 && sw > sh && !landscapeZoom && isTablet) minOf(w / sw, h / sh) else w / sw
+                                val scale = if (fitScreenEnabled && h > 0) minOf(w / sw, h / sh)
+                                    else if (h > 0 && sw > sh && !landscapeZoom && isTablet) minOf(w / sw, h / sh)
+                                    else w / sw
                                 ssv.setScaleAndCenter(scale, android.graphics.PointF(sw / 2f, sh / 2f))
                             }
                         }

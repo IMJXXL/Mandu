@@ -158,6 +158,7 @@ private fun ReadingModeTab(config: ReaderConfig, mode: Mode, onConfigChange: (Re
         }
         TsyCheckbox("裁剪边缘", config.isTrimWhiteBorder) { onConfigChange(config.copy(isTrimWhiteBorder = it)) }
         TsyCheckbox("自动放大横向图片", config.landscapeZoom) { onConfigChange(config.copy(landscapeZoom = it)) }
+        TsyCheckbox("漫画完整显示", config.fitScreen) { onConfigChange(config.copy(fitScreen = it)) }
         TsyCheckbox("图片放大时先平移再翻页", config.panNavigation) { onConfigChange(config.copy(panNavigation = it)) }
         TsyCheckbox("拆分双页（重进漫画生效）", config.doublePageSplit) { onConfigChange(config.copy(doublePageSplit = it)) }
         if (config.doublePageSplit) {

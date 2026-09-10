@@ -251,6 +251,7 @@ private fun ReadingModeTab(config: ReaderConfig, mode: Mode, onConfigChange: (Re
             }
         }
         CheckboxItem("自动放大横向图片（平板上建议关闭，关闭时宽图完整显示）", config.landscapeZoom) { onConfigChange(config.copy(landscapeZoom = it)) }
+        CheckboxItem("漫画完整显示（开启后翻页模式下，画面不会越界屏幕）", config.fitScreen) { onConfigChange(config.copy(fitScreen = it)) }
         CheckboxItem("拆分双页（重进漫画生效）", config.doublePageSplit) { onConfigChange(config.copy(doublePageSplit = it)) }
         if (config.doublePageSplit) {
             CheckboxItem("反转双页", config.doublePageReverse) { onConfigChange(config.copy(doublePageReverse = it)) }

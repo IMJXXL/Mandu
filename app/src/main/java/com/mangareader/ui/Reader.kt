@@ -1747,6 +1747,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
                             invertColors = config.isInvertColors,
                             centerGapType = config.centerGapType,
                             landscapeZoom = config.landscapeZoom,
+                            fitScreen = config.fitScreen,
                             trimWhiteBorder = config.isTrimWhiteBorder,
                             trimThreshold = config.trimThreshold,
                             trimWhiteRatio = config.trimWhiteRatio,

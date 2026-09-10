@@ -125,6 +125,7 @@ fun NativeReaderScreen(
     invertColors: Boolean = false,
     centerGapType: Int = 0,
     landscapeZoom: Boolean = true,
+    fitScreen: Boolean = true,
     trimWhiteBorder: Boolean = false,
     trimThreshold: Int = 220,
     trimWhiteRatio: Float = 0.90f,
@@ -202,6 +203,7 @@ fun NativeReaderScreen(
         if (delegate is PagerReaderView) {
             delegate.setCenterGapType(centerGapType)
             delegate.setLandscapeZoom(landscapeZoom)
+            delegate.setFitScreen(fitScreen)
             delegate.setTrimWhiteBorder(trimWhiteBorder, trimThreshold, trimWhiteRatio)
             delegate.setPanNavigation(panNavigation)
         }
