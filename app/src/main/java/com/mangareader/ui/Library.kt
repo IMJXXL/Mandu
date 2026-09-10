@@ -649,7 +649,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                     if (remoteDownloadBusy) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                            Text("正在下载…", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("正在下载…", fontSize = 13.sp, color = Color(0xFF888888))
                         }
                     }
                 }

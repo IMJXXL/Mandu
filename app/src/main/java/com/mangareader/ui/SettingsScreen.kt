@@ -228,21 +228,19 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
         AlertDialog(onDismissRequest = {}, title = { Text("导入漫画") },
             text = {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-                    val primaryColor = MaterialTheme.colorScheme.primary
-                    val outlineColor = MaterialTheme.colorScheme.outline
                     Canvas(Modifier.size(64.dp)) {
                         val w = size.width; val h = size.height
                         val cx = w * 0.5f; val ground = h * 0.85f
                         val phase = animProgress * 2f * Math.PI.toFloat()
-                        drawCircle(primaryColor, radius = w * 0.08f, center = Offset(cx, h * 0.3f))
-                        drawLine(primaryColor, Offset(cx, h * 0.38f), Offset(cx, h * 0.6f), strokeWidth = w * 0.06f)
+                        drawCircle(Color(0xFF7C8CF8), radius = w * 0.08f, center = Offset(cx, h * 0.3f))
+                        drawLine(Color(0xFF7C8CF8), Offset(cx, h * 0.38f), Offset(cx, h * 0.6f), strokeWidth = w * 0.06f)
                         val armSwing = kotlin.math.sin(phase.toDouble()).toFloat() * w * 0.12f
-                        drawLine(primaryColor, Offset(cx, h * 0.42f), Offset(cx - armSwing, h * 0.55f), strokeWidth = w * 0.04f)
-                        drawLine(primaryColor, Offset(cx, h * 0.42f), Offset(cx + armSwing, h * 0.55f), strokeWidth = w * 0.04f)
+                        drawLine(Color(0xFF7C8CF8), Offset(cx, h * 0.42f), Offset(cx - armSwing, h * 0.55f), strokeWidth = w * 0.04f)
+                        drawLine(Color(0xFF7C8CF8), Offset(cx, h * 0.42f), Offset(cx + armSwing, h * 0.55f), strokeWidth = w * 0.04f)
                         val legSwing = kotlin.math.sin(phase.toDouble()).toFloat() * w * 0.14f
-                        drawLine(primaryColor, Offset(cx, h * 0.6f), Offset(cx - legSwing, ground), strokeWidth = w * 0.05f)
-                        drawLine(primaryColor, Offset(cx, h * 0.6f), Offset(cx + legSwing, ground), strokeWidth = w * 0.05f)
-                        drawLine(outlineColor, Offset(w * 0.1f, ground), Offset(w * 0.9f, ground), strokeWidth = w * 0.02f)
+                        drawLine(Color(0xFF7C8CF8), Offset(cx, h * 0.6f), Offset(cx - legSwing, ground), strokeWidth = w * 0.05f)
+                        drawLine(Color(0xFF7C8CF8), Offset(cx, h * 0.6f), Offset(cx + legSwing, ground), strokeWidth = w * 0.05f)
+                        drawLine(Color.Gray, Offset(w * 0.1f, ground), Offset(w * 0.9f, ground), strokeWidth = w * 0.02f)
                     }
                     Spacer(Modifier.height(12.dp))
                     Text(scanTarget, fontSize = 16.sp)
@@ -274,7 +272,6 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
     if (showClickFlipDialog) {
         val accentColor = MaterialTheme.colorScheme.primary
         val surfaceColor = MaterialTheme.colorScheme.surfaceVariant
-        val outlineColor = MaterialTheme.colorScheme.outline
         AlertDialog(onDismissRequest = { showClickFlipDialog = false }, title = { Text("点击翻页区域") },
             text = {
                 Column {
@@ -298,24 +295,24 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
                                     val h = size.height
                                     when (type) {
                                         com.mangareader.data.ReaderConfig.ClickFlipType.NO -> {
-                                            drawRect(outlineColor, style = Stroke(width = 1.dp.toPx()))
+                                            drawRect(Color.Gray, style = Stroke(width = 1.dp.toPx()))
                                         }
                                         com.mangareader.data.ReaderConfig.ClickFlipType.LEFT_RIGHT -> {
-                                            drawRect(outlineColor, style = Stroke(width = 1.dp.toPx()))
-                                            drawLine(outlineColor, Offset(w * 0.35f, 0f), Offset(w * 0.35f, h), strokeWidth = 1.dp.toPx())
-                                            drawLine(outlineColor, Offset(w * 0.65f, 0f), Offset(w * 0.65f, h), strokeWidth = 1.dp.toPx())
+                                            drawRect(Color.Gray, style = Stroke(width = 1.dp.toPx()))
+                                            drawLine(Color.Gray, Offset(w * 0.35f, 0f), Offset(w * 0.35f, h), strokeWidth = 1.dp.toPx())
+                                            drawLine(Color.Gray, Offset(w * 0.65f, 0f), Offset(w * 0.65f, h), strokeWidth = 1.dp.toPx())
                                             drawLine(accentColor, Offset(w * 0.17f, h * 0.5f), Offset(w * 0.05f, h * 0.5f), strokeWidth = 2.dp.toPx())
                                             drawLine(accentColor, Offset(w * 0.83f, h * 0.5f), Offset(w * 0.95f, h * 0.5f), strokeWidth = 2.dp.toPx())
                                         }
                                         com.mangareader.data.ReaderConfig.ClickFlipType.DIAGONAL_LB_RT -> {
-                                            drawRect(outlineColor, style = Stroke(width = 1.dp.toPx()))
-                                            drawLine(outlineColor, Offset(0f, h), Offset(w, 0f), strokeWidth = 1.dp.toPx())
+                                            drawRect(Color.Gray, style = Stroke(width = 1.dp.toPx()))
+                                            drawLine(Color.Gray, Offset(0f, h), Offset(w, 0f), strokeWidth = 1.dp.toPx())
                                             drawLine(accentColor, Offset(w * 0.15f, h * 0.85f), Offset(w * 0.05f, h * 0.95f), strokeWidth = 2.dp.toPx())
                                             drawLine(accentColor, Offset(w * 0.85f, h * 0.15f), Offset(w * 0.95f, h * 0.05f), strokeWidth = 2.dp.toPx())
                                         }
                                         com.mangareader.data.ReaderConfig.ClickFlipType.DIAGONAL_LT_RB -> {
-                                            drawRect(outlineColor, style = Stroke(width = 1.dp.toPx()))
-                                            drawLine(outlineColor, Offset(0f, 0f), Offset(w, h), strokeWidth = 1.dp.toPx())
+                                            drawRect(Color.Gray, style = Stroke(width = 1.dp.toPx()))
+                                            drawLine(Color.Gray, Offset(0f, 0f), Offset(w, h), strokeWidth = 1.dp.toPx())
                                             drawLine(accentColor, Offset(w * 0.15f, h * 0.15f), Offset(w * 0.05f, h * 0.05f), strokeWidth = 2.dp.toPx())
                                             drawLine(accentColor, Offset(w * 0.85f, h * 0.85f), Offset(w * 0.95f, h * 0.95f), strokeWidth = 2.dp.toPx())
                                         }
@@ -414,7 +411,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
                 modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)),
                 color = MaterialTheme.colorScheme.surfaceVariant
             ) {
-                Column(Modifier.padding(16.dp)) {
+                Column(Modifier.padding(12.dp)) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text("扫描时校验压缩包内容", fontSize = 14.sp, fontWeight = FontWeight.Medium)
