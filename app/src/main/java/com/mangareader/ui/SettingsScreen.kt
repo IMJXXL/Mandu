@@ -818,7 +818,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
                         Text("SMB 服务器管理", fontSize = 16.sp)
-                        Text("配置局域网共享并扫描阅读漫画（需要 Android 12+）", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("配置局域网共享并扫描阅读漫画", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Icon(Icons.Default.ChevronRight, null)
                 }
@@ -832,7 +832,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
                         Text("WebDAV 服务器管理", fontSize = 16.sp)
-                        Text("配置 WebDAV 网盘并在线阅读远端漫画", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("配置 WebDAV 网盘并在线阅读远端漫画（Beta）", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Icon(Icons.Default.ChevronRight, null)
                 }
@@ -954,6 +954,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
                             LicenseLink("libmobi", "https://github.com/niceSaber/libmobi")
                             LicenseLink("libzip", "https://github.com/niceSaber/libzip")
                             LicenseLink("APNG4Android (penfeizhou)", "https://github.com/penfeizhou/APNG4Android")
+                            LicenseLink("LocalViewer (GPL v3)", "https://www.gnu.org/licenses/gpl-3.0.html")
                             // 超分栈（模型随包内置，BSD 系许可）
                             LicenseLink("ncnn (Tencent)", "https://github.com/Tencent/ncnn")
                             LicenseLink("Real-CUGAN 模型 (bilibili/ailab)", "https://github.com/bilibili/ailab")
@@ -964,6 +965,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
                             Text("特别感谢", fontSize = 14.sp, fontWeight = FontWeight.Medium)
                             Text("· TachiyomiSY — 阅读器架构与功能设计的重要参考", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Text("· MHark — 文件访问机制与本地漫画读取方案的重要参考", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("· LocalViewer — SMB/WebDAV 远程漫画能力的重要参考", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Spacer(Modifier.height(4.dp))
                             Text("感谢所有开源项目的贡献者，让这一切成为可能。", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }

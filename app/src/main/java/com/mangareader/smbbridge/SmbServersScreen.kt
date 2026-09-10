@@ -91,14 +91,7 @@ fun SmbServersScreen(onBack: () -> Unit, onOpenBook: (Long) -> Unit = {}) {
         },
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
-            if (!SmbVersionGuard.isSupported()) {
-                Text(
-                    "当前系统低于 Android 12，仅可管理配置；扫描与阅读需要 Android 12+",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                )
-            }
+
             if (sources.isEmpty()) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text("暂无服务器，点击右上角 + 添加", color = MaterialTheme.colorScheme.onSurfaceVariant)
