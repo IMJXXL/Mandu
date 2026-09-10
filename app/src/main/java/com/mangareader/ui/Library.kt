@@ -68,7 +68,7 @@ enum class SortMode(val label: String) { LAST("最近阅读"), NAME("名称"), D
 enum class FilterMode(val label: String) { ALL("全部"), READING("阅读中"), UNREAD("未读"), FINISHED("已读完"), FAV("收藏") }
 enum class LayoutMode(val cols: Int, val label: String) { GRID2(2, "2列"), GRID3(3, "3列"), GRID4(4, "4列"), GRID5(5, "5列"), LIST(1, "列表") }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettings: () -> Unit = {}, onOpenHistory: () -> Unit = {}) {
     val ctx = LocalContext.current
@@ -622,11 +622,13 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                         val onTap = remember(b.id, isMultiSelect) { { if (isMultiSelect) { selectedBooks = if (b.id in selectedBooks) selectedBooks - b.id else selectedBooks + b.id } else openBookThrottled(b.id, null) } }
                         val onLongClick = remember(b.id) { { showBookInfo = b } }
                         val onDelete = remember(b.id) { { deleteTarget = b } }
-                        BookCard(b, engine, isMultiSelect, b.id in selectedBooks, thumbDecodePx,
-                            onToggleSelect = onToggleSelect,
-                            onTap = onTap,
-                            onLongClick = onLongClick,
-                            onDelete = onDelete)
+                        Box(Modifier.animateItem()) {
+                            BookCard(b, engine, isMultiSelect, b.id in selectedBooks, thumbDecodePx,
+                                onToggleSelect = onToggleSelect,
+                                onTap = onTap,
+                                onLongClick = onLongClick,
+                                onDelete = onDelete)
+                        }
                     }
                 }
             }

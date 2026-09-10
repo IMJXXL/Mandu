@@ -39,13 +39,14 @@ fun ReaderSettingsDialog(
 
     AlertDialog(onDismissRequest = onDismiss, containerColor = bg, title = null, text = {
         Column(Modifier.fillMaxWidth()) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                 tabs.forEachIndexed { index, title ->
-                    Column(horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.weight(1f).clickable { selectedTab = index }.padding(vertical = 8.dp)) {
-                        Text(title, fontSize = 15.sp, fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Normal,
-                            color = if (selectedTab == index) accent else text.copy(alpha = 0.6f))
-                        if (selectedTab == index) { Spacer(Modifier.height(4.dp)); Box(Modifier.width(40.dp).height(2.dp).background(accent)) }
+                    SegmentedButton(
+                        selected = selectedTab == index,
+                        onClick = { selectedTab = index },
+                        shape = SegmentedButtonDefaults.itemShape(index = index, count = tabs.size)
+                    ) {
+                        Text(title, fontSize = 13.sp, maxLines = 1)
                     }
                 }
             }
