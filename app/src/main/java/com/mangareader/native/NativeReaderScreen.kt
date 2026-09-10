@@ -125,7 +125,7 @@ fun NativeReaderScreen(
     invertColors: Boolean = false,
     centerGapType: Int = 0,
     landscapeZoom: Boolean = true,
-    fitScreen: Boolean = true,
+    fitScreen: Boolean = false,
     trimWhiteBorder: Boolean = false,
     trimThreshold: Int = 220,
     trimWhiteRatio: Float = 0.90f,
@@ -245,6 +245,13 @@ fun NativeReaderScreen(
             val shiftMode = pageLayout == 2
             // Single update: set both flags then refresh once
             pagerView.setDoublePageModeAndShift(doubleMode, shiftMode)
+        }
+    }
+
+    LaunchedEffect(fitScreen, landscapeZoom) {
+        if (pagerView is PagerReaderView) {
+            pagerView.setFitScreen(fitScreen)
+            pagerView.setLandscapeZoom(landscapeZoom)
         }
     }
 
