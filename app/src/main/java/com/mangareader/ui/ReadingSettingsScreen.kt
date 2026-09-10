@@ -18,6 +18,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.hippo.ehviewer.Settings
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -208,6 +209,22 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
                     onCheckedChange = {
                         longPressSave = it
                         prefs.edit().putBoolean("long_press_save", it).apply()
+                    },
+                )
+            }
+
+            // ★ HDR 显示开关：开启后阅读器窗口进入 HDR 模式，HDR 图片高光更亮、暗部更深
+            Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("HDR 显示", fontSize = 16.sp)
+                    Text("开启后阅读 HDR 图片时屏幕切换到 HDR 模式，展现完整亮度范围；需 HDR 屏支持，非 HDR 屏自动回退", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                var hdrDisplay by remember { mutableStateOf(Settings.readerHdrDisplay.value) }
+                Switch(
+                    checked = hdrDisplay,
+                    onCheckedChange = {
+                        hdrDisplay = it
+                        Settings.readerHdrDisplay.value = it
                     },
                 )
             }

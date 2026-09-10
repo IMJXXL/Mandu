@@ -101,7 +101,7 @@ class SmbBridgeLogicTest {
     }
 
     @Test
-    fun `version guard min api is 31`() {
-        assertEquals(31, SmbVersionGuard.MIN_API)
+    fun `version guard min api is 26`() {
+        assertEquals(26, SmbVersionGuard.MIN_API)
     }
 }

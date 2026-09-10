@@ -9,6 +9,8 @@ import android.graphics.drawable.Drawable
 import android.util.Log
 import android.view.View
 import android.widget.FrameLayout
+import com.hippo.ehviewer.util.setReaderColorMode
+import com.hippo.ehviewer.util.restoreColorMode
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -97,6 +99,11 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
     var currentBookId by remember { mutableLongStateOf(bookId) }
     var config by remember { mutableStateOf(com.mangareader.data.ReaderConfig.load(ctx, bookId)) }
     var configVersion by remember { mutableIntStateOf(0) }
+
+    DisposableEffect(act) {
+        if (act != null) setReaderColorMode(act)
+        onDispose { if (act != null) restoreColorMode(act) }
+    }
 
     // 监听 SharedPreferences 外部修改，自动触发 config 重读
     DisposableEffect(bookId) {

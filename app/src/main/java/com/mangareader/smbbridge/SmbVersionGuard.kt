@@ -3,11 +3,12 @@ package com.mangareader.smbbridge
 import android.os.Build
 
 /**
- * SMB 版本守卫（tasks 1.5.2 / 任务组7）：SMB 功能仅 Android 12+（API >= 31）可用，
- * 低版本隐藏/禁用入口。WebDAV 无此守卫（API 26+ 即可用）。
+ * SMB 版本守卫：SMB 功能在 Android 8.0+（API >= 26）可用。
+ * smbj 为纯 Java 库，无 Android API 硬限制；原先限 31 是保守策略，现已放开。
+ * WebDAV 同样 API 26+ 可用。
  */
 object SmbVersionGuard {
-    const val MIN_API = 31
+    const val MIN_API = 26
 
     fun isSupported(): Boolean = Build.VERSION.SDK_INT >= MIN_API
 
