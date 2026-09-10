@@ -110,10 +110,20 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
      *   参考：EhViewer 自写 Decoder 绕开 Coil wrap；APNG4Android 库本设计即不依赖任何上层 loader。
      *   （34a6c83 曾换成 ImageDecoder——动图 WebP 需 API 30+ 且行为随系统；用户裁定回退 v1.2 引擎）
      */
-    private fun makeAnimDrawable(raw: ByteArray, kind: AnimKind): Drawable? {
+    private fun makeAnimDrawable(raw: ByteArray, kind: AnimKind, file: java.io.File? = null): Drawable? {
         return try {
+            // ★ mmap 优先：12MB 落 native memory 不占 Java 堆（对齐参考项目 LocalViewer）
+            val buffer = if (file != null && file.exists() && file.length() > 0) {
+                try {
+                    java.io.RandomAccessFile(file, "r").use { raf ->
+                        raf.channel.map(java.nio.channels.FileChannel.MapMode.READ_ONLY, 0, file.length())
+                    }
+                } catch (_: Exception) { java.nio.ByteBuffer.wrap(raw) }
+            } else {
+                java.nio.ByteBuffer.wrap(raw)
+            }
             val loader = object : com.github.penfeizhou.animation.loader.ByteBufferLoader() {
-                override fun getByteBuffer(): ByteBuffer = ByteBuffer.wrap(raw)
+                override fun getByteBuffer(): java.nio.ByteBuffer = buffer
             }
             val drawable = when (kind) {
                 AnimKind.WEBP -> com.github.penfeizhou.animation.webp.WebPDrawable(loader)
@@ -203,20 +213,27 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         }
         loadScope.launch {
             try {
-                val raw = withContext(Dispatchers.IO) {
-                    try { e.loadPageRaw(meta, treePath) } catch (_: Exception) { null }
-                }
-                if (raw == null) return@launch
-                // 入 cache（只留最近 6 个 raw，估算上限 6 × 20MB ≈ 120MB）
-                synchronized(animRawCache) {
-                    animRawCache[idx] = raw
-                    while (animRawCache.size > 6) {
-                        val it = animRawCache.entries.iterator()
-                        if (it.hasNext()) { it.next(); it.remove() } else break
+                // ★ mmap 优先：File 可用时跳过 readBytes，12MB 落 native memory 不占 Java 堆
+                val realFile = withContext(Dispatchers.IO) { e.getRealFileForPage(treePath, meta) }
+                val drawable = if (realFile != null) {
+                    withContext(Dispatchers.IO) {
+                        try { makeAnimDrawable(ByteArray(0), kind, realFile) } catch (_: Exception) { null }
                     }
-                }
-                val drawable = withContext(Dispatchers.IO) {
-                    try { makeAnimDrawable(raw, kind) } catch (_: Exception) { null }
+                } else {
+                    val raw = withContext(Dispatchers.IO) {
+                        try { e.loadPageRaw(meta, treePath) } catch (_: Exception) { null }
+                    }
+                    if (raw == null) return@launch
+                    synchronized(animRawCache) {
+                        animRawCache[idx] = raw
+                        while (animRawCache.size > 6) {
+                            val it = animRawCache.entries.iterator()
+                            if (it.hasNext()) { it.next(); it.remove() } else break
+                        }
+                    }
+                    withContext(Dispatchers.IO) {
+                        try { makeAnimDrawable(raw, kind) } catch (_: Exception) { null }
+                    }
                 }
                 if (drawable == null) return@launch
                 withContext(Dispatchers.Main) {
@@ -851,20 +868,28 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                     runCatching { engine?.peekAnimKindFast(treePath, meta) }.getOrNull() ?: AnimKind.NONE
                 }
                 if (kind != AnimKind.NONE) {
-                    val animRaw = withContext(Dispatchers.IO) {
-                        runCatching { engine?.loadPageRaw(meta, treePath) }.getOrNull()
-                    }
-                    val drawable = animRaw?.let { r ->
-                        withContext(Dispatchers.IO) { runCatching { makeAnimDrawable(r, kind) }.getOrNull() }
-                    }
-                    if (drawable != null && animRaw != null) {
-                        synchronized(animRawCache) {
-                            animRawCache[idx] = animRaw
-                            while (animRawCache.size > 6) {
-                                val it = animRawCache.entries.iterator()
-                                if (it.hasNext()) { it.next(); it.remove() } else break
+                    // ★ mmap 优先：File 可用时跳过 readBytes，12MB 落 native memory 不占 Java 堆
+                    val realFile = withContext(Dispatchers.IO) { engine?.getRealFileForPage(treePath, meta) }
+                    val drawable: Drawable? = if (realFile != null) {
+                        withContext(Dispatchers.IO) { runCatching { makeAnimDrawable(ByteArray(0), kind, realFile) }.getOrNull() }
+                    } else {
+                        val animRaw = withContext(Dispatchers.IO) {
+                            runCatching { engine?.loadPageRaw(meta, treePath) }.getOrNull()
+                        }
+                        if (animRaw != null) {
+                            synchronized(animRawCache) {
+                                animRawCache[idx] = animRaw
+                                while (animRawCache.size > 6) {
+                                    val it = animRawCache.entries.iterator()
+                                    if (it.hasNext()) { it.next(); it.remove() } else break
+                                }
                             }
                         }
+                        animRaw?.let { r ->
+                            withContext(Dispatchers.IO) { runCatching { makeAnimDrawable(r, kind) }.getOrNull() }
+                        }
+                    }
+                    if (drawable != null) {
                         pageAnimDrawables[idx] = drawable
                         if (pageAnimFlags.none { it.pageIdx == idx }) {
                             pageAnimFlags = pageAnimFlags + AnimFlag(idx, kind)

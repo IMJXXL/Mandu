@@ -814,6 +814,24 @@ class ArchiveEngine(private val ctx: Context) {
         } catch (_: Exception) { null }
     }
 
+    /** ★ 获取页面对应的真实 File（用于 mmap 替代 readBytes 降 Java 堆） */
+    fun getRealFileForPage(treeStr: String, meta: PageMeta): java.io.File? {
+        if (meta.source != "dir") return null
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.R) return null
+        if (!android.os.Environment.isExternalStorageManager()) return null
+        return try {
+            val p = parsePath(treeStr) ?: return null
+            val tree = makeTree(p.auth, p.tree)
+            val docUri = if (meta.ext.isNotEmpty()) {
+                DocumentsContract.buildDocumentUriUsingTree(tree, meta.ext)
+            } else {
+                DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
+            }
+            val f = getRealFile(docUri)
+            if (f != null && f.exists() && f.length() > 0) f else null
+        } catch (_: Exception) { null }
+    }
+
     fun decodeBitmap(data: ByteArray): Bitmap? {
         return try {
             // ★ F3.2 大图解码闸：解码前先探尺寸，解码内存超 24MB(6M px) 逐级 inSampleSize。

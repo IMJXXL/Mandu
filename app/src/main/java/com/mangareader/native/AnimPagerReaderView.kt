@@ -210,11 +210,21 @@ class AnimPagerReaderView(context: Context) : FrameLayout(context), ReaderViewDe
 
     /** ★ §34.1 单页动图 Drawable 构造——同 PagerReaderView.makeAnimDrawable，复制以解耦
      *  （2026-09-05 恢复 v1.2 的 APNG4Android 引擎：全 API 兼容、不被 Coil 包装成 ScaleDrawable） */
-    private fun makeAnimDrawable(raw: ByteArray, kind: AnimKind): Drawable? {
+    private fun makeAnimDrawable(raw: ByteArray, kind: AnimKind, file: java.io.File? = null): Drawable? {
         if (kind == AnimKind.NONE) return null
         return try {
+            // ★ mmap 优先：12MB 落 native memory 不占 Java 堆
+            val buffer = if (file != null && file.exists() && file.length() > 0) {
+                try {
+                    java.io.RandomAccessFile(file, "r").use { raf ->
+                        raf.channel.map(java.nio.channels.FileChannel.MapMode.READ_ONLY, 0, file.length())
+                    }
+                } catch (_: Exception) { java.nio.ByteBuffer.wrap(raw) }
+            } else {
+                java.nio.ByteBuffer.wrap(raw)
+            }
             val loader = object : com.github.penfeizhou.animation.loader.ByteBufferLoader() {
-                override fun getByteBuffer(): ByteBuffer = ByteBuffer.wrap(raw)
+                override fun getByteBuffer(): java.nio.ByteBuffer = buffer
             }
             val drawable = when (kind) {
                 AnimKind.WEBP -> com.github.penfeizhou.animation.webp.WebPDrawable(loader)
@@ -255,12 +265,14 @@ class AnimPagerReaderView(context: Context) : FrameLayout(context), ReaderViewDe
             try {
                 // ★ v1.13 动图提速：raw 单次读取（缓存命中免 IO），kind 从同一份 raw 判定——
                 //   消除原"peek 全读 + load 再全读"的双倍 IO
-                val cached = synchronized(rawCacheLock) { rawCache[idx] }
+                // ★ mmap 优先：File 可用时跳过 readBytes，12MB 落 native memory 不占 Java 堆
+                val realFile = withContext(Dispatchers.IO) { e.getRealFileForPage(treePath, meta) }
+                val cached = if (realFile == null) synchronized(rawCacheLock) { rawCache[idx] } else null
                 val raw = cached ?: withContext(Dispatchers.IO) {
                     try { e.loadPageRaw(meta, treePath) } catch (_: Exception) { null }
                 }
                 if (raw == null) { withContext(Dispatchers.Main) { holder.hideLoading() }; return@launch }
-                if (cached == null) synchronized(rawCacheLock) { rawCache[idx] = raw }
+                if (realFile == null && cached == null) synchronized(rawCacheLock) { rawCache[idx] = raw }
                 val kind = e.peekAnimKindFromRaw(raw)
                 if (kind == AnimKind.NONE) {
                     // ★ 静图 fallback：decode 到 Bitmap 设到 ImageView（原直接 return 导致不显示）
@@ -283,7 +295,7 @@ class AnimPagerReaderView(context: Context) : FrameLayout(context), ReaderViewDe
                 decodeSem.acquire()
                 val drawable = try {
                     withContext(Dispatchers.IO) {
-                        try { makeAnimDrawable(raw, kind) } catch (oom: OutOfMemoryError) { android.util.Log.e("ANIMT", "anim OOM idx=$idx kind=$kind size=${raw.size}"); synchronized(rawCacheLock) { rawCache.clear() }; null } catch (_: Exception) { null }
+                        try { makeAnimDrawable(raw, kind, realFile) } catch (oom: OutOfMemoryError) { android.util.Log.e("ANIMT", "anim OOM idx=$idx kind=$kind size=${raw.size}"); synchronized(rawCacheLock) { rawCache.clear() }; null } catch (_: Exception) { null }
                     }
                 } finally { decodeSem.release() }
                 if (drawable == null) { android.util.Log.e("ANIMT", "drawable null idx=$idx"); withContext(Dispatchers.Main) { holder.hideLoading() }; return@launch }
