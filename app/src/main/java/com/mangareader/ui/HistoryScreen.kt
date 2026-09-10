@@ -13,7 +13,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import kotlinx.coroutines.launch
@@ -99,9 +98,7 @@ fun HistoryScreen(onBack: () -> Unit, onOpen: (Long, String?) -> Unit) {
         )
     }
 
-    val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
     Scaffold(
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             TopAppBar(
                 title = { Text("阅读历史") },
@@ -114,8 +111,7 @@ fun HistoryScreen(onBack: () -> Unit, onOpen: (Long, String?) -> Unit) {
                     IconButton(onClick = { showClearDialog = true }, enabled = sessions.isNotEmpty()) {
                         Icon(Icons.Default.Delete, "清空历史")
                     }
-                },
-                scrollBehavior = scrollBehavior
+                }
             )
         }
     ) { pad ->
