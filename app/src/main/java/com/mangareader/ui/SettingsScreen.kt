@@ -609,74 +609,83 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
             }
 
             item {
-            HorizontalDivider()
+            Spacer(Modifier.height(16.dp))
             }
             item {
-            Spacer(Modifier.height(24.dp))
+            Text("显示", style = MaterialTheme.typography.titleMedium)
             }
             item {
-            Text("显示", fontSize = 18.sp, fontWeight = FontWeight.Medium)
-            }
-            item {
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(8.dp))
             }
             item {
             var globalHide by remember { mutableStateOf(prefs.getBoolean("global_hide", false)) }
-            Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("全局隐藏", fontSize = 16.sp)
-                    Text("开启后首页不显示任何漫画", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Card(Modifier.fillMaxWidth()) {
+                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.VisibilityOff, null, modifier = Modifier.size(24.dp))
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("全局隐藏", fontSize = 16.sp)
+                        Text("开启后首页不显示任何漫画", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(checked = globalHide, onCheckedChange = { newHide ->
+                        globalHide = newHide
+                        prefs.edit().putBoolean("global_hide", newHide).apply()
+                        Toast.makeText(ctx, if (newHide) "已全局隐藏" else "已取消全局隐藏", Toast.LENGTH_SHORT).show()
+                    })
                 }
-                Switch(checked = globalHide, onCheckedChange = { newHide ->
-                    globalHide = newHide
-                    prefs.edit().putBoolean("global_hide", newHide).apply()
-                    Toast.makeText(ctx, if (newHide) "已全局隐藏" else "已取消全局隐藏", Toast.LENGTH_SHORT).show()
-                })
             }
             }
 
             item {
-            Row(Modifier.fillMaxWidth().padding(vertical = 12.dp).clickable { showDonation = true },
-                horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("请作者喝杯咖啡", fontSize = 16.sp)
-                    Text("随心就好，不看也没关系", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Card(Modifier.fillMaxWidth().clickable { showDonation = true }) {
+                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Favorite, null, modifier = Modifier.size(24.dp))
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("请作者喝杯咖啡", fontSize = 16.sp)
+                        Text("随心就好，不看也没关系", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Icon(Icons.Default.ChevronRight, null)
                 }
-                Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
             }
             }
 
             item {
-            HorizontalDivider()
+            Spacer(Modifier.height(16.dp))
             }
             item {
-            Spacer(Modifier.height(24.dp))
+            Text("外观（待完善）", style = MaterialTheme.typography.titleMedium)
             }
             item {
-            Text("外观（待完善）", fontSize = 18.sp, fontWeight = FontWeight.Medium)
-            }
-            item {
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(8.dp))
             }
 
             item {
             // 暗色模式切换
             var darkMode by remember { mutableStateOf(prefs.getString("dark_mode", "SYSTEM") ?: "SYSTEM") }
-            Text("暗色模式", fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(horizontal = 4.dp))
-            Spacer(Modifier.height(8.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf("亮色" to "LIGHT", "暗色" to "DARK", "系统" to "SYSTEM").forEach { (label, value) ->
-                    FilterChip(
-                        selected = darkMode == value,
-                        onClick = {
-                            darkMode = value
-                            prefs.edit().putString("dark_mode", value).apply()
-                            // 通过 recompose 生效，需要重启 activity
-                            (ctx as? android.app.Activity)?.recreate()
-                        },
-                        label = { Text(label, fontSize = 13.sp) },
-                        modifier = Modifier.weight(1f)
-                    )
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.DarkMode, null, modifier = Modifier.size(24.dp))
+                        Spacer(Modifier.width(12.dp))
+                        Text("暗色模式", fontSize = 16.sp)
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf("亮色" to "LIGHT", "暗色" to "DARK", "系统" to "SYSTEM").forEach { (label, value) ->
+                            FilterChip(
+                                selected = darkMode == value,
+                                onClick = {
+                                    darkMode = value
+                                    prefs.edit().putString("dark_mode", value).apply()
+                                    // 通过 recompose 生效，需要重启 activity
+                                    (ctx as? android.app.Activity)?.recreate()
+                                },
+                                label = { Text(label, fontSize = 13.sp) },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
                 }
             }
             }
@@ -686,7 +695,11 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
             }
             item {
             // 主题选择
-            Text("主题", fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(horizontal = 4.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Palette, null, modifier = Modifier.size(24.dp))
+                Spacer(Modifier.width(12.dp))
+                Text("主题", fontSize = 16.sp)
+            }
             Spacer(Modifier.height(8.dp))
             val currentThemeOrdinal = prefs.getInt("app_theme", 0)
             val dynamicColorEnabled = prefs.getBoolean("dynamic_color", false)
@@ -771,16 +784,14 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
             }
 
             item {
-            HorizontalDivider()
+
+            Spacer(Modifier.height(16.dp))
             }
             item {
-            Spacer(Modifier.height(24.dp))
+            Text("阅读", style = MaterialTheme.typography.titleMedium)
             }
             item {
-            Text("阅读", fontSize = 18.sp, fontWeight = FontWeight.Medium)
-            }
-            item {
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(8.dp))
             }
             item {
             Card(Modifier.fillMaxWidth().clickable { showReadingSettings = true }) {
@@ -840,10 +851,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
             }
 
             item {
-            HorizontalDivider()
-            }
-            item {
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(16.dp))
             }
             item {
             var personalNoteExpanded by remember { mutableStateOf(false) }
@@ -886,16 +894,13 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
             }
 
             item {
-            HorizontalDivider()
+            Spacer(Modifier.height(16.dp))
             }
             item {
-            Spacer(Modifier.height(24.dp))
+            Text("阅读统计", style = MaterialTheme.typography.titleMedium)
             }
             item {
-            Text("阅读统计", fontSize = 18.sp, fontWeight = FontWeight.Medium)
-            }
-            item {
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(8.dp))
             }
             item {
             Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
@@ -908,10 +913,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
             }
 
             item {
-            HorizontalDivider()
-            }
-            item {
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(16.dp))
             }
             item {
 
