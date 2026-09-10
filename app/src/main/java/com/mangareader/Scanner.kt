@@ -641,7 +641,7 @@ class Scanner(private val ctx: Context, private val dao: MangaDao) {
 
     // 递归查找文件夹内第一本漫画（按名称排序），用作封面
     private fun findFirstCoverInFolder(auth: String, treeDocId: String, folderDocId: String, depth: Int = 0): String? {
-        if (depth > 3) return null
+        if (depth > 8) return null
         val treeUri = Uri.parse("content://$auth/tree/${Uri.encode(treeDocId)}")
         val childUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, folderDocId)
         Log.d(TAG, "findFirstCover: depth=$depth folder=$folderDocId treeUri=$treeUri")
