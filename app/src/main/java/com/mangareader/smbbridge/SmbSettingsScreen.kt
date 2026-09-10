@@ -140,10 +140,10 @@ fun SmbSettingsScreen(onBack: () -> Unit, onOpenDownloadQueue: () -> Unit = {}) 
                     Icon(Icons.Default.Folder, null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
                     Spacer(Modifier.width(10.dp))
                     Column(Modifier.weight(1f)) {
-                        Text("全量下载保存路径", fontSize = 15.sp)
+                        Text("全量下载保存路径", fontSize = 16.sp)
                         Text(
                             text = downloadPath ?: "未设置（点击选择）",
-                            fontSize = 11.sp,
+                            fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
@@ -195,10 +195,10 @@ fun SmbSettingsScreen(onBack: () -> Unit, onOpenDownloadQueue: () -> Unit = {}) 
 
 @Composable
 fun SectionCard(title: String, content: @Composable ColumnScope.() -> Unit) {
-    Spacer(Modifier.height(10.dp))
-    Text(title, fontSize = 13.sp, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = 4.dp, bottom = 6.dp))
-    ElevatedCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(horizontal = 14.dp, vertical = 6.dp)) { content() }
+    Spacer(Modifier.height(16.dp))
+    Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 8.dp))
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp)) { content() }
     }
 }
 
@@ -207,8 +207,8 @@ fun SwitchRow(title: String, subtitle: String, pref: com.ehviewer.core.preferenc
     val state by pref.valueFlow().collectAsState(initial = pref.value)
     Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
-            Text(title, fontSize = 15.sp)
-            Text(subtitle, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(title, fontSize = 16.sp)
+            Text(subtitle, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Switch(checked = state, onCheckedChange = { pref.value = it })
     }
@@ -224,10 +224,10 @@ fun IntRow(title: String, subtitle: String, pref: com.ehviewer.core.preferences.
         }
     }.padding(vertical = 10.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
-            Text(title, fontSize = 15.sp)
-            Text(subtitle, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(title, fontSize = 16.sp)
+            Text(subtitle, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Text("$state", fontSize = 15.sp, color = MaterialTheme.colorScheme.primary)
+        Text("$state", fontSize = 16.sp, color = MaterialTheme.colorScheme.primary)
     }
 }
 
@@ -330,8 +330,8 @@ fun CacheManagementCard(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(Modifier.weight(1f)) {
-                    Text(e.label, fontSize = 15.sp)
-                    Text(e.subtitle, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(e.label, fontSize = 16.sp)
+                    Text(e.subtitle, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Text(
                     formatSize(size),
