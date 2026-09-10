@@ -54,6 +54,7 @@ class App : Application(), SingletonImageLoader.Factory {
                 add(com.mangareader.viewer.CoverDataKeyer)
                 add(com.mangareader.viewer.ItemCoverFetcher.Factory(engine))
                 add(com.mangareader.viewer.ItemCoverDataKeyer)
+                add(com.hippo.ehviewer.coil.HardwareBitmapInterceptor)
                 add(com.mangareader.coil.AnimatedWebPDecoder.Factory)
                 add(AnimatedImageDecoder.Factory(false))
             }
