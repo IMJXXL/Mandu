@@ -683,8 +683,12 @@ private fun BookCard(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, isS
         else -> "未读" to Color(0xFFE57373)
     }
 
-    Column(Modifier.clip(RoundedCornerShape(12.dp))
-        .combinedClickable(onClick = onTap, onLongClick = onLongClick)) {
+    Surface(
+        modifier = Modifier.combinedClickable(onClick = onTap, onLongClick = onLongClick),
+        shape = RoundedCornerShape(12.dp),
+        color = Color.Transparent,
+    ) {
+        Column {
         // ★ 远程不支持流式格式（mobi/azw3）→ 第一时间显示"需下载"占位符，不触发封面加载
         val fileName = b.filePath.substringAfterLast('/').substringBefore(':')
         val fileExt = fileName.substringAfterLast('.', "").lowercase()
@@ -768,6 +772,7 @@ private fun BookCard(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, isS
         }
         Box(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface).padding(horizontal = 8.dp, vertical = 6.dp)) {
             Text(text = b.title, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurface)
+        }
         }
     }
 }

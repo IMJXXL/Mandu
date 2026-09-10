@@ -19,8 +19,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Download
@@ -74,12 +74,15 @@ fun WebDavSettingsScreen(onBack: () -> Unit, onOpenDownloadQueue: () -> Unit = {
             )
         },
     ) { padding ->
-        Column(Modifier.padding(padding).verticalScroll(rememberScrollState()).padding(16.dp)) {
+        LazyColumn(Modifier.padding(padding).fillMaxSize().padding(16.dp)) {
 
+            item {
             SectionCard("连接与安全") {
                 SwitchRow("允许自签名/不安全证书", "自签名 NAS 或内网 HTTPS 服务打开即可连接；关闭时使用系统证书校验（更安全）", Settings.webDavInsecureTls)
             }
+            }
 
+            item {
             SectionCard("浏览行为") {
                 SwitchRow("ZIP 当文件夹浏览", "在浏览界面把 zip 归档当文件夹逐页查看", Settings.browseZipAsDir)
                 SwitchRow("显示隐藏文件", "列出以 . 开头或服务端标记隐藏的条目", Settings.browseShowHiddenFiles)
@@ -88,20 +91,26 @@ fun WebDavSettingsScreen(onBack: () -> Unit, onOpenDownloadQueue: () -> Unit = {
                 SwitchRow("浏览显示归档页数", "目录列表中显示每个归档的总页数（需要额外读取）", Settings.browseArchivePageCount)
                 SwitchRow("返回时回到目录", "从阅读退出后回到浏览目录而不是书架", Settings.alwaysExitToDir)
             }
+            }
 
+            item {
             SectionCard("目录索引与扫描") {
                 SwitchRow("目录索引缓存", "缓存目录列表与页数信息，二次进入/扫描更快", Settings.networkFolderIndexCache)
                 SwitchRow("快速扫描", "增量扫描时跳过深度 peek，更快但新目录信息可能不全", Settings.networkFolderIndexQuickScan)
                 SwitchRow("保存文件标记", "在共享目录写入标记文件辅助识别", Settings.saveFileMarkers)
             }
+            }
 
+            item {
             SectionCard("远程阅读") {
                 SwitchRow("禁用阅读网络缓存", "阅读页不落盘缓存（更省空间，但重读需重新下载）", Settings.disableReaderNetworkCache)
                 IntRow("阅读页缓存预算 (MB)", "流式页缓存的总容量上限", Settings.readCacheSize)
                 IntRow("预加载页数", "当前页之外预取的页数", Settings.preloadImage)
                 IntRow("下载线程数", "整档下载使用的并发连接数", Settings.multiThreadDownload)
             }
+            }
 
+            item {
             SectionCard("下载目录") {
                 val downloadPath by Settings.smbDownloadDirPath.collectAsState()
                 val pickDirLauncher = rememberLauncherForActivityResult(
@@ -148,7 +157,9 @@ fun WebDavSettingsScreen(onBack: () -> Unit, onOpenDownloadQueue: () -> Unit = {
                     }
                 }
             }
+            }
 
+            item {
             SectionCard("归档密码") {
                 var passwds by remember { mutableStateOf(Settings.archivePasswds) }
                 Row(
@@ -169,10 +180,13 @@ fun WebDavSettingsScreen(onBack: () -> Unit, onOpenDownloadQueue: () -> Unit = {
                     Text("编辑 ›", fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
                 }
             }
+            }
 
+            item {
             CacheManagementCard(ctx, scope, WEBDAV_CACHE_ENTRIES)
+            }
 
-            Spacer(Modifier.height(24.dp))
+            item { Spacer(Modifier.height(24.dp)) }
         }
     }
 }
