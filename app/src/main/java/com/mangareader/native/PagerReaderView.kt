@@ -28,6 +28,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -143,7 +144,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         val meta = pageList.getOrNull(idx) ?: return
         loadScope.launch {
             val kind = withContext(Dispatchers.IO) {
-                try { e.peekAnimKind(treePath, meta) } catch (_: Exception) {
+                try { e.peekAnimKindFast(treePath, meta) } catch (_: Exception) {
                     AnimKind.NONE
                 }
             }
@@ -151,34 +152,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             pageAnimFlags = pageAnimFlags + AnimFlag(idx, kind)
             if (kind != AnimKind.NONE) {
                 animatedCount++
-                // ★ Bug C-2 修复：peek 完判定为动图后，立刻预构 drawable 入 pageAnimDrawables map，
-                //   不等 onBindViewHolder → loadAnimPageAsync → IO + makeAnimDrawable 的 360ms 串行延迟。
-                //   这样翻页瞬间 startAnimIfNotRunning 能命中 map → START OK 无空窗闪白。
-                //   预构不设到任何 ImageView（此时无 holder），只入 map + 入 raw cache 复用。
-                if (pageAnimDrawables[idx] == null && !inflightAnimLoads.contains(idx)) {
-                    inflightAnimLoads.add(idx)
-                    val preRaw = withContext(Dispatchers.IO) {
-                        try { e.loadPageRaw(meta, treePath) } catch (_: Exception) {
-                            null
-                        }
-                    }
-                    if (preRaw != null) {
-                        synchronized(animRawCache) {
-                            animRawCache[idx] = preRaw
-                            while (animRawCache.size > 6) {
-                                val it = animRawCache.entries.iterator()
-                                if (it.hasNext()) { it.next(); it.remove() } else break
-                            }
-                        }
-                        val preDrawable = withContext(Dispatchers.IO) {
-                            try { makeAnimDrawable(preRaw, kind) } catch (_: Exception) { null }
-                        }
-                        if (preDrawable != null && pageAnimDrawables[idx] == null) {
-                            pageAnimDrawables[idx] = preDrawable
-                        }
-                    }
-                    inflightAnimLoads.remove(idx)
-                }
+
                 withContext(Dispatchers.Main) { pagerAdapter?.notifyItemChanged(idx, "anim") }
                 if (animatedCount >= com.mangareader.ui.ReaderParams.ANIM_PROMPT_THRESHOLD) {
                     onAnimDetected?.invoke(animatedCount)
@@ -471,7 +445,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                             if (flag.kind == AnimKind.NONE) continue
                             val pos = if (isRtl) pageList.size - 1 - target else target
                             if (lm.findViewByPosition(pos) != null) {
-                                pagerAdapter?.notifyItemChanged(pos, "anim")
+                                rv.post { pagerAdapter?.notifyItemChanged(pos, "anim") }
                             }
                         }
                     }
@@ -749,6 +723,11 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
      */
     fun goToPage(page: Int, smooth: Boolean) {
         if (page < 0 || page >= pageList.size) return
+        val distance = kotlin.math.abs(page - currentPage)
+        if (distance > 5) {
+            loadScope.coroutineContext.cancelChildren()
+            inflightAnimLoads.clear()
+        }
         val pos = positionOf(page)
         val animate = smooth && flipAnimationEnabled && !verticalPager
         viewPager.setCurrentItem(pos.coerceIn(0, pagerAdapter?.itemCount?.minus(1) ?: 0), animate)

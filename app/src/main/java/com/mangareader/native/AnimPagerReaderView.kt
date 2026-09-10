@@ -236,7 +236,7 @@ class AnimPagerReaderView(context: Context) : FrameLayout(context), ReaderViewDe
     private suspend fun peekAnimKindSuspend(idx: Int): AnimKind {
         val e = engine ?: return AnimKind.NONE
         val meta = pageList.getOrNull(idx) ?: return AnimKind.NONE
-        return try { e.peekAnimKind(treePath, meta) } catch (_: Exception) {
+        return try { e.peekAnimKindFast(treePath, meta) } catch (_: Exception) {
             AnimKind.NONE
         }
     }

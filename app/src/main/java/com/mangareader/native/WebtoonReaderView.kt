@@ -454,6 +454,9 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
         //   landed f≈p 正常放行；真异常偏离则 re-anchor 到 p=重试完成用户指令，语义完全正向。
         //   （非窗口期赋值无读者，无害；下次 setup 由 doScrollAndFinalize 重置）
         pendingAnchorSp = p
+        if (distance > 5) {
+            loadScope.coroutineContext.cancelChildren()
+        }
         recycler.scrollToPosition(p)
         preloadAround(p, jump = distance > 5)
     }
@@ -785,7 +788,7 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
             if (pageAnimFlags.any { it.pageIdx == pos }) return  // 已 peek 过
             loadScope.launch {
                 val kind = withContext(Dispatchers.IO) {
-                    try { e.peekAnimKind(treePath, meta) } catch (_: Exception) { AnimKind.NONE }
+                    try { e.peekAnimKindFast(treePath, meta) } catch (_: Exception) { AnimKind.NONE }
                 }
                 if (pageAnimFlags.any { it.pageIdx == pos }) return@launch  // 防 race
                 pageAnimFlags = pageAnimFlags + AnimFlag(pos, kind)
