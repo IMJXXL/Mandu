@@ -262,31 +262,31 @@ interface MangaDao {
     suspend fun restoreBookToRemote(id: Long)
 
     /** ★ 删除 SMB 服务器时级联清理其书籍（spec 5.1 级联清理；仅新增） */
-    @Query("DELETE FROM manga_books WHERE source = 'smb' AND filePath LIKE 'smb:' || :serverId || ':%'")
+    @Query("DELETE FROM manga_books WHERE (source = 'smb' AND filePath LIKE 'smb:' || :serverId || ':%') OR (source = 'local' AND originalPath LIKE 'smb:' || :serverId || ':%')")
     suspend fun deleteSmbBooks(serverId: Long)
 
-    /** ★ SMB 书源整源隐藏/显示（对齐本地文件夹的隐藏机制；仅新增） */
-    @Query("UPDATE manga_books SET isHidden = :hidden WHERE source = 'smb' AND filePath LIKE 'smb:' || :serverId || ':%'")
+    /** ★ SMB 书源整源隐藏/显示（对齐本地文件夹的隐藏机制；含已下载到本地的书） */
+    @Query("UPDATE manga_books SET isHidden = :hidden WHERE (source = 'smb' AND filePath LIKE 'smb:' || :serverId || ':%') OR (source = 'local' AND originalPath LIKE 'smb:' || :serverId || ':%')")
     suspend fun setSmbBooksHidden(serverId: Long, hidden: Boolean)
 
-    @Query("SELECT COUNT(*) FROM manga_books WHERE source = 'smb' AND filePath LIKE 'smb:' || :serverId || ':%' AND isHidden = 1")
+    @Query("SELECT COUNT(*) FROM manga_books WHERE ((source = 'smb' AND filePath LIKE 'smb:' || :serverId || ':%') OR (source = 'local' AND originalPath LIKE 'smb:' || :serverId || ':%')) AND isHidden = 1")
     suspend fun countSmbHiddenBooks(serverId: Long): Int
 
-    @Query("SELECT * FROM manga_books WHERE source = 'smb' AND filePath LIKE 'smb:' || :serverId || ':%'")
+    @Query("SELECT * FROM manga_books WHERE (source = 'smb' AND filePath LIKE 'smb:' || :serverId || ':%') OR (source = 'local' AND originalPath LIKE 'smb:' || :serverId || ':%')")
     suspend fun getSmbBooks(serverId: Long): List<Book>
 
-    @Query("SELECT * FROM manga_books WHERE source = 'webdav' AND filePath LIKE 'webdav:' || :serverId || ':%'")
+    @Query("SELECT * FROM manga_books WHERE (source = 'webdav' AND filePath LIKE 'webdav:' || :serverId || ':%') OR (source = 'local' AND originalPath LIKE 'webdav:' || :serverId || ':%')")
     suspend fun getWebDavBooks(serverId: Long): List<Book>
 
-    /** ★ WebDAV 书源整源隐藏/显示（仅新增） */
-    @Query("UPDATE manga_books SET isHidden = :hidden WHERE source = 'webdav' AND filePath LIKE 'webdav:' || :serverId || ':%'")
+    /** ★ WebDAV 书源整源隐藏/显示（含已下载到本地的书） */
+    @Query("UPDATE manga_books SET isHidden = :hidden WHERE (source = 'webdav' AND filePath LIKE 'webdav:' || :serverId || ':%') OR (source = 'local' AND originalPath LIKE 'webdav:' || :serverId || ':%')")
     suspend fun setWebDavBooksHidden(serverId: Long, hidden: Boolean)
 
-    @Query("SELECT COUNT(*) FROM manga_books WHERE source = 'webdav' AND filePath LIKE 'webdav:' || :serverId || ':%' AND isHidden = 1")
+    @Query("SELECT COUNT(*) FROM manga_books WHERE ((source = 'webdav' AND filePath LIKE 'webdav:' || :serverId || ':%') OR (source = 'local' AND originalPath LIKE 'webdav:' || :serverId || ':%')) AND isHidden = 1")
     suspend fun countWebDavHiddenBooks(serverId: Long): Int
 
-    /** ★ 删除 WebDAV 服务器时级联清理其书籍（spec 5.7 级联清理；仅新增） */
-    @Query("DELETE FROM manga_books WHERE source = 'webdav' AND filePath LIKE 'webdav:' || :serverId || ':%'")
+    /** ★ 删除 WebDAV 服务器时级联清理其书籍（含已下载到本地的书） */
+    @Query("DELETE FROM manga_books WHERE (source = 'webdav' AND filePath LIKE 'webdav:' || :serverId || ':%') OR (source = 'local' AND originalPath LIKE 'webdav:' || :serverId || ':%')")
     suspend fun deleteWebDavBooks(serverId: Long)
 
     @Update

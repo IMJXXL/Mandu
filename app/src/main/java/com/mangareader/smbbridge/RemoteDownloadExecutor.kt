@@ -4,7 +4,6 @@ import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
 import com.hippo.ehviewer.Settings
-import com.mangareader.data.Book
 import com.mangareader.data.MangaDatabase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -19,7 +18,6 @@ object RemoteDownloadExecutor {
         }
 
         val fileName = task.sourcePath.substringAfterLast('/')
-        val ext = fileName.substringAfterLast('.', "").lowercase()
         val treeUri = Uri.parse(treeUriStr)
 
         val cachePath = try {
@@ -76,27 +74,21 @@ object RemoteDownloadExecutor {
         out.use { o -> srcFile.inputStream().use { it.copyTo(o) } }
 
         val docId = DocumentsContract.getDocumentId(destUri)
-        val treePath = treeUri.lastPathSegment?.removePrefix("tree/") ?: ""
-        val auth = treeUri.authority ?: ""
-        val safPath = "a:$auth|$treePath|$docId|$ext"
-        val coverPath = "cv:$auth|$treePath|$docId|$fileName"
+        val realPath = if (docId.startsWith("primary:")) {
+            android.os.Environment.getExternalStorageDirectory().absolutePath + "/" + docId.substringAfter("primary:")
+        } else {
+            destUri.toString()
+        }
 
         val dao = MangaDatabase.getDatabase(ctx).mangaDao()
         if (task.bookId > 0) {
-            val book = dao.getBookById(task.bookId)
-            if (book != null) {
-                runCatching { dao.updateBook(book.copy(filePath = safPath, source = "local", fileType = ext, coverPath = coverPath, originalPath = task.sourcePath)) }
-                coil3.SingletonImageLoader.get(ctx).memoryCache?.clear()
-            }
+            runCatching { dao.rehomeBookToLocal(task.bookId, realPath) }
         } else {
             val book = dao.getBookByPath(task.sourcePath)
             if (book != null) {
-                runCatching { dao.updateBook(book.copy(filePath = safPath, source = "local", fileType = ext, coverPath = coverPath, originalPath = task.sourcePath)) }
-            } else {
-                runCatching { dao.insertBook(Book(title = task.title, filePath = safPath, fileType = ext, source = "local", coverPath = coverPath, originalPath = task.sourcePath)) }
+                runCatching { dao.rehomeBookToLocal(book.id, realPath) }
             }
-            coil3.SingletonImageLoader.get(ctx).memoryCache?.clear()
         }
-        safPath
+        realPath
     }
 }
