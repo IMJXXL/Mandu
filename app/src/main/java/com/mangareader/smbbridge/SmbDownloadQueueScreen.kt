@@ -154,6 +154,12 @@ private fun DownloadTaskCard(
                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                             )
                         }
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            if (task.sourceKind == "smb") "SMB" else "WebDAV",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                         if (task.totalBytes > 0) {
                             Spacer(Modifier.width(8.dp))
                             Text(
