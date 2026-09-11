@@ -652,6 +652,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
                 // ★ 先尝试 SAF 路径（zip/cbz 等），空则转文件系统路径走 enterLocalArchiveReader（mobi/azw3）
                 val safPages = withContext(Dispatchers.IO) { runCatching { engine.listPages(cachePath) }.getOrDefault(emptyList()) }
                 if (safPages.isNotEmpty()) {
+                    navStack = listOf(cachePath)
                     return enterReader(cachePath, targetPage)
                 } else {
                     // a:auth|treePath|docId|ext → primary:xxx → /storage/emulated/0/xxx
