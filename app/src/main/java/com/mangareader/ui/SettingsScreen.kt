@@ -830,8 +830,8 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
                     Icon(Icons.Default.Cloud, null, modifier = Modifier.size(24.dp))
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
-                        Text("WebDAV 服务器管理", fontSize = 16.sp)
-                        Text("配置 WebDAV 网盘并在线阅读远端漫画（Beta）", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("WebDAV 服务器管理（Beta）", fontSize = 16.sp)
+                        Text("配置 WebDAV 网盘并在线阅读远端漫画", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Icon(Icons.Default.ChevronRight, null)
                 }
@@ -841,49 +841,8 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
             item {
             Spacer(Modifier.height(16.dp))
             }
-            item {
-            var personalNoteExpanded by remember { mutableStateOf(false) }
-            Card(
-                Modifier.fillMaxWidth().clickable { personalNoteExpanded = !personalNoteExpanded },
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-            ) {
-                Column(Modifier.padding(16.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("私心没放关于", fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
-                        Icon(
-                            if (personalNoteExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    if (personalNoteExpanded) {
-                        Spacer(Modifier.height(8.dp))
-                        Text("    大家好，我是瑾轩小狼。", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text("    最开始做漫读，不过是想打造一款贴合自身习惯的本地漫画阅读工具。iOS 平台的可达阅读器堪称标杆，我一直十分推崇；安卓端其实也有不少成熟优质的阅读软件，只是都不太契合我的使用习惯，于是决定从零独立开发。", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text("    每个人的使用偏好各不相同，漫读未必适合所有人，大家可以多体验几款软件，总能找到心仪的那一款。", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Spacer(Modifier.height(4.dp))
-                        Text("    项目全程利用业余碎片时间开发，前后耗时三周左右。原本计划加入 SMB 文件读取以及图片无损放大功能，空余精力有限，相关逻辑始终没能调试完善， SMB 最后只能忍痛舍弃。而图片无损放大（超分）已在后续版本补回：AI 实时放大、批量离线超分、预加载、渐进式替换与黑白漫画优化均已可用，入口在漫画阅读器底部工具栏的【超分】。", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text("    受自身技术水平局限，成品距离标杆软件还有不小差距，程序内仍存在不少待修复 bug，好在主体功能均可正常使用，便先行定稿发布。", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text("    整个项目前后推倒重写三次，反复迭代优化；还有一处兼容问题始终没能解决，高版本安卓系统下，滑动动画流畅度反而不及低版本，暂时没能找到问题根源。", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Spacer(Modifier.height(4.dp))
-                        Text("    本软件为纯个人业余开发，全程免费，没有任何商业收益。如果这款阅读器用着合你的心意，欢迎添加 ", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text("QQ：1173350134（点击可复制）", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary, modifier = Modifier.clickable {
-                            val clipboard = ctx.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                            clipboard.setPrimaryClip(android.content.ClipData.newPlainText("QQ", "1173350134"))
-                            android.widget.Toast.makeText(ctx, "QQ 号已复制", android.widget.Toast.LENGTH_SHORT).show()
-                        })
-                        Text("    ，请我喝杯咖啡，随心就好。", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Spacer(Modifier.height(4.dp))
-                        Text("    特别感谢身边亲友的鼎力支持：", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.primary)
-                        Text("    感谢晓萌抽空为本项目绘制专属 Logo，感谢染林同学耐心测试，及时反馈各类问题；更要谢谢我的妻子，包容我占用大量空余时间投入开发，给予我充足的理解与支持。", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-            }
-            }
 
-            item {
-            Spacer(Modifier.height(16.dp))
-            }
+
             item {
 
 

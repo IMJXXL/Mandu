@@ -126,28 +126,30 @@ class MainActivity : ComponentActivity() {
                 // 仅安装后首次打开弹出
                 val personalNoteShown = remember { mutableStateOf(prefs.getBoolean("personal_note_shown", false)) }
                 if (!personalNoteShown.value) {
+                    var countdown by remember { mutableStateOf(3) }
+                    LaunchedEffect(Unit) {
+                        while (countdown > 0) {
+                            kotlinx.coroutines.delay(1000)
+                            countdown--
+                        }
+                    }
                     AlertDialog(
                         onDismissRequest = { },
                         modifier = Modifier.fillMaxWidth(0.95f),
                         title = { Text("大家好，我是瑾轩小狼") },
                         text = {
                             Column(Modifier.verticalScroll(rememberScrollState())) {
-                                Text("    最开始做漫读，不过是想打造一款贴合自身习惯的本地漫画阅读工具。iOS 平台的可达阅读器堪称标杆，我一直十分推崇；安卓端其实也有不少成熟优质的阅读软件，只是都不太契合我的使用习惯，于是决定从零独立开发。")
+                                Text("    漫读是一款安卓本地漫画阅读器，全程免费、无广告、无任何商业收益。")
                                 Spacer(Modifier.height(8.dp))
-                                Text("    每个人的使用偏好各不相同，漫读未必适合所有人，大家可以多体验几款软件，总能找到心仪的那一款。")
+                                Text("    开发不易，如果用着合心意，欢迎点击左上角的「瑾」字请我喝杯咖啡；遇到问题或建议，也可以直接加 QQ 反馈。")
                                 Spacer(Modifier.height(8.dp))
-                                Text("    项目全程利用业余碎片时间开发，前后耗时三周左右。原本计划加入 SMB 文件读取以及图片无损放大功能，空余精力有限，SMB 最后只能忍痛舍弃；而图片无损放大（超分）已在后续版本补回——入口在漫画阅读器底部工具栏的【超分】。")
-                                Text("    受自身技术水平局限，成品距离标杆软件还有不小差距，程序内仍存在不少待修复 bug，好在主体功能均可正常使用，便先行定稿发布。")
-                                Text("    整个项目前后推倒重写三次，反复迭代优化；还有一处兼容问题始终没能解决，高版本安卓系统下，滑动动画流畅度反而不及低版本，暂时没能找到问题根源。")
-                                Spacer(Modifier.height(8.dp))
-                                Text("    本软件为纯个人业余开发，全程免费，没有任何商业收益。如果这款阅读器用着合你的心意，欢迎添加QQ：1173350134（点击可复制），请我喝杯咖啡，随心就好。", color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.clickable {
+                                Text("QQ：1173350134（点击可复制）", color = MaterialTheme.colorScheme.primary, modifier = Modifier.clickable {
                                     val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
                                     cm.setPrimaryClip(android.content.ClipData.newPlainText("QQ", "1173350134"))
                                     android.widget.Toast.makeText(this@MainActivity, "QQ号已复制", android.widget.Toast.LENGTH_SHORT).show()
                                 })
                                 Spacer(Modifier.height(8.dp))
-                                Text("    特别感谢身边亲友的鼎力支持：", color = MaterialTheme.colorScheme.primary)
-                                Text("    感谢晓萌抽空为本项目绘制专属 Logo，感谢染林同学耐心测试，及时反馈各类问题；更要谢谢我的妻子，包容我占用大量空余时间投入开发，给予我充足的理解与支持。")
+                                Text("    特别感谢晓萌绘制 Logo，染林同学耐心测试。")
                                 Spacer(Modifier.height(12.dp))
                                 HorizontalDivider()
                                 Spacer(Modifier.height(8.dp))
@@ -155,10 +157,13 @@ class MainActivity : ComponentActivity() {
                             }
                         },
                         confirmButton = {
-                            TextButton(onClick = {
-                                personalNoteShown.value = true
-                                prefs.edit().putBoolean("personal_note_shown", true).apply()
-                            }) { Text("阅") }
+                            TextButton(
+                                onClick = {
+                                    personalNoteShown.value = true
+                                    prefs.edit().putBoolean("personal_note_shown", true).apply()
+                                },
+                                enabled = countdown == 0
+                            ) { Text(if (countdown > 0) "阅 ($countdown)" else "阅") }
                         }
                     )
                 }

@@ -12,6 +12,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -96,6 +97,18 @@ fun DonationDialog(onDismiss: () -> Unit) {
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center
+                )
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    "有问题或建议，也可以直接加 QQ 反馈：1173350134（点击复制）",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.primary,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.clickable {
+                        val clipboard = ctx.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("QQ", "1173350134"))
+                        Toast.makeText(ctx, "QQ 号已复制", Toast.LENGTH_SHORT).show()
+                    }
                 )
                 Spacer(Modifier.height(16.dp))
                 TextButton(onClick = onDismiss) { Text("关闭") }
