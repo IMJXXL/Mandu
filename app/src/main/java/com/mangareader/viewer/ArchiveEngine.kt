@@ -2405,6 +2405,33 @@ class ArchiveEngine(private val ctx: Context) {
     }
 
     private fun listDir(tree: Uri, doc: String, auth: String, treeId: String): List<Item> {
+        // ★ 快速路径：用真实路径列目录，跳过 SAF Binder 调用
+        //   1068 文件目录 SAF query 耗时 1.5s；File.listFiles() <50ms
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R && android.os.Environment.isExternalStorageManager()) {
+            try {
+                val dirUri = DocumentsContract.buildDocumentUriUsingTree(tree, doc)
+                val dirFile = resolveRealDir(dirUri)
+                if (dirFile != null && dirFile.exists() && dirFile.isDirectory) {
+                    val files = dirFile.listFiles()
+                    if (files != null) {
+                        val fastItems = mutableListOf<Item>()
+                        for (f in files) {
+                            val n = f.name
+                            val isDir = f.isDirectory
+                            if (isDir || isComic(n)) {
+                                val childDocId = "$doc/$n"
+                                val itemSubPath = if (isDir) "d:$auth|$treeId|$childDocId"
+                                    else "a:$auth|$treeId|$childDocId|${n.substringAfterLast(".").lowercase()}"
+                                fastItems.add(Item(n, auth, treeId, childDocId, isDir, itemSubPath))
+                            }
+                        }
+                        d(TAG, "listDirFast: ${fastItems.size} items from ${dirFile.absolutePath}")
+                        return fastItems.sortedWith(compareByDescending<Item> { it.dir }.thenComparing({ it.name }, NaturalComparator))
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+        // 降级：SAF 查询
         val items = mutableListOf<Item>()
         try {
             val child = DocumentsContract.buildChildDocumentsUriUsingTree(tree, doc)
