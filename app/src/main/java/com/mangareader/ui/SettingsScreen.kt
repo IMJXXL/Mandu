@@ -23,6 +23,7 @@ import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -98,6 +99,11 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
             folderHiddenMap = map
         }
     }
+
+    var draggedIndex by remember { mutableIntStateOf(-1) }
+    var dragOffset by remember { mutableFloatStateOf(0f) }
+    val shelfDensity = LocalDensity.current.density
+    val shelfItemHeight = 52f
 
     var showScrollModeDialog by remember { mutableStateOf(false) }
     var showClickFlipDialog by remember { mutableStateOf(false) }
@@ -547,21 +553,17 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
             }
             item {
             if (bookshelves.isEmpty()) Text("还没有书架", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            else {
-                var draggedIndex by remember { mutableIntStateOf(-1) }
-                var dragOffset by remember { mutableFloatStateOf(0f) }
-                val density = LocalDensity.current.density
-                val itemHeight = 52f
-                bookshelves.forEachIndexed { index, shelf ->
-                    val maxUp = index * itemHeight
-                    val maxDown = (bookshelves.size - 1 - index) * itemHeight
+            }
+            itemsIndexed(bookshelves, key = { _, it -> it.id }) { index, shelf ->
+                    val maxUp = index * shelfItemHeight
+                    val maxDown = (bookshelves.size - 1 - index) * shelfItemHeight
                     Surface(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(vertical = 2.dp)
                             .graphicsLayer {
                                 if (draggedIndex == index) {
-                                    translationY = dragOffset.coerceIn(-maxUp, maxDown) * density
+                                    translationY = dragOffset.coerceIn(-maxUp, maxDown) * shelfDensity
                                     shadowElevation = 8f
                                 }
                             }
@@ -569,9 +571,8 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
                                 detectDragGesturesAfterLongPress(
                                     onDragStart = { draggedIndex = index },
                                     onDragEnd = {
-                                        // 拖拽结束时一次性写入数据库
                                         if (draggedIndex >= 0 && draggedIndex < bookshelves.size) {
-                                            val finalIndex = (draggedIndex + (dragOffset / itemHeight).toInt()).coerceIn(0, bookshelves.size - 1)
+                                            val finalIndex = (draggedIndex + (dragOffset / shelfItemHeight).toInt()).coerceIn(0, bookshelves.size - 1)
                                             if (finalIndex != draggedIndex) {
                                                 val mutable = bookshelves.toMutableList()
                                                 val item = mutable.removeAt(draggedIndex)
@@ -589,8 +590,8 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
                                     onDragCancel = { draggedIndex = -1; dragOffset = 0f },
                                     onDrag = { change, dragAmount ->
                                         change.consume()
-                                        val maxUp2 = draggedIndex * itemHeight
-                                        val maxDown2 = (bookshelves.size - 1 - draggedIndex) * itemHeight
+                                        val maxUp2 = draggedIndex * shelfItemHeight
+                                        val maxDown2 = (bookshelves.size - 1 - draggedIndex) * shelfItemHeight
                                         dragOffset = (dragOffset + dragAmount.y).coerceIn(-maxUp2, maxDown2)
                                     }
                                 )
@@ -608,8 +609,6 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
                             IconButton(onClick = { showDeleteShelf = shelf }) { Icon(Icons.Default.Delete, "删除", modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.error) }
                         }
                     }
-                }
-            }
             }
 
             item {
@@ -688,9 +687,9 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
                     Spacer(Modifier.height(16.dp))
 
                     Spacer(Modifier.height(8.dp))
-                    val currentThemeOrdinal = prefs.getInt("app_theme", 0)
-                    val dynamicColorEnabled = prefs.getBoolean("dynamic_color", false)
-                    val currentDarkMode = prefs.getString("dark_mode", "SYSTEM") ?: "SYSTEM"
+                    val currentThemeOrdinal = remember { prefs.getInt("app_theme", 0) }
+                    val dynamicColorEnabled = remember { prefs.getBoolean("dynamic_color", false) }
+                    val currentDarkMode = remember { prefs.getString("dark_mode", "SYSTEM") ?: "SYSTEM" }
                     val previewIsDark = when (currentDarkMode) {
                         "LIGHT" -> false
                         "DARK" -> true
