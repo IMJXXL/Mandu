@@ -123,3 +123,33 @@ class CoverFetcher(
 object CoverDataKeyer : Keyer<CoverData> {
     override fun key(data: CoverData, options: Options): String = "${data.path}#dyn=${data.dynOn}"
 }
+
+class ItemCoverFetcher(
+    private val engine: ArchiveEngine,
+    private val item: ArchiveEngine.Item,
+    private val options: Options,
+) : Fetcher {
+    override suspend fun fetch(): FetchResult {
+        val bitmap = withContext(Dispatchers.IO) {
+            try { engine.loadCoverForItem(item) } catch (e: Exception) { null }
+        } ?: throw RuntimeException("Item cover load failed: ${item.name}")
+        val baos = java.io.ByteArrayOutputStream()
+        bitmap.compress(Bitmap.CompressFormat.JPEG, 90, baos)
+        val bytes = baos.toByteArray()
+        return SourceFetchResult(
+            source = ImageSource(source = Buffer().write(bytes), fileSystem = options.fileSystem),
+            mimeType = "image/jpeg",
+            dataSource = DataSource.MEMORY,
+        )
+    }
+
+    class Factory(private val engine: ArchiveEngine) : Fetcher.Factory<ArchiveEngine.Item> {
+        override fun create(data: ArchiveEngine.Item, options: Options, imageLoader: ImageLoader): Fetcher? =
+            ItemCoverFetcher(engine, data, options)
+    }
+}
+
+object ItemCoverKeyer : Keyer<ArchiveEngine.Item> {
+    override fun key(data: ArchiveEngine.Item, options: Options): String =
+        "itemcover:${data.auth}|${data.tree}|${data.doc}|${data.subPath}"
+}

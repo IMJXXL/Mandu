@@ -7,11 +7,13 @@ import android.os.Looper
 import android.util.Log
 import com.mangareader.data.MangaDatabase
 import com.mangareader.viewer.ArchiveEngine
+import android.app.ActivityManager
 import coil3.ImageLoader
 import coil3.SingletonImageLoader
 import coil3.disk.DiskCache
 import coil3.gif.AnimatedImageDecoder
 import coil3.memory.MemoryCache
+import coil3.request.allowRgb565
 import coil3.request.crossfade
 import coil3.serviceLoaderEnabled
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -47,11 +49,20 @@ class App : Application(), SingletonImageLoader.Factory {
                     .build()
             }
             .crossfade(300)
+            .allowRgb565(run {
+                val mi = ActivityManager.MemoryInfo()
+                (getSystemService(ACTIVITY_SERVICE) as? ActivityManager)?.getMemoryInfo(mi)
+                mi.totalMem < 3L * 1024 * 1024 * 1024
+            })
+            .fetcherCoroutineContext(Dispatchers.IO.limitedParallelism(8))
+            .decoderCoroutineContext(Dispatchers.IO.limitedParallelism(3))
             .serviceLoaderEnabled(false)
             .components {
 
                 add(com.mangareader.viewer.CoverFetcher.Factory(engine))
                 add(com.mangareader.viewer.CoverDataKeyer)
+                add(com.mangareader.viewer.ItemCoverFetcher.Factory(engine))
+                add(com.mangareader.viewer.ItemCoverKeyer)
                 add(com.mangareader.coil.AnimatedWebPDecoder.Factory)
                 add(AnimatedImageDecoder.Factory(false))
             }

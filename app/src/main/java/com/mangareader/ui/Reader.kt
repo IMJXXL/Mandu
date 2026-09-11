@@ -2215,35 +2215,16 @@ private fun ItemGrid(items: List<ArchiveEngine.Item>, engine: ArchiveEngine, bgC
 @Composable
 private fun ItemCard(item: ArchiveEngine.Item, engine: ArchiveEngine, bgColor: Color, progress: List<ReadingProgress>, tap: () -> Unit) {
 
-    var cover by remember(item.doc, item.subPath) { mutableStateOf<Bitmap?>(null) }
-    LaunchedEffect(item.doc, item.subPath) {
-        cover = null
-        withContext(Dispatchers.IO) { try { cover = engine.loadCoverForItem(item) } catch (_: Exception) { cover = null } }
-    }
     val status = remember(progress, item.name) { com.mangareader.ui.statusForItem(item, progress) }
     Column(Modifier.clip(RoundedCornerShape(12.dp)).clickable(onClick = tap).shadow(4.dp, RoundedCornerShape(12.dp))) {
         Box(Modifier.fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)).background(bgColor.copy(alpha = 0.8f)), contentAlignment = Alignment.Center) {
 
-            if (cover != null) {
-                val bitmap = cover!!
-                // ★ 复查修复（2026-09-06）：按 ContentScale.Crop 语义缩放居中绘制 ——
-                //   原写法 drawImage 按像素原尺寸画，与组件 0.72 宽高比不匹配时会溢出/留空边。
-                Canvas(modifier = Modifier.fillMaxSize()) {
-                    val iw = bitmap.width.toFloat()
-                    val ih = bitmap.height.toFloat()
-                    if (iw >= 1f && ih >= 1f) {
-                        val s = maxOf(size.width / iw, size.height / ih)
-                        val dx = (size.width - iw * s) / 2f
-                        val dy = (size.height - ih * s) / 2f
-                        withTransform({
-                            translate(dx, dy)
-                            scale(s, s, pivot = Offset.Zero)
-                        }) {
-                            drawImage(bitmap.asImageBitmap())
-                        }
-                    }
-                }
-            }
+            coil3.compose.AsyncImage(
+                model = item,
+                contentDescription = item.name,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+            )
 
             Box(Modifier.fillMaxWidth().height(36.dp).align(Alignment.BottomCenter).background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.5f)))))
             // ★ §37(17) 状态徽章——三态都画（已读完绿、阅读中橙、未读红），替代原"文件夹/压缩包"类型标签
