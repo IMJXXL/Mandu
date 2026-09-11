@@ -652,6 +652,12 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
                 // ★ 先尝试 SAF 路径（zip/cbz 等），空则转文件系统路径走 enterLocalArchiveReader（mobi/azw3）
                 val safPages = withContext(Dispatchers.IO) { runCatching { engine.listPages(cachePath) }.getOrDefault(emptyList()) }
                 if (safPages.isNotEmpty()) {
+                    withContext(Dispatchers.IO) {
+                        val oldProgress = dao.getProgress(b.id, path)
+                        if (oldProgress != null && dao.getProgress(b.id, cachePath) == null) {
+                            dao.upsertProgress(b.id, cachePath, oldProgress.lastPage, oldProgress.completed, oldProgress.updatedAt, oldProgress.totalPages)
+                        }
+                    }
                     navStack = listOf(cachePath)
                     return enterReader(cachePath, targetPage)
                 } else {

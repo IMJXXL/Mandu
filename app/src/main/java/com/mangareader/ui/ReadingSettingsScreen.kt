@@ -199,7 +199,7 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
                 Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("HDR 显示", fontSize = 16.sp)
-                        Text("开启后阅读 HDR 图片时屏幕切换到 HDR 模式，展现完整亮度范围；需 HDR 屏支持，非 HDR 屏自动回退", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("开启后阅读 HDR 图片时屏幕切换到 HDR 模式；需 HDR 屏支持，低亮度屏（<600nit）开启后可能发黄", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     var hdrDisplay by remember { mutableStateOf(Settings.readerHdrDisplay.value) }
                     Switch(

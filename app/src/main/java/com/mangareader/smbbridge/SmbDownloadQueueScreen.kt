@@ -31,6 +31,11 @@ import androidx.compose.ui.unit.sp
 fun SmbDownloadQueueScreen(onBack: () -> Unit, onOpenBook: ((Long) -> Unit)? = null) {
     val tasks by SmbDownloadQueue.tasks.collectAsState()
     var taskToDelete by remember { mutableStateOf<DownloadTask?>(null) }
+    var showClearDialog by remember { mutableStateOf(false) }
+    var showInvalidDialog by remember { mutableStateOf(false) }
+    var invalidCount by remember { mutableStateOf(0) }
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val dao = remember { com.mangareader.data.MangaDatabase.getDatabase(ctx).mangaDao() }
 
     Scaffold(
         topBar = {
@@ -40,8 +45,19 @@ fun SmbDownloadQueueScreen(onBack: () -> Unit, onOpenBook: ((Long) -> Unit)? = n
                 actions = {
                     val hasFinished = tasks.any { it.status == DownloadStatus.Completed || it.status == DownloadStatus.Failed }
                     if (hasFinished) {
-                        TextButton(onClick = { SmbDownloadQueue.clearCompleted() }) {
+                        TextButton(onClick = { showClearDialog = true }) {
                             Text("清空已完成")
+                        }
+                    }
+                    val hasInvalid = tasks.any { it.status == DownloadStatus.Completed && it.localPath != null && it.bookId > 0 && !java.io.File(it.localPath).exists() }
+                    if (hasInvalid) {
+                        TextButton(onClick = {
+
+                            val bookIds = SmbDownloadQueue.removeInvalid(dao)
+                            invalidCount = bookIds.size
+                            showInvalidDialog = true
+                        }) {
+                            Text("移除失效")
                         }
                     }
                 },
@@ -106,6 +122,36 @@ fun SmbDownloadQueueScreen(onBack: () -> Unit, onOpenBook: ((Long) -> Unit)? = n
                 }
             },
             dismissButton = { TextButton(onClick = { taskToDelete = null }) { Text("取消") } },
+        )
+    }
+
+    if (showClearDialog) {
+        AlertDialog(
+            onDismissRequest = { showClearDialog = false },
+            title = { Text("清空已完成") },
+            text = { Text("将清空所有已完成和失败的下载任务。\n\n选择是否同时删除已下载的文件。") },
+            confirmButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = {
+                        SmbDownloadQueue.clearCompleted(deleteFile = true)
+                        showClearDialog = false
+                    }) { Text("删除文件+任务", color = MaterialTheme.colorScheme.error) }
+                    TextButton(onClick = {
+                        SmbDownloadQueue.clearCompleted(deleteFile = false)
+                        showClearDialog = false
+                    }) { Text("仅删任务") }
+                }
+            },
+            dismissButton = { TextButton(onClick = { showClearDialog = false }) { Text("取消") } },
+        )
+    }
+
+    if (showInvalidDialog) {
+        AlertDialog(
+            onDismissRequest = { showInvalidDialog = false },
+            title = { Text("移除失效任务") },
+            text = { Text("已移除 $invalidCount 本本地文件不存在的书籍及其下载任务。") },
+            confirmButton = { TextButton(onClick = { showInvalidDialog = false }) { Text("确定") } },
         )
     }
 }

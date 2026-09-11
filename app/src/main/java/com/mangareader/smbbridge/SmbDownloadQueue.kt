@@ -130,13 +130,51 @@ object SmbDownloadQueue {
         scope.launch { dao?.deleteDownloadTask(id) }
     }
 
-    fun clearCompleted() {
+    fun removeByBookId(bookId: Long) {
+        _tasks.value.filter { it.bookId == bookId }.forEach { task ->
+            scope.launch { mutex.withLock { jobs[task.id]?.cancel(); jobs.remove(task.id) } }
+        }
+        _tasks.value = _tasks.value.filterNot { it.bookId == bookId }
+        scope.launch { dao?.deleteDownloadTaskByBookId(bookId) }
+    }
+
+    fun clearCompleted(deleteFile: Boolean = false) {
         val toRemove = _tasks.value.filter { it.status == DownloadStatus.Completed || it.status == DownloadStatus.Failed }
+        if (deleteFile) {
+            toRemove.forEach { task ->
+                task.localPath?.let { path ->
+                    if (path.startsWith("a:")) {
+                        runCatching { /* SAF path: skip file delete */ }
+                    } else {
+                        runCatching { java.io.File(path).delete() }
+                    }
+                }
+            }
+        }
         _tasks.value = _tasks.value.filterNot { it in toRemove }
         scope.launch {
             mutex.withLock { toRemove.forEach { jobs.remove(it.id) } }
             dao?.clearFinishedDownloadTasks()
         }
+    }
+
+    fun removeInvalid(dao: com.mangareader.data.MangaDao): List<Long> {
+        val invalid = _tasks.value.filter { task ->
+            task.status == DownloadStatus.Completed && task.localPath != null &&
+            task.bookId > 0 && !java.io.File(task.localPath).exists()
+        }
+        val bookIds = invalid.map { it.bookId }.distinct()
+        invalid.forEach { task ->
+            scope.launch { mutex.withLock { jobs[task.id]?.cancel(); jobs.remove(task.id) } }
+        }
+        _tasks.value = _tasks.value.filterNot { it in invalid }
+        scope.launch {
+            invalid.forEach { dao?.deleteDownloadTask(it.id) }
+            bookIds.forEach { bid ->
+                dao?.getBookById(bid)?.let { dao?.deleteBook(it) }
+            }
+        }
+        return bookIds
     }
 
     fun updateTask(id: Long, transform: (DownloadTask) -> DownloadTask) {

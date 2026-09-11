@@ -649,6 +649,9 @@ interface MangaDao {
     @Query("DELETE FROM download_tasks WHERE status = 'Completed' OR status = 'Failed'")
     suspend fun clearFinishedDownloadTasks()
 
+    @Query("DELETE FROM download_tasks WHERE bookId = :bookId")
+    suspend fun deleteDownloadTaskByBookId(bookId: Long)
+
     // ==================== ★ C1 修复：rescan 四表快照回填 ====================
 
     /** 全字段裸插入回填行（内存合并后调用，IGNORE 仅作防御） */
