@@ -80,28 +80,22 @@ object RemoteDownloadExecutor {
         val ext = fileName.substringAfterLast('.', "").lowercase()
         val safPath = "a:$auth|$treePath|$docId|$ext"
         val localCoverPath = "cv:$auth|$treePath|$docId|$fileName"
-        // ★ 对齐旧 SMB 内联下载：优先用真实文件系统路径存入 originalPath，
-        //   enterLocalArchiveReader 通过 useArchivePageLoader 能读 mobi/azw3；
-        //   SAF a: 路径 engine.listPages 不支持 mobi 格式会返回空。
-        val realPath = if (docId.startsWith("primary:")) {
-            android.os.Environment.getExternalStorageDirectory().absolutePath + "/" + docId.substringAfter("primary:")
-        } else {
-            safPath
-        }
-
+        // ★ originalPath 存 SAF 路径（a:...），enterReader 的 a: 分支走 engine.listPages（libmobi）
+        //   能读 mobi/azw3；listPages 返回空时回退文件系统路径走 enterLocalArchiveReader（libarchive）读 zip/cbz。
         val dao = MangaDatabase.getDatabase(ctx).mangaDao()
         if (task.bookId > 0) {
-            runCatching { dao.rehomeBookToLocal(task.bookId, realPath) }
+            runCatching { dao.rehomeBookToLocal(task.bookId, safPath) }
             runCatching { dao.updateBookCoverPath(task.bookId, localCoverPath) }
             coil3.SingletonImageLoader.get(ctx).memoryCache?.clear()
         } else {
             val book = dao.getBookByPath(task.sourcePath)
             if (book != null) {
-                runCatching { dao.rehomeBookToLocal(book.id, realPath) }
+                runCatching { dao.rehomeBookToLocal(book.id, safPath) }
                 runCatching { dao.updateBookCoverPath(book.id, localCoverPath) }
                 coil3.SingletonImageLoader.get(ctx).memoryCache?.clear()
             }
         }
+
         withContext(Dispatchers.Main) {
             Toast.makeText(ctx, "下载完成：$fileName", Toast.LENGTH_SHORT).show()
         }
