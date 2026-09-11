@@ -690,8 +690,7 @@ private fun BookCard(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, isS
     ) {
         Column {
         // ★ 远程不支持流式格式（mobi/azw3）→ 第一时间显示"需下载"占位符，不触发封面加载
-        val fileName = b.filePath.substringAfterLast('/').substringBefore(':')
-        val fileExt = fileName.substringAfterLast('.', "").lowercase()
+        val fileExt = b.fileType.lowercase()
         val isRemoteUnsupported = (b.source == "smb" || b.source == "webdav") && fileExt in setOf("mobi", "azw3")
 
         Box(Modifier.fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)).background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
