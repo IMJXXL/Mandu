@@ -8,7 +8,11 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
@@ -47,6 +51,8 @@ fun SmbDownloadQueueScreen(onBack: () -> Unit, onOpenBook: ((Long) -> Unit)? = n
         if (tasks.isEmpty()) {
             Box(Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(Icons.Default.Download, null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
+                    Spacer(Modifier.height(12.dp))
                     Text("队列为空", fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(8.dp))
                     Text("在浏览页多选书籍后点击下载", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
@@ -133,6 +139,14 @@ private fun DownloadTaskCard(
     ) {
         Column(Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                val statusIcon = when (task.status) {
+                    DownloadStatus.Downloading, DownloadStatus.Queued -> Icons.Default.Download
+                    DownloadStatus.Completed -> Icons.Default.CheckCircle
+                    DownloadStatus.Failed -> Icons.Default.Error
+                    DownloadStatus.Paused -> Icons.Default.Pause
+                }
+                Icon(statusIcon, null, tint = statusColor, modifier = Modifier.size(24.dp))
+                Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
                     Text(
                         task.title,
@@ -155,11 +169,17 @@ private fun DownloadTaskCard(
                             )
                         }
                         Spacer(Modifier.width(8.dp))
-                        Text(
-                            if (task.sourceKind == "smb") "SMB" else "WebDAV",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                        ) {
+                            Text(
+                                if (task.sourceKind == "smb") "SMB" else "WebDAV",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            )
+                        }
                         if (task.totalBytes > 0) {
                             Spacer(Modifier.width(8.dp))
                             Text(
@@ -191,8 +211,18 @@ private fun DownloadTaskCard(
             // Progress bar
             if (task.status == DownloadStatus.Downloading || task.status == DownloadStatus.Paused) {
                 Spacer(Modifier.height(8.dp))
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    LinearProgressIndicator(
+                        progress = { task.progress },
+                        modifier = Modifier.weight(1f).clip(RoundedCornerShape(2.dp)),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text("${(task.progress * 100).toInt()}%", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            if (task.status == DownloadStatus.Queued) {
+                Spacer(Modifier.height(8.dp))
                 LinearProgressIndicator(
-                    progress = { task.progress },
                     modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(2.dp)),
                 )
             }
