@@ -42,7 +42,12 @@ object WebDavScanner {
 
             if (ctx.discovered.isEmpty()) return@withContext 0
             val dao = WebDavDbBridge.mangaDatabase?.mangaDao() ?: return@withContext 0
-            val rows = dao.insertBooksBatch(ctx.discovered.values.toList())
+            // ★ 按 filePath 去重（对齐 SmbScanner）：insertBooksBatch 的 IGNORE 检测主键 id，
+            //   新 Book id=0 不冲突，每次都"新增"。先查已有 filePath 集合过滤。
+            val existingPaths = dao.getWebDavBooks(sourceId).map { it.filePath }.toHashSet()
+            val toInsert = ctx.discovered.values.filter { it.filePath !in existingPaths }
+            if (toInsert.isEmpty()) return@withContext 0
+            val rows = dao.insertBooksBatch(toInsert)
             val inserted = rows.count { it != -1L }
             android.util.Log.i(
                 TAG,

@@ -108,16 +108,18 @@ fun WebDavAddWizardScreen(onBack: () -> Unit, onSaved: () -> Unit) {
                 withContext(Dispatchers.Main) { Toast.makeText(ctx, "保存失败：${it.message?.take(60)}", Toast.LENGTH_SHORT).show() }
                 return@launch
             }
+            // ★ 对齐 SmbAddWizardScreen：先扫描完成后才导航返回，
+            //   否则 onSaved() 销毁 Composable 取消 scope，扫描协程永远跑不完
+            val scanned = runCatching { WebDavScanner.scanWebDavServer(savedId) }.getOrNull()
             withContext(Dispatchers.Main) {
                 busy = false
-                Toast.makeText(ctx, "已保存书源 #$savedId，正在扫描…", Toast.LENGTH_SHORT).show()
-                onSaved()
-            }
-            runCatching {
-                val n = WebDavScanner.scanWebDavServer(savedId)
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(ctx, "扫描完成：新增 $n 本", Toast.LENGTH_SHORT).show()
+                val scanMsg = when {
+                    scanned == null -> ""
+                    scanned == 0 -> "，书架无变化"
+                    else -> "，扫描新增 $scanned 本，封面后台加载中"
                 }
+                Toast.makeText(ctx, "已保存书源 #$savedId$scanMsg", Toast.LENGTH_SHORT).show()
+                onSaved()
             }
         }
     }
