@@ -643,6 +643,13 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
             if (cachePath != null && cachePath.startsWith("/")) {
                 val cacheExists = withContext(Dispatchers.IO) { java.io.File(cachePath).exists() }
                 if (cacheExists) {
+                    // ★ 进度迁移：旧进度存在远程路径(smb:/webdav:)下，本地路径查不到 → 迁移到 cachePath
+                    withContext(Dispatchers.IO) {
+                        val oldProgress = dao.getProgress(b.id, path)
+                        if (oldProgress != null && dao.getProgress(b.id, cachePath) == null) {
+                            dao.upsertProgress(b.id, cachePath, oldProgress.lastPage, oldProgress.completed, oldProgress.updatedAt, oldProgress.totalPages)
+                        }
+                    }
                     return enterLocalArchiveReader(b, cachePath, targetPage)
                 } else {
 

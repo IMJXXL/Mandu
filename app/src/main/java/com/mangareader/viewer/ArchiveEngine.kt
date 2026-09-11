@@ -1191,6 +1191,16 @@ class ArchiveEngine(private val ctx: Context) {
     private fun loadMobiCover(auth: String, treeStr: String, docId: String, tree: Uri, coverKey: String): Bitmap? {
         val uri = DocumentsContract.buildDocumentUriUsingTree(tree, docId)
         val cacheKey = uri.toString()
+        // ★ 优先用 loadMobiCoverFromHeader（从文件头扫描 JPEG/PNG 魔数），不依赖 native 库的格式支持
+        //   AZW3(KF8) 的 native readMobiCover 可能返回损坏数据（彩色条纹），header 扫描更可靠
+        val realFile = getRealFile(uri)
+        if (realFile != null) {
+            val headerData = try { loadMobiCoverFromHeader(realFile) } catch (_: Exception) { null }
+            if (headerData != null) {
+                val bmp = safeDecodeCover(headerData)
+                if (bmp != null) { saveCoverToDisk(coverKey, bmp); synchronized(coverCache) { coverCache[coverKey] = bmp }; return bmp }
+            }
+        }
         // fd-based opening, same key as scanMobi/loadPage
         try {
             val pfd = ctx.contentResolver.openFileDescriptor(uri, "r")
