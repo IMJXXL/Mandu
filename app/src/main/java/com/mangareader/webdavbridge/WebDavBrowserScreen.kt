@@ -1,5 +1,6 @@
 package com.mangareader.webdavbridge
 
+import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -173,6 +174,14 @@ fun WebDavBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -
         val treeUriStr = Settings.smbDownloadDirTreeUri.value
         if (treeUriStr.isNullOrEmpty()) {
             showNoDirDialog = true
+            return
+        }
+        val treeUri = Uri.parse(treeUriStr)
+        val canWrite = ctx.contentResolver.persistedUriPermissions.any {
+            it.uri == treeUri && it.isWritePermission
+        }
+        if (!canWrite) {
+            Toast.makeText(ctx, "下载目录不可写，请重新设置", Toast.LENGTH_LONG).show()
             return
         }
         val src = source ?: return

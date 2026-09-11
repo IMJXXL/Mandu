@@ -3,6 +3,7 @@ package com.mangareader.smbbridge
 import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
+import android.widget.Toast
 import com.hippo.ehviewer.Settings
 import com.mangareader.data.MangaDatabase
 import kotlinx.coroutines.Dispatchers
@@ -93,6 +94,9 @@ object RemoteDownloadExecutor {
                 runCatching { dao.updateBook(book.copy(filePath = safPath, source = "local", fileType = ext, coverPath = localCoverPath, originalPath = task.sourcePath)) }
                 coil3.SingletonImageLoader.get(ctx).memoryCache?.clear()
             }
+        }
+        withContext(Dispatchers.Main) {
+            Toast.makeText(ctx, "下载完成：$fileName", Toast.LENGTH_SHORT).show()
         }
         safPath
     }
