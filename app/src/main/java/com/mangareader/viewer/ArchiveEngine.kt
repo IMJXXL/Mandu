@@ -2038,7 +2038,46 @@ class ArchiveEngine(private val ctx: Context) {
     private fun getRealFile(uri: Uri): File? {
         val key = uri.toString()
         synchronized(realFileCache) { realFileCache[key]?.let { return it } }
-        // SAF查询（直接查，不遍历SP）
+        // ★ 快速路径：对 primary: URI 直接构造真实路径，跳过 SAF Binder 调用
+        //   FUSE 文件系统下 SAF query 查 _data 列必然失败，白做一次 Binder IPC（10-15ms/次）
+        try {
+            val docId = DocumentsContract.getDocumentId(uri)
+            if (docId.startsWith("primary:")) {
+                val relPath = docId.removePrefix("primary:")
+                val f = File("/storage/emulated/0/$relPath")
+                if (f.exists() && f.isFile && f.length() > 0) {
+                    synchronized(realFileCache) { realFileCache[key] = f }
+                    return f
+                }
+                // 可能是目录（archive 所在目录）
+                if (f.exists() && f.isDirectory) {
+                    val fileName = docId.substringAfterLast("/")
+                    if (fileName.isNotEmpty()) {
+                        val childFile = File(f, fileName)
+                        if (childFile.exists() && childFile.isFile && childFile.length() > 0) {
+                            synchronized(realFileCache) { realFileCache[key] = childFile }
+                            return childFile
+                        }
+                    }
+                    val cbzFile = f.listFiles()?.firstOrNull {
+                        it.isFile && it.length() > 0 && (
+                            it.name.endsWith(".cbz", true) ||
+                            it.name.endsWith(".zip", true) ||
+                            it.name.endsWith(".epub", true) ||
+                            it.name.endsWith(".cbr", true) ||
+                            it.name.endsWith(".rar", true) ||
+                            it.name.endsWith(".pdf", true) ||
+                            it.name.endsWith(".mobi", true)
+                        )
+                    }
+                    if (cbzFile != null) {
+                        synchronized(realFileCache) { realFileCache[key] = cbzFile }
+                        return cbzFile
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+        // 降级：SAF 查询 _data 列（用于非 primary: URI 或快速路径未命中）
         try {
             ctx.contentResolver.query(uri, arrayOf("_data"), null, null, null)?.use { cursor ->
                 if (cursor.moveToFirst()) {
@@ -2051,11 +2090,9 @@ class ArchiveEngine(private val ctx: Context) {
                                 synchronized(realFileCache) { realFileCache[key] = f }
                                 return f
                             }
-                            // 如果返回的是目录，在目录内搜索匹配的压缩文件
                             if (f.exists() && f.isDirectory) {
                                 val docId = DocumentsContract.getDocumentId(uri)
                                 val fileName = docId.substringAfterLast("/")
-                                // 先尝试精确匹配文件名
                                 if (fileName.isNotEmpty()) {
                                     val childFile = File(f, fileName)
                                     if (childFile.exists() && childFile.isFile && childFile.length() > 0) {
@@ -2063,7 +2100,6 @@ class ArchiveEngine(private val ctx: Context) {
                                         return childFile
                                     }
                                 }
-                                // 尝试在目录内找匹配的压缩文件
                                 val cbzFile = f.listFiles()?.firstOrNull {
                                     it.isFile && it.length() > 0 && (
                                         it.name.endsWith(".cbz", true) ||
@@ -2082,19 +2118,6 @@ class ArchiveEngine(private val ctx: Context) {
                             }
                         }
                     }
-                }
-            }
-        } catch (_: Exception) {}
-        // Fallback: construct path from document ID (for external storage URIs)
-        try {
-            val docId = DocumentsContract.getDocumentId(uri)
-            if (docId.startsWith("primary:")) {
-                val relPath = docId.removePrefix("primary:")
-                val f = File("/storage/emulated/0/$relPath")
-                if (f.exists() && f.length() > 0) {
-                    synchronized(realFileCache) { realFileCache[key] = f }
-                    Log.d(TAG, "getRealFile fallback: ${f.absolutePath}")
-                    return f
                 }
             }
         } catch (_: Exception) {}
