@@ -40,11 +40,15 @@ object WebDavCoverLoader {
 
         val mutex = dedup.getOrPut(coverPath) { Mutex() }
         try {
-            mutex.withLock {
-                // 归档/文档格式永远先走缩略图降采样（loadCoverByArchiveCache），
-                // 避免下载 10MB+ 原始页（wantRaw 仅对文件夹书/直接图片文件有意义，
-                // 它们的 loadCoverByArchiveCache 返回 null 后 fallback 到原始字节路径）。
-                loadCoverByArchiveCache(ref) ?: loadCoverByTransientSession(ref)
+            // ★ NonCancellable（对齐 SmbCoverLoader）：即使 Coil 滚动取消请求，也完成
+            //   封面提取并缓存到磁盘，下次书架加载即可命中磁盘缓存
+            withContext(kotlinx.coroutines.NonCancellable) {
+                mutex.withLock {
+                    // 归档/文档格式永远先走缩略图降采样（loadCoverByArchiveCache），
+                    // 避免下载 10MB+ 原始页（wantRaw 仅对文件夹书/直接图片文件有意义，
+                    // 它们的 loadCoverByArchiveCache 返回 null 后 fallback 到原始字节路径）。
+                    loadCoverByArchiveCache(ref) ?: loadCoverByTransientSession(ref)
+                }
             }
         } catch (t: Throwable) {
             android.util.Log.w(TAG, "loadCoverRawWebDav failed: ${t.message}")

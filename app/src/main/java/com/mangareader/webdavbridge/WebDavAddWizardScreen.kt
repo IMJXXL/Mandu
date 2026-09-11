@@ -28,26 +28,35 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * WebDAV 添加向导（对齐参考项目分步流程，2026-09-06 用户要求）：
+ * WebDAV 添加/编辑向导（对齐参考项目分步流程，2026-09-06 用户要求；
+ * 2026-09-11 加 initial 编辑模式对齐 SmbAddWizardScreen）：
  * 1/2 地址与身份（连接测试）→ 2/2 浏览并选定目录 → 以导入文件夹的形式保存书源。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun WebDavAddWizardScreen(onBack: () -> Unit, onSaved: () -> Unit) {
+fun WebDavAddWizardScreen(onBack: () -> Unit, onSaved: () -> Unit, initial: WebDavSourceEntity? = null) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
+    val isEdit = initial != null
 
     var step by remember { mutableStateOf(1) }
     var busy by remember { mutableStateOf(false) }
 
-    var displayName by remember { mutableStateOf("") }
-    var baseUrl by remember { mutableStateOf("") }
-    var username by remember { mutableStateOf("") }
+    var displayName by remember { mutableStateOf(initial?.displayName ?: "") }
+    var baseUrl by remember { mutableStateOf(initial?.baseUrl ?: "") }
+    var username by remember { mutableStateOf(initial?.username ?: "") }
     var password by remember { mutableStateOf("") }
 
     var tempSource by remember { mutableStateOf<WebDavSourceEntity?>(null) }
-    var dir by remember { mutableStateOf("") }
+    var dir by remember { mutableStateOf(initial?.pathPrefix ?: "") }
     var dirEntries by remember { mutableStateOf<List<BrowseEntryRemote>>(emptyList()) }
+
+    // 编辑模式：加载已保存的密码回填（对齐 SmbAddWizardScreen）
+    LaunchedEffect(isEdit) {
+        if (isEdit && password.isBlank()) {
+            password = try { com.hippo.ehviewer.webdav.WebDavPasswordStore.get(initial!!.id) } catch (_: Throwable) { "" }
+        }
+    }
 
     val titles = listOf("1/2 地址与身份", "2/2 选择目录")
 
@@ -94,16 +103,32 @@ fun WebDavAddWizardScreen(onBack: () -> Unit, onSaved: () -> Unit) {
     }
 
     fun save() {
+        val src = tempSource ?: return
         busy = true
         scope.launch(Dispatchers.IO) {
             val savedId = runCatching {
-                WebDavRepository.add(
-                    displayName = displayName,
-                    baseUrl = baseUrl,
-                    pathPrefix = dir,
-                    username = username,
-                    password = password,
-                )
+                if (isEdit && initial != null) {
+                    WebDavRepository.update(
+                        initial.copy(
+                            displayName = displayName.ifBlank {
+                                runCatching { java.net.URI(baseUrl).host }.getOrNull() ?: baseUrl
+                            },
+                            baseUrl = baseUrl,
+                            pathPrefix = dir,
+                            username = username,
+                        ),
+                        password = password.takeIf { it.isNotBlank() },
+                    )
+                    initial.id
+                } else {
+                    WebDavRepository.add(
+                        displayName = displayName,
+                        baseUrl = baseUrl,
+                        pathPrefix = dir,
+                        username = username,
+                        password = password,
+                    )
+                }
             }.getOrElse {
                 withContext(Dispatchers.Main) { Toast.makeText(ctx, "保存失败：${it.message?.take(60)}", Toast.LENGTH_SHORT).show() }
                 return@launch
@@ -113,12 +138,13 @@ fun WebDavAddWizardScreen(onBack: () -> Unit, onSaved: () -> Unit) {
             val scanned = runCatching { WebDavScanner.scanWebDavServer(savedId) }.getOrNull()
             withContext(Dispatchers.Main) {
                 busy = false
+                val msg = if (isEdit) "已更新" else "已保存"
                 val scanMsg = when {
                     scanned == null -> ""
                     scanned == 0 -> "，书架无变化"
                     else -> "，扫描新增 $scanned 本，封面后台加载中"
                 }
-                Toast.makeText(ctx, "已保存书源 #$savedId$scanMsg", Toast.LENGTH_SHORT).show()
+                Toast.makeText(ctx, "$msg：/$dir$scanMsg", Toast.LENGTH_SHORT).show()
                 onSaved()
             }
         }
@@ -129,7 +155,7 @@ fun WebDavAddWizardScreen(onBack: () -> Unit, onSaved: () -> Unit) {
             TopAppBar(
                 title = {
                     Column {
-                        Text("添加 WebDAV 书源", fontSize = 16.sp)
+                        Text(if (isEdit) "编辑 WebDAV 书源" else "添加 WebDAV 书源", fontSize = 16.sp)
                         Text(titles[step - 1], fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
                     }
                 },
@@ -188,6 +214,14 @@ fun WebDavAddWizardScreen(onBack: () -> Unit, onSaved: () -> Unit) {
                     )
                     if (busy) {
                         Box(Modifier.fillMaxWidth().height(80.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+                    }
+                    if (!busy && dirEntries.isEmpty()) {
+                        Text(
+                            "目录为空，请检查地址和凭据，或返回上一级目录",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(vertical = 12.dp),
+                        )
                     }
                     LazyColumn(Modifier.weight(1f)) {
                         items(dirEntries) { e ->

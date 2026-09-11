@@ -1,10 +1,6 @@
 package com.mangareader.webdavbridge
 
-import android.app.Activity
-import android.text.InputType
-import android.widget.EditText
-import android.widget.LinearLayout
-import android.widget.ScrollView
+
 import android.widget.Toast
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -13,7 +9,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.CleaningServices
+
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Delete
@@ -29,7 +25,7 @@ import androidx.compose.ui.unit.sp
 import com.ehviewer.core.database.model.WebDavSourceEntity
 import com.mangareader.smbbridge.SmbDownloadQueueScreen
 import com.mangareader.smbbridge.SmbErrors
-import com.hippo.ehviewer.webdav.WebDavClient
+import com.hippo.ehviewer.webdav.WebDavGateway
 import com.hippo.ehviewer.webdav.WebDavPasswordStore
 import com.hippo.ehviewer.webdav.WebDavRepository
 import java.text.SimpleDateFormat
@@ -42,7 +38,7 @@ import kotlinx.coroutines.withContext
 /**
  * WebDAV 服务器管理 UI（design.md 2.2.2 WebDavServersScreen / spec 5.7 / 任务组12、13）。
  * **无 API 守卫**：API 26+ 全部可用。
- * ★ 表单用原生 AlertDialog.Builder + EditText（同 SmbServersScreen，绕开 MIUI Compose 输入兼容问题）。
+ * ★ 编辑走向导模式（对齐 SmbServersScreen，2026-09-11）。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -54,50 +50,12 @@ fun WebDavServersScreen(onBack: () -> Unit, onOpenBook: ((Long) -> Unit)? = null
     var editing by remember { mutableStateOf<WebDavSourceEntity?>(null) }
     var browsingId by remember { mutableStateOf<Long?>(null) }
     var showWizard by remember { mutableStateOf(false) }
-    var showFormTick by remember { mutableStateOf(0) }
+
     var deleting by remember { mutableStateOf<WebDavSourceEntity?>(null) }
     var busyId by remember { mutableStateOf<Long?>(null) }
     var showSettings by remember { mutableStateOf(false) }
     var showDownloadQueue by remember { mutableStateOf(false) }
 
-    LaunchedEffect(showFormTick) {
-        if (showFormTick > 0) {
-            // 解包 ContextWrapper 链拿 Activity（LocalContext 可能是 ContextThemeWrapper）
-            var actCtx = ctx
-            while (actCtx !is Activity && actCtx is android.content.ContextWrapper) actCtx = actCtx.baseContext
-            (actCtx as? Activity)?.let { activity ->
-                showWebDavServerForm(activity, editing) { values, initial ->
-                    scope.launch {
-                        runCatching {
-                            if (initial == null) {
-                                WebDavRepository.add(
-                                    displayName = values[0],
-                                    baseUrl = values[1],
-                                    pathPrefix = values[2],
-                                    username = values[3],
-                                    password = values[4],
-                                )
-                            } else {
-                                WebDavRepository.update(
-                                    initial.copy(
-                                        displayName = values[0].ifBlank {
-                                            runCatching { java.net.URI(values[1]).host }.getOrNull() ?: values[1]
-                                        },
-                                        baseUrl = WebDavClient.normalizeBaseUrl(values[1]),
-                                        pathPrefix = values[2],
-                                        username = values[3],
-                                    ),
-                                    password = values[4].takeIf { it.isNotBlank() },
-                                )
-                            }
-                        }
-                        editing = null
-                    }
-                }
-            }
-            showFormTick = 0
-        }
-    }
 
     browsingId?.let { id ->
         WebDavBrowserScreen(serverId = id, onBack = { browsingId = null }, onOpenBook = onOpenBook ?: {})
@@ -115,7 +73,7 @@ fun WebDavServersScreen(onBack: () -> Unit, onOpenBook: ((Long) -> Unit)? = null
     }
 
     if (showWizard) {
-        WebDavAddWizardScreen(onBack = { showWizard = false }, onSaved = { showWizard = false })
+        WebDavAddWizardScreen(onBack = { showWizard = false; editing = null }, onSaved = { showWizard = false; editing = null }, initial = editing)
         return
     }
 
@@ -164,9 +122,9 @@ fun WebDavServersScreen(onBack: () -> Unit, onOpenBook: ((Long) -> Unit)? = null
                                     else -> MaterialTheme.colorScheme.onSurfaceVariant
                                 }
                                 val statusText = when {
-                                    s.lastError != null -> "错误：${s.lastError.take(80)}"
-                                    s.lastOkAt != null -> "正常 · 上次成功 " + SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(s.lastOkAt))
-                                    else -> "未测试"
+                                    s.lastError != null -> "● 错误：${s.lastError.take(80)}"
+                                    s.lastOkAt != null -> "● 正常 · ${SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(s.lastOkAt))}"
+                                    else -> "● 未测试"
                                 }
                                 Text(statusText, fontSize = 12.sp, color = statusColor)
                                 @OptIn(ExperimentalLayoutApi::class)
@@ -178,7 +136,8 @@ fun WebDavServersScreen(onBack: () -> Unit, onOpenBook: ((Long) -> Unit)? = null
                                                 busyId = s.id
                                                 try {
                                                     val n = WebDavScanner.scanWebDavServer(s.id)
-                                                    Toast.makeText(ctx, "扫描完成，新增 $n 本", Toast.LENGTH_SHORT).show()
+                                                    val msg = if (n == 0) "扫描完成，书架无变化" else "扫描成功：新增 $n 本，封面后台加载中"
+                                                    Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show()
                                                 } catch (t: Throwable) {
                                                     Toast.makeText(ctx, SmbErrors.humanizeWebDav(t), Toast.LENGTH_LONG).show()
                                                 } finally {
@@ -194,9 +153,16 @@ fun WebDavServersScreen(onBack: () -> Unit, onOpenBook: ((Long) -> Unit)? = null
                                                 busyId = s.id
                                                 try {
                                                     val password = try { WebDavPasswordStore.get(s.id) } catch (_: Throwable) { "" }
-                                                    WebDavClient.testConnection(s, password).getOrThrow()
-                                                    WebDavRepository.markOk(s.id)
-                                                    Toast.makeText(ctx, "连接正常", Toast.LENGTH_SHORT).show()
+                                                    val ok = kotlinx.coroutines.withTimeoutOrNull(5000) {
+                                                        runCatching { WebDavGateway.listDirectory(s, password, s.pathPrefix, useCache = false) }.isSuccess
+                                                    } ?: false
+                                                    if (ok) {
+                                                        WebDavRepository.markOk(s.id)
+                                                        Toast.makeText(ctx, "连接正常", Toast.LENGTH_SHORT).show()
+                                                    } else {
+                                                        WebDavRepository.markError(s.id, "连接超时或失败")
+                                                        Toast.makeText(ctx, "连接失败", Toast.LENGTH_SHORT).show()
+                                                    }
                                                 } catch (t: Throwable) {
                                                     WebDavRepository.markError(s.id, t.message ?: "连接失败")
                                                     Toast.makeText(ctx, SmbErrors.humanizeWebDav(t), Toast.LENGTH_LONG).show()
@@ -207,7 +173,7 @@ fun WebDavServersScreen(onBack: () -> Unit, onOpenBook: ((Long) -> Unit)? = null
                                         },
                                     ) { Text("测试") }
                                     TextButton(onClick = { browsingId = s.id }) { Text("浏览") }
-                                    TextButton(onClick = { editing = s; showFormTick++ }) {
+                                    TextButton(onClick = { editing = s; showWizard = true }) {
                                         Icon(Icons.Default.Edit, null, Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text("编辑")
                                     }
                                     TextButton(onClick = { deleting = s }) {
@@ -262,65 +228,3 @@ fun WebDavServersScreen(onBack: () -> Unit, onOpenBook: ((Long) -> Unit)? = null
     }
 }
 
-/** 原生表单对话框（spec 5.7.1：baseUrl 非空且合法）。 */
-private fun showWebDavServerForm(
-    activity: Activity,
-    initial: WebDavSourceEntity?,
-    onSave: (List<String>, WebDavSourceEntity?) -> Unit,
-) {
-    fun dp(v: Int): Int = (v * activity.resources.displayMetrics.density).toInt()
-
-    fun makeField(hint: String, value: String, password: Boolean = false): EditText {
-        return EditText(activity).apply {
-            this.hint = hint
-            setText(value)
-            setSingleLine(true)
-            if (password) transformationMethod = android.text.method.PasswordTransformationMethod.getInstance()
-            setPadding(dp(14), dp(12), dp(14), dp(12))
-        }
-    }
-
-    val fields = listOf(
-        makeField("显示名（可选）", initial?.displayName ?: ""),
-        makeField("服务器地址 *（如 https://dav.example.com/）", initial?.baseUrl ?: ""),
-        makeField("起始路径（可选）", initial?.pathPrefix ?: ""),
-        makeField("用户名", initial?.username ?: ""),
-        makeField(if (initial == null) "密码" else "密码（留空保持不变）", "", password = true),
-    )
-
-    val box = LinearLayout(activity).apply {
-        orientation = LinearLayout.VERTICAL
-        setPadding(dp(20), dp(10), dp(20), 0)
-        fields.forEachIndexed { i, et ->
-            addView(et)
-            if (i < fields.size - 1) addView(android.widget.Space(activity), LinearLayout.LayoutParams(1, dp(8)))
-        }
-    }
-    val scroll = ScrollView(activity).apply { addView(box) }
-
-    val dialog = android.app.AlertDialog.Builder(activity)
-        .setTitle(if (initial == null) "添加 WebDAV 服务器" else "编辑 WebDAV 服务器")
-        .setView(scroll)
-        .setPositiveButton("保存", null)
-        .setNegativeButton("取消", null)
-        .create()
-
-    dialog.setOnShowListener {
-        dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-            val values = fields.map { it.text.toString().trim() }
-            val invalid = when {
-                values[1].isBlank() -> "服务器地址"
-                !(values[1].startsWith("http://") || values[1].startsWith("https://")) -> "地址格式"
-                else -> null
-            }
-            if (invalid != null) {
-                Toast.makeText(activity, "$invalid 无效（需以 http(s):// 开头）", Toast.LENGTH_SHORT).show()
-            } else {
-                onSave(values, initial)
-                dialog.dismiss()
-            }
-        }
-        fields[1].post { fields[1].requestFocus() }
-    }
-    dialog.show()
-}
