@@ -6,7 +6,7 @@ import android.provider.DocumentsContract
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.background
+
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -35,7 +35,7 @@ import com.hippo.ehviewer.Settings
 import com.hippo.ehviewer.collectAsState
 import com.hippo.ehviewer.library.BrowseEntryRemote
 import com.hippo.ehviewer.library.IMAGE_EXTENSIONS
-import com.hippo.ehviewer.library.RemoteArchiveOpen
+
 import com.hippo.ehviewer.smb.SmbCache
 import com.hippo.ehviewer.smb.SmbGateway
 import com.hippo.ehviewer.smb.SmbPasswordStore
@@ -66,7 +66,7 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -> U
 
     var isMultiSelectMode by remember { mutableStateOf(false) }
     var selectedRemotes by remember { mutableStateOf<Set<String>>(emptySet()) }
-    var downloadStatus by remember { mutableStateOf<String?>(null) }
+
     var showNoDirDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(serverId) {
@@ -187,138 +187,36 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -> U
 
     fun startBatchDownload() {
         val treeUriStr = Settings.smbDownloadDirTreeUri.value
-        if (treeUriStr == null) {
+        if (treeUriStr.isNullOrEmpty()) {
             showNoDirDialog = true
+            return
+        }
+        val treeUri = Uri.parse(treeUriStr)
+        val canWrite = ctx.contentResolver.persistedUriPermissions.any {
+            it.uri == treeUri && it.isWritePermission
+        }
+        if (!canWrite) {
+            Toast.makeText(ctx, "下载目录不可写，请重新设置", Toast.LENGTH_LONG).show()
             return
         }
         val src = source ?: return
         val toDownload = allDownloadable.filter { it.second.first in selectedRemotes }
         if (toDownload.isEmpty()) return
 
-        scope.launch(Dispatchers.IO) {
-            val dao = SmbDbBridge.mangaDatabase?.mangaDao()
-            val treeUri = Uri.parse(treeUriStr)
-            val treeDocId = DocumentsContract.getTreeDocumentId(treeUri)
-            val canWrite = ctx.contentResolver.persistedUriPermissions.any {
-                it.uri == treeUri && it.isWritePermission
-            }
-            if (!canWrite) {
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(ctx, "下载目录不可写，请重新设置", Toast.LENGTH_LONG).show()
-                }
-                return@launch
-            }
-            // .nomedia
-            runCatching {
-                val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, treeDocId)
-                var nomediaUri: Uri? = null
-                ctx.contentResolver.query(
-                    childrenUri,
-                    arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME, DocumentsContract.Document.COLUMN_DOCUMENT_ID),
-                    null, null, null,
-                )?.use { c ->
-                    while (c.moveToNext()) {
-                        if (c.getString(0) == ".nomedia") {
-                            nomediaUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, c.getString(1))
-                        }
-                    }
-                }
-                if (nomediaUri == null) {
-                    DocumentsContract.createDocument(ctx.contentResolver, treeUri, "application/octet-stream", ".nomedia")
-                }
-            }
-
-            val total = toDownload.size
-            var done = 0
-            var failed = 0
-            // ★ 入队：每个下载任务注册到 SmbDownloadQueue
-            val queueIds = mutableMapOf<String, Long>()
-            for ((entry, info) in toDownload) {
-                val (remotePath, fileName, ext) = info
-                val qid = SmbDownloadQueue.enqueue(
-                    DownloadTask(
-                        id = 0,
-                        title = fileName.substringBeforeLast('.').ifEmpty { fileName },
-                        sourceKind = "smb",
-                        sourcePath = SmbPaths.bookPath(src.id, src.share, remotePath),
-                    ),
-                    autoStart = false,
-                )
-                queueIds[remotePath] = qid
-            }
-            for ((entry, info) in toDownload) {
-                val (remotePath, fileName, ext) = info
-                val qid = queueIds[remotePath]
-                if (qid != null) SmbDownloadQueue.updateTask(qid) { it.copy(status = DownloadStatus.Downloading) }
-                withContext(Dispatchers.Main) { downloadStatus = "下载中 $done/$total：$fileName" }
-                runCatching {
-                    val remote = if (src.share.isBlank()) remotePath else remotePath.substringAfter('/')
-                    val local = RemoteArchiveOpen.ensureSmbArchive(
-                        source = src,
-                        password = password,
-                        remoteRelativeFile = remote,
-                        allowLarge = true,
-                    )
-                    val srcFile = java.io.File(local.path.toString())
-                    if (!srcFile.exists()) throw java.io.IOException("缓存文件不存在")
-                    // 查找并删除同名文件
-                    val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, treeDocId)
-                    ctx.contentResolver.query(
-                        childrenUri,
-                        arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME, DocumentsContract.Document.COLUMN_DOCUMENT_ID),
-                        null, null, null,
-                    )?.use { c ->
-                        while (c.moveToNext()) {
-                            if (c.getString(0) == fileName) {
-                                val existingUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, c.getString(1))
-                                runCatching { DocumentsContract.deleteDocument(ctx.contentResolver, existingUri) }
-                            }
-                        }
-                    }
-                    // 创建目标文件
-                    val destUri = DocumentsContract.createDocument(ctx.contentResolver, treeUri, "application/octet-stream", fileName)
-                        ?: throw java.io.IOException("无法创建目标文件")
-                    ctx.contentResolver.openOutputStream(destUri)?.use { out ->
-                        srcFile.inputStream().use { it.copyTo(out) }
-                    } ?: throw java.io.IOException("无法打开输出流")
-                    val docId = DocumentsContract.getDocumentId(destUri)
-                    val realPath = if (docId.startsWith("primary:")) {
-                        android.os.Environment.getExternalStorageDirectory().absolutePath + "/" + docId.substringAfter("primary:")
-                    } else {
-                        destUri.toString()
-                    }
-                    if (dao != null) {
-                        val filePath = SmbPaths.bookPath(src.id, src.share, remotePath)
-                        val book = dao.getBookByPath(filePath)
-                        if (book != null) {
-                            dao.rehomeBookToLocal(book.id, realPath)
-                        } else {
-                            dao.insertBook(
-                                Book(
-                                    title = fileName.substringBeforeLast('.').ifEmpty { fileName },
-                                    filePath = realPath,
-                                    fileType = ext,
-                                    source = "local",
-                                ),
-                            )
-                        }
-                    }
-                    if (qid != null) SmbDownloadQueue.markCompleted(qid, realPath)
-                }.onFailure { t ->
-                    failed++
-                    android.util.Log.w("SmbDownload", "Failed: $fileName", t)
-                    if (qid != null) SmbDownloadQueue.markFailed(qid, t.message ?: "下载失败")
-                }
-                done++
-            }
-            withContext(Dispatchers.Main) {
-                downloadStatus = null
-                isMultiSelectMode = false
-                selectedRemotes = emptySet()
-                val msg = if (failed == 0) "下载完成 $total 本" else "完成 $done/$total，失败 $failed 本"
-                Toast.makeText(ctx, msg, Toast.LENGTH_LONG).show()
-            }
+        for ((_, info) in toDownload) {
+            val (remotePath, fileName, _) = info
+            SmbDownloadQueue.enqueue(
+                DownloadTask(
+                    id = 0,
+                    title = fileName.substringBeforeLast('.').ifEmpty { fileName },
+                    sourceKind = "smb",
+                    sourcePath = SmbPaths.bookPath(src.id, src.share, remotePath),
+                ),
+            )
         }
+        isMultiSelectMode = false
+        selectedRemotes = emptySet()
+        Toast.makeText(ctx, "已加入下载队列（${toDownload.size} 本）", Toast.LENGTH_SHORT).show()
     }
 
     Scaffold(
@@ -445,6 +343,7 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -> U
                                         addArchive(joinRel(e.fileName), e.name, e.fileName.substringAfterLast('.', "").lowercase())
                                     }
                                 },
+                                { remotePath?.let { clearBookCaches(it) } },
                                 Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                             )
                             is BrowseEntryRemote.VideoFile -> Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -465,6 +364,7 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -> U
                                                 addArchive(joinRel(e.name), e.name, ext)
                                             }
                                         },
+                                        { remotePath?.let { clearBookCaches(it) } },
                                         Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                                     )
                                 } else {
@@ -479,24 +379,7 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -> U
                     }
                 }
             }
-            // 下载进度
-            downloadStatus?.let { status ->
-                Box(
-                    Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.4f)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Card(Modifier.padding(32.dp)) {
-                        Column(
-                            Modifier.padding(24.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                        ) {
-                            CircularProgressIndicator()
-                            Spacer(Modifier.height(16.dp))
-                            Text(status, fontSize = 14.sp)
-                        }
-                    }
-                }
-            }
+
         }
         }
         }
@@ -519,11 +402,12 @@ private fun FileRow(
     isSelected: Boolean,
     showCheckbox: Boolean,
     onOpen: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val ext = remotePath.substringBefore(':').substringAfterLast('.', "").lowercase()
     Row(
-        modifier.fillMaxWidth().clickable(onClick = onOpen),
+        modifier.fillMaxWidth().combinedClickable(onClick = onOpen, onLongClick = onLongClick),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (showCheckbox) {
