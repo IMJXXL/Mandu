@@ -188,7 +188,7 @@ fun WebDavAddWizardScreen(onBack: () -> Unit, onSaved: () -> Unit) {
                         Box(Modifier.fillMaxWidth().height(80.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
                     }
                     LazyColumn(Modifier.weight(1f)) {
-                        items(dirEntries, key = { it.name }) { e ->
+                        items(dirEntries) { e ->
                             if (e is BrowseEntryRemote.Directory) {
                                 Row(
                                     Modifier.fillMaxWidth().clickable {

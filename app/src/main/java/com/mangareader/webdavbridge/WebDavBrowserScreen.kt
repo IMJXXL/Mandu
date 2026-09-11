@@ -276,7 +276,7 @@ fun WebDavBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -
                     Text("空目录", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 else -> LazyColumn(Modifier.fillMaxSize()) {
-                    items(entries, key = { it.name }) { e ->
+                    items(entries) { e ->
                         val dl = extractDownloadable(e)
                         val remotePath = dl?.first
                         val isSelected = remotePath != null && remotePath in selectedRemotes
