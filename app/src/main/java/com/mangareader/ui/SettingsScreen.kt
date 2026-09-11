@@ -22,6 +22,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -82,6 +83,21 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
     var editShelfName by remember { mutableStateOf("") }
     var showCreateShelf by remember { mutableStateOf(false) }
     var newShelfName by remember { mutableStateOf("") }
+
+    var folderHiddenMap by remember { mutableStateOf<Map<Long, Boolean>>(emptyMap()) }
+    LaunchedEffect(folders) {
+        if (folders.isNotEmpty()) {
+            val map = withContext(Dispatchers.IO) {
+                folders.associate { f ->
+                    val treeUri = android.net.Uri.parse(f.treeUri)
+                    val auth = treeUri.authority ?: ""
+                    val treeDocId = android.net.Uri.decode(treeUri.lastPathSegment ?: "").removePrefix("tree:")
+                    f.id to dao.getBooksByFolderParams("a:$auth|$treeDocId|%", "d:$auth|$treeDocId%", "z:a:$auth|$treeDocId|%").any { it.isHidden }
+                }
+            }
+            folderHiddenMap = map
+        }
+    }
 
     var showScrollModeDialog by remember { mutableStateOf(false) }
     var showClickFlipDialog by remember { mutableStateOf(false) }
@@ -439,92 +455,76 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
             item {
             if (folders.isEmpty()) {
                 Text("还没有导入文件夹", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            } else {
-                if (folders.size >= 2) {
-                    Button(onClick = {
-                        scope.launch {
-                            scanning = true; scanTarget = "一键扫描所有文件夹..."; scanCount = 0
-                            var totalAdded = 0
-                            var totalRemoved = 0
-                            withContext(Dispatchers.IO) {
-                                folders.forEach { f ->
-                                    val (a, r) = scanner.rescanAndCommit(f) { count -> scanCount = count }
-                                    totalAdded += a; totalRemoved += r
-                                }
+            } else if (folders.size >= 2) {
+                Button(onClick = {
+                    scope.launch {
+                        scanning = true; scanTarget = "一键扫描所有文件夹..."; scanCount = 0
+                        var totalAdded = 0
+                        var totalRemoved = 0
+                        withContext(Dispatchers.IO) {
+                            folders.forEach { f ->
+                                val (a, r) = scanner.rescanAndCommit(f) { count -> scanCount = count }
+                                totalAdded += a; totalRemoved += r
                             }
-                            scanCount = totalAdded
+                        }
+                        scanCount = totalAdded
+                        scanning = false
+                        val msg = when {
+                            totalAdded == 0 && totalRemoved == 0 -> "扫描完成，书架无变化"
+                            else -> "扫描成功：新增 $totalAdded 本、移除 $totalRemoved 本，封面后台加载中"
+                        }
+                        Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show()
+                        scanning = false
+                    }
+                }, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Default.Refresh, null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("一键扫描全部 (${folders.size}个文件夹)")
+                }
+                Spacer(Modifier.height(8.dp))
+            }
+            }
+            items(folders, key = { it.id }) { f ->
+                val dateFormat = remember { java.text.SimpleDateFormat("MM-dd HH:mm") }
+                Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(f.displayName, fontWeight = FontWeight.Medium, fontSize = 14.sp)
+                        Text("扫描于 ${if (f.lastScanAt > 0) dateFormat.format(java.util.Date(f.lastScanAt)) else "未扫描"}",
+                            fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    TextButton(onClick = {
+                        scope.launch {
+                            scanning = true; scanTarget = "正在扫描「${f.displayName}」..."; scanCount = 0
+                            val (addedN, removedN) = withContext(Dispatchers.IO) { scanner.rescanAndCommit(f) { count -> scanCount = count } }
+                            scanCount = addedN
                             scanning = false
                             val msg = when {
-                                totalAdded == 0 && totalRemoved == 0 -> "扫描完成，书架无变化"
-                                else -> "扫描成功：新增 $totalAdded 本、移除 $totalRemoved 本，封面后台加载中"
+                                addedN == 0 && removedN == 0 -> "刷新完成，书架无变化"
+                                else -> "刷新成功：新增 $addedN 本、移除 $removedN 本，封面后台加载中"
                             }
                             Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show()
-                            // 自动关闭扫描弹窗
                             scanning = false
                         }
-                    }, modifier = Modifier.fillMaxWidth()) {
-                        Icon(Icons.Default.Refresh, null)
-                        Spacer(Modifier.width(8.dp))
-                        Text("一键扫描全部 (${folders.size}个文件夹)")
+                    }) { Text("刷新") }
+                    val folderHidden = folderHiddenMap[f.id] ?: false
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(if (folderHidden) "隐藏" else "已显示", fontSize = 12.sp,
+                            color = if (folderHidden) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary)
+                    Switch(checked = !folderHidden, onCheckedChange = { show ->
+                        folderHiddenMap = folderHiddenMap + (f.id to !show)
+                        scope.launch {
+                            withContext(Dispatchers.IO) {
+                                val treeUri = android.net.Uri.parse(f.treeUri)
+                                val auth = treeUri.authority ?: ""
+                                val treeDocId = android.net.Uri.decode(treeUri.lastPathSegment ?: "").removePrefix("tree:")
+                                dao.setHiddenByFolderParams("a:$auth|$treeDocId|%", "d:$auth|$treeDocId%", "z:a:$auth|$treeDocId|%", !show)
+                            }
+                            Toast.makeText(ctx, if (show) "已显示「${f.displayName}」的漫画" else "已隐藏「${f.displayName}」的漫画", Toast.LENGTH_SHORT).show()
+                        }
+                    })
                     }
-                    Spacer(Modifier.height(8.dp))
+                    TextButton(onClick = { showDeleteFolder = f }) { Text("删除", color = MaterialTheme.colorScheme.error) }
                 }
-                val dateFormat = remember { java.text.SimpleDateFormat("MM-dd HH:mm") }
-                folders.forEach { f ->
-                    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text(f.displayName, fontWeight = FontWeight.Medium, fontSize = 14.sp)
-                            Text("扫描于 ${if (f.lastScanAt > 0) dateFormat.format(java.util.Date(f.lastScanAt)) else "未扫描"}",
-                                fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        TextButton(onClick = {
-                            scope.launch {
-                                scanning = true; scanTarget = "正在扫描「${f.displayName}」..."; scanCount = 0
-                                val (addedN, removedN) = withContext(Dispatchers.IO) { scanner.rescanAndCommit(f) { count -> scanCount = count } }
-                                scanCount = addedN
-                                scanning = false
-                                val msg = when {
-                                    addedN == 0 && removedN == 0 -> "刷新完成，书架无变化"
-                                    else -> "刷新成功：新增 $addedN 本、移除 $removedN 本，封面后台加载中"
-                                }
-                                Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show()
-                                scanning = false
-                            }
-                        }) { Text("刷新") }
-                        // 隐藏/显示开关：切换该文件夹下所有书的isHidden
-                        var folderHidden by remember(f.id) {
-                            mutableStateOf(false).also { state ->
-                                scope.launch {
-                                    val hidden = withContext(Dispatchers.IO) {
-                                        val treeUri = android.net.Uri.parse(f.treeUri)
-                                        val auth = treeUri.authority ?: ""
-                                        val treeDocId = android.net.Uri.decode(treeUri.lastPathSegment ?: "").removePrefix("tree:")
-                                        dao.getBooksByFolderParams("a:$auth|$treeDocId|%", "d:$auth|$treeDocId%", "z:a:$auth|$treeDocId|%").any { it.isHidden }
-                                    }
-                                    state.value = hidden
-                                }
-                            }
-                        }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(if (folderHidden) "隐藏" else "已显示", fontSize = 12.sp,
-                                color = if (folderHidden) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary)
-                        Switch(checked = !folderHidden, onCheckedChange = { show ->
-                            folderHidden = !show
-                            scope.launch {
-                                withContext(Dispatchers.IO) {
-                                    val treeUri = android.net.Uri.parse(f.treeUri)
-                                    val auth = treeUri.authority ?: ""
-                                    val treeDocId = android.net.Uri.decode(treeUri.lastPathSegment ?: "").removePrefix("tree:")
-                                    dao.setHiddenByFolderParams("a:$auth|$treeDocId|%", "d:$auth|$treeDocId%", "z:a:$auth|$treeDocId|%", !show)
-                                }
-                                Toast.makeText(ctx, if (show) "已显示「${f.displayName}」的漫画" else "已隐藏「${f.displayName}」的漫画", Toast.LENGTH_SHORT).show()
-                            }
-                        })
-                        }
-                        TextButton(onClick = { showDeleteFolder = f }) { Text("删除", color = MaterialTheme.colorScheme.error) }
-                    }
-                }
-            }
             }
 
             item {
