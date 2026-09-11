@@ -37,7 +37,7 @@ object RemoteDownloadDialogState {
         val treeUriStr = Settings.smbDownloadDirTreeUri.value
         if (treeUriStr.isNullOrEmpty()) {
             _dialogState.value = null
-            Toast.makeText(ctx, "请先在 SMB 设置 → 下载目录 中设置保存路径", Toast.LENGTH_LONG).show()
+            Toast.makeText(ctx, "请先在 SMB 或 WebDAV 设置 → 下载目录 中设置保存路径", Toast.LENGTH_LONG).show()
             return
         }
 

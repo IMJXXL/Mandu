@@ -203,16 +203,22 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -> U
         val toDownload = allDownloadable.filter { it.second.first in selectedRemotes }
         if (toDownload.isEmpty()) return
 
-        for ((_, info) in toDownload) {
-            val (remotePath, fileName, _) = info
-            SmbDownloadQueue.enqueue(
-                DownloadTask(
-                    id = 0,
-                    title = fileName.substringBeforeLast('.').ifEmpty { fileName },
-                    sourceKind = "smb",
-                    sourcePath = SmbPaths.bookPath(src.id, src.share, remotePath),
-                ),
-            )
+        scope.launch(Dispatchers.IO) {
+            val dao = SmbDbBridge.mangaDatabase?.mangaDao()
+            for ((_, info) in toDownload) {
+                val (remotePath, fileName, _) = info
+                val bookPath = SmbPaths.bookPath(src.id, src.share, remotePath)
+                val existingBook = dao?.getBookByPath(bookPath)
+                SmbDownloadQueue.enqueue(
+                    DownloadTask(
+                        id = 0,
+                        title = fileName.substringBeforeLast('.').ifEmpty { fileName },
+                        sourceKind = "smb",
+                        sourcePath = bookPath,
+                        bookId = existingBook?.id ?: 0L,
+                    ),
+                )
+            }
         }
         isMultiSelectMode = false
         selectedRemotes = emptySet()

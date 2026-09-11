@@ -648,6 +648,13 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
 
                     withContext(Dispatchers.IO) { runCatching { dao.restoreBookToRemote(b.id) } }
                 }
+            } else if (cachePath != null && cachePath.startsWith("a:")) {
+                val safExists = withContext(Dispatchers.IO) { runCatching { engine.listPages(cachePath) }.getOrDefault(emptyList()).isNotEmpty() }
+                if (safExists) {
+                    return enterReader(cachePath, targetPage)
+                } else {
+                    withContext(Dispatchers.IO) { runCatching { dao.restoreBookToRemote(b.id) } }
+                }
             }
             val downloading = com.mangareader.smbbridge.SmbDownloadQueue.tasks.value.find {
                 it.sourcePath == path && (it.status == com.mangareader.smbbridge.DownloadStatus.Downloading || it.status == com.mangareader.smbbridge.DownloadStatus.Queued)

@@ -188,16 +188,22 @@ fun WebDavBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -
         val toDownload = allDownloadable.filter { it.second.first in selectedRemotes }
         if (toDownload.isEmpty()) return
 
-        for ((_, info) in toDownload) {
-            val (remotePath, fileName, _) = info
-            SmbDownloadQueue.enqueue(
-                DownloadTask(
-                    id = 0,
-                    title = fileName.substringBeforeLast('.').ifEmpty { fileName },
-                    sourceKind = "webdav",
-                    sourcePath = WebDavPaths.bookPath(src.id, remotePath),
+        scope.launch(Dispatchers.IO) {
+            val dao = WebDavDbBridge.mangaDatabase?.mangaDao()
+            for ((_, info) in toDownload) {
+                val (remotePath, fileName, _) = info
+                val bookPath = WebDavPaths.bookPath(src.id, remotePath)
+                val existingBook = dao?.getBookByPath(bookPath)
+                SmbDownloadQueue.enqueue(
+                    DownloadTask(
+                        id = 0,
+                        title = fileName.substringBeforeLast('.').ifEmpty { fileName },
+                        sourceKind = "webdav",
+                        sourcePath = bookPath,
+                        bookId = existingBook?.id ?: 0L,
+                    )
                 )
-            )
+            }
         }
         isMultiSelectMode = false
         selectedRemotes = emptySet()

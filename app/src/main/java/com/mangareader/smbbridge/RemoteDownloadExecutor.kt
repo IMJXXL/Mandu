@@ -84,11 +84,13 @@ object RemoteDownloadExecutor {
         val dao = MangaDatabase.getDatabase(ctx).mangaDao()
         if (task.bookId > 0) {
             runCatching { dao.rehomeBookToLocal(task.bookId, safPath) }
+            runCatching { dao.updateBookCoverPath(task.bookId, localCoverPath) }
             coil3.SingletonImageLoader.get(ctx).memoryCache?.clear()
         } else {
             val book = dao.getBookByPath(task.sourcePath)
             if (book != null) {
                 runCatching { dao.rehomeBookToLocal(book.id, safPath) }
+                runCatching { dao.updateBookCoverPath(book.id, localCoverPath) }
                 coil3.SingletonImageLoader.get(ctx).memoryCache?.clear()
             }
         }

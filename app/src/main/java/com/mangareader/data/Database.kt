@@ -257,6 +257,10 @@ interface MangaDao {
     @Query("UPDATE manga_books SET originalPath = :filePath WHERE id = :id")
     suspend fun rehomeBookToLocal(id: Long, filePath: String)
 
+    /** ★ 下载完成后更新封面路径为本地 SAF 封面路径，使封面可从本地提取 */
+    @Query("UPDATE manga_books SET coverPath = :coverPath WHERE id = :id")
+    suspend fun updateBookCoverPath(id: Long, coverPath: String)
+
     /** ★ 清除本地缓存路径记录（缓存文件被删时） */
     @Query("UPDATE manga_books SET originalPath = NULL WHERE id = :id")
     suspend fun restoreBookToRemote(id: Long)
