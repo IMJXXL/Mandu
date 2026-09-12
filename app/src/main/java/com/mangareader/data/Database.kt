@@ -165,7 +165,8 @@ data class Bookmark(
     val bookId: Long,
     val chapterPath: String,
     val page: Int,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val note: String? = null
 )
 
 @Dao
@@ -626,6 +627,12 @@ interface MangaDao {
     @Query("DELETE FROM bookmarks WHERE bookId = :bookId AND chapterPath = :chapterPath AND page = :page")
     suspend fun deleteBookmark(bookId: Long, chapterPath: String, page: Int)
 
+    @Query("UPDATE bookmarks SET note = :note WHERE bookId = :bookId AND chapterPath = :chapterPath AND page = :page")
+    suspend fun updateBookmarkNote(bookId: Long, chapterPath: String, page: Int, note: String?)
+
+    @Query("SELECT * FROM bookmarks WHERE bookId = :bookId AND chapterPath = :chapterPath AND page = :page")
+    suspend fun getBookmark(bookId: Long, chapterPath: String, page: Int): Bookmark?
+
     @Query("SELECT * FROM bookmarks WHERE bookId IN (:bookIds)")
     suspend fun getBookmarksForBooks(bookIds: List<Long>): List<Bookmark>
 
@@ -918,7 +925,7 @@ data class DownloadTaskEntity(
 
 @Database(
     entities = [Book::class, Folder::class, ReadingHistory::class, Bookshelf::class, BookshelfItem::class, Tag::class, TagLink::class, ReadingProgress::class, Bookmark::class, com.ehviewer.core.database.model.SmbSourceEntity::class, com.ehviewer.core.database.model.LibraryRootEntity::class, com.ehviewer.core.database.model.LocalGalleryEntity::class, com.ehviewer.core.database.model.WebDavSourceEntity::class, DownloadTaskEntity::class],
-    version = 15,
+    version = 16,
     exportSchema = false
 )
 abstract class MangaDatabase : com.ehviewer.core.database.LocalLibraryDatabase() {
@@ -1112,13 +1119,19 @@ abstract class MangaDatabase : com.ehviewer.core.database.LocalLibraryDatabase()
             }
         }
 
+        private val MIGRATION_15_16 = object : androidx.room.migration.Migration(15, 16) {
+            override fun migrate(database: androidx.sqlite.db.SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE bookmarks ADD COLUMN note TEXT")
+            }
+        }
+
         fun getDatabase(context: Context): MangaDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
                     context.applicationContext,
                     MangaDatabase::class.java,
                     "manga_reader_db"
-                ).addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15)
+                ).addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16)
                 .build()
                 INSTANCE = instance
                 instance

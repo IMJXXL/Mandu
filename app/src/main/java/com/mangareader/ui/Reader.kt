@@ -809,7 +809,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
     // ★ 书签状态同步：翻页/切章/增删后刷新"当前页是否有书签"；TOC 打开时拉一次该书书签列表
     LaunchedEffect(cur, navStack, bookmarkTick, viewing, book) {
         val bid = book?.id
-        val ch = if (viewing) navStack.lastOrNull() else null
+        val ch = if (viewing) (navStack.lastOrNull() ?: book?.filePath) else null
         pageBookmarked = if (bid != null && bid > 0 && ch != null) {
             withContext(Dispatchers.IO) { runCatching { dao.countBookmark(bid, ch, cur) }.getOrDefault(0) } > 0
         } else false
@@ -945,21 +945,31 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
     }
 
     // ★ 书签 click/toggle：同页 idempotent（唯一索引+IGNORE）；toggle 结果 Toast 反馈
+    var showBookmarkNoteDialog by remember { mutableStateOf(false) }
+    var pendingBookmarkNote by remember { mutableStateOf("") }
+
     fun toggleBookmark() {
         val b = book ?: return
         if (!viewing || pageList.isEmpty() || b.id <= 0) return
         val chPath = navStack.lastOrNull() ?: b.filePath
         val page = cur
         scope.launch(Dispatchers.Main) {
-            val added = withContext(Dispatchers.IO) {
-                if (dao.countBookmark(b.id, chPath, page) > 0) {
-                    dao.deleteBookmark(b.id, chPath, page); false
+            val exists = withContext(Dispatchers.IO) { dao.countBookmark(b.id, chPath, page) > 0 }
+            if (exists) {
+                withContext(Dispatchers.IO) { dao.deleteBookmark(b.id, chPath, page) }
+                bookmarkTick++
+                android.widget.Toast.makeText(ctx, "已移除书签", android.widget.Toast.LENGTH_SHORT).show()
+            } else {
+                val noteEnabled = ctx.getSharedPreferences("reader_config", android.content.Context.MODE_PRIVATE).getBoolean("bookmark_note_enabled", false)
+                if (noteEnabled) {
+                    pendingBookmarkNote = ""
+                    showBookmarkNoteDialog = true
                 } else {
-                    dao.insertBookmark(com.mangareader.data.Bookmark(bookId = b.id, chapterPath = chPath, page = page)) != -1L
+                    withContext(Dispatchers.IO) { dao.insertBookmark(com.mangareader.data.Bookmark(bookId = b.id, chapterPath = chPath, page = page)) }
+                    bookmarkTick++
+                    android.widget.Toast.makeText(ctx, "已添加书签（第 ${page + 1} 页）", android.widget.Toast.LENGTH_SHORT).show()
                 }
             }
-            bookmarkTick++
-            android.widget.Toast.makeText(ctx, if (added) "已添加书签（第 ${page + 1} 页）" else "已移除书签", android.widget.Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -2203,6 +2213,50 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
             dismissButton = {
                 TextButton(onClick = { showSwitchConfirm = false }) { Text("取消") }
             }
+        )
+    }
+
+    if (showBookmarkNoteDialog) {
+        val b = book
+        AlertDialog(
+            onDismissRequest = {
+                showBookmarkNoteDialog = false
+                if (b != null && viewing && pageList.isNotEmpty() && b.id > 0) {
+                    val chPath = navStack.lastOrNull() ?: b.filePath
+                    scope.launch(Dispatchers.IO) {
+                        dao.insertBookmark(com.mangareader.data.Bookmark(bookId = b.id, chapterPath = chPath, page = cur))
+                        bookmarkTick++
+                    }
+                    android.widget.Toast.makeText(ctx, "已添加书签（第 ${cur + 1} 页）", android.widget.Toast.LENGTH_SHORT).show()
+                }
+            },
+            title = { Text("书签备注") },
+            text = {
+                androidx.compose.material3.OutlinedTextField(
+                    value = pendingBookmarkNote,
+                    onValueChange = { pendingBookmarkNote = it },
+                    label = { Text("备注（可选）") },
+                    singleLine = false,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showBookmarkNoteDialog = false
+                    if (b != null && viewing && pageList.isNotEmpty() && b.id > 0) {
+                        val chPath = navStack.lastOrNull() ?: b.filePath
+                        val note = pendingBookmarkNote.ifEmpty { null }
+                        scope.launch(Dispatchers.IO) {
+                            dao.insertBookmark(com.mangareader.data.Bookmark(bookId = b.id, chapterPath = chPath, page = cur, note = note))
+                            bookmarkTick++
+                        }
+                        android.widget.Toast.makeText(ctx, "已添加书签（第 ${cur + 1} 页）", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                }) { Text("保存") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showBookmarkNoteDialog = false }) { Text("取消") }
+            },
         )
     }
 }

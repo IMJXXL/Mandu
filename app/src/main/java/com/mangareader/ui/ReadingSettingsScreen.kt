@@ -150,30 +150,17 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
             item {
                 Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text("启动时自动刷新", fontSize = 16.sp)
-                        Text("检查已导入文件夹是否有新文件", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("书签备注", fontSize = 16.sp)
+                        Text("开启后点击书签时弹出备注输入框，备注显示在目录书签条目中", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    Switch(checked = autoRefresh, onCheckedChange = { autoRefresh = it; prefs.edit().putBoolean("auto_refresh", it).apply() })
-                }
-            }
-
-            item {
-                Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("沉浸式阅读", fontSize = 16.sp)
-                        Text("阅读时隐藏状态栏和导航栏", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Switch(checked = config.isImmersiveMode, onCheckedChange = { config = config.copy(isImmersiveMode = it); config.save(ctx) })
-                }
-            }
-
-            item {
-                Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("墨水屏模式", fontSize = 16.sp)
-                        Text("适配墨水屏设备：降低图片解码分辨率、减少预加载、延长UI自动隐藏时间", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Switch(checked = config.isEinkMode, onCheckedChange = { config = config.copy(isEinkMode = it); config.save(ctx) })
+                    var bookmarkNote by remember { mutableStateOf(prefs.getBoolean("bookmark_note_enabled", false)) }
+                    Switch(
+                        checked = bookmarkNote,
+                        onCheckedChange = {
+                            bookmarkNote = it
+                            prefs.edit().putBoolean("bookmark_note_enabled", it).apply()
+                        },
+                    )
                 }
             }
 

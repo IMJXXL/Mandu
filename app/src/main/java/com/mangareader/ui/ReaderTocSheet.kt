@@ -241,6 +241,9 @@ fun ReaderTocSheet(
                                 Column(Modifier.weight(1f)) {
                                     Text(bookmarkChapterLabel(bm.chapterPath), color = MaterialTheme.colorScheme.onSurface, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     Text("第 ${bm.page + 1} 页 · ${dateFormat.format(java.util.Date(bm.createdAt))}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+                                    if (!bm.note.isNullOrEmpty()) {
+                                        Text(bm.note!!, color = MaterialTheme.colorScheme.primary, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                    }
                                 }
                                 IconButton(onClick = { onPageBookmarkDelete(bm) }) {
                                     Icon(Icons.Default.DeleteOutline, "删除书签", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(20.dp))
