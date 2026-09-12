@@ -814,6 +814,19 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
             withContext(Dispatchers.IO) { runCatching { dao.countBookmark(bid, ch, cur) }.getOrDefault(0) } > 0
         } else false
     }
+
+    DisposableEffect(viewing) {
+        if (viewing) {
+            val prefs = ctx.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE)
+            VolumeKeyHandler.enabled = prefs.getBoolean("reader_volume_keys", false)
+            VolumeKeyHandler.inverted = prefs.getBoolean("reader_volume_keys_inverted", false)
+            VolumeKeyHandler.onNext = { go(1) }
+            VolumeKeyHandler.onPrev = { go(-1) }
+        }
+        onDispose { VolumeKeyHandler.onNext = null; VolumeKeyHandler.onPrev = null }
+    }
+    DisposableEffect(ui) { VolumeKeyHandler.menuVisible = ui; onDispose { } }
+
     LaunchedEffect(showToc, bookmarkTick, book) {
         val bid = book?.id
         if (showToc && bid != null) {

@@ -22,6 +22,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.mangareader.ui.HistoryScreen
+import com.mangareader.ui.VolumeKeyHandler
 import com.mangareader.ui.showSystemBars
 import androidx.navigation.navOptions
 import com.mangareader.ui.Library
@@ -31,6 +32,28 @@ import com.mangareader.ui.Theme
 import com.mangareader.ui.AppTheme
 
 class MainActivity : ComponentActivity() {
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+        if (VolumeKeyHandler.enabled && !VolumeKeyHandler.menuVisible) {
+            when (event.keyCode) {
+                android.view.KeyEvent.KEYCODE_VOLUME_DOWN -> {
+                    if (event.action == android.view.KeyEvent.ACTION_UP) {
+                        if (VolumeKeyHandler.inverted) VolumeKeyHandler.onPrev?.invoke()
+                        else VolumeKeyHandler.onNext?.invoke()
+                    }
+                    return true
+                }
+                android.view.KeyEvent.KEYCODE_VOLUME_UP -> {
+                    if (event.action == android.view.KeyEvent.ACTION_UP) {
+                        if (VolumeKeyHandler.inverted) VolumeKeyHandler.onNext?.invoke()
+                        else VolumeKeyHandler.onPrev?.invoke()
+                    }
+                    return true
+                }
+            }
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         SignatureVerifier.verify(this, "F6D95465BE7D17C1B3BE2B0C59969C22")

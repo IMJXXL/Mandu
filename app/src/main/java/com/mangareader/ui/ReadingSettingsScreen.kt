@@ -167,6 +167,28 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
             item {
                 Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
+                        Text("音量键翻页", fontSize = 16.sp)
+                        Text("使用音量键翻页，菜单显示时不拦截", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    var volKeys by remember { mutableStateOf(prefs.getBoolean("reader_volume_keys", false)) }
+                    Switch(checked = volKeys, onCheckedChange = { volKeys = it; prefs.edit().putBoolean("reader_volume_keys", it).apply() })
+                }
+            }
+
+            item {
+                Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("翻转音量键", fontSize = 16.sp)
+                        Text("交换音量上/下键的翻页方向", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    var volInvert by remember { mutableStateOf(prefs.getBoolean("reader_volume_keys_inverted", false)) }
+                    Switch(checked = volInvert, onCheckedChange = { volInvert = it; prefs.edit().putBoolean("reader_volume_keys_inverted", it).apply() })
+                }
+            }
+
+            item {
+                Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
 
                         Text("长按保存图片", fontSize = 16.sp)
                         Text("开启后翻页阅读时长按页面可将当前图保存到相册；默认关闭，避免翻页时误触", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
