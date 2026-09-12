@@ -1149,7 +1149,11 @@ class ArchiveEngine(private val ctx: Context) {
                     debugLogBuffer.appendLine("${System.currentTimeMillis()} loadArchiveCover: OK via FD direct read")
                     flushLog(ctx)
                     return bmp
+                } else {
+                    Log.w(TAG, "loadArchiveCover: FD data=${data.size}bytes but safeDecodeCover returned null for $coverKey")
                 }
+            } else {
+                Log.w(TAG, "loadArchiveCover: loadFromZip returned null for $coverKey")
             }
         } catch (e: Exception) {
             Log.d(TAG, "loadArchiveCover FD: ${e.message}")
@@ -1180,6 +1184,8 @@ class ArchiveEngine(private val ctx: Context) {
                     }
                 }
             } catch (e: Exception) { Log.d(TAG, "loadArchiveCover realFile: ${e.message}") }
+        } else {
+            Log.w(TAG, "loadArchiveCover: getRealFile returned null for $coverKey")
         }
 
         Log.w(TAG, "loadArchiveCover: ALL fallbacks failed for $coverKey")
