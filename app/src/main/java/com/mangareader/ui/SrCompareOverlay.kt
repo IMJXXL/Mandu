@@ -48,6 +48,7 @@ fun SrCompareOverlay(pageIndex: Int, tick: Int, onClose: () -> Unit, bgColor: In
     val original = remember(pageIndex, tick) { SrPipeline.peekOriginal(pageIndex) }
     val enhanced = remember(pageIndex, tick) { SrPipeline.peekSr(pageIndex) }
 
+
     // ★ 底色跟随阅读器背景色（非固定黑）：长页适配后两侧必然露出底色，与阅读观感保持一致
     Box(Modifier.fillMaxSize().background(Color(bgColor))) {
         if (original != null && enhanced != null && !original.isRecycled && !enhanced.isRecycled) {

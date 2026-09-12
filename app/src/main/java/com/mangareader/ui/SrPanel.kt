@@ -121,10 +121,21 @@ private fun SrPanelContent(
             .fillMaxWidth()
             .navigationBarsPadding()
             .padding(horizontal = 20.dp)
-            .padding(bottom = 16.dp)
+            .padding(top = 20.dp, bottom = 16.dp)
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
+        // drag handle 指示条
+        Box(
+            Modifier
+                .align(Alignment.CenterHorizontally)
+                .width(36.dp)
+                .height(4.dp)
+                .background(
+                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                    RoundedCornerShape(2.dp),
+                ),
+        )
         Text("超分 / 画质优化", fontSize = 18.sp, fontWeight = FontWeight.Bold)
 
         // native 崩溃保护提示（上次被超分核心带走时显示）

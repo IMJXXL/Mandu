@@ -107,12 +107,20 @@ object SrPipeline {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Bitmap>): Boolean = size > 8
     }
 
-    fun peekOriginal(pageIndex: Int): Bitmap? = synchronized(originals) { originals["$sessionChapterId:$pageIndex"] }
+    fun peekOriginal(pageIndex: Int): Bitmap? = synchronized(originals) {
+        val key = "$sessionChapterId:$pageIndex"
+        val bmp = originals[key]
+        if (bmp != null && bmp.isRecycled) {
+            originals.remove(key)
+            null
+        } else bmp
+    }
 
     /** 对比叠层"右侧"取图：超分结果优先；黑白独立模式下退而求其次取黑白优化结果；
      *  最后兜底查批量离线产物（手动开超分切换模型后内存缓存键不命中时仍可对比） */
     fun peekSr(pageIndex: Int): Bitmap? {
-        SrCore.dispatcher.getSrBitmap(sessionChapterId, pageIndex)?.let { return it }
+        val srBmp = SrCore.dispatcher.getSrBitmap(sessionChapterId, pageIndex)
+        if (srBmp != null) return srBmp
         if (!SrCore.settings.upscaleEnabled && SrCore.settings.bwEnabled) {
             val key = "bwonly_${sessionChapterId}_${pageIndex}_${SrCore.settings.bwGrayLevels}_${if (SrCore.settings.bwDensityCorrection) 1 else 0}"
             SrCore.manager.getCachedResult(key)?.let { return it }
@@ -416,6 +424,17 @@ object SrPipeline {
                     eng.loadPage(meta, sessionTreeStr)
                 }
                 if (original == null || original.isRecycled) return@launch
+
+                // ★ 修复对比失效：callerBitmap 来自视图 bitmapCache，超分完成后视图替换 bitmap 并
+                //   recycle 旧的，originals 中存的引用变毒图。存独立 copy 不被视图持有，不会被 recycle。
+                if (callerBitmap != null) {
+                    runCatching {
+                        val indep = original.copy(original.config ?: Bitmap.Config.ARGB_8888, false)
+                        synchronized(originals) { originals["$cid:$pageIndex"] = indep }
+                    }
+                } else {
+                    synchronized(originals) { originals["$cid:$pageIndex"] = original }
+                }
 
                 if (original.width < 100 || original.height < 100) return@launch
                 // ★ 1x 档（快速优化/waifu2x 清理）输出不放大，输入上限放宽到 8192；
