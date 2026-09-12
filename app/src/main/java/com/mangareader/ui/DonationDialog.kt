@@ -91,6 +91,13 @@ fun DonationDialog(onDismiss: () -> Unit) {
                         ),
                     contentScale = ContentScale.Fit
                 )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "（长按图片保存到相册）",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    textAlign = TextAlign.Center
+                )
                 Spacer(Modifier.height(12.dp))
                 Text(
                     "随心就好，金额随意。没有这份心意也完全没关系，用得开心就是最好的支持。",
