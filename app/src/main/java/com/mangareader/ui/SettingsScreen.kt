@@ -869,8 +869,8 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
                             Text("漫读 v${com.mangareader.BuildConfig.VERSION_NAME}", fontSize = 16.sp, fontWeight = FontWeight.Bold)
                             Spacer(Modifier.height(8.dp))
                             Text("支持格式", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                            Text("漫画: ZIP/CBZ · RAR/CBR · 7Z/CB7 · PDF · EPUB · MOBI/AZW/AZW3/PDB/PRC", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text("图片: JPG · PNG · WEBP · GIF · BMP · HEIF", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("漫画: ZIP/CBZ · RAR/CBR(含RAR5) · 7Z/CB7 · TAR/CBT · PDF · EPUB · MOBI/AZW/AZW3/PDB/PRC", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("图片: JPG · PNG · WEBP · GIF · BMP · HEIC · HEIF · AVIF · SVG · JXL", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Spacer(Modifier.height(8.dp))
                             Text("版本兼容性", fontSize = 14.sp, fontWeight = FontWeight.Medium)
                             val sdk = android.os.Build.VERSION.SDK_INT
@@ -883,19 +883,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
                             } else {
                                 Text("64位系统，可使用全部功能", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
                             }
-                            Spacer(Modifier.height(8.dp))
-                            Text("超分（无损放大）兼容性", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                            val srLibOk = try { com.mangareader.sr.NativeLibraryStatus.isRealESRGANAvailable } catch (_: Throwable) { false }
-                            val vulkanOk = try { com.mangareader.sr.VulkanHelper.isVulkanSupported(ctx) } catch (_: Throwable) { false }
-                            val vulkanDetail = try { com.mangareader.sr.VulkanHelper.describe(ctx) } catch (_: Throwable) { "检测失败" }
-                            if (srLibOk && vulkanOk) {
-                                Text("✓ 本设备支持超分（Vulkan GPU 加速）", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
-                            } else {
-                                Text("✗ 本设备不可用超分：${if (!vulkanOk) "缺少 Vulkan 图形加速" else "超分组件加载失败"}", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
-                            }
-                            Text(vulkanDetail, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text("超分路径：Vulkan GPU / CPU 自动选择；不支持 Vulkan 的设备走 CPU（较慢但绝对稳定）", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text("超分缓存：${if (sdk >= android.os.Build.VERSION_CODES.R) "WEBP 高质量存储" else "JPEG 存储（系统限制，画质略低）"}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
                             Spacer(Modifier.height(12.dp))
                             HorizontalDivider()
                             Spacer(Modifier.height(12.dp))
@@ -912,18 +900,18 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
                             LicenseLink("libmobi", "https://github.com/niceSaber/libmobi")
                             LicenseLink("libzip", "https://github.com/niceSaber/libzip")
                             LicenseLink("APNG4Android (penfeizhou)", "https://github.com/penfeizhou/APNG4Android")
-                            LicenseLink("LocalViewer (GPL v3)", "https://www.gnu.org/licenses/gpl-3.0.html")
+                            LicenseLink("LocalViewer (GPL v3)", "https://github.com/zmz125000/LocalViewer")
                             // 超分栈（模型随包内置，BSD 系许可）
                             LicenseLink("ncnn (Tencent)", "https://github.com/Tencent/ncnn")
                             LicenseLink("Real-CUGAN 模型 (bilibili/ailab)", "https://github.com/bilibili/ailab")
                             LicenseLink("Real-ESRGAN 模型 (xinntao)", "https://github.com/xinntao/Real-ESRGAN")
-                            LicenseLink("ncnn 超分推理实现 (nihui)", "https://github.com/nihui/realcugan-ncnn-vulkan")
-                            LicenseLink("waifu2x 模型与 ncnn 移植 (nagadomi / nihui)", "https://github.com/nihui/waifu2x-ncnn-vulkan")
+                            LicenseLink("ncnn (nihui)", "https://github.com/nihui/realcugan-ncnn-vulkan")
+                            LicenseLink("waifu2x (nagadomi / nihui)", "https://github.com/nihui/waifu2x-ncnn-vulkan")
                             Spacer(Modifier.height(8.dp))
                             Text("特别感谢", fontSize = 14.sp, fontWeight = FontWeight.Medium)
                             Text("· TachiyomiSY — 阅读器架构与功能设计的重要参考", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text("· MHark — 文件访问机制与本地漫画读取方案的重要参考", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text("· LocalViewer — SMB/WebDAV 远程漫画能力的重要参考", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("· MHark — 读取机制与性能的重要参考", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("· LocalViewer — SMB/WebDAV 的重要参考", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Spacer(Modifier.height(4.dp))
                             Text("感谢所有开源项目的贡献者，让这一切成为可能。", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
