@@ -93,10 +93,10 @@ class MainActivity : ComponentActivity() {
                 }
                 NavHost(
                     nav, "library",
-                    enterTransition = { slideInHorizontally(animationSpec = tween(300)) { it } },
-                    exitTransition = { slideOutHorizontally(animationSpec = tween(300)) { -it } },
-                    popEnterTransition = { slideInHorizontally(animationSpec = tween(300)) { -it } },
-                    popExitTransition = { slideOutHorizontally(animationSpec = tween(300)) { it } },
+                    enterTransition = { fadeIn(animationSpec = tween(300)) },
+                    exitTransition = { fadeOut(animationSpec = tween(300)) },
+                    popEnterTransition = { fadeIn(animationSpec = tween(300)) },
+                    popExitTransition = { fadeOut(animationSpec = tween(300)) },
                 ) {
                     composable("library") {
                         Library(
