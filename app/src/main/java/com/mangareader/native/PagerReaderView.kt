@@ -1357,7 +1357,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                         ssv.setOnImageEventListener(null)
                     }
                 })
-                ssv.setImage(com.davemorrissey.labs.subscaleview.ImageSource.bitmap(bmp))
+                ssv.setImage(com.davemorrissey.labs.subscaleview.ImageSource.cachedBitmap(bmp))
             } else {
                 // 不使用 SSIV：用 ImageView FIT_CENTER（同步设 bitmap，无需 loadingBar）
                 loadingBar?.visibility = View.GONE
@@ -1391,7 +1391,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                         ssv.setOnImageEventListener(null)
                     }
                 })
-                ssv.setImage(com.davemorrissey.labs.subscaleview.ImageSource.bitmap(bmp))
+                ssv.setImage(com.davemorrissey.labs.subscaleview.ImageSource.cachedBitmap(bmp))
             } else {
                 val halfW = bmp.width / 2
                 val srcX = if (showRight) halfW else 0
