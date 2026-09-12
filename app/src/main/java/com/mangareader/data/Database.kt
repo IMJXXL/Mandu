@@ -530,26 +530,35 @@ interface MangaDao {
     suspend fun getProgress(bookId: Long, path: String): ReadingProgress?
 
     @Query("""
-        INSERT INTO reading_progress(bookId, path, lastPage, completed, updatedAt, anim_dialog_choice, totalPages)
+        INSERT OR IGNORE INTO reading_progress(bookId, path, lastPage, completed, updatedAt, anim_dialog_choice, totalPages)
         VALUES (:bookId, :path, :lastPage, :completed, :updatedAt, 0, :totalPages)
-        ON CONFLICT(bookId, path) DO UPDATE SET
+    """)
+    suspend fun insertOrIgnoreProgress(
+        bookId: Long, path: String, lastPage: Int, completed: Boolean, updatedAt: Long,
+        totalPages: Int
+    )
+
+    @Query("""
+        UPDATE reading_progress SET
             lastPage = :lastPage,
             completed = :completed,
             updatedAt = :updatedAt,
             totalPages = max(totalPages, :totalPages)
-        -- ★ v1.11 修订：移除原 completed 的 CASE 单向锁（1→0 禁降）。
-        --   实机教训：一旦误标 completed=1（如小页数卷 done 误判/历史脏数据），单向锁让该卷
-        --   永久命中"已读完→跳第1页"（enterReader 决策1）且无法自愈——正是"记忆全失效永远回第一页"根因。
-        --   改为直写后：save(done=false) 可把误标拉回 false 自然恢复；
-        --   动图弹窗按钮不再走本方法（改用 preinsertProgressIfAbsent 占位 + setAnimDialogChoice），
-        --   原"弹窗冲掉 completed"的担忧源头已消除。
-        -- ★ v1.13 A'：新增 totalPages 列；UPDATE 用 max() 单调递增——调用点传 0/未知值不会
-        --   把已积累的真实页数覆盖归零（审核第二轮修正项）
+        WHERE bookId = :bookId AND path = :path
     """)
-    suspend fun upsertProgress(
+    suspend fun updateProgress(
         bookId: Long, path: String, lastPage: Int, completed: Boolean, updatedAt: Long,
         totalPages: Int
     )
+
+    @Transaction
+    suspend fun upsertProgress(
+        bookId: Long, path: String, lastPage: Int, completed: Boolean, updatedAt: Long,
+        totalPages: Int
+    ) {
+        insertOrIgnoreProgress(bookId, path, lastPage, completed, updatedAt, totalPages)
+        updateProgress(bookId, path, lastPage, completed, updatedAt, totalPages)
+    }
 
     // ★ 3+5 改动2：@Transaction 批量保存阅读进度——把 updateReadingProgress + upsertProgress + insertHistory
     //   三条写入打包在单个事务内，save/兜底 save 共用此方法。@Transaction 保证不读到半折叠状态。
