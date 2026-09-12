@@ -478,7 +478,7 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -> U
         AlertDialog(
             onDismissRequest = { showNoDirDialog = false },
             title = { Text("未设置下载路径") },
-            text = { Text("请先在 SMB 设置 → 下载目录 中设置保存路径") },
+            text = { Text("请先设置下载保存路径") },
             confirmButton = {
                 Row {
                     TextButton(onClick = { showNoDirDialog = false; pickDownloadDirLauncher.launch(null) }) { Text("去设置") }

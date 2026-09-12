@@ -178,17 +178,17 @@ class MainActivity : ComponentActivity() {
                         title = { Text("大家好，我是瑾轩小狼") },
                         text = {
                             Column(Modifier.verticalScroll(rememberScrollState())) {
-                                Text("    漫读是一款安卓本地漫画阅读器，全程免费、无广告、无任何商业收益。")
+                                Text("    漫读是一款安卓本地漫画阅读器，全程免费、无广告、无任何商业收益。", fontSize = 15.sp)
                                 Spacer(Modifier.height(8.dp))
-                                Text("    开发不易，如果用着合心意，欢迎点击左上角的「瑾」字请我喝杯咖啡；遇到问题或建议，也可以直接加 QQ 反馈。")
+                                Text("    开发不易，如果用着合心意，欢迎点击左上角的「瑾」字请我喝杯咖啡；遇到问题或建议，也可以直接加 QQ 反馈。", fontSize = 15.sp)
                                 Spacer(Modifier.height(8.dp))
-                                Text("QQ：1173350134（点击可复制）", color = MaterialTheme.colorScheme.primary, modifier = Modifier.clickable {
+                                Text("QQ：1173350134（点击可复制）", fontSize = 15.sp, color = MaterialTheme.colorScheme.primary, modifier = Modifier.clickable {
                                     val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
                                     cm.setPrimaryClip(android.content.ClipData.newPlainText("QQ", "1173350134"))
                                     android.widget.Toast.makeText(this@MainActivity, "QQ号已复制", android.widget.Toast.LENGTH_SHORT).show()
                                 })
                                 Spacer(Modifier.height(8.dp))
-                                Text("    特别感谢晓萌绘制 Logo，染林同学耐心测试。")
+                                Text("    特别感谢晓萌绘制 Logo，染林同学耐心测试。", fontSize = 15.sp)
                                 Spacer(Modifier.height(12.dp))
                                 HorizontalDivider()
                                 Spacer(Modifier.height(8.dp))
