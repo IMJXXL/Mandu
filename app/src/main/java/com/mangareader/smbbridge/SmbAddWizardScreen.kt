@@ -84,7 +84,7 @@ fun SmbAddWizardScreen(onBack: () -> Unit, onSaved: () -> Unit, initial: SmbSour
             addedAt = 0,
         )
         val result = withContext(Dispatchers.IO) {
-            runCatching { SmbGateway.listDirectory(temp, password, "") }
+            runCatching { SmbGateway.listDirectory(temp, password, "", useCache = false) }
         }
         busy = false
         return result.fold(onSuccess = { entries ->
