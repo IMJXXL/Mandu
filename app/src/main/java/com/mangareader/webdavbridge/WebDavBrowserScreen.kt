@@ -40,7 +40,7 @@ import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
-fun WebDavBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -> Unit = {}) {
+fun WebDavBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -> Unit = {}, onOpenSettings: () -> Unit = {}) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var source by remember { mutableStateOf<WebDavSourceEntity?>(null) }
@@ -427,7 +427,12 @@ fun WebDavBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -
             onDismissRequest = { showNoDirDialog = false },
             title = { Text("未设置下载路径") },
             text = { Text("请先在 WebDAV 设置 → 下载目录 中设置保存路径") },
-            confirmButton = { TextButton(onClick = { showNoDirDialog = false }) { Text("知道了") } },
+            confirmButton = {
+                Row {
+                    TextButton(onClick = { showNoDirDialog = false; onOpenSettings() }) { Text("去设置") }
+                    TextButton(onClick = { showNoDirDialog = false }) { Text("知道了") }
+                }
+            },
         )
     }
 

@@ -58,7 +58,7 @@ fun WebDavServersScreen(onBack: () -> Unit, onOpenBook: ((Long) -> Unit)? = null
 
 
     browsingId?.let { id ->
-        WebDavBrowserScreen(serverId = id, onBack = { browsingId = null }, onOpenBook = onOpenBook ?: {})
+        WebDavBrowserScreen(serverId = id, onBack = { browsingId = null }, onOpenBook = onOpenBook ?: {}, onOpenSettings = { browsingId = null; showSettings = true })
         return
     }
 

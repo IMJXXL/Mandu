@@ -56,7 +56,7 @@ fun SmbServersScreen(onBack: () -> Unit, onOpenBook: (Long) -> Unit = {}) {
     var showDownloadQueue by remember { mutableStateOf(false) }
 
     browsingId?.let { id ->
-        SmbBrowserScreen(serverId = id, onBack = { browsingId = null }, onOpenBook = onOpenBook)
+        SmbBrowserScreen(serverId = id, onBack = { browsingId = null }, onOpenBook = onOpenBook, onOpenSettings = { browsingId = null; showSettings = true })
         return
     }
 
