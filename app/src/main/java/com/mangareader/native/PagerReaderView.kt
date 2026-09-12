@@ -492,7 +492,15 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         }
 
     private class NoOpTransformer : ViewPager2.PageTransformer {
-        override fun transformPage(page: View, position: Float) {}
+        override fun transformPage(page: View, position: Float) {
+            page.apply {
+                rotationY = 0f
+                scaleX = 1f
+                scaleY = 1f
+                alpha = 1f
+                translationX = 0f
+            }
+        }
     }
 
     private class FlipPageTransformer : ViewPager2.PageTransformer {
