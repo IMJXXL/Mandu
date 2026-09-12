@@ -19,14 +19,16 @@ typedef void (*FPDF_InitLibrary)();
 typedef void (*FPDF_DestroyLibrary)();
 typedef FPDF_DOCUMENT (*FPDF_LoadDocument)(const char* file_path, const char* password);
 typedef FPDF_DOCUMENT (*FPDF_LoadMemDocument)(const void* data, size_t size, const char* password);
-typedef FPDF_DOCUMENT (*FPDF_LoadCustomDocument)(void* file_read, const char* password);
+typedef FPDF_DOCUMENT (*FPDF_LoadCustomDocument)(void* file_access, const char* password);
 typedef void (*FPDF_CloseDocument)(FPDF_DOCUMENT document);
 
-// Custom file read interface for FPDF_LoadCustomDocument
-typedef struct FPDF_FILE_READ {
-    size_t (*ReadBlock)(void* param, size_t position, size_t size, void* buffer);
-    void* param;
-} FPDF_FILE_READ;
+// Custom file access interface for FPDF_LoadCustomDocument (official pdfium ABI)
+typedef int FPDF_BOOL;
+typedef struct FPDF_FILEACCESS {
+    unsigned long m_FileLen;
+    FPDF_BOOL (*m_GetBlock)(void* param, unsigned long position, unsigned char* pBuf, unsigned long size);
+    void* m_Param;
+} FPDF_FILEACCESS;
 
 // Callback data for custom document reading (JNI callback to Kotlin)
 struct CustomReadData {
@@ -82,7 +84,7 @@ private:
         void* mappedData = nullptr;
         size_t mappedSize = 0;
         int fdRefCount = 0;
-        FPDF_FILE_READ* customFileRead = nullptr;
+        FPDF_FILEACCESS* customFileAccess = nullptr;
         CustomReadData* customReadData = nullptr;
     };
 
