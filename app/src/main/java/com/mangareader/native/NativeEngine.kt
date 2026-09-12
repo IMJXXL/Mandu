@@ -131,7 +131,14 @@ object NativeEngine {
     fun pdfRenderPageBitmap(key: String, pageIndex: Int, width: Int, height: Int, dpi: Int): Bitmap? = nativePdfRenderPageBitmap(key, pageIndex, width, height, dpi)
     fun pdfCloseAll() = nativePdfCloseAll()
 
+    fun interface PdfRangeReader {
+        fun readBlock(position: Long, size: Int): ByteArray?
+    }
+
+    fun pdfOpenCustom(key: String, fileSize: Long, reader: PdfRangeReader): Boolean = nativePdfOpenCustom(key, fileSize, reader)
+
     private external fun nativePdfOpen(key: String, fd: Int): Boolean
+    private external fun nativePdfOpenCustom(key: String, fileSize: Long, reader: PdfRangeReader): Boolean
     private external fun nativePdfClose(key: String)
     private external fun nativePdfIsOpen(key: String): Boolean
     private external fun nativePdfGetPageCount(key: String): Int

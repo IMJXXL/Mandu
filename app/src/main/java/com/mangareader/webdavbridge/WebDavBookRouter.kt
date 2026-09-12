@@ -2,6 +2,7 @@ package com.mangareader.webdavbridge
 
 import com.hippo.ehviewer.gallery.useArchivePageLoader
 import com.hippo.ehviewer.gallery.useDocumentExtractPageLoader
+import com.hippo.ehviewer.gallery.usePdfiumPageLoader
 import com.hippo.ehviewer.gallery.PageLoader
 import com.hippo.ehviewer.gallery.PasswdProvider
 import com.hippo.ehviewer.gallery.useSolidExtractPageLoader
@@ -15,6 +16,7 @@ import com.hippo.ehviewer.library.RemoteArchiveOpen
 import com.hippo.ehviewer.library.RemoteRangeNotSupportedException
 import com.hippo.ehviewer.library.isDocumentFileName
 import com.hippo.ehviewer.library.isEpubFileName
+import com.hippo.ehviewer.library.isPdfFileName
 import com.hippo.ehviewer.library.isImageFileName
 import com.hippo.ehviewer.library.isSolidArchiveFileName
 import com.hippo.ehviewer.library.isTarArchiveFileName
@@ -185,17 +187,28 @@ object WebDavBookRouter {
             throw IllegalStateException("该归档需要密码（当前未配置归档密码）")
         }
         if (isDocumentFileName(remote)) {
-            val documentFormat = if (isEpubFileName(remote)) "epub" else "pdf"
-            useDocumentExtractPageLoader(
-                source = byteSource,
-                cacheKey = cacheKey,
-                titleHint = titleHint,
-                formatHint = documentFormat,
-                info = null,
-                startPage = startPage,
-                remoteSize = runCatching { byteSource.size }.getOrDefault(0L),
-                progressivePdf = documentFormat == "pdf",
-            ) { loader -> block(loader, byteSource) }
+            if (isPdfFileName(remote)) {
+                usePdfiumPageLoader(
+                    source = byteSource,
+                    cacheKey = cacheKey,
+                    titleHint = titleHint,
+                    info = null,
+                    startPage = startPage,
+                    remoteSize = runCatching { byteSource.size }.getOrDefault(0L),
+                ) { loader -> block(loader, byteSource) }
+            } else {
+                val documentFormat = if (isEpubFileName(remote)) "epub" else "pdf"
+                useDocumentExtractPageLoader(
+                    source = byteSource,
+                    cacheKey = cacheKey,
+                    titleHint = titleHint,
+                    formatHint = documentFormat,
+                    info = null,
+                    startPage = startPage,
+                    remoteSize = runCatching { byteSource.size }.getOrDefault(0L),
+                    progressivePdf = documentFormat == "pdf",
+                ) { loader -> block(loader, byteSource) }
+            }
         } else if (isSolidArchiveFileName(remote)) {
             try {
                 useSolidExtractPageLoader(

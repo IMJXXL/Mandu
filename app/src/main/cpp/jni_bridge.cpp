@@ -571,6 +571,17 @@ Java_com_mangareader_native_NativeEngine_nativePdfOpen(JNIEnv* env, jobject thiz
     return result ? JNI_TRUE : JNI_FALSE;
 }
 
+JNIEXPORT jboolean JNICALL
+Java_com_mangareader_native_NativeEngine_nativePdfOpenCustom(JNIEnv* env, jobject thiz, jstring key, jlong fileSize, jobject reader) {
+    if (key == nullptr || reader == nullptr || g_jvm == nullptr) return JNI_FALSE;
+    const char* cKey = env->GetStringUTFChars(key, nullptr);
+    jobject readerRef = env->NewGlobalRef(reader);
+    bool result = PdfiumWrapper::instance().openDocumentCustom(std::string(cKey), (size_t)fileSize, g_jvm, readerRef);
+    if (!result) env->DeleteGlobalRef(readerRef);
+    env->ReleaseStringUTFChars(key, cKey);
+    return result ? JNI_TRUE : JNI_FALSE;
+}
+
 JNIEXPORT void JNICALL
 Java_com_mangareader_native_NativeEngine_nativePdfClose(JNIEnv* env, jobject thiz, jstring key) {
     if (key == nullptr) return;

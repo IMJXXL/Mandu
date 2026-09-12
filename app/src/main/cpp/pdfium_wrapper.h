@@ -19,7 +19,21 @@ typedef void (*FPDF_InitLibrary)();
 typedef void (*FPDF_DestroyLibrary)();
 typedef FPDF_DOCUMENT (*FPDF_LoadDocument)(const char* file_path, const char* password);
 typedef FPDF_DOCUMENT (*FPDF_LoadMemDocument)(const void* data, size_t size, const char* password);
+typedef FPDF_DOCUMENT (*FPDF_LoadCustomDocument)(void* file_read, const char* password);
 typedef void (*FPDF_CloseDocument)(FPDF_DOCUMENT document);
+
+// Custom file read interface for FPDF_LoadCustomDocument
+typedef struct FPDF_FILE_READ {
+    size_t (*ReadBlock)(void* param, size_t position, size_t size, void* buffer);
+    void* param;
+} FPDF_FILE_READ;
+
+// Callback data for custom document reading (JNI callback to Kotlin)
+struct CustomReadData {
+    JavaVM* jvm = nullptr;
+    jobject readerRef = nullptr;
+    jmethodID readBlockMethod = nullptr;
+};
 typedef int (*FPDF_GetPageCount)(FPDF_DOCUMENT document);
 typedef FPDF_PAGE (*FPDF_LoadPage)(FPDF_DOCUMENT document, int page_index);
 typedef void (*FPDF_ClosePage)(FPDF_PAGE page);
@@ -45,6 +59,7 @@ public:
     bool load();
     bool openDocument(const std::string& key, int fd);
     bool openDocumentWithPassword(const std::string& key, int fd, const char* password);
+    bool openDocumentCustom(const std::string& key, size_t fileSize, JavaVM* jvm, jobject readerRef);
     void closeDocument(const std::string& key);
     bool isOpen(const std::string& key);
     int getPageCount(const std::string& key);
@@ -67,6 +82,8 @@ private:
         void* mappedData = nullptr;
         size_t mappedSize = 0;
         int fdRefCount = 0;
+        FPDF_FILE_READ* customFileRead = nullptr;
+        CustomReadData* customReadData = nullptr;
     };
 
     std::unordered_map<std::string, DocInfo> handles;
@@ -79,6 +96,7 @@ private:
     FPDF_DestroyLibrary fn_DestroyLibrary = nullptr;
     FPDF_LoadDocument fn_LoadDocument = nullptr;
     FPDF_LoadMemDocument fn_LoadMemDocument = nullptr;
+    FPDF_LoadCustomDocument fn_LoadCustomDocument = nullptr;
     FPDF_CloseDocument fn_CloseDocument = nullptr;
     FPDF_GetPageCount fn_GetPageCount = nullptr;
     FPDF_LoadPage fn_LoadPage = nullptr;

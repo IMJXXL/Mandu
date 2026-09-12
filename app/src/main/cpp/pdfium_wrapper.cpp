@@ -20,6 +20,7 @@ bool PdfiumWrapper::load() {
     #define BIND(var, sym) var = (decltype(var))dlsym(mDlHandle, sym)
     BIND(fn_InitLibrary, "FPDF_InitLibrary"); BIND(fn_DestroyLibrary, "FPDF_DestroyLibrary");
     BIND(fn_LoadDocument, "FPDF_LoadDocument"); BIND(fn_LoadMemDocument, "FPDF_LoadMemDocument");
+    BIND(fn_LoadCustomDocument, "FPDF_LoadCustomDocument");
     BIND(fn_CloseDocument, "FPDF_CloseDocument"); BIND(fn_GetPageCount, "FPDF_GetPageCount");
     BIND(fn_LoadPage, "FPDF_LoadPage"); BIND(fn_ClosePage, "FPDF_ClosePage");
     BIND(fn_GetPageWidth, "FPDF_GetPageWidth"); BIND(fn_GetPageHeight, "FPDF_GetPageHeight");
@@ -27,7 +28,7 @@ bool PdfiumWrapper::load() {
     BIND(fn_RenderPageBitmap, "FPDF_RenderPageBitmap"); BIND(fn_BitmapDestroy, "FPDFBitmap_Destroy");
     BIND(fn_BitmapGetBuffer, "FPDFBitmap_GetBuffer"); BIND(fn_BitmapGetStride, "FPDFBitmap_GetStride");
     #undef BIND
-    if (!fn_InitLibrary || !fn_LoadMemDocument || !fn_RenderPageBitmap) {
+    if (!fn_InitLibrary || !fn_LoadMemDocument || !fn_RenderPageBitmap || !fn_LoadCustomDocument) {
         return false;
     }
     fn_InitLibrary();
@@ -74,6 +75,91 @@ bool PdfiumWrapper::openDocumentWithPassword(const std::string& key, int fd, con
     return true;
 }
 
+// Static callback for FPDF_LoadCustomDocument — calls back into Kotlin PdfRangeReader.
+static size_t readBlockCallback(void* param, size_t position, size_t size, void* buffer) {
+    auto* data = static_cast<CustomReadData*>(param);
+    if (!data || !data->jvm || !data->readerRef || !data->readBlockMethod) return 0;
+
+    JNIEnv* env;
+    bool attached = false;
+    jint rc = data->jvm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6);
+    if (rc == JNI_EDETACHED) {
+        rc = data->jvm->AttachCurrentThread(&env, nullptr);
+        if (rc != JNI_OK) return 0;
+        attached = true;
+    } else if (rc != JNI_OK) {
+        return 0;
+    }
+
+    jbyteArray result = static_cast<jbyteArray>(
+        env->CallObjectMethod(data->readerRef, data->readBlockMethod,
+                              static_cast<jlong>(position), static_cast<jint>(size)));
+    size_t bytesRead = 0;
+    if (result && !env->ExceptionCheck()) {
+        jsize len = env->GetArrayLength(result);
+        if (len > 0) {
+            env->GetByteArrayRegion(result, 0, len, static_cast<jbyte*>(buffer));
+            bytesRead = static_cast<size_t>(len);
+        }
+        env->DeleteLocalRef(result);
+    } else {
+        if (env->ExceptionCheck()) env->ExceptionClear();
+    }
+
+    if (attached) data->jvm->DetachCurrentThread();
+    return bytesRead;
+}
+
+bool PdfiumWrapper::openDocumentCustom(const std::string& key, size_t fileSize,
+                                        JavaVM* jvm, jobject readerRef) {
+    std::lock_guard<std::mutex> lock(mutex);
+    if (handles.find(key) != handles.end()) return true;
+    if (!load()) return false;
+
+    JNIEnv* env;
+    if (jvm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) != JNI_OK) return false;
+
+    jclass readerClass = env->GetObjectClass(readerRef);
+    jmethodID readBlock = env->GetMethodID(readerClass, "readBlock", "(JI)[B");
+    env->DeleteLocalRef(readerClass);
+    if (!readBlock) return false;
+
+    auto* customData = new CustomReadData{jvm, readerRef, readBlock};
+    auto* fileRead = new FPDF_FILE_READ{readBlockCallback, customData};
+
+    FPDF_DOCUMENT doc = fn_LoadCustomDocument(fileRead, nullptr);
+    if (!doc) {
+        delete fileRead;
+        delete customData;
+        return false;
+    }
+
+    if (handles.size() >= 5) {
+        auto oldest = handles.begin();
+        if (oldest->second.currentPage) fn_ClosePage(oldest->second.currentPage);
+        if (oldest->second.doc) fn_CloseDocument(oldest->second.doc);
+        if (oldest->second.mappedData) munmap(oldest->second.mappedData, oldest->second.mappedSize);
+        if (oldest->second.fd >= 0) close(oldest->second.fd);
+        if (oldest->second.customFileRead) {
+            if (oldest->second.customReadData) {
+                JNIEnv* e2;
+                if (oldest->second.customReadData->jvm->GetEnv(reinterpret_cast<void**>(&e2), JNI_VERSION_1_6) == JNI_OK)
+                    e2->DeleteGlobalRef(oldest->second.customReadData->readerRef);
+                delete oldest->second.customReadData;
+            }
+            delete oldest->second.customFileRead;
+        }
+        handles.erase(oldest);
+    }
+
+    DocInfo info;
+    info.doc = doc;
+    info.customFileRead = fileRead;
+    info.customReadData = customData;
+    handles[key] = info;
+    return true;
+}
+
 void PdfiumWrapper::closeDocument(const std::string& key) {
     std::lock_guard<std::mutex> lock(mutex);
     auto it = handles.find(key);
@@ -82,6 +168,15 @@ void PdfiumWrapper::closeDocument(const std::string& key) {
         if (it->second.doc) fn_CloseDocument(it->second.doc);
         if (it->second.mappedData) munmap(it->second.mappedData, it->second.mappedSize);
         if (it->second.fd >= 0) close(it->second.fd);
+        if (it->second.customFileRead) {
+            if (it->second.customReadData) {
+                JNIEnv* env;
+                if (it->second.customReadData->jvm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) == JNI_OK)
+                    env->DeleteGlobalRef(it->second.customReadData->readerRef);
+                delete it->second.customReadData;
+            }
+            delete it->second.customFileRead;
+        }
         handles.erase(it);
     }
 }
@@ -202,6 +297,16 @@ void PdfiumWrapper::closeAll() {
         if (kv.second.currentPage) fn_ClosePage(kv.second.currentPage);
         if (kv.second.doc) fn_CloseDocument(kv.second.doc);
         if (kv.second.mappedData) munmap(kv.second.mappedData, kv.second.mappedSize);
+        if (kv.second.fd >= 0) close(kv.second.fd);
+        if (kv.second.customFileRead) {
+            if (kv.second.customReadData) {
+                JNIEnv* env;
+                if (kv.second.customReadData->jvm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) == JNI_OK)
+                    env->DeleteGlobalRef(kv.second.customReadData->readerRef);
+                delete kv.second.customReadData;
+            }
+            delete kv.second.customFileRead;
+        }
     }
     handles.clear();
     if (mDlHandle) {
