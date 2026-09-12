@@ -292,6 +292,6 @@ object SmbBookRouter {
         }
     }
 
-    private const val OPEN_TIMEOUT_MS = 45_000L
+    private const val OPEN_TIMEOUT_MS = 15_000L
     private const val TAG = "SmbBookRouter"
 }

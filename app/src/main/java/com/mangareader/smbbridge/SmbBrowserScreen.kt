@@ -68,6 +68,9 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -> U
     var selectedRemotes by remember { mutableStateOf<Set<String>>(emptySet()) }
 
     var showNoDirDialog by remember { mutableStateOf(false) }
+    var showItemMenu by remember { mutableStateOf(false) }
+    var longPressedName by remember { mutableStateOf("") }
+    var longPressedRemote by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(serverId) {
         password = try { SmbPasswordStore.get(serverId) } catch (_: Throwable) { "" }
@@ -176,8 +179,11 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -> U
         is BrowseEntryRemote.ArchiveGallery -> Triple(joinRel(e.fileName), e.name, e.fileName.substringAfterLast('.', "").lowercase())
         is BrowseEntryRemote.RegularFile -> {
             val ext = e.name.substringAfterLast('.', "").lowercase()
-            if (ext in SmbScanner.SCANNABLE_FORMATS) Triple(joinRel(e.name), e.name, ext) else null
+            Triple(joinRel(e.name), e.name, ext)
         }
+        is BrowseEntryRemote.Directory -> Triple(joinRel(e.relativeName), e.name, "")
+        is BrowseEntryRemote.FolderGallery -> Triple(joinRel(e.relativeName), e.name, "")
+        is BrowseEntryRemote.VideoFile -> Triple(joinRel(e.name), e.name, e.name.substringAfterLast('.', "").lowercase())
         else -> null
     }
 
@@ -315,23 +321,58 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -> U
                         when (e) {
                             is BrowseEntryRemote.Directory -> Row(
                                 Modifier.fillMaxWidth()
-                                    .combinedClickable(onClick = { dir = if (dir.isEmpty()) e.relativeName else "$dir/${e.relativeName}" })
+                                    .combinedClickable(
+                                        onClick = {
+                                            if (isMultiSelectMode && remotePath != null) {
+                                                selectedRemotes = if (isSelected) selectedRemotes - remotePath else selectedRemotes + remotePath
+                                            } else {
+                                                dir = if (dir.isEmpty()) e.relativeName else "$dir/${e.relativeName}"
+                                            }
+                                        },
+                                        onLongClick = {
+                                            longPressedName = e.name
+                                            longPressedRemote = remotePath
+                                            showItemMenu = true
+                                        },
+                                    )
                                     .padding(horizontal = 16.dp, vertical = 12.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
+                                if (isMultiSelectMode && remotePath != null) {
+                                    Checkbox(checked = isSelected, onCheckedChange = {
+                                        selectedRemotes = if (isSelected) selectedRemotes - remotePath else selectedRemotes + remotePath
+                                    }, modifier = Modifier.size(24.dp))
+                                    Spacer(Modifier.width(8.dp))
+                                }
                                 Icon(Icons.Default.Folder, null, tint = Color(0xFF8FB8E8))
                                 Spacer(Modifier.width(12.dp))
                                 Text(e.name, fontSize = 15.sp, modifier = Modifier.weight(1f))
                             }
                             is BrowseEntryRemote.FolderGallery -> Row(
                                 Modifier.fillMaxWidth()
-                                    .combinedClickable(onClick = {
-                                        if (isMultiSelectMode) return@combinedClickable
-                                        addFolder(e.relativeName)
-                                    })
+                                    .combinedClickable(
+                                        onClick = {
+                                            if (isMultiSelectMode && remotePath != null) {
+                                                selectedRemotes = if (isSelected) selectedRemotes - remotePath else selectedRemotes + remotePath
+                                            } else {
+                                                addFolder(e.relativeName)
+                                            }
+                                        },
+                                        onLongClick = {
+                                            longPressedName = e.name
+                                            longPressedRemote = remotePath
+                                            showItemMenu = true
+                                        },
+                                    )
                                     .padding(horizontal = 16.dp, vertical = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
+                                if (isMultiSelectMode && remotePath != null) {
+                                    Checkbox(checked = isSelected, onCheckedChange = {
+                                        selectedRemotes = if (isSelected) selectedRemotes - remotePath else selectedRemotes + remotePath
+                                    }, modifier = Modifier.size(24.dp))
+                                    Spacer(Modifier.width(8.dp))
+                                }
                                 Icon(Icons.Default.Folder, null, tint = Color(0xFF9DE8B8))
                                 Spacer(Modifier.width(12.dp))
                                 Column(Modifier.weight(1f)) {
@@ -349,37 +390,47 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -> U
                                         addArchive(joinRel(e.fileName), e.name, e.fileName.substringAfterLast('.', "").lowercase())
                                     }
                                 },
-                                { remotePath?.let { clearBookCaches(it) } },
+                                {
+                                    longPressedName = e.name
+                                    longPressedRemote = remotePath
+                                    showItemMenu = true
+                                },
                                 Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                             )
-                            is BrowseEntryRemote.VideoFile -> Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.InsertDriveFile, null, tint = Color.Gray)
-                                Spacer(Modifier.width(12.dp))
-                                Text(e.name, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
-                            }
+                            is BrowseEntryRemote.VideoFile -> FileRow(
+                                e.name, joinRel(e.name),
+                                isSelected, isMultiSelectMode,
+                                {
+                                    if (isMultiSelectMode && remotePath != null) {
+                                        selectedRemotes = if (isSelected) selectedRemotes - remotePath else selectedRemotes + remotePath
+                                    }
+                                },
+                                {
+                                    longPressedName = e.name
+                                    longPressedRemote = remotePath
+                                    showItemMenu = true
+                                },
+                                Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                            )
                             else -> {
                                 val ext = e.name.substringAfterLast('.', "").lowercase()
-                                if (ext in SmbScanner.SCANNABLE_FORMATS) {
-                                    FileRow(
-                                        e.name, joinRel(e.name),
-                                        isSelected, isMultiSelectMode,
-                                        {
-                                            if (isMultiSelectMode && remotePath != null) {
-                                                selectedRemotes = if (isSelected) selectedRemotes - remotePath else selectedRemotes + remotePath
-                                            } else {
-                                                addArchive(joinRel(e.name), e.name, ext)
-                                            }
-                                        },
-                                        { remotePath?.let { clearBookCaches(it) } },
-                                        Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                                    )
-                                } else {
-                                    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(Icons.Default.InsertDriveFile, null, tint = Color.Gray)
-                                        Spacer(Modifier.width(12.dp))
-                                        Text(e.name, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
-                                    }
-                                }
+                                FileRow(
+                                    e.name, joinRel(e.name),
+                                    isSelected, isMultiSelectMode,
+                                    {
+                                        if (isMultiSelectMode && remotePath != null) {
+                                            selectedRemotes = if (isSelected) selectedRemotes - remotePath else selectedRemotes + remotePath
+                                        } else if (ext in SmbScanner.SCANNABLE_FORMATS) {
+                                            addArchive(joinRel(e.name), e.name, ext)
+                                        }
+                                    },
+                                    {
+                                        longPressedName = e.name
+                                        longPressedRemote = remotePath
+                                        showItemMenu = true
+                                    },
+                                    Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                                )
                             }
                         }
                     }
@@ -396,6 +447,49 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -> U
             title = { Text("未设置下载路径") },
             text = { Text("请先在浏览页设置下载路径") },
             confirmButton = { TextButton(onClick = { showNoDirDialog = false }) { Text("知道了") } },
+        )
+    }
+
+    if (showItemMenu) {
+        AlertDialog(
+            onDismissRequest = { showItemMenu = false },
+            title = { Text(longPressedName) },
+            text = { Text("选择操作") },
+            confirmButton = {
+                Row {
+                    TextButton(onClick = {
+                        showItemMenu = false
+                        val r = longPressedRemote ?: return@TextButton
+                        val treeUriStr = Settings.smbDownloadDirTreeUri.value
+                        if (treeUriStr.isNullOrEmpty()) { showNoDirDialog = true; return@TextButton }
+                        val src = source ?: return@TextButton
+                        scope.launch(Dispatchers.IO) {
+                            val dao = SmbDbBridge.mangaDatabase?.mangaDao()
+                            val bookPath = SmbPaths.bookPath(src.id, src.share, r)
+                            val existingBook = dao?.getBookByPath(bookPath)
+                            SmbDownloadQueue.enqueue(
+                                DownloadTask(
+                                    id = 0,
+                                    title = longPressedName.substringBeforeLast('.').ifEmpty { longPressedName },
+                                    sourceKind = "smb",
+                                    sourcePath = bookPath,
+                                    bookId = existingBook?.id ?: 0L,
+                                ),
+                            )
+                            withContext(Dispatchers.Main) { Toast.makeText(ctx, "已加入下载队列", Toast.LENGTH_SHORT).show() }
+                        }
+                    }) {
+                        Icon(Icons.Default.Download, null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("下载")
+                    }
+                    TextButton(onClick = {
+                        showItemMenu = false
+                        longPressedRemote?.let { clearBookCaches(it) }
+                    }) { Text("清除缓存") }
+                }
+            },
+            dismissButton = { TextButton(onClick = { showItemMenu = false }) { Text("取消") } },
         )
     }
 }
