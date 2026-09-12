@@ -98,7 +98,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
     var bookshelves by remember { mutableStateOf(listOf<Bookshelf>()) }
     var sort by remember {
         mutableStateOf(
-            try { SortMode.valueOf(prefs.getString("library_sort", SortMode.LAST.name)!!) } catch (_: Exception) { SortMode.LAST }
+            try { SortMode.valueOf(prefs.getString("library_sort", SortMode.NAME.name)!!) } catch (_: Exception) { SortMode.NAME }
         )
     }
     var sortAsc by remember { mutableStateOf(prefs.getBoolean("library_sort_asc", false)) }
