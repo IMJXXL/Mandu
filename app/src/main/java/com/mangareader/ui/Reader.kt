@@ -1973,6 +1973,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
                     enabled = config.isFlipFlashEnabled,
                     durationMs = config.flipFlashDuration,
                     intervalPages = config.flipFlashInterval,
+                    color = config.flipFlashColor,
                     modifier = Modifier.fillMaxSize()
                 )
                 // 导航区域提示 — 仅水平模式（单页从左到右/从右到左）显示

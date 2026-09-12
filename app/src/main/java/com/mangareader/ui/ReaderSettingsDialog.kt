@@ -205,6 +205,11 @@ private fun GeneralTab(config: ReaderConfig, onConfigChange: (ReaderConfig) -> U
         TsySlider("间隔页数", config.flipFlashInterval.toFloat(), 1f..10f, 9, "${config.flipFlashInterval}页") {
             onConfigChange(config.copy(flipFlashInterval = it.toInt()))
         }
+        TsyChipRow(
+            items = listOf("白色" to 0, "黑色" to 1, "黑白两段" to 2),
+            selected = config.flipFlashColor,
+            onSelect = { onConfigChange(config.copy(flipFlashColor = it as Int)) }
+        )
     }
     TsyCheckbox("自动进入条漫模式", config.autoWebtoon) { onConfigChange(config.copy(autoWebtoon = it)) }
 }

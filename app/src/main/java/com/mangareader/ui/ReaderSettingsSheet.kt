@@ -304,7 +304,7 @@ private fun GeneralTab(config: ReaderConfig, onConfigChange: (ReaderConfig) -> U
             onConfigChange(config.copy(flipFlashInterval = it.toInt()))
         }
         SettingsChipRow("闪烁颜色") {
-            listOf("白色" to 0, "黑色" to 1).forEach { (label, value) ->
+            listOf("白色" to 0, "黑色" to 1, "黑白两段" to 2).forEach { (label, value) ->
                 FilterChip(
                     selected = value == config.flipFlashColor,
                     onClick = { onConfigChange(config.copy(flipFlashColor = value)) },
