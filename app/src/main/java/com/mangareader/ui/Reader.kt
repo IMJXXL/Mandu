@@ -977,7 +977,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
                 bookmarkTick++
                 android.widget.Toast.makeText(ctx, "已移除书签", android.widget.Toast.LENGTH_SHORT).show()
             } else {
-                val noteEnabled = ctx.getSharedPreferences("reader_config", android.content.Context.MODE_PRIVATE).getBoolean("bookmark_note_enabled", false)
+                val noteEnabled = ctx.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE).getBoolean("bookmark_note_enabled", false)
                 if (noteEnabled) {
                     pendingBookmarkNote = ""
                     showBookmarkNoteDialog = true

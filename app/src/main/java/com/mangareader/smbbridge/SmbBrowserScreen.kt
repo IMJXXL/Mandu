@@ -84,6 +84,27 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -> U
         }
     }
 
+    val pickDownloadDirLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocumentTree(),
+    ) { uri: Uri? ->
+        if (uri != null) {
+            runCatching {
+                ctx.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+                )
+            }
+            com.hippo.ehviewer.Settings.smbDownloadDirTreeUri.value = uri.toString()
+            val docId = DocumentsContract.getTreeDocumentId(uri)
+            val path = if (docId.startsWith("primary:")) {
+                android.os.Environment.getExternalStorageDirectory().absolutePath + "/" + docId.substringAfter("primary:")
+            } else {
+                uri.toString()
+            }
+            com.hippo.ehviewer.Settings.smbDownloadDirPath.value = path
+        }
+    }
+
     LaunchedEffect(serverId) {
         password = try { SmbPasswordStore.get(serverId) } catch (_: Throwable) { "" }
         source = SmbRepository.load(serverId)
@@ -460,7 +481,7 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -> U
             text = { Text("请先在 SMB 设置 → 下载目录 中设置保存路径") },
             confirmButton = {
                 Row {
-                    TextButton(onClick = { showNoDirDialog = false; onOpenSettings() }) { Text("去设置") }
+                    TextButton(onClick = { showNoDirDialog = false; pickDownloadDirLauncher.launch(null) }) { Text("去设置") }
                     TextButton(onClick = { showNoDirDialog = false }) { Text("知道了") }
                 }
             },

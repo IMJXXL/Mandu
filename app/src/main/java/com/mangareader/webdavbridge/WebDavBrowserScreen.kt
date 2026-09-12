@@ -1,8 +1,12 @@
 package com.mangareader.webdavbridge
 
+import android.content.Intent
 import android.net.Uri
+import android.provider.DocumentsContract
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.*
@@ -66,6 +70,27 @@ fun WebDavBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -
             dir = dir.substringBeforeLast('/', "")
         } else {
             onBack()
+        }
+    }
+
+    val pickDownloadDirLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocumentTree(),
+    ) { uri: Uri? ->
+        if (uri != null) {
+            runCatching {
+                ctx.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+                )
+            }
+            com.hippo.ehviewer.Settings.smbDownloadDirTreeUri.value = uri.toString()
+            val docId = DocumentsContract.getTreeDocumentId(uri)
+            val path = if (docId.startsWith("primary:")) {
+                android.os.Environment.getExternalStorageDirectory().absolutePath + "/" + docId.substringAfter("primary:")
+            } else {
+                uri.toString()
+            }
+            com.hippo.ehviewer.Settings.smbDownloadDirPath.value = path
         }
     }
 
@@ -441,7 +466,7 @@ fun WebDavBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -
             text = { Text("请先在 WebDAV 设置 → 下载目录 中设置保存路径") },
             confirmButton = {
                 Row {
-                    TextButton(onClick = { showNoDirDialog = false; onOpenSettings() }) { Text("去设置") }
+                    TextButton(onClick = { showNoDirDialog = false; pickDownloadDirLauncher.launch(null) }) { Text("去设置") }
                     TextButton(onClick = { showNoDirDialog = false }) { Text("知道了") }
                 }
             },

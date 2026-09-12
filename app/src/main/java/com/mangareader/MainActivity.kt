@@ -8,6 +8,11 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.tween
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -86,7 +91,13 @@ class MainActivity : ComponentActivity() {
                     }
                     onDispose { }
                 }
-                NavHost(nav, "library") {
+                NavHost(
+                    nav, "library",
+                    enterTransition = { slideInHorizontally(animationSpec = tween(300)) { it } },
+                    exitTransition = { slideOutHorizontally(animationSpec = tween(300)) { -it } },
+                    popEnterTransition = { slideInHorizontally(animationSpec = tween(300)) { -it } },
+                    popExitTransition = { slideOutHorizontally(animationSpec = tween(300)) { it } },
+                ) {
                     composable("library") {
                         Library(
                             { id, jump ->
@@ -120,7 +131,12 @@ class MainActivity : ComponentActivity() {
                     composable("reader/{id}?jump={jump}", listOf(
                         navArgument("id") { type = NavType.LongType },
                         navArgument("jump") { type = NavType.StringType; nullable = true; defaultValue = null }
-                    )) {
+                    ),
+                        enterTransition = { fadeIn(animationSpec = tween(300)) },
+                        exitTransition = { fadeOut(animationSpec = tween(300)) },
+                        popEnterTransition = { fadeIn(animationSpec = tween(300)) },
+                        popExitTransition = { fadeOut(animationSpec = tween(300)) }
+                    ) {
                         val readerId = it.arguments?.getLong("id") ?: return@composable
                         Reader(
                             bookId = readerId,

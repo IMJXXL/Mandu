@@ -167,24 +167,30 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
             }
 
             item {
+                var volKeys by remember { mutableStateOf(prefs.getBoolean("reader_volume_keys", false)) }
+                var volInvert by remember { mutableStateOf(prefs.getBoolean("reader_volume_keys_inverted", false)) }
                 Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("音量键翻页", fontSize = 16.sp)
                         Text("使用音量键翻页，菜单显示时不拦截", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    var volKeys by remember { mutableStateOf(prefs.getBoolean("reader_volume_keys", false)) }
-                    Switch(checked = volKeys, onCheckedChange = { volKeys = it; prefs.edit().putBoolean("reader_volume_keys", it).apply() })
+                    Switch(checked = volKeys, onCheckedChange = {
+                        volKeys = it
+                        prefs.edit().putBoolean("reader_volume_keys", it).apply()
+                        if (!it && volInvert) {
+                            volInvert = false
+                            prefs.edit().putBoolean("reader_volume_keys_inverted", false).apply()
+                        }
+                    })
                 }
-            }
-
-            item {
-                Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("翻转音量键", fontSize = 16.sp)
-                        Text("交换音量上/下键的翻页方向", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (volKeys) {
+                    Row(Modifier.fillMaxWidth().padding(start = 24.dp, top = 8.dp, bottom = 8.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("翻转音量键", fontSize = 15.sp)
+                            Text("交换音量上/下键的翻页方向", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(checked = volInvert, onCheckedChange = { volInvert = it; prefs.edit().putBoolean("reader_volume_keys_inverted", it).apply() })
                     }
-                    var volInvert by remember { mutableStateOf(prefs.getBoolean("reader_volume_keys_inverted", false)) }
-                    Switch(checked = volInvert, onCheckedChange = { volInvert = it; prefs.edit().putBoolean("reader_volume_keys_inverted", it).apply() })
                 }
             }
 
