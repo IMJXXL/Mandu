@@ -7,7 +7,7 @@ import com.hippo.ehviewer.jni.closeArchive
 import com.hippo.ehviewer.jni.needPassword
 import com.hippo.ehviewer.jni.openArchive
 import com.hippo.ehviewer.library.document.EpubEngine
-import com.hippo.ehviewer.library.document.PdfImageEngine
+
 import com.hippo.ehviewer.util.FileUtils
 import java.io.File
 import kotlinx.coroutines.runBlocking
@@ -196,15 +196,43 @@ private fun countDocumentAndSaveIndex(path: Path, liveSize: Long): Int {
         val size = liveSize.takeIf { it > 0L }
             ?: runCatching { source.size }.getOrDefault(0L)
         val name = path.name
+        if (isPdfFileName(name)) {
+            // pdfium counts pages reliably; PdfImageEngine fails on ObjStm xref
+            // PDFs (page objects compressed in object streams). No saveIndex here —
+            // the extract-cache index is only consumable by PdfImageEngine.
+            return countPdfPagesViaPdfium(cacheKey, source, size)
+        }
         val engine = when {
             isEpubFileName(name) -> EpubEngine.open(source, remoteSize = size, coverOnly = false)
-            isPdfFileName(name) -> PdfImageEngine.open(source, remoteSize = size, coverOnly = false)
             else -> null
         } ?: return 0
         DocumentExtractCache.saveIndex(engine.toIndex(cacheKey, complete = false))
         engine.pageCount
     } finally {
         runCatching { source.close() }
+    }
+}
+
+private fun countPdfPagesViaPdfium(cacheKey: String, source: ArchiveByteSource, size: Long): Int {
+    if (size <= 0L) return 0
+    val pdfKey = "count_pdf:$cacheKey"
+    return try {
+        val reader = com.mangareader.native.NativeEngine.PdfRangeReader { pos, len ->
+            val buf = ByteArray(len)
+            val read = source.readAt(pos, buf, 0, len)
+            if (read > 0) buf.copyOf(read) else null
+        }
+        if (!com.mangareader.native.NativeEngine.pdfOpenCustom(pdfKey, size, reader)) return 0
+        try {
+            com.mangareader.native.NativeEngine.pdfGetPageCount(pdfKey)
+        } finally {
+            com.mangareader.native.NativeEngine.pdfClose(pdfKey)
+        }
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
+    } catch (e: Throwable) {
+        logcat("ArchivePages", e)
+        0
     }
 }
 

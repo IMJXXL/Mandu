@@ -678,12 +678,19 @@ object ArchiveCoverCache {
         val dest = thumbPathFor(cacheKey, 0L, 0L)
         if (isCachedOnDisk(dest)) return@withIOContext CoverEnsureResult.Hit(dest)
         coverFromDocumentExtractCache(cacheKey)?.let { return@withIOContext CoverEnsureResult.Hit(it) }
+        val base = cacheKey.substringAfterLast('/').substringAfterLast(':')
+        val isPdf = isPdfFileName(base) || cacheKey.endsWith(".pdf", ignoreCase = true)
         extractSlots.withPermit {
             if (isCachedOnDisk(dest)) return@withPermit CoverEnsureResult.Hit(dest)
             coverFromDocumentExtractCache(cacheKey)?.let { return@withPermit CoverEnsureResult.Hit(it) }
             try {
                 openSource().use { source ->
                     val size = runCatching { source.size }.getOrDefault(0L)
+                    // pdfium renders pages incl. ObjStm xref / /SMask /ICCBased that
+                    // PdfImageEngine cannot parse. Must take priority for PDFs.
+                    if (isPdf && size > 0L) {
+                        return@withPermit ensurePdfiumStreamCover(cacheKey, source, size, dest)
+                    }
                     val engine = openDocumentCoverEngine(cacheKey, source, size)
                         ?: return@use CoverEnsureResult.Skip
                     if (engine.pageCount <= 0) return@use CoverEnsureResult.NoImages
@@ -704,16 +711,82 @@ object ArchiveCoverCache {
         }
     }
 
+    /**
+     * pdfium-based cover for PDFs PdfImageEngine cannot parse. Renders page 0 at
+     * thumbnail edge directly (no intermediate extract file) and writes the JPEG
+     * to [dest] with the same bookkeeping as [writeCoverFromExtractedPage].
+     */
+    private fun ensurePdfiumStreamCover(
+        cacheKey: String,
+        source: ArchiveByteSource,
+        size: Long,
+        dest: Path,
+    ): CoverEnsureResult {
+        val pdfKey = "cover_pdf:$cacheKey"
+        try {
+            val reader = com.mangareader.native.NativeEngine.PdfRangeReader { pos, len ->
+                val buf = ByteArray(len)
+                val read = source.readAt(pos, buf, 0, len)
+                if (read > 0) buf.copyOf(read) else null
+            }
+            if (!com.mangareader.native.NativeEngine.pdfOpenCustom(pdfKey, size, reader)) {
+                return CoverEnsureResult.Skip
+            }
+            try {
+                if (com.mangareader.native.NativeEngine.pdfGetPageCount(pdfKey) <= 0) {
+                    return CoverEnsureResult.NoImages
+                }
+                val pageSize = com.mangareader.native.NativeEngine.pdfGetPageSize(pdfKey, 0)
+                    ?: return CoverEnsureResult.Skip
+                val pw = pageSize[0].toFloat().coerceAtLeast(1f)
+                val ph = pageSize[1].toFloat().coerceAtLeast(1f)
+                val scale = THUMB_EDGE.toFloat() / maxOf(pw, ph)
+                val w = (pw * scale).toInt().coerceAtLeast(1)
+                val h = (ph * scale).toInt().coerceAtLeast(1)
+                val bmp = com.mangareader.native.NativeEngine.pdfRenderPageBitmap(pdfKey, 0, w, h, 72)
+                    ?: return CoverEnsureResult.Skip
+                val bytes = java.io.ByteArrayOutputStream().use { baos ->
+                    bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, THUMB_JPEG_QUALITY, baos)
+                    baos.toByteArray()
+                }
+                bmp.recycle()
+                File(dest.parent!!.toString()).mkdirs()
+                val destFile = File(dest.toString())
+                destFile.writeBytes(bytes)
+                if (destFile.isFile && destFile.length() > 0L) {
+                    markPresent(dest)
+                    OriginDiskCache.scheduleTrim()
+                    return CoverEnsureResult.Hit(dest)
+                } else {
+                    return CoverEnsureResult.Skip
+                }
+            } finally {
+                com.mangareader.native.NativeEngine.pdfClose(pdfKey)
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            logcat("ArchiveCover", e)
+            return CoverEnsureResult.Skip
+        }
+        return CoverEnsureResult.Skip
+    }
+
     private suspend fun ensureLocalDocumentCover(archivePath: Path, key: String): CoverEnsureResult {
         val dest = thumbPathFor(key, 0L, 0L)
         if (isCachedOnDisk(dest)) return CoverEnsureResult.Hit(dest)
         coverFromDocumentExtractCache(key)?.let { return CoverEnsureResult.Hit(it) }
+        val isPdf = isPdfFileName(archivePath.name)
         return extractSlots.withPermit {
             if (isCachedOnDisk(dest)) return@withPermit CoverEnsureResult.Hit(dest)
             coverFromDocumentExtractCache(key)?.let { return@withPermit CoverEnsureResult.Hit(it) }
             try {
                 archivePath.openFileDescriptor("r").use { pfd ->
                     PfdArchiveByteSource(pfd, ownsPfd = false).use { source ->
+                        // pdfium for PDFs: PdfImageEngine fails on ObjStm xref / SMask PDFs.
+                        if (isPdf && pfd.statSize > 0L) {
+                            return@withPermit ensurePdfiumStreamCover(key, source, pfd.statSize, dest)
+                        }
                         val engine = openDocumentCoverEngine(key, source, pfd.statSize)
                             ?: return@withPermit CoverEnsureResult.Skip
                         if (engine.pageCount <= 0) return@withPermit CoverEnsureResult.NoImages
