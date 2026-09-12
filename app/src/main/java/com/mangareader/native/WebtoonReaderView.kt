@@ -717,9 +717,8 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
         if (level < android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) return
         synchronized(bitmapCache) {
             val keep = currentPage
-            for ((k, v) in bitmapCache.snapshot()) {
+            for ((k, _) in bitmapCache.snapshot()) {
                 if (kotlin.math.abs(k - keep) > 2) {
-                    try { if (!v.isRecycled) v.recycle() } catch (_: Exception) {}
                     bitmapCache.remove(k)
                 }
             }
