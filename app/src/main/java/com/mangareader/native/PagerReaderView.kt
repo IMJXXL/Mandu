@@ -684,13 +684,13 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         android.util.Log.i("PagerView", "srInject p=$pageIndex pos=$pos bmp=${bitmap.width}x${bitmap.height}")
         if (pos >= 0 && pos < pageList.size) {
             android.os.Handler(android.os.Looper.getMainLooper()).post {
-                // 先清理旧 ViewHolder 状态，避免 OOM
-                try {
-                    val rv = viewPager.getChildAt(0) as? androidx.recyclerview.widget.RecyclerView
-                    val holder = rv?.findViewHolderForAdapterPosition(pos) as? PagerViewHolder
-                    if (holder != null) holder.clear()
-                    else android.util.Log.d("PagerView", "srInject holder null (offscreen) p=$pageIndex")
-                } catch (_: Exception) {}
+                // ★ 不调 holder.clear()：clear 会重置 SSIV (resetScaleAndCenter + visibility=GONE)，
+                //   随后 notifyItemChanged → setImage 时 SSIV 需异步重新初始化 decoder，
+                //   初始化期间无内容 = 白屏。直接 notifyItemChanged 让 setImage 从旧图无缝切到新图，
+                //   SSIV 保持旧图显示直到新图 onReady。heldBitmap/动图状态由 setImage 内部覆盖。
+                val rv = viewPager.getChildAt(0) as? androidx.recyclerview.widget.RecyclerView
+                val holder = rv?.findViewHolderForAdapterPosition(pos) as? PagerViewHolder
+                if (holder == null) android.util.Log.d("PagerView", "srInject holder null (offscreen) p=$pageIndex")
                 pagerAdapter?.notifyItemChanged(pos, "loaded")
             }
         }
