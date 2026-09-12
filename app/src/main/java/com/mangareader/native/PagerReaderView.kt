@@ -1493,14 +1493,9 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         private fun disposeAnimDrawable() {
             heldAnimDrawable?.let { d ->
                 try { if (d is Animatable && d.isRunning) d.stop() } catch (_: Throwable) {}
-                // ★ Bug#11：原版用 `this.bindingAdapterPosition` 当 idx 去删 map，
-                //   但 holder 被复用到别的页后 dp ≠ 原 idx → 错删或漏删。
-                //   改用 setAnimDrawable 进入时缓存的 heldIdx（setAnimDrawable 写入时是真正的 idx）。
-                pageAnimDrawables.remove(heldIdx)
             }
             heldIdx = -1
             heldAnimDrawable = null
-            // ★ §34.2 T1：不再 iv.setImageDrawable(null)，避免闪白空窗
         }
         /** §24 二代 clearStatic：动图路径前的清理（仅清静图状态不及动图槽）
          *  ★ §34.2 T2：动图 holder 回收时也走这里——clearStatic 不动动图槽（heldAnimDrawable/pageAnimDrawables），
