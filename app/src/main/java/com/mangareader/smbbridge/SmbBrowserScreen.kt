@@ -4,6 +4,7 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.DocumentsContract
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 
@@ -71,6 +72,17 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -> U
     var showItemMenu by remember { mutableStateOf(false) }
     var longPressedName by remember { mutableStateOf("") }
     var longPressedRemote by remember { mutableStateOf<String?>(null) }
+
+    BackHandler {
+        if (isMultiSelectMode) {
+            isMultiSelectMode = false
+            selectedRemotes = emptySet()
+        } else if (dir.isNotEmpty()) {
+            dir = dir.substringBeforeLast('/', "")
+        } else {
+            onBack()
+        }
+    }
 
     LaunchedEffect(serverId) {
         password = try { SmbPasswordStore.get(serverId) } catch (_: Throwable) { "" }

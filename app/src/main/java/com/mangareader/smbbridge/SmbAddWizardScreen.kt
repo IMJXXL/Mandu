@@ -1,6 +1,7 @@
 package com.mangareader.smbbridge
 
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -40,6 +41,8 @@ fun SmbAddWizardScreen(onBack: () -> Unit, onSaved: () -> Unit, initial: SmbSour
 
     var step by remember { mutableStateOf(1) }
     var busy by remember { mutableStateOf(false) }
+
+    BackHandler { if (step > 1) step-- else onBack() }
 
     // step1 字段（编辑模式预填）
     var displayName by remember { mutableStateOf(initial?.displayName ?: "") }

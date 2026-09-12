@@ -2,6 +2,7 @@ package com.mangareader.webdavbridge
 
 import android.net.Uri
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.*
@@ -56,6 +57,17 @@ fun WebDavBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -
     var showItemMenu by remember { mutableStateOf(false) }
     var longPressedName by remember { mutableStateOf("") }
     var longPressedRemote by remember { mutableStateOf<String?>(null) }
+
+    BackHandler {
+        if (isMultiSelectMode) {
+            isMultiSelectMode = false
+            selectedRemotes = emptySet()
+        } else if (dir.isNotEmpty()) {
+            dir = dir.substringBeforeLast('/', "")
+        } else {
+            onBack()
+        }
+    }
 
     LaunchedEffect(serverId) {
         source = WebDavRepository.load(serverId)

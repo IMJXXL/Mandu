@@ -1,6 +1,7 @@
 package com.mangareader.ui
 
 import android.content.Context
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -22,6 +23,7 @@ import com.hippo.ehviewer.Settings
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ReadingSettingsScreen(onBack: () -> Unit) {
+    BackHandler { onBack() }
     val ctx = LocalContext.current
     val prefs = remember { ctx.getSharedPreferences("manga_reader", Context.MODE_PRIVATE) }
     var config by remember { mutableStateOf(com.mangareader.data.ReaderConfig.load(ctx).let {

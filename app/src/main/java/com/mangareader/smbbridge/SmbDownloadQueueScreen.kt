@@ -1,5 +1,6 @@
 package com.mangareader.smbbridge
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -29,6 +30,7 @@ import androidx.compose.ui.unit.sp
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SmbDownloadQueueScreen(onBack: () -> Unit, onOpenBook: ((Long) -> Unit)? = null) {
+    BackHandler { onBack() }
     val tasks by SmbDownloadQueue.tasks.collectAsState()
     var taskToDelete by remember { mutableStateOf<DownloadTask?>(null) }
     var showClearDialog by remember { mutableStateOf(false) }

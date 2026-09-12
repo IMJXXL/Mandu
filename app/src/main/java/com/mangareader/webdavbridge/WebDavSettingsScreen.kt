@@ -15,6 +15,7 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.DocumentsContract
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -58,6 +59,7 @@ private val WEBDAV_CACHE_ENTRIES = listOf(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WebDavSettingsScreen(onBack: () -> Unit, onOpenDownloadQueue: () -> Unit = {}) {
+    BackHandler { onBack() }
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
 

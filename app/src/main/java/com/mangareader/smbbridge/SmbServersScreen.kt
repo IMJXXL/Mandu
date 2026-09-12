@@ -1,6 +1,7 @@
 package com.mangareader.smbbridge
 
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -43,6 +44,7 @@ import kotlinx.coroutines.withContext
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SmbServersScreen(onBack: () -> Unit, onOpenBook: (Long) -> Unit = {}) {
+    BackHandler { onBack() }
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val sources by SmbRepository.sourcesFlow().collectAsState(initial = emptyList())

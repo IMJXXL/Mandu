@@ -7,6 +7,7 @@ import android.net.Uri
 import android.provider.DocumentsContract
 import android.util.Log
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -140,6 +141,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
 
     var isMultiSelect by remember { mutableStateOf(false) }
     var selectedBooks by remember { mutableStateOf(setOf<Long>()) }
+    BackHandler(isMultiSelect) { isMultiSelect = false; selectedBooks = emptySet() }
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var showShelfDialog by remember { mutableStateOf(false) }
     var showCreateShelf by remember { mutableStateOf(false) }

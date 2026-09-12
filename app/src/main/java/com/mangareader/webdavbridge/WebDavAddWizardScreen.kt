@@ -1,6 +1,7 @@
 package com.mangareader.webdavbridge
 
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -41,6 +42,8 @@ fun WebDavAddWizardScreen(onBack: () -> Unit, onSaved: () -> Unit, initial: WebD
 
     var step by remember { mutableStateOf(1) }
     var busy by remember { mutableStateOf(false) }
+
+    BackHandler { if (step > 1) step-- else onBack() }
 
     var displayName by remember { mutableStateOf(initial?.displayName ?: "") }
     var baseUrl by remember { mutableStateOf(initial?.baseUrl ?: "") }
