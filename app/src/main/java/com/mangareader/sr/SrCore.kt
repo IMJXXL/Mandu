@@ -135,8 +135,9 @@ object SrCore {
     }
 
     fun effectivePreloadWindow(): Int {
-        return if (settings.preloadOverride >= 0) settings.preloadOverride
+        val base = if (settings.preloadOverride >= 0) settings.preloadOverride
         else profileManager.getPreloadWindow()
+        return if (com.hippo.ehviewer.Settings.isEinkMode) minOf(base, 1) else base
     }
 
     /** ★ F4.7③：省电模式/低 RAM 设备自动停用"新起"的实时超分（缓存/批量产物不受影响）。

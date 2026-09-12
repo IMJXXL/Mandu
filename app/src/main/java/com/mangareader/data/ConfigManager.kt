@@ -66,7 +66,7 @@ class ConfigManager(private val context: Context) {
                 imageMarginH = json.optInt("imageMarginH", 0),
                 readBackground = try { ReaderConfig.ReadBackground.valueOf(json.getString("readBackground")) } catch (_: Exception) { ReaderConfig.ReadBackground.DEFAULT },
                 isEinkMode = json.optBoolean("isEinkMode", false),
-                einkDecodeSize = json.optInt("einkDecodeSize", 1280),
+                einkDecodeSize = json.optInt("einkDecodeSize", 1920),
                 einkUiHideDelay = json.optLong("einkUiHideDelay", 6000L),
                 pdfQuality = json.optDouble("pdfQuality", 3.0).toFloat(),
                 isImmersiveMode = json.optBoolean("isImmersiveMode", true),

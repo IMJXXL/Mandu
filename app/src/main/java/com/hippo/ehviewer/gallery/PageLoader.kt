@@ -541,9 +541,10 @@ abstract class PageLoader(
         } else {
             Settings.readerDecodeAhead.value.coerceAtLeast(0)
         }
+        val einkReduce = Settings.isEinkMode
         val policy = ReaderLoadPolicy(
-            sourceAhead = Settings.preloadImage.value.coerceAtLeast(0),
-            decodeAhead = decodeAhead,
+            sourceAhead = if (einkReduce) minOf(Settings.preloadImage.value.coerceAtLeast(0), 2) else Settings.preloadImage.value.coerceAtLeast(0),
+            decodeAhead = if (einkReduce) minOf(decodeAhead, 1) else decodeAhead,
         )
         val demand = demandPlanner.plan(navigation, size, policy)
         lastNavigation = demand.navigation

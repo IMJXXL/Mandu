@@ -1035,7 +1035,8 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             if (leftIdx + 2 < pageList.size) { loadPageAsync(leftIdx + 2); if (leftIdx + 3 < pageList.size) loadPageAsync(leftIdx + 3) }
         } else {
             loadPageAsync(centerIdx)
-            for (i in 1..2) {
+            val nearRange = if (com.hippo.ehviewer.Settings.isEinkMode) 1 else 2
+            for (i in 1..nearRange) {
                 val fwd = centerIdx + i
                 if (fwd < pageList.size) loadPageAsync(fwd)
                 val bwd = centerIdx - i
@@ -1044,7 +1045,8 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         }
         // ★ LV119 对齐参考项目：不再预 peek 动图——loadPageAsync 内部用 Coil3 自动识别动图
         if (!doublePageMode) {
-            for (delta in -5..5) {
+            val farRange = if (com.hippo.ehviewer.Settings.isEinkMode) 2 else 5
+            for (delta in -farRange..farRange) {
                 val target = centerIdx + delta
                 if (target !in pageList.indices) continue
                 if (bitmapCache[target] == null && pageAnimDrawables[target] == null) {

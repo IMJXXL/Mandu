@@ -58,6 +58,9 @@ fun <T> PrefDelegate<T>.asMutableState(): MutableState<T> {
 }
 
 object Settings : DataStorePreferences(null) {
+    @Volatile
+    var isEinkMode: Boolean = false
+
     @Suppress("ktlint:standard:backing-property-naming")
     private val _favFlow = MutableSharedFlow<Unit>()
     val favChangesFlow = _favFlow.debounce(1000)

@@ -207,6 +207,128 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
             item {
                 Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
+                        Text("墨水屏模式", fontSize = 16.sp)
+                        Text("降低分辨率解码、减少预加载、缩短UI自动隐藏时间以减少残影", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(
+                        checked = config.isEinkMode,
+                        onCheckedChange = {
+                            config = config.copy(isEinkMode = it)
+                            config.save(ctx)
+                        },
+                    )
+                }
+            }
+
+            if (config.isEinkMode) {
+                item {
+                    Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+                        Text("翻页闪烁", fontSize = 16.sp, fontWeight = FontWeight.Medium)
+                        Spacer(Modifier.height(8.dp))
+                        Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Text("启用翻页闪烁（降低残影）", fontSize = 14.sp)
+                            Switch(
+                                checked = config.isFlipFlashEnabled,
+                                onCheckedChange = { config = config.copy(isFlipFlashEnabled = it); config.save(ctx) },
+                            )
+                        }
+                        if (config.isFlipFlashEnabled) {
+                            Spacer(Modifier.height(4.dp))
+                            Text("闪烁颜色", fontSize = 14.sp)
+                            Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                listOf("白色" to 0, "黑色" to 1, "黑白两段" to 2).forEach { (label, value) ->
+                                    Surface(
+                                        modifier = Modifier.weight(1f).clickable {
+                                            config = config.copy(flipFlashColor = value)
+                                            config.save(ctx)
+                                        },
+                                        shape = MaterialTheme.shapes.medium,
+                                        color = if (config.flipFlashColor == value) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                        tonalElevation = if (config.flipFlashColor == value) 4.dp else 0.dp,
+                                    ) {
+                                        Text(label, fontSize = 13.sp, modifier = Modifier.padding(12.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center, color = if (config.flipFlashColor == value) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface)
+                                    }
+                                }
+                            }
+                            Spacer(Modifier.height(4.dp))
+                            Text("持续时间: ${config.flipFlashDuration}ms", fontSize = 14.sp)
+                            Slider(
+                                value = config.flipFlashDuration.toFloat(),
+                                onValueChange = { config = config.copy(flipFlashDuration = it.toInt()) },
+                                onValueChangeFinished = { config.save(ctx) },
+                                valueRange = 50f..1500f,
+                                steps = 14,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text("间隔页数: ${config.flipFlashInterval}页", fontSize = 14.sp)
+                            Slider(
+                                value = config.flipFlashInterval.toFloat(),
+                                onValueChange = { config = config.copy(flipFlashInterval = it.toInt()) },
+                                onValueChangeFinished = { config.save(ctx) },
+                                valueRange = 1f..10f,
+                                steps = 8,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                        Spacer(Modifier.height(12.dp))
+                    }
+                }
+
+                item {
+                    Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+                        Text("解码分辨率", fontSize = 16.sp, fontWeight = FontWeight.Medium)
+                        Spacer(Modifier.height(4.dp))
+                        Text("降低分辨率可加快解码速度、减少内存占用", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(Modifier.height(8.dp))
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf("1072\n(6寸)" to 1072, "1440\n(8寸)" to 1440, "1920\n(默认)" to 1920, "原图\n(全量)" to 4096).forEach { (label, value) ->
+                                Surface(
+                                    modifier = Modifier.weight(1f).clickable {
+                                        config = config.copy(einkDecodeSize = value)
+                                        config.save(ctx)
+                                    },
+                                    shape = MaterialTheme.shapes.medium,
+                                    color = if (config.einkDecodeSize == value) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                    tonalElevation = if (config.einkDecodeSize == value) 4.dp else 0.dp,
+                                ) {
+                                    Text(label, fontSize = 12.sp, modifier = Modifier.padding(12.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center, lineHeight = 16.sp, color = if (config.einkDecodeSize == value) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface)
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(12.dp))
+                    }
+                }
+
+                item {
+                    Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+                        Text("UI自动隐藏时间", fontSize = 16.sp, fontWeight = FontWeight.Medium)
+                        Spacer(Modifier.height(4.dp))
+                        Text("缩短隐藏时间可减少残影（普通模式默认10秒）", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(Modifier.height(8.dp))
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf("3秒" to 3000L, "6秒" to 6000L, "10秒" to 10000L, "不隐藏" to 0L).forEach { (label, value) ->
+                                Surface(
+                                    modifier = Modifier.weight(1f).clickable {
+                                        config = config.copy(einkUiHideDelay = value)
+                                        config.save(ctx)
+                                    },
+                                    shape = MaterialTheme.shapes.medium,
+                                    color = if (config.einkUiHideDelay == value) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                    tonalElevation = if (config.einkUiHideDelay == value) 4.dp else 0.dp,
+                                ) {
+                                    Text(label, fontSize = 13.sp, modifier = Modifier.padding(12.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center, color = if (config.einkUiHideDelay == value) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface)
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(12.dp))
+                    }
+                }
+            }
+
+            item {
+                Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
                         Text("HDR 显示", fontSize = 16.sp)
                         Text("需原生 HDR 屏支持，低亮度屏（<600nit）开启后可能发黄", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }

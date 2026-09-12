@@ -156,6 +156,9 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
             config.save(ctx, bookId)
         }
     }
+    LaunchedEffect(config.isEinkMode) {
+        com.hippo.ehviewer.Settings.isEinkMode = config.isEinkMode
+    }
     // ★ v1.11 P0-B6：进卷默认沉浸（ui=false）——底部进度条不在屏上，快滑手指扫过底栏区域
     //   不会再误触 Slider（实机堆栈实锤的回跳根因）。单击画面 toggleUi 呼出，10s 自动隐藏照旧。
     var ui by remember { mutableStateOf(false) }
@@ -1357,7 +1360,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
             showSystemBars(act, config.isKeepScreenOn)
             val delayMs = if (config.isEinkMode) config.einkUiHideDelay else 10000L
             uiJob?.cancel()
-            uiJob = scope.launch { delay(delayMs); if (ui) { ui = false; hideUi() } }
+            uiJob = if (delayMs > 0L) scope.launch { delay(delayMs); if (ui) { ui = false; hideUi() } } else null
         } else if (!ui) {
             uiJob?.cancel()
             hideUi()
@@ -1390,7 +1393,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
         uiJob?.cancel()
         if (ui && viewing) {
             val delayMs = if (config.isEinkMode) config.einkUiHideDelay else 10000L
-            uiJob = scope.launch { delay(delayMs); if (ui) { ui = false; hideUi() } }
+            if (delayMs > 0L) uiJob = scope.launch { delay(delayMs); if (ui) { ui = false; hideUi() } }
         }
     }
 
