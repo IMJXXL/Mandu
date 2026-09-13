@@ -137,6 +137,9 @@ dependencies {
     // Apache Commons Compress - ZIP/7Z handling
     implementation("org.apache.commons:commons-compress:1.26.1")
 
+    // XZ - required by Commons Compress for LZMA2 (7z/CB7 extraction)
+    implementation("org.tukaani:xz:1.10")
+
     // JunRAR - RAR/CBR support
     implementation("com.github.junrar:junrar:7.5.5")
 
