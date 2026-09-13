@@ -1313,6 +1313,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
             // 有多个目录项 → 回到目录列表
             viewing = false; pageList = emptyList()
             items = tocItems
+            if (navStack.size > 1) navStack = navStack.dropLast(1)
         } else if (navStack.size > 1 && navStack.last() != effectiveRootPath) {
             // 有上一级 → 回到上一级目录
             viewing = false; pageList = emptyList()
