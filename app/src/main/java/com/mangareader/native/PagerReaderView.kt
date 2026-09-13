@@ -1418,7 +1418,13 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 ssiv.post { applySplitScale(ssiv, bmp, showRight) }
                 return
             }
-            val targetScale = ssiv.width.toFloat() / (bmp.width / 2f)
+            val scaleByWidth = ssiv.width.toFloat() / (bmp.width / 2f)
+            val targetScale = if (ssiv.height > 0) {
+                val scaleByHeight = ssiv.height.toFloat() / bmp.height.toFloat()
+                minOf(scaleByWidth, scaleByHeight)
+            } else {
+                scaleByWidth
+            }
             val centerX = if (showRight) bmp.width * 3f / 4f else bmp.width / 4f
             val centerY = bmp.height / 2f
             ssiv.setScaleAndCenter(targetScale, android.graphics.PointF(centerX, centerY))
