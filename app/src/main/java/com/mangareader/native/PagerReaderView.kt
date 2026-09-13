@@ -1443,8 +1443,8 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                     }
                 }
             })
-            // landscapeZoom：宽图自动放大适配高度
-            if (landscapeZoom && bmp.width > bmp.height) {
+            // landscapeZoom：宽图自动放大适配高度（fitScreen 开时不插手，保持 contain）
+            if (landscapeZoom && !fitScreenEnabled && bmp.width > bmp.height) {
                 ssiv.handler?.postDelayed({
                     if (ssiv.isReady) {
                         val targetScale = ssiv.height.toFloat() / bmp.height.toFloat()
