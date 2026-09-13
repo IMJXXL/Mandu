@@ -22,7 +22,6 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -59,13 +58,11 @@ import com.mangareader.data.Book
 import com.mangareader.data.Bookshelf
 import com.mangareader.data.ReadingProgress
 import com.mangareader.data.SearchHistory
-import com.mangareader.data.Tag
 import com.mangareader.viewer.ArchiveEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.CoroutineScope
 
 enum class SortMode(val label: String) { LAST("最近阅读"), NAME("名称"), DATE("添加时间"), PROGRESS("阅读进度") }
@@ -107,7 +104,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
     }
     var sortAsc by remember { mutableStateOf(prefs.getBoolean("library_sort_asc", false)) }
     var filter by remember { mutableStateOf(FilterMode.ALL) }
-
+    var showSort by remember { mutableStateOf(false) }
     val configuration = LocalConfiguration.current
     val isTablet = configuration.smallestScreenWidthDp >= 600
     val autoCols = if (isTablet) {
@@ -152,14 +149,6 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
 
     var selectedShelfId by remember { mutableStateOf<Long?>(null) }
     var selectedShelfName by remember { mutableStateOf("") }
-    var selectedTagIds by remember { mutableStateOf(setOf<Long>()) }
-    var showManageSheet by remember { mutableStateOf(false) }
-    var allTags by remember { mutableStateOf(listOf<Tag>()) }
-    var bookTagColors by remember { mutableStateOf(mapOf<Long, List<Long>>()) }
-    var showTagEditForBook by remember { mutableStateOf<Book?>(null) }
-    var showTagEditForMulti by remember { mutableStateOf(false) }
-    var shelfBookIds by remember { mutableStateOf<Set<Long>?>(null) }
-    var tagBookIds by remember { mutableStateOf<Set<Long>?>(null) }
 
     var lastReading by remember { mutableStateOf<ReadingProgress?>(null) }
 
@@ -183,10 +172,6 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
         dao.getAllBookshelves().collect { bookshelves = it }
     }
 
-    LaunchedEffect(Unit) {
-        dao.getAllTags().collect { allTags = it }
-    }
-
     // Preload covers for books that don't have disk-cached covers yet
     val coverScope = rememberCoroutineScope()
     val md5 = remember { java.security.MessageDigest.getInstance("MD5") }
@@ -206,51 +191,30 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
         }
     }
 
-    LaunchedEffect(books.map { it.id }) {
-        if (books.isNotEmpty()) {
-            val bt = withContext(Dispatchers.IO) { dao.getTagsForBooks(books.map { it.id }) }
-            bookTagColors = bt.groupBy { it.bookId }.mapValues { e -> e.value.map { it.color } }
-        } else bookTagColors = emptyMap()
-    }
-
-    LaunchedEffect(selectedShelfId) {
-        shelfBookIds = if (selectedShelfId != null) {
-            withContext(Dispatchers.IO) { dao.getBooksByShelf(selectedShelfId!!).first().map { it.id }.toSet() }
-        } else null
-    }
-
-    LaunchedEffect(selectedTagIds) {
-        tagBookIds = if (selectedTagIds.isNotEmpty()) {
-            withContext(Dispatchers.IO) { dao.getBooksByTags(selectedTagIds.toList()).first().map { it.id }.toSet() }
-        } else null
-    }
-
-    LaunchedEffect(sort, sortAsc, debouncedQuery, filter, selectedShelfId, selectedTagIds, shelfBookIds, tagBookIds) {
+    LaunchedEffect(sort, sortAsc, debouncedQuery, filter, selectedShelfId) {
         val globalHide = ctx.getSharedPreferences("manga_reader", Context.MODE_PRIVATE).getBoolean("global_hide", false)
         if (globalHide) {
             books = emptyList()
             return@LaunchedEffect
         }
-        val baseFlow = if (debouncedQuery.isNotEmpty()) dao.searchVisibleBooks(debouncedQuery) else when (sort) {
-            SortMode.LAST -> dao.getVisibleBooks()
-            SortMode.NAME -> dao.getVisibleBooksByName()
-            SortMode.DATE -> dao.getVisibleBooksByDateAdded()
-            SortMode.PROGRESS -> dao.getVisibleBooksByProgress()
-        }
-        baseFlow.collect {
-            var result = it
-            if (shelfBookIds != null) result = result.filter { b -> b.id in shelfBookIds!! }
-            if (tagBookIds != null) result = result.filter { b -> b.id in tagBookIds!! }
-            result = when (filter) {
-                FilterMode.ALL -> result
-                FilterMode.FAV -> result.filter { b -> b.isFavorite }
-                FilterMode.READING -> result.filter { b -> (b.readPages > 0 || b.lastReadAt != null) && (b.totalPages == 0 || b.readPages < b.totalPages) }
-                FilterMode.UNREAD -> result.filter { b -> b.readPages == 0 && b.lastReadAt == null }
-                FilterMode.FINISHED -> result.filter { b -> b.totalPages > 0 && b.readPages >= b.totalPages }
+        val flow = when {
+            selectedShelfId != null -> dao.getBooksByShelf(selectedShelfId!!)
+            debouncedQuery.isNotEmpty() -> dao.searchVisibleBooks(debouncedQuery)
+            filter == FilterMode.FAV -> dao.getVisibleFavoriteBooks()
+            filter == FilterMode.READING -> dao.getVisibleReadingBooks()
+            filter == FilterMode.UNREAD -> dao.getVisibleUnreadBooks()
+            filter == FilterMode.FINISHED -> dao.getVisibleFinishedBooks()
+            else -> when (sort) {
+                SortMode.LAST -> dao.getVisibleBooks()
+                SortMode.NAME -> dao.getVisibleBooksByName()
+                SortMode.DATE -> dao.getVisibleBooksByDateAdded()
+                SortMode.PROGRESS -> dao.getVisibleBooksByProgress()
             }
+        }
+        flow.collect {
             val ordered = if (sort == SortMode.NAME) {
-                result.sortedWith(Comparator { a, b -> naturalCompare(a.title, b.title) })
-            } else result
+                it.sortedWith(Comparator { a, b -> naturalCompare(a.title, b.title) })
+            } else it
             books = if (sortAsc) ordered.reversed() else ordered
         }
     }
@@ -425,8 +389,6 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                     Text("文件类型: ${b.fileType.uppercase()}")
                     Spacer(Modifier.height(8.dp))
                     Text("来源: ${b.source}")
-                    Spacer(Modifier.height(12.dp))
-                    Text("编辑标签", fontSize = 13.sp, color = MaterialTheme.colorScheme.primary, modifier = Modifier.clickable { showTagEditForBook = b })
                 }
             },
             confirmButton = { TextButton(onClick = { showBookInfo = null }) { Text("关闭") } },
@@ -506,9 +468,39 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
                 actions = {
                     IconButton(onClick = { isMultiSelect = true }) { Icon(Icons.Default.Edit, "编辑") }
+                    IconButton(onClick = { showSort = true }) { Icon(Icons.Default.Sort, "排序") }
+                    IconButton(onClick = {
+                        val next = !sortAsc
+                        sortAsc = next
+                        prefs.edit().putBoolean("library_sort_asc", next).apply()
+                    }) {
+                        Icon(if (sortAsc) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward, "排序方向")
+                    }
+                    val colsCandidates = if (isTablet) listOf(1, 3, 4, 6) else listOf(1, 2, 3, 4, 5)
+                    IconButton(onClick = {
+                        val idx = colsCandidates.indexOf(effectiveCols).coerceAtLeast(0)
+                        manualCols = colsCandidates[(idx + 1) % colsCandidates.size]
+                    }) {
+                        Icon(when (effectiveCols) {
+                            1 -> Icons.Default.ViewList
+                            2 -> Icons.Default.ViewModule
+                            3 -> Icons.Default.GridView
+                            4 -> Icons.Default.Dashboard
+                            else -> Icons.Default.Apps
+                        }, "布局")
+                    }
                     IconButton(onClick = { showSearch = !showSearch }) { Icon(if (showSearch) Icons.Filled.Close else Icons.Default.Search, "搜索") }
-                    IconButton(onClick = { showManageSheet = true }) { Icon(Icons.Default.Category, "管理") }
+                    // ★ F 历史记录页入口
+                    IconButton(onClick = onOpenHistory) { Icon(Icons.Default.History, "阅读历史") }
                     IconButton(onClick = onSettings) { Icon(Icons.Default.Settings, "设置") }
+                    DropdownMenu(expanded = showSort, onDismissRequest = { showSort = false }) {
+                        SortMode.entries.forEach { s -> DropdownMenuItem(text = { Text(s.label) }, onClick = {
+                            sort = s
+                            prefs.edit().putString("library_sort", s.name).apply()
+                            showSort = false
+                        },
+                            leadingIcon = { if (sort == s) Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.primary) else Spacer(Modifier.size(24.dp)) }) }
+                    }
                 }
             )
         },
@@ -538,7 +530,6 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
             if (isMultiSelect && selectedBooks.isNotEmpty()) Surface(color = MaterialTheme.colorScheme.primaryContainer) {
                 Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
                     TextButton(onClick = { showShelfDialog = true }) { Text("添加到书架", color = MaterialTheme.colorScheme.primary) }
-                    TextButton(onClick = { showTagEditForMulti = true }) { Text("添加标签", color = MaterialTheme.colorScheme.primary) }
                     TextButton(onClick = { showDeleteConfirm = true }) { Text("删除", color = MaterialTheme.colorScheme.error) }
                 }
             }
@@ -585,8 +576,10 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
             LazyRow(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(FilterMode.entries.size) { i ->
                     val f = FilterMode.entries[i]
-                    FilterChip(selected = filter == f, onClick = {
+                    FilterChip(selected = filter == f && selectedShelfId == null, onClick = {
                         filter = f
+                        selectedShelfId = null
+                        selectedShelfName = ""
                     }, label = { Text(f.label, fontSize = 13.sp) })
                 }
                 items(bookshelves.size) { i ->
@@ -598,17 +591,10 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                         } else {
                             selectedShelfId = shelf.id
                             selectedShelfName = shelf.name
+                            filter = FilterMode.ALL
                         }
                     }, label = { Text(shelf.name, fontSize = 13.sp) },
                         leadingIcon = { Icon(Icons.Default.Book, null, Modifier.size(16.dp)) }
-                    )
-                }
-                items(allTags.size) { i ->
-                    val t = allTags[i]
-                    FilterChip(selected = t.id in selectedTagIds, onClick = {
-                        selectedTagIds = if (t.id in selectedTagIds) selectedTagIds - t.id else selectedTagIds + t.id
-                    }, label = { Text(t.name, fontSize = 13.sp) },
-                        leadingIcon = { Icon(Icons.Default.Label, null, Modifier.size(16.dp)) }
                     )
                 }
             }
@@ -642,29 +628,13 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                             onToggleSelect = onToggleSelect,
                             onTap = onTap,
                             onLongClick = onLongClick,
-                            onDelete = onDelete,
-                            tagColors = bookTagColors[b.id] ?: emptyList())
+                            onDelete = onDelete)
                     }
                 }
             }
         }
     }
     if (showDonation) DonationDialog(onDismiss = { showDonation = false })
-
-    if (showManageSheet) LibraryManageSheet(
-        onDismiss = { showManageSheet = false },
-        dao, scope, bookshelves, {},
-        sort, { sort = it; prefs.edit().putString("library_sort", it.name).apply() },
-        sortAsc, { sortAsc = it; prefs.edit().putBoolean("library_sort_asc", it).apply() },
-        isTablet, manualCols, { manualCols = it },
-        onOpenHistory
-    )
-    showTagEditForBook?.let { b ->
-        TagSelectDialog(onDismiss = { showTagEditForBook = null }, dao, scope, setOf(b.id)) { showTagEditForBook = null }
-    }
-    if (showTagEditForMulti) {
-        TagSelectDialog(onDismiss = { showTagEditForMulti = false }, dao, scope, selectedBooks) { showTagEditForMulti = false }
-    }
 
     val remoteDownloadInfo by com.mangareader.smbbridge.RemoteDownloadDialogState.dialogState.collectAsState()
     val remoteDownloadBusy by com.mangareader.smbbridge.RemoteDownloadDialogState.downloadBusy.collectAsState()
@@ -702,7 +672,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun BookCard(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, isSelected: Boolean, decodePx: Int, onToggleSelect: () -> Unit, onTap: () -> Unit, onLongClick: () -> Unit, onDelete: () -> Unit, tagColors: List<Long> = emptyList()) {
+private fun BookCard(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, isSelected: Boolean, decodePx: Int, onToggleSelect: () -> Unit, onTap: () -> Unit, onLongClick: () -> Unit, onDelete: () -> Unit) {
     val ctx = LocalContext.current
     // ★ LV119 对齐参考项目：直接用 coverPath (cv:...) 作为 Coil3 model，
     //   CoverFetcher 返回原始字节 → Coil3 decoders 自动识别动图（GIF/WebP/APNG）
@@ -797,12 +767,6 @@ private fun BookCard(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, isS
         }
         Box(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface).padding(horizontal = 8.dp, vertical = 6.dp)) {
             Text(text = b.title, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurface)
-        }
-        if (tagColors.isNotEmpty()) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                tagColors.take(3).forEach { c -> Box(Modifier.size(6.dp).clip(CircleShape).background(Color(c))) }
-                if (tagColors.size > 3) Text("+${tagColors.size - 3}", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
         }
         }
     }

@@ -81,8 +81,6 @@ data class TagLink(
     val bookId: Long
 )
 
-data class BookTag(val bookId: Long, val tagId: Long, val color: Long)
-
 @Entity(tableName = "reading_history",
     indices = [Index("bookId"), Index("timestamp")])
 data class ReadingHistory(
@@ -502,9 +500,6 @@ interface MangaDao {
     @Delete
     suspend fun deleteTagLink(link: TagLink)
 
-    @Query("DELETE FROM tag_links WHERE tagId = :tagId AND bookId = :bookId")
-    suspend fun deleteTagLinkByIds(tagId: Long, bookId: Long)
-
     @Query("DELETE FROM tag_links WHERE bookId = :bookId")
     suspend fun removeAllTagsFromBook(bookId: Long)
 
@@ -519,12 +514,6 @@ interface MangaDao {
 
     @Query("SELECT COUNT(*) FROM tag_links WHERE tagId = :tagId")
     suspend fun countBooksInTag(tagId: Long): Int
-
-    @Query("SELECT tl.bookId AS bookId, t.id AS tagId, t.color AS color FROM tag_links tl INNER JOIN tags t ON t.id = tl.tagId WHERE tl.bookId IN (:bookIds)")
-    suspend fun getTagsForBooks(bookIds: List<Long>): List<BookTag>
-
-    @Query("SELECT DISTINCT b.* FROM manga_books b INNER JOIN tag_links tl ON b.id = tl.bookId WHERE tl.tagId IN (:tagIds) AND b.isHidden = 0 ORDER BY b.title ASC")
-    fun getBooksByTags(tagIds: List<Long>): Flow<List<Book>>
 
     // ==================== §23 阅读记忆 ====================
 
