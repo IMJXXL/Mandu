@@ -1256,14 +1256,15 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
                 ?: switchTargetPath
             // ★ 修复白屏：先同步清 pageList+viewing，再更新 navStack，防止 NativeReaderScreen
             //   重建时拿到旧/空 pageList 白屏（navStack 更新触发 key 变→重建，此时 pageList 已空+viewing=false 不显示）
+            val fullPath = if (bookRoot.startsWith("z:") && bookRoot.endsWith("//")) "$bookRoot$switchTargetPath" else switchTargetPath
             pageList = emptyList(); viewing = false; items = emptyList()
-            navStack = listOf(bookRoot, switchTargetPath)
+            navStack = listOf(bookRoot, fullPath)
             scope.launch {
                 withContext(Dispatchers.IO) {
-                    val chItems = try { engine.children(switchTargetPath) } catch (_: Exception) { emptyList() }
+                    val chItems = try { engine.children(fullPath) } catch (_: Exception) { emptyList() }
                     if (chItems.isEmpty()) {
                         // ★ §23 改走 enterReader 恢复 lastPage
-                        enterReader(switchTargetPath)
+                        enterReader(fullPath)
                     } else {
                         items = chItems
                     }
