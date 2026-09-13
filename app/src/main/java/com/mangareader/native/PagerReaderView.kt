@@ -761,6 +761,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         val distance = kotlin.math.abs(page - currentPage)
         if (distance > 5) {
             loadScope.coroutineContext.cancelChildren()
+            inflightLoads.clear()
             inflightAnimLoads.clear()
         }
         val pos = positionOf(page)
