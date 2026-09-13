@@ -1009,7 +1009,7 @@ class ArchiveEngine(private val ctx: Context) {
             val auth = parts[0]
             val treeStr = parts[1]
             val docId = parts[2]
-            val fileName = if (parts.size >= 4 && parts[3].isNotEmpty()) parts[3] else docId.substringAfterLast("/")
+            val fileName = (if (parts.size >= 4 && parts[3].isNotEmpty()) parts[3] else docId.substringAfterLast("/")).lowercase()
             val tree = makeTree(auth, treeStr)
             val logMsg = "loadCover: auth=$auth tree=$treeStr doc=$docId file=$fileName"
             Log.d(TAG, logMsg)
@@ -1068,7 +1068,7 @@ class ArchiveEngine(private val ctx: Context) {
             val auth = parts[0]
             val treeStr = parts[1]
             val docId = parts[2]
-            val fileName = if (parts.size >= 4 && parts[3].isNotEmpty()) parts[3] else docId.substringAfterLast("/")
+            val fileName = (if (parts.size >= 4 && parts[3].isNotEmpty()) parts[3] else docId.substringAfterLast("/")).lowercase()
             val tree = makeTree(auth, treeStr)
 
             if (fileName.endsWith(".cbz") || fileName.endsWith(".zip") || fileName.endsWith(".epub")) {
