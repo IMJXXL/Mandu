@@ -59,9 +59,9 @@ data class ReaderConfig(
         prefs.edit().apply {
             putString("${prefix}scrollMode", scrollMode.name)
             putString("${prefix}clickFlipType", clickFlipType.name)
-            putBoolean("${prefix}isFlipAnimation", isFlipAnimation)
-            putBoolean("${prefix}isShowPageNum", isShowPageNum)
-            putBoolean("${prefix}isKeepScreenOn", isKeepScreenOn)
+            putBoolean("isFlipAnimation", isFlipAnimation)
+            putBoolean("isShowPageNum", isShowPageNum)
+            putBoolean("isKeepScreenOn", isKeepScreenOn)
             putBoolean("${prefix}isTrimWhiteBorder", isTrimWhiteBorder)
             putFloat("${prefix}trimFactor", trimFactor)
             putInt("${prefix}trimThreshold", trimThreshold)
@@ -72,8 +72,8 @@ data class ReaderConfig(
             putInt("${prefix}einkDecodeSize", einkDecodeSize)
             putLong("${prefix}einkUiHideDelay", einkUiHideDelay)
             putFloat("${prefix}pdfQuality", pdfQuality)
-            putBoolean("${prefix}isImmersiveMode", isImmersiveMode)
-            putInt("${prefix}orientation", orientation)
+            putBoolean("isImmersiveMode", isImmersiveMode)
+            putInt("orientation", orientation)
             putInt("${prefix}autoFlipInterval", autoFlipInterval)
             putBoolean("${prefix}isGrayscale", isGrayscale)
             putBoolean("${prefix}isInvertColors", isInvertColors)
@@ -83,16 +83,16 @@ data class ReaderConfig(
             putInt("${prefix}flipFlashColor", flipFlashColor)
             putString("${prefix}pageLayout", pageLayout.name)
             putBoolean("${prefix}useSSIV", useSSIV)
-            putBoolean("${prefix}landscapeZoom", landscapeZoom)
-            putBoolean("${prefix}fitScreen", fitScreen)
+            putBoolean("landscapeZoom", landscapeZoom)
+            putBoolean("fitScreen", fitScreen)
             putBoolean("${prefix}panNavigation", panNavigation)
             putInt("${prefix}doublePageShift", doublePageShift)
             putBoolean("${prefix}doublePageSplit", doublePageSplit)
             putBoolean("${prefix}doublePageReverse", doublePageReverse)
 
-            putBoolean("${prefix}autoWebtoon", autoWebtoon)
-            putBoolean("${prefix}chapterTransition", chapterTransition)
-            putBoolean("${prefix}seamlessNextVolume", seamlessNextVolume)
+            putBoolean("autoWebtoon", autoWebtoon)
+            putBoolean("chapterTransition", chapterTransition)
+            putBoolean("seamlessNextVolume", seamlessNextVolume)
             putInt("${prefix}centerGapType", centerGapType)
             apply()
         }
@@ -105,9 +105,9 @@ data class ReaderConfig(
             return ReaderConfig(
                 scrollMode = try { ScrollMode.valueOf(prefs.getString("${prefix}scrollMode", "HORIZONTAL_LEFT")!!) } catch (_: Exception) { ScrollMode.HORIZONTAL_LEFT },
                 clickFlipType = try { ClickFlipType.valueOf(prefs.getString("${prefix}clickFlipType", "LEFT_RIGHT")!!) } catch (_: Exception) { ClickFlipType.LEFT_RIGHT },
-                isFlipAnimation = prefs.getBoolean("${prefix}isFlipAnimation", prefs.getBoolean("isFlipAnimation", true)),
-                isShowPageNum = prefs.getBoolean("${prefix}isShowPageNum", prefs.getBoolean("isShowPageNum", true)),
-                isKeepScreenOn = prefs.getBoolean("${prefix}isKeepScreenOn", prefs.getBoolean("isKeepScreenOn", true)),
+                isFlipAnimation = prefs.getBoolean("isFlipAnimation", true),
+                isShowPageNum = prefs.getBoolean("isShowPageNum", true),
+                isKeepScreenOn = prefs.getBoolean("isKeepScreenOn", true),
                 isTrimWhiteBorder = prefs.getBoolean("${prefix}isTrimWhiteBorder", false),
                 trimFactor = prefs.getFloat("${prefix}trimFactor", 0.02f),
                 trimThreshold = prefs.getInt("${prefix}trimThreshold", 220),
@@ -118,8 +118,8 @@ data class ReaderConfig(
                 einkDecodeSize = prefs.getInt("${prefix}einkDecodeSize", 1920),
                 einkUiHideDelay = prefs.getLong("${prefix}einkUiHideDelay", 6000L),
                 pdfQuality = prefs.getFloat("${prefix}pdfQuality", 3.0f),
-                isImmersiveMode = prefs.getBoolean("${prefix}isImmersiveMode", prefs.getBoolean("isImmersiveMode", true)),
-                orientation = prefs.getInt("${prefix}orientation", prefs.getInt("orientation", -1)),
+                isImmersiveMode = prefs.getBoolean("isImmersiveMode", true),
+                orientation = prefs.getInt("orientation", -1),
                 autoFlipInterval = prefs.getInt("${prefix}autoFlipInterval", 0),
                 isGrayscale = prefs.getBoolean("${prefix}isGrayscale", false),
                 isInvertColors = prefs.getBoolean("${prefix}isInvertColors", false),
@@ -129,17 +129,17 @@ data class ReaderConfig(
                 flipFlashColor = prefs.getInt("${prefix}flipFlashColor", 0),
                 pageLayout = try { PageLayout.valueOf(prefs.getString("${prefix}pageLayout", "SINGLE")!!) } catch (_: Exception) { PageLayout.SINGLE },
                 useSSIV = prefs.getBoolean("${prefix}useSSIV", true),
-                landscapeZoom = prefs.getBoolean("${prefix}landscapeZoom", prefs.getBoolean("landscapeZoom", false)),
-                fitScreen = prefs.getBoolean("${prefix}fitScreen", prefs.getBoolean("fitScreen", false)),
+                landscapeZoom = prefs.getBoolean("landscapeZoom", false),
+                fitScreen = prefs.getBoolean("fitScreen", false),
                 panNavigation = prefs.getBoolean("${prefix}panNavigation", true),
                 doublePageShift = prefs.getInt("${prefix}doublePageShift", 0),
                 doublePageSplit = prefs.getBoolean("${prefix}doublePageSplit", false),
                 doublePageReverse = prefs.getBoolean("${prefix}doublePageReverse", false),
 
-                autoWebtoon = prefs.getBoolean("${prefix}autoWebtoon", prefs.getBoolean("autoWebtoon", true)),
-                chapterTransition = prefs.getBoolean("${prefix}chapterTransition", prefs.getBoolean("chapterTransition", true)),
+                autoWebtoon = prefs.getBoolean("autoWebtoon", true),
+                chapterTransition = prefs.getBoolean("chapterTransition", true),
                 centerGapType = prefs.getInt("${prefix}centerGapType", 0),
-                seamlessNextVolume = prefs.getBoolean("${prefix}seamlessNextVolume", prefs.getBoolean("seamlessNextVolume", false))
+                seamlessNextVolume = prefs.getBoolean("seamlessNextVolume", false)
             )
         }
     }
