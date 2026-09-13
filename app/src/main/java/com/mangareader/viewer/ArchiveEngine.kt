@@ -2311,21 +2311,21 @@ class ArchiveEngine(private val ctx: Context) {
                 var idx = 0
                 ctx.contentResolver.openInputStream(uri)?.use { s ->
                     ZipInputStream(s).use { z ->
-                        var e = try { z.nextEntry } catch (_: Exception) { null }
+                        var e = try { z.nextEntry } catch (ex: Exception) { Log.w(TAG, "loadFromZip SAF ZipInputStream nextEntry: ${ex.message}"); null }
                         while (e != null) {
                             if (!e.isDirectory && isImg(e.name)) {
                                 if (idx == targetIndex) {
-                                    targetData = try { z.readBytes() } catch (_: Exception) { null }
+                                    targetData = try { z.readBytes() } catch (ex: Exception) { Log.w(TAG, "loadFromZip SAF ZipInputStream readBytes idx=$idx: ${ex.message}"); null }
                                     break
                                 }
                                 idx++
                             }
-                            e = try { z.nextEntry } catch (_: Exception) { null }
+                            e = try { z.nextEntry } catch (ex: Exception) { Log.w(TAG, "loadFromZip SAF ZipInputStream nextEntry: ${ex.message}"); null }
                         }
                     }
                 }
                 if (targetData != null) { flushLog(ctx); return targetData }
-            } catch (_: Exception) {}
+            } catch (e: Exception) { Log.w(TAG, "loadFromZip SAF fallback: ${e.message}") }
         } catch (e: Exception) { debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip EXCEPTION: ${e.message}") }
         debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: ALL FAILED for target=$targetIndex")
         flushLog(ctx)
