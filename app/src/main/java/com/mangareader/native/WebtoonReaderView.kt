@@ -690,7 +690,7 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
             val e = engine
             if (e != null) {
                 val p = e.getRealFileForPath(treePath)
-                if (p.isNotEmpty()) {
+                if (p.isNotEmpty() && treePath.startsWith("a:")) {
                     val tree = android.net.Uri.parse("content://${treePath.substringAfter("a:").substringBefore("|")}/tree/${android.net.Uri.encode(treePath.substringAfter("|").substringBefore("|"))}")
                     val docId = treePath.substringAfterLast("|").substringBeforeLast(".")
                     val uri = android.provider.DocumentsContract.buildDocumentUriUsingTree(tree, docId)

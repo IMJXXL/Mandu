@@ -313,9 +313,10 @@ class Scanner(private val ctx: Context, private val dao: MangaDao) {
         for (b in books) {
             val filePath = b.filePath
             val cached = prefs.getString("realpath_$filePath", null)
-            if (cached != null) continue
-            try {
-                val p = filePath.removePrefix("a:").split("|", limit = 4)
+                if (cached != null) continue
+                if (!filePath.startsWith("a:")) continue
+                try {
+                    val p = filePath.removePrefix("a:").split("|", limit = 4)
                 if (p.size < 3) continue
                 val realFile = getRealFileForPath(p[0], p[1], p[2])
                 if (realFile != null) {
