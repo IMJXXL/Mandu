@@ -422,6 +422,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
                 val now = System.currentTimeMillis()
                 // ★ v1.11：与 save() 同款多页守卫（单页列表不构成"读完"）
                 val done = pageListSnap.size > 1 && curSnap >= pageListSnap.size - 1
+                android.util.Log.d("ReaderProgress", "onDispose-save bookId=${b.id} chPath=$chPathSnap cur=$curSnap size=${pageListSnap.size} done=$done")
                 val sx = scrollX; val sy = scrollY; val zs = zoomLevel
                 app.appScope.launch {
                     try {
@@ -460,6 +461,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
         // ★ v1.11 修复：done 加多页守卫。原 `cur >= size-1` 在 pageList.size==1 时一进即 true → completed=1
         //   单向锁死后每开必跳第 1 页（实机 book=39 实锤）。单页/空列表不构成"读完"。
         val done = pageListSnap.size > 1 && curSnap >= pageListSnap.size - 1
+        android.util.Log.d("ReaderProgress", "save bookId=${b.id} chPath=$chPathSnap cur=$curSnap size=${pageListSnap.size} done=$done")
 
         saveJob?.cancel()
         saveJob = app.appScope.launch {
@@ -724,6 +726,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
         }
         pageList = pages
         val progress = withContext(Dispatchers.IO) { dao.getProgress(b.id, path) }
+        android.util.Log.d("ReaderProgress", "enterReader bookId=${b.id} path=$path pages=${pages.size} progress=${progress?.let { "lastPage=${it.lastPage} completed=${it.completed} updatedAt=${it.updatedAt}" } ?: "null"}")
         // ★ v1.11 脏数据自愈：completed=1 且 lastPage==0 且多页卷 → 必为历史污染
         //   （正常"读完"路径写入的 lastPage 恒为末页索引 size-1 或 markAsReadNow 的 size-1，不可能是 0；
         //     唯一来源是旧版 done 误判/单向锁时代把 0 页码配上了 completed）。
@@ -1834,8 +1837,9 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
                                 //   此处兜底其他触发路径），窗口结束由 WebtoonRV 统一 updatePage 校准放行
                                 val skip = isVert && (wv == null || wv.isSetupScrollPending || wv.isSettleWindowActive)
                                 if (skip) {
-                                    android.util.Log.d("WebtoonRV", "Reader.onPageChanged SKIP newCur=$newCur pend=${wv?.isSetupScrollPending} win=${wv?.isSettleWindowActive}")
+                                    android.util.Log.d("ReaderProgress", "onPageChanged SKIP newCur=$newCur isVert=$isVert pend=${wv?.isSetupScrollPending} win=${wv?.isSettleWindowActive}")
                                 } else {
+                                    android.util.Log.d("ReaderProgress", "onPageChanged EXEC newCur=$newCur isVert=$isVert")
                                     cur = newCur; save()
                                 }
                             },
