@@ -207,6 +207,18 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
             }
             item {
             Spacer(Modifier.height(8.dp))
+            Card(Modifier.fillMaxWidth().clickable { showFolderManage = true }) {
+                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Folder, null, modifier = Modifier.size(24.dp))
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("本地漫画管理", fontSize = 16.sp)
+                        Text("添加文件夹、扫描刷新、显示隐藏", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Icon(Icons.Default.ChevronRight, null)
+                }
+            }
+            Spacer(Modifier.height(8.dp))
             Card(Modifier.fillMaxWidth().clickable { showShelfManage = true }) {
                 Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.Bookmarks, null, modifier = Modifier.size(24.dp))
@@ -214,18 +226,6 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
                     Column(Modifier.weight(1f)) {
                         Text("书架管理", fontSize = 16.sp)
                         Text("新建、重命名、拖动排序书架", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Icon(Icons.Default.ChevronRight, null)
-                }
-            }
-            Spacer(Modifier.height(8.dp))
-            Card(Modifier.fillMaxWidth().clickable { showFolderManage = true }) {
-                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Folder, null, modifier = Modifier.size(24.dp))
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text("已导入文件夹", fontSize = 16.sp)
-                        Text("添加文件夹、扫描刷新、显示隐藏", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Icon(Icons.Default.ChevronRight, null)
                 }

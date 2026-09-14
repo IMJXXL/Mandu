@@ -95,17 +95,18 @@ fun FolderManageScreen(onBack: () -> Unit) {
 
     Scaffold(
         topBar = {
-            TopAppBar(title = { Text("已导入文件夹") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") } })
+            TopAppBar(
+                title = { Text("本地漫画管理") },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") } },
+                actions = {
+                    IconButton(onClick = { picker.launch(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply { putExtra("android.content.extra.SHOW_ADVANCED", true) }) }) {
+                        Icon(Icons.Default.Add, "导入文件夹")
+                    }
+                }
+            )
         }
     ) { pad ->
         Column(Modifier.padding(pad).fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
-            Button(onClick = { picker.launch(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply { putExtra("android.content.extra.SHOW_ADVANCED", true) }) }, modifier = Modifier.fillMaxWidth()) {
-                Icon(Icons.Default.Add, null)
-                Spacer(Modifier.width(8.dp))
-                Text("导入文件夹")
-            }
-            Spacer(Modifier.height(8.dp))
             Surface(
                 modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)),
                 color = MaterialTheme.colorScheme.surfaceVariant
