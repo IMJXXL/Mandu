@@ -1,29 +1,15 @@
 package com.mangareader.ui
 
 import android.app.Activity
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -32,7 +18,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.ui.Alignment
@@ -41,23 +26,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.content.FileProvider
 import com.mangareader.App
-import com.mangareader.Scanner
-import com.mangareader.data.Bookshelf
-import com.mangareader.data.Folder
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -65,211 +41,30 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
     val ctx = LocalContext.current
     val app = ctx.applicationContext as App
     val dao = remember { app.db.mangaDao() }
-    val scanner = remember { Scanner(ctx, dao) }
     val scope = rememberCoroutineScope()
     val prefs = remember { ctx.getSharedPreferences("manga_reader", Context.MODE_PRIVATE) }
     var config by remember { mutableStateOf(com.mangareader.data.ReaderConfig.load(ctx)) }
     var totalBooks by remember { mutableIntStateOf(0) }
     var readBooks by remember { mutableIntStateOf(0) }
-    var folders by remember { mutableStateOf(listOf<Folder>()) }
-    var bookshelves by remember { mutableStateOf(listOf<Bookshelf>()) }
-    var scanning by remember { mutableStateOf(false) }
-    var scanTarget by remember { mutableStateOf("") }
-    var scanCount by remember { mutableIntStateOf(0) }
     var showDonation by remember { mutableStateOf(false) }
-    var showDeleteFolder by remember { mutableStateOf<Folder?>(null) }
-    var showDeleteShelf by remember { mutableStateOf<Bookshelf?>(null) }
-    var showNomediaDialog by remember { mutableStateOf<android.net.Uri?>(null) }
-    var editShelf by remember { mutableStateOf<Bookshelf?>(null) }
-    var editShelfName by remember { mutableStateOf("") }
-    var showCreateShelf by remember { mutableStateOf(false) }
-    var newShelfName by remember { mutableStateOf("") }
-
-    var folderHiddenMap by remember { mutableStateOf<Map<Long, Boolean>>(emptyMap()) }
-    LaunchedEffect(folders) {
-        if (folders.isNotEmpty()) {
-            val map = withContext(Dispatchers.IO) {
-                folders.associate { f ->
-                    val treeUri = android.net.Uri.parse(f.treeUri)
-                    val auth = treeUri.authority ?: ""
-                    val treeDocId = android.net.Uri.decode(treeUri.lastPathSegment ?: "").removePrefix("tree:")
-                    f.id to dao.getBooksByFolderParams("a:$auth|$treeDocId|%", "d:$auth|$treeDocId%", "z:a:$auth|$treeDocId|%").any { it.isHidden }
-                }
-            }
-            folderHiddenMap = map
-        }
-    }
-
-    var draggedIndex by remember { mutableIntStateOf(-1) }
-    var dragOffset by remember { mutableFloatStateOf(0f) }
-    val shelfDensity = LocalDensity.current.density
-    val shelfItemHeight = 52f
 
     var showScrollModeDialog by remember { mutableStateOf(false) }
     var showClickFlipDialog by remember { mutableStateOf(false) }
     var showReadingSettings by remember { mutableStateOf(false) }
+    var showShelfManage by remember { mutableStateOf(false) }
+    var showFolderManage by remember { mutableStateOf(false) }
     // 超分队列页（全屏页，不嵌在滚动 Column 里渲染）
     var showSrQueue by remember { mutableStateOf(false) }
     // ★ SMB/WebDAV 服务器管理入口（smb_embed_lv119 任务2.4/12.5）
     var showSmbServers by remember { mutableStateOf(false) }
     var showWebDavServers by remember { mutableStateOf(false) }
 
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
-        if (r.resultCode == Activity.RESULT_OK) r.data?.data?.let { uri ->
-            scope.launch {
-                try { ctx.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION) } catch (_: Exception) {}
-                scanning = true; scanTarget = "扫描中..."; scanCount = 0
-                val n = withContext(Dispatchers.IO) { scanner.scanAndCommit(uri) { count -> scanCount = count } }
-                scanning = false
-                Toast.makeText(ctx, if (n > 0) "导入成功，共 $n 本漫画，封面后台加载中" else "未找到漫画文件", Toast.LENGTH_SHORT).show()
-                if (n > 0) {
-                    try {
-                        val hasNomedia = withContext(Dispatchers.IO) { scanner.checkNomedia(uri) }
-                        if (!hasNomedia) {
-                            showNomediaDialog = uri
-                        }
-                    } catch (_: Exception) {}
-                }
-            }
-        }
-    }
-
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) { readBooks = dao.countReadBooks() }
     }
     // ★ 漫画总数改为 Room Flow 观察——后台导入入库后自动更新，删除/导入全程实时
     LaunchedEffect(Unit) { dao.observeTotalBooks().collect { totalBooks = it } }
-    LaunchedEffect(Unit) { dao.getAllFolders().collect { folders = it } }
-    LaunchedEffect(Unit) { dao.getAllBookshelves().collect { bookshelves = it } }
 
-    if (showDeleteFolder != null) {
-        val f = showDeleteFolder!!
-        AlertDialog(onDismissRequest = { showDeleteFolder = null }, title = { Text("删除文件夹") },
-            text = { Text("删除「${f.displayName}」及该文件夹下所有漫画记录？原始文件不受影响。") },
-            confirmButton = {
-                TextButton(onClick = {
-                    scope.launch {
-                        withContext(Dispatchers.IO) {
-                            val treeUri = Uri.parse(f.treeUri)
-                            val docId = treeUri.lastPathSegment ?: ""
-                            val auth = treeUri.authority ?: ""
-                            // ★ C8：前缀 Kotlin 侧拼好（a/z 带尾 '|'，d 不带）
-                            val td = docId.removePrefix("tree:")
-                            val aPrefix = "a:$auth|$td|%"; val dPrefix = "d:$auth|$td%"; val zPrefix = "z:a:$auth|$td|%"
-                            // ★ 先查出这些书的 coverPath，删对应封面文件
-                            val books = dao.getBooksByFolderParams(aPrefix, dPrefix, zPrefix)
-                            val coverDir = File(ctx.filesDir, "covers")
-                            books.forEach { b ->
-                                b.coverPath?.let { cp ->
-                                    val md = java.security.MessageDigest.getInstance("MD5").digest(cp.toByteArray())
-                                    val hash = md.joinToString("") { "%02x".format(it) }
-                                    File(coverDir, "$hash.thumb").delete()
-                                }
-                            }
-                            dao.deleteBooksByFolderParams(aPrefix, dPrefix, zPrefix)
-                            dao.deleteFolder(f)
-                        }
-                        showDeleteFolder = null
-                        Toast.makeText(ctx, "已删除", Toast.LENGTH_SHORT).show()
-                    }
-                }) { Text("确定", color = MaterialTheme.colorScheme.error) }
-            },
-            dismissButton = { TextButton(onClick = { showDeleteFolder = null }) { Text("取消") } })
-    }
-
-    if (showNomediaDialog != null) {
-        val uri = showNomediaDialog!!
-        AlertDialog(onDismissRequest = { showNomediaDialog = null },
-            title = { Text("添加 .nomedia 文件") },
-            text = { Text("该文件夹中没有 .nomedia 文件。\n\n添加后可以防止系统相册扫描到漫画图片，避免漫画封面出现在相册中。\n\n是否添加？") },
-            confirmButton = {
-                TextButton(onClick = {
-                    scope.launch {
-                        withContext(Dispatchers.IO) { scanner.createNomedia(uri) }
-                        showNomediaDialog = null
-                        Toast.makeText(ctx, "已添加 .nomedia 文件", Toast.LENGTH_SHORT).show()
-                    }
-                }) { Text("添加") }
-            },
-            dismissButton = { TextButton(onClick = { showNomediaDialog = null }) { Text("跳过") } })
-    }
-
-    if (showDeleteShelf != null) {
-        val s = showDeleteShelf!!
-        AlertDialog(onDismissRequest = { showDeleteShelf = null }, title = { Text("删除书架") },
-            text = { Text("删除书架「${s.name}」？书架内的漫画不受影响。") },
-            confirmButton = {
-                TextButton(onClick = {
-                    scope.launch { withContext(Dispatchers.IO) { dao.deleteBookshelf(s) }; showDeleteShelf = null }
-                }) { Text("确定", color = MaterialTheme.colorScheme.error) }
-            },
-            dismissButton = { TextButton(onClick = { showDeleteShelf = null }) { Text("取消") } })
-    }
-
-    if (editShelf != null) {
-        AlertDialog(onDismissRequest = { editShelf = null }, title = { Text("编辑书架名称") },
-            text = { OutlinedTextField(value = editShelfName, onValueChange = { editShelfName = it }, singleLine = true, modifier = Modifier.fillMaxWidth()) },
-            confirmButton = {
-                TextButton(onClick = {
-                    if (editShelfName.isNotBlank()) {
-                        scope.launch { withContext(Dispatchers.IO) { dao.updateBookshelf(editShelf!!.copy(name = editShelfName.trim())) }; editShelf = null }
-                    }
-                }) { Text("保存") }
-            },
-            dismissButton = { TextButton(onClick = { editShelf = null }) { Text("取消") } })
-    }
-
-    if (showCreateShelf) {
-        AlertDialog(onDismissRequest = { showCreateShelf = false }, title = { Text("新建书架") },
-            text = { OutlinedTextField(value = newShelfName, onValueChange = { newShelfName = it }, label = { Text("书架名称") }, singleLine = true, modifier = Modifier.fillMaxWidth()) },
-            confirmButton = {
-                TextButton(onClick = {
-                    if (newShelfName.isNotBlank()) {
-                        scope.launch {
-                            withContext(Dispatchers.IO) {
-                                val maxOrder = bookshelves.maxOfOrNull { it.sortOrder } ?: 0
-                                dao.insertBookshelf(Bookshelf(name = newShelfName.trim(), sortOrder = maxOrder + 1))
-                            }
-                            newShelfName = ""
-                            showCreateShelf = false
-                        }
-                    }
-                }) { Text("创建") }
-            },
-            dismissButton = { TextButton(onClick = { showCreateShelf = false; newShelfName = "" }) { Text("取消") } })
-    }
-
-    if (scanning) {
-        val infiniteTransition = rememberInfiniteTransition(label = "scan")
-        val animProgress by infiniteTransition.animateFloat(
-            initialValue = 0f, targetValue = 1f,
-            animationSpec = infiniteRepeatable(tween(800, easing = LinearEasing), RepeatMode.Restart),
-            label = "runCycle"
-        )
-        AlertDialog(onDismissRequest = {}, title = { Text("导入漫画") },
-            text = {
-                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-                    Canvas(Modifier.size(64.dp)) {
-                        val w = size.width; val h = size.height
-                        val cx = w * 0.5f; val ground = h * 0.85f
-                        val phase = animProgress * 2f * Math.PI.toFloat()
-                        drawCircle(Color(0xFF7C8CF8), radius = w * 0.08f, center = Offset(cx, h * 0.3f))
-                        drawLine(Color(0xFF7C8CF8), Offset(cx, h * 0.38f), Offset(cx, h * 0.6f), strokeWidth = w * 0.06f)
-                        val armSwing = kotlin.math.sin(phase.toDouble()).toFloat() * w * 0.12f
-                        drawLine(Color(0xFF7C8CF8), Offset(cx, h * 0.42f), Offset(cx - armSwing, h * 0.55f), strokeWidth = w * 0.04f)
-                        drawLine(Color(0xFF7C8CF8), Offset(cx, h * 0.42f), Offset(cx + armSwing, h * 0.55f), strokeWidth = w * 0.04f)
-                        val legSwing = kotlin.math.sin(phase.toDouble()).toFloat() * w * 0.14f
-                        drawLine(Color(0xFF7C8CF8), Offset(cx, h * 0.6f), Offset(cx - legSwing, ground), strokeWidth = w * 0.05f)
-                        drawLine(Color(0xFF7C8CF8), Offset(cx, h * 0.6f), Offset(cx + legSwing, ground), strokeWidth = w * 0.05f)
-                        drawLine(Color.Gray, Offset(w * 0.1f, ground), Offset(w * 0.9f, ground), strokeWidth = w * 0.02f)
-                    }
-                    Spacer(Modifier.height(12.dp))
-                    Text(scanTarget, fontSize = 16.sp)
-                    Spacer(Modifier.height(6.dp))
-                    Text("已发现 $scanCount 本漫画", fontSize = 14.sp, color = MaterialTheme.colorScheme.primary)
-                }
-            }, confirmButton = {})
-    }
 
     if (showScrollModeDialog) {
         AlertDialog(onDismissRequest = { showScrollModeDialog = false }, title = { Text("翻页模式") },
@@ -411,204 +206,30 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
             }
             }
             item {
-            Button(onClick = { picker.launch(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply { putExtra("android.content.extra.SHOW_ADVANCED", true) }) }, modifier = Modifier.fillMaxWidth()) {
-                Icon(Icons.Default.Add, null)
-                Spacer(Modifier.width(8.dp))
-                Text("导入文件夹")
-            }
-            }
-
-            item {
-            // ★ §37 扫描时校验压缩包内容开关 —— 默认关闭，保持扫描速度；
-            //   开启后扫描会对每个 .zip/.cbz 文件打开内部 entry 验证至少含一张图才收，
-            //   避免"纳*save.zip 这种非漫画 archive 被误认成漫画"。
-            //   代价：大书库扫描会变慢（每个 zip 都要打开读中央目录；native 句柄复用，单文件几十 ms）。
             Spacer(Modifier.height(8.dp))
-            var verifyZipContent by remember { mutableStateOf(prefs.getBoolean("scan_verify_zip_content", false)) }
-            Surface(
-                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)),
-                color = MaterialTheme.colorScheme.surfaceVariant
-            ) {
-                Column(Modifier.padding(12.dp)) {
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text("扫描时校验压缩包内容", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                            Text(
-                                "开启后：.zip/.cbz 须内部含图才视为漫画\n防止非漫画 archive 被误识别\n代价：大书库扫描会变慢",
-                                fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                lineHeight = 14.sp
-                            )
-                        }
-                        Switch(checked = verifyZipContent, onCheckedChange = { v ->
-                            verifyZipContent = v
-                            prefs.edit().putBoolean("scan_verify_zip_content", v).apply()
-                        })
-                    }
-                }
-            }
-            }
-
-            item {
-            Spacer(Modifier.height(16.dp))
-            }
-            item {
-            Text("已导入文件夹", fontSize = 16.sp, fontWeight = FontWeight.Medium)
-            }
-            item {
-            Spacer(Modifier.height(8.dp))
-            }
-            item {
-            if (folders.isEmpty()) {
-                Text("还没有导入文件夹", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            } else if (folders.size >= 2) {
-                Button(onClick = {
-                    scope.launch {
-                        scanning = true; scanTarget = "一键扫描所有文件夹..."; scanCount = 0
-                        var totalAdded = 0
-                        var totalRemoved = 0
-                        withContext(Dispatchers.IO) {
-                            folders.forEach { f ->
-                                val (a, r) = scanner.rescanAndCommit(f) { count -> scanCount = count }
-                                totalAdded += a; totalRemoved += r
-                            }
-                        }
-                        scanCount = totalAdded
-                        scanning = false
-                        val msg = when {
-                            totalAdded == 0 && totalRemoved == 0 -> "扫描完成，书架无变化"
-                            else -> "扫描成功：新增 $totalAdded 本、移除 $totalRemoved 本，封面后台加载中"
-                        }
-                        Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show()
-                        scanning = false
-                    }
-                }, modifier = Modifier.fillMaxWidth()) {
-                    Icon(Icons.Default.Refresh, null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("一键扫描全部 (${folders.size}个文件夹)")
-                }
-                Spacer(Modifier.height(8.dp))
-            }
-            }
-            items(folders, key = { "folder_${it.id}" }) { f ->
-                val dateFormat = remember { java.text.SimpleDateFormat("MM-dd HH:mm") }
-                Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Card(Modifier.fillMaxWidth().clickable { showShelfManage = true }) {
+                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Bookmarks, null, modifier = Modifier.size(24.dp))
+                    Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
-                        Text(f.displayName, fontWeight = FontWeight.Medium, fontSize = 14.sp)
-                        Text("扫描于 ${if (f.lastScanAt > 0) dateFormat.format(java.util.Date(f.lastScanAt)) else "未扫描"}",
-                            fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("书架管理", fontSize = 16.sp)
+                        Text("新建、重命名、拖动排序书架", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    TextButton(onClick = {
-                        scope.launch {
-                            scanning = true; scanTarget = "正在扫描「${f.displayName}」..."; scanCount = 0
-                            val (addedN, removedN) = withContext(Dispatchers.IO) { scanner.rescanAndCommit(f) { count -> scanCount = count } }
-                            scanCount = addedN
-                            scanning = false
-                            val msg = when {
-                                addedN == 0 && removedN == 0 -> "刷新完成，书架无变化"
-                                else -> "刷新成功：新增 $addedN 本、移除 $removedN 本，封面后台加载中"
-                            }
-                            Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show()
-                            scanning = false
-                        }
-                    }) { Text("刷新") }
-                    val folderHidden = folderHiddenMap[f.id] ?: false
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(if (folderHidden) "隐藏" else "已显示", fontSize = 12.sp,
-                            color = if (folderHidden) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary)
-                    Switch(checked = !folderHidden, onCheckedChange = { show ->
-                        folderHiddenMap = folderHiddenMap + (f.id to !show)
-                        scope.launch {
-                            withContext(Dispatchers.IO) {
-                                val treeUri = android.net.Uri.parse(f.treeUri)
-                                val auth = treeUri.authority ?: ""
-                                val treeDocId = android.net.Uri.decode(treeUri.lastPathSegment ?: "").removePrefix("tree:")
-                                dao.setHiddenByFolderParams("a:$auth|$treeDocId|%", "d:$auth|$treeDocId%", "z:a:$auth|$treeDocId|%", !show)
-                            }
-                            Toast.makeText(ctx, if (show) "已显示「${f.displayName}」的漫画" else "已隐藏「${f.displayName}」的漫画", Toast.LENGTH_SHORT).show()
-                        }
-                    })
-                    }
-                    TextButton(onClick = { showDeleteFolder = f }) { Text("删除", color = MaterialTheme.colorScheme.error) }
+                    Icon(Icons.Default.ChevronRight, null)
                 }
             }
-
-            item {
-            Spacer(Modifier.height(24.dp))
-            }
-            item {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text("书架管理", fontSize = 16.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
-                TextButton(onClick = { showCreateShelf = true }) { Text("+ 新建", color = MaterialTheme.colorScheme.primary) }
-            }
-            }
-            item {
             Spacer(Modifier.height(8.dp))
-            }
-            item {
-            Text("长按拖动排序", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            item {
-            Spacer(Modifier.height(4.dp))
-            }
-            item {
-            if (bookshelves.isEmpty()) Text("还没有书架", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            itemsIndexed(bookshelves, key = { _, it -> "shelf_${it.id}" }) { index, shelf ->
-                    val maxUp = index * shelfItemHeight
-                    val maxDown = (bookshelves.size - 1 - index) * shelfItemHeight
-                    Surface(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 2.dp)
-                            .graphicsLayer {
-                                if (draggedIndex == index) {
-                                    translationY = dragOffset.coerceIn(-maxUp, maxDown) * shelfDensity
-                                    shadowElevation = 8f
-                                }
-                            }
-                            .pointerInput(index, bookshelves.size) {
-                                detectDragGesturesAfterLongPress(
-                                    onDragStart = { draggedIndex = index },
-                                    onDragEnd = {
-                                        if (draggedIndex >= 0 && draggedIndex < bookshelves.size) {
-                                            val finalIndex = (draggedIndex + (dragOffset / shelfItemHeight).toInt()).coerceIn(0, bookshelves.size - 1)
-                                            if (finalIndex != draggedIndex) {
-                                                val mutable = bookshelves.toMutableList()
-                                                val item = mutable.removeAt(draggedIndex)
-                                                mutable.add(finalIndex, item)
-                                                bookshelves = mutable
-                                                scope.launch {
-                                                    withContext(Dispatchers.IO) {
-                                                        mutable.forEachIndexed { i, s -> dao.updateBookshelfSort(s.id, i) }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                        draggedIndex = -1; dragOffset = 0f
-                                    },
-                                    onDragCancel = { draggedIndex = -1; dragOffset = 0f },
-                                    onDrag = { change, dragAmount ->
-                                        change.consume()
-                                        val maxUp2 = draggedIndex * shelfItemHeight
-                                        val maxDown2 = (bookshelves.size - 1 - draggedIndex) * shelfItemHeight
-                                        dragOffset = (dragOffset + dragAmount.y).coerceIn(-maxUp2, maxDown2)
-                                    }
-                                )
-                            },
-                        shape = RoundedCornerShape(8.dp),
-                        color = if (draggedIndex == index) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
-                    ) {
-                        Row(Modifier.padding(horizontal = 12.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.DragHandle, null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Spacer(Modifier.width(8.dp))
-                            Icon(Icons.Default.Book, null, modifier = Modifier.size(20.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text(shelf.name, fontSize = 14.sp, modifier = Modifier.weight(1f))
-                            IconButton(onClick = { editShelf = shelf; editShelfName = shelf.name }) { Icon(Icons.Default.Edit, "编辑", modifier = Modifier.size(20.dp)) }
-                            IconButton(onClick = { showDeleteShelf = shelf }) { Icon(Icons.Default.Delete, "删除", modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.error) }
-                        }
+            Card(Modifier.fillMaxWidth().clickable { showFolderManage = true }) {
+                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Folder, null, modifier = Modifier.size(24.dp))
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("已导入文件夹", fontSize = 16.sp)
+                        Text("添加文件夹、扫描刷新、显示隐藏", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
+                    Icon(Icons.Default.ChevronRight, null)
+                }
+            }
             }
 
             item {
@@ -936,6 +557,12 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
 
     if (showReadingSettings) {
         ReadingSettingsScreen(onBack = { showReadingSettings = false })
+    }
+    if (showShelfManage) {
+        ShelfManageScreen(onBack = { showShelfManage = false })
+    }
+    if (showFolderManage) {
+        FolderManageScreen(onBack = { showFolderManage = false })
     }
     if (showSmbServers) {
         com.mangareader.smbbridge.SmbServersScreen(onBack = { showSmbServers = false }, onOpenBook = { id -> onOpenBook?.invoke(id, null) })
