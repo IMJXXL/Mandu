@@ -67,9 +67,8 @@ fun FilterPanelSheet(
         Box(Modifier.fillMaxSize()) {
             Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.5f)).clickable { onDismiss() })
             Surface(
-                modifier = Modifier.width(320.dp).heightIn(max = 400.dp),
-                color = MaterialTheme.colorScheme.surface,
-                tonalElevation = 4.dp
+                modifier = Modifier.fillMaxWidth().fillMaxSize(),
+                color = MaterialTheme.colorScheme.surface
             ) {
                 Column(Modifier.padding(16.dp).verticalScroll(rememberScrollState())) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {

@@ -29,3 +29,7 @@ app/libs/*.bak
 .tmp_old_pager.kt
 
 tmp_db/
+check_*.py
+analyze_comments.py
+crash_buf.txt
+tmp_logcat*.txt

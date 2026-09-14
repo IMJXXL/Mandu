@@ -611,13 +611,13 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                     }
                 }
             }
-            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp).onGloballyPositioned { anchorBounds = it.boundsInWindow() }, verticalAlignment = Alignment.CenterVertically) {
                 FilterMode.entries.forEach { f ->
                     FilterChip(selected = filter == f, onClick = { filter = f }, label = { Text(f.label, fontSize = 13.sp) }, modifier = Modifier.padding(end = 8.dp))
                 }
                 Spacer(Modifier.weight(1f))
                 BadgedBox(badge = { if (selectedShelfIds.isNotEmpty() || selectedTagIds.isNotEmpty()) Badge() }) {
-                    IconButton(onClick = { showFilterPanel = true }, modifier = Modifier.onGloballyPositioned { anchorBounds = it.boundsInWindow() }) { Icon(Icons.Default.FilterList, "筛选") }
+                    IconButton(onClick = { showFilterPanel = true }) { Icon(Icons.Default.FilterList, "筛选") }
                 }
             }
             if (books.isEmpty()) {
