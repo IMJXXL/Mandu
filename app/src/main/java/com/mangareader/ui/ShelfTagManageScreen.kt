@@ -53,7 +53,7 @@ fun ShelfTagManageScreen(onBack: () -> Unit, dao: MangaDao, scope: CoroutineScop
         containerColor = MaterialTheme.colorScheme.background
     ) { pad ->
         Column(Modifier.padding(pad).fillMaxSize().verticalScroll(rememberScrollState())) {
-            Surface(modifier = Modifier.fillMaxWidth().padding(16.dp), shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surface, tonalElevation = 1.dp) {
+            Card(Modifier.fillMaxWidth().padding(16.dp)) {
                 Column(Modifier.padding(16.dp)) {
                     ShelfManageSection(dao, scope)
                     Spacer(Modifier.height(16.dp))
