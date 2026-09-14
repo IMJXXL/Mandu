@@ -21,12 +21,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -55,12 +53,6 @@ import com.mangareader.App
 import com.mangareader.Scanner
 import com.mangareader.data.Bookshelf
 import com.mangareader.data.Folder
-import com.mangareader.data.Tag
-import com.mangareader.data.TagLink
-import com.mangareader.data.MangaDao
-import com.mangareader.data.TagSortMode
-import com.mangareader.data.ShelfSortMode
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -69,7 +61,7 @@ import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = null, onOpenShelfTagManage: () -> Unit = {}) {
+fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = null) {
     val ctx = LocalContext.current
     val app = ctx.applicationContext as App
     val dao = remember { app.db.mangaDao() }
@@ -80,12 +72,18 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
     var totalBooks by remember { mutableIntStateOf(0) }
     var readBooks by remember { mutableIntStateOf(0) }
     var folders by remember { mutableStateOf(listOf<Folder>()) }
+    var bookshelves by remember { mutableStateOf(listOf<Bookshelf>()) }
     var scanning by remember { mutableStateOf(false) }
     var scanTarget by remember { mutableStateOf("") }
     var scanCount by remember { mutableIntStateOf(0) }
     var showDonation by remember { mutableStateOf(false) }
     var showDeleteFolder by remember { mutableStateOf<Folder?>(null) }
+    var showDeleteShelf by remember { mutableStateOf<Bookshelf?>(null) }
     var showNomediaDialog by remember { mutableStateOf<android.net.Uri?>(null) }
+    var editShelf by remember { mutableStateOf<Bookshelf?>(null) }
+    var editShelfName by remember { mutableStateOf("") }
+    var showCreateShelf by remember { mutableStateOf(false) }
+    var newShelfName by remember { mutableStateOf("") }
 
     var folderHiddenMap by remember { mutableStateOf<Map<Long, Boolean>>(emptyMap()) }
     LaunchedEffect(folders) {
@@ -102,6 +100,10 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
         }
     }
 
+    var draggedIndex by remember { mutableIntStateOf(-1) }
+    var dragOffset by remember { mutableFloatStateOf(0f) }
+    val shelfDensity = LocalDensity.current.density
+    val shelfItemHeight = 52f
 
     var showScrollModeDialog by remember { mutableStateOf(false) }
     var showClickFlipDialog by remember { mutableStateOf(false) }
@@ -138,7 +140,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
     // ★ 漫画总数改为 Room Flow 观察——后台导入入库后自动更新，删除/导入全程实时
     LaunchedEffect(Unit) { dao.observeTotalBooks().collect { totalBooks = it } }
     LaunchedEffect(Unit) { dao.getAllFolders().collect { folders = it } }
-
+    LaunchedEffect(Unit) { dao.getAllBookshelves().collect { bookshelves = it } }
 
     if (showDeleteFolder != null) {
         val f = showDeleteFolder!!
@@ -192,6 +194,50 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
             dismissButton = { TextButton(onClick = { showNomediaDialog = null }) { Text("跳过") } })
     }
 
+    if (showDeleteShelf != null) {
+        val s = showDeleteShelf!!
+        AlertDialog(onDismissRequest = { showDeleteShelf = null }, title = { Text("删除书架") },
+            text = { Text("删除书架「${s.name}」？书架内的漫画不受影响。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    scope.launch { withContext(Dispatchers.IO) { dao.deleteBookshelf(s) }; showDeleteShelf = null }
+                }) { Text("确定", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { showDeleteShelf = null }) { Text("取消") } })
+    }
+
+    if (editShelf != null) {
+        AlertDialog(onDismissRequest = { editShelf = null }, title = { Text("编辑书架名称") },
+            text = { OutlinedTextField(value = editShelfName, onValueChange = { editShelfName = it }, singleLine = true, modifier = Modifier.fillMaxWidth()) },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (editShelfName.isNotBlank()) {
+                        scope.launch { withContext(Dispatchers.IO) { dao.updateBookshelf(editShelf!!.copy(name = editShelfName.trim())) }; editShelf = null }
+                    }
+                }) { Text("保存") }
+            },
+            dismissButton = { TextButton(onClick = { editShelf = null }) { Text("取消") } })
+    }
+
+    if (showCreateShelf) {
+        AlertDialog(onDismissRequest = { showCreateShelf = false }, title = { Text("新建书架") },
+            text = { OutlinedTextField(value = newShelfName, onValueChange = { newShelfName = it }, label = { Text("书架名称") }, singleLine = true, modifier = Modifier.fillMaxWidth()) },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (newShelfName.isNotBlank()) {
+                        scope.launch {
+                            withContext(Dispatchers.IO) {
+                                val maxOrder = bookshelves.maxOfOrNull { it.sortOrder } ?: 0
+                                dao.insertBookshelf(Bookshelf(name = newShelfName.trim(), sortOrder = maxOrder + 1))
+                            }
+                            newShelfName = ""
+                            showCreateShelf = false
+                        }
+                    }
+                }) { Text("创建") }
+            },
+            dismissButton = { TextButton(onClick = { showCreateShelf = false; newShelfName = "" }) { Text("取消") } })
+    }
 
     if (scanning) {
         val infiniteTransition = rememberInfiniteTransition(label = "scan")
@@ -488,7 +534,84 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
             }
 
             item {
+            Spacer(Modifier.height(24.dp))
+            }
+            item {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("书架管理", fontSize = 16.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+                TextButton(onClick = { showCreateShelf = true }) { Text("+ 新建", color = MaterialTheme.colorScheme.primary) }
+            }
+            }
+            item {
+            Spacer(Modifier.height(8.dp))
+            }
+            item {
+            Text("长按拖动排序", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            item {
+            Spacer(Modifier.height(4.dp))
+            }
+            item {
+            if (bookshelves.isEmpty()) Text("还没有书架", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            itemsIndexed(bookshelves, key = { _, it -> "shelf_${it.id}" }) { index, shelf ->
+                    val maxUp = index * shelfItemHeight
+                    val maxDown = (bookshelves.size - 1 - index) * shelfItemHeight
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 2.dp)
+                            .graphicsLayer {
+                                if (draggedIndex == index) {
+                                    translationY = dragOffset.coerceIn(-maxUp, maxDown) * shelfDensity
+                                    shadowElevation = 8f
+                                }
+                            }
+                            .pointerInput(index, bookshelves.size) {
+                                detectDragGesturesAfterLongPress(
+                                    onDragStart = { draggedIndex = index },
+                                    onDragEnd = {
+                                        if (draggedIndex >= 0 && draggedIndex < bookshelves.size) {
+                                            val finalIndex = (draggedIndex + (dragOffset / shelfItemHeight).toInt()).coerceIn(0, bookshelves.size - 1)
+                                            if (finalIndex != draggedIndex) {
+                                                val mutable = bookshelves.toMutableList()
+                                                val item = mutable.removeAt(draggedIndex)
+                                                mutable.add(finalIndex, item)
+                                                bookshelves = mutable
+                                                scope.launch {
+                                                    withContext(Dispatchers.IO) {
+                                                        mutable.forEachIndexed { i, s -> dao.updateBookshelfSort(s.id, i) }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        draggedIndex = -1; dragOffset = 0f
+                                    },
+                                    onDragCancel = { draggedIndex = -1; dragOffset = 0f },
+                                    onDrag = { change, dragAmount ->
+                                        change.consume()
+                                        val maxUp2 = draggedIndex * shelfItemHeight
+                                        val maxDown2 = (bookshelves.size - 1 - draggedIndex) * shelfItemHeight
+                                        dragOffset = (dragOffset + dragAmount.y).coerceIn(-maxUp2, maxDown2)
+                                    }
+                                )
+                            },
+                        shape = RoundedCornerShape(8.dp),
+                        color = if (draggedIndex == index) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
+                    ) {
+                        Row(Modifier.padding(horizontal = 12.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.DragHandle, null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(Modifier.width(8.dp))
+                            Icon(Icons.Default.Book, null, modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text(shelf.name, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                            IconButton(onClick = { editShelf = shelf; editShelfName = shelf.name }) { Icon(Icons.Default.Edit, "编辑", modifier = Modifier.size(20.dp)) }
+                            IconButton(onClick = { showDeleteShelf = shelf }) { Icon(Icons.Default.Delete, "删除", modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.error) }
+                        }
+                    }
+            }
 
+            item {
             Spacer(Modifier.height(16.dp))
             }
             item {
@@ -512,20 +635,6 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
                         prefs.edit().putBoolean("global_hide", newHide).apply()
                         Toast.makeText(ctx, if (newHide) "已全局隐藏" else "已取消全局隐藏", Toast.LENGTH_SHORT).show()
                     })
-                }
-            }
-            }
-
-            item {
-            Card(Modifier.fillMaxWidth().clickable { onOpenShelfTagManage() }) {
-                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.LibraryBooks, null, modifier = Modifier.size(24.dp))
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text("书架与标签管理", fontSize = 16.sp)
-                        Text("管理书架与标签的创建、排序与颜色", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Icon(Icons.Default.ChevronRight, null)
                 }
             }
             }

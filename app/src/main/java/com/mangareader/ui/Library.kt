@@ -21,7 +21,6 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -41,8 +40,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -59,7 +56,6 @@ import com.mangareader.App
 import com.mangareader.Scanner
 import com.mangareader.data.Book
 import com.mangareader.data.Bookshelf
-import com.mangareader.data.Tag
 import com.mangareader.data.ReadingProgress
 import com.mangareader.data.SearchHistory
 import com.mangareader.viewer.ArchiveEngine
@@ -68,10 +64,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.flow.first
 
 enum class SortMode(val label: String) { LAST("最近阅读"), NAME("名称"), DATE("添加时间"), PROGRESS("阅读进度") }
-enum class FilterMode(val label: String) { ALL("全部"), READING("阅读中"), UNREAD("未读"), FINISHED("已读完") }
+enum class FilterMode(val label: String) { ALL("全部"), READING("阅读中"), UNREAD("未读"), FINISHED("已读完"), FAV("收藏") }
 enum class LayoutMode(val cols: Int, val label: String) { GRID2(2, "2列"), GRID3(3, "3列"), GRID4(4, "4列"), GRID5(5, "5列"), LIST(1, "列表") }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -152,18 +147,8 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
     var showCreateShelf by remember { mutableStateOf(false) }
     var newShelfName by remember { mutableStateOf("") }
 
-    var selectedShelfIds by remember { mutableStateOf(setOf<Long>()) }
-    var selectedTagIds by remember { mutableStateOf(setOf<Long>()) }
-    var showFilterPanel by remember { mutableStateOf(false) }
-    var allTags by remember { mutableStateOf(listOf<Tag>()) }
-    var bookTagColors by remember { mutableStateOf(mapOf<Long, List<Long>>()) }
-    var showTagPickerForBook by remember { mutableStateOf<Book?>(null) }
-    var showTagPickerForMulti by remember { mutableStateOf(false) }
-    var showShelfPickerForBook by remember { mutableStateOf<Book?>(null) }
-    var shelfBookIds by remember { mutableStateOf<Set<Long>?>(null) }
-    var tagBookIds by remember { mutableStateOf<Set<Long>?>(null) }
-
-    var anchorBounds by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
+    var selectedShelfId by remember { mutableStateOf<Long?>(null) }
+    var selectedShelfName by remember { mutableStateOf("") }
 
     var lastReading by remember { mutableStateOf<ReadingProgress?>(null) }
 
@@ -187,10 +172,6 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
         dao.getAllBookshelves().collect { bookshelves = it }
     }
 
-    LaunchedEffect(Unit) {
-        dao.getAllTags().collect { allTags = it }
-    }
-
     // Preload covers for books that don't have disk-cached covers yet
     val coverScope = rememberCoroutineScope()
     val md5 = remember { java.security.MessageDigest.getInstance("MD5") }
@@ -210,46 +191,32 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
         }
     }
 
-    LaunchedEffect(selectedShelfIds) {
-        shelfBookIds = if (selectedShelfIds.isNotEmpty()) withContext(Dispatchers.IO) { dao.getBooksByBookshelves(selectedShelfIds.toList()).first() }.map { it.id }.toSet() else null
-    }
-
-    LaunchedEffect(selectedTagIds) {
-        tagBookIds = if (selectedTagIds.isNotEmpty()) withContext(Dispatchers.IO) { dao.getBooksByTags(selectedTagIds.toList()).first() }.map { it.id }.toSet() else null
-    }
-
-    LaunchedEffect(sort, sortAsc, debouncedQuery, filter, shelfBookIds, tagBookIds) {
+    LaunchedEffect(sort, sortAsc, debouncedQuery, filter, selectedShelfId) {
         val globalHide = ctx.getSharedPreferences("manga_reader", Context.MODE_PRIVATE).getBoolean("global_hide", false)
         if (globalHide) {
             books = emptyList()
             return@LaunchedEffect
         }
-        val flow = if (debouncedQuery.isNotEmpty()) dao.searchVisibleBooks(debouncedQuery) else dao.getVisibleBooks()
-        flow.collect { all ->
-            var filtered = all
-            if (shelfBookIds != null) filtered = filtered.filter { it.id in shelfBookIds!! }
-            if (tagBookIds != null) filtered = filtered.filter { it.id in tagBookIds!! }
-            filtered = when (filter) {
-                FilterMode.READING -> filtered.filter { val f = it.totalPages > 0 && it.readPages >= it.totalPages; !f && (it.readPages > 0 || (it.lastReadAt != null && it.lastReadAt > 0)) }
-                FilterMode.UNREAD -> filtered.filter { val f = it.totalPages > 0 && it.readPages >= it.totalPages; val r = !f && (it.readPages > 0 || (it.lastReadAt != null && it.lastReadAt > 0)); !f && !r }
-                FilterMode.FINISHED -> filtered.filter { it.totalPages > 0 && it.readPages >= it.totalPages }
-                FilterMode.ALL -> filtered
+        val flow = when {
+            selectedShelfId != null -> dao.getBooksByShelf(selectedShelfId!!)
+            debouncedQuery.isNotEmpty() -> dao.searchVisibleBooks(debouncedQuery)
+            filter == FilterMode.FAV -> dao.getVisibleFavoriteBooks()
+            filter == FilterMode.READING -> dao.getVisibleReadingBooks()
+            filter == FilterMode.UNREAD -> dao.getVisibleUnreadBooks()
+            filter == FilterMode.FINISHED -> dao.getVisibleFinishedBooks()
+            else -> when (sort) {
+                SortMode.LAST -> dao.getVisibleBooks()
+                SortMode.NAME -> dao.getVisibleBooksByName()
+                SortMode.DATE -> dao.getVisibleBooksByDateAdded()
+                SortMode.PROGRESS -> dao.getVisibleBooksByProgress()
             }
-            val ordered = when (sort) {
-                SortMode.NAME -> filtered.sortedWith(Comparator { a, b -> naturalCompare(a.title, b.title) })
-                SortMode.LAST -> filtered.sortedByDescending { it.lastReadAt ?: 0L }
-                SortMode.DATE -> filtered.sortedByDescending { it.addedAt }
-                SortMode.PROGRESS -> filtered.sortedByDescending { if (it.totalPages > 0) it.readPages.toFloat() / it.totalPages else 0f }
-            }
+        }
+        flow.collect {
+            val ordered = if (sort == SortMode.NAME) {
+                it.sortedWith(Comparator { a, b -> naturalCompare(a.title, b.title) })
+            } else it
             books = if (sortAsc) ordered.reversed() else ordered
         }
-    }
-
-    LaunchedEffect(books.map { it.id }) {
-        if (books.isNotEmpty()) {
-            val bt = withContext(Dispatchers.IO) { dao.getTagsForBooks(books.map { it.id }) }
-            bookTagColors = bt.groupBy { it.bookId }.mapValues { e -> e.value.map { it.color } }
-        } else bookTagColors = emptyMap()
     }
 
     deleteTarget?.let { b ->
@@ -422,9 +389,6 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                     Text("文件类型: ${b.fileType.uppercase()}")
                     Spacer(Modifier.height(8.dp))
                     Text("来源: ${b.source}")
-                    Spacer(Modifier.height(12.dp))
-                    TextButton(onClick = { showTagPickerForBook = b }) { Text("编辑标签") }
-                    TextButton(onClick = { showShelfPickerForBook = b }) { Text("添加到书架") }
                 }
             },
             confirmButton = { TextButton(onClick = { showBookInfo = null }) { Text("关闭") } },
@@ -566,7 +530,6 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
             if (isMultiSelect && selectedBooks.isNotEmpty()) Surface(color = MaterialTheme.colorScheme.primaryContainer) {
                 Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
                     TextButton(onClick = { showShelfDialog = true }) { Text("添加到书架", color = MaterialTheme.colorScheme.primary) }
-                    TextButton(onClick = { showTagPickerForMulti = true }) { Text("添加标签", color = MaterialTheme.colorScheme.primary) }
                     TextButton(onClick = { showDeleteConfirm = true }) { Text("删除", color = MaterialTheme.colorScheme.error) }
                 }
             }
@@ -610,14 +573,34 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                     }
                 }
             }
-            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                FilterMode.entries.forEach { f ->
-                    FilterChip(selected = filter == f, onClick = { filter = f }, label = { Text(f.label, fontSize = 13.sp) }, modifier = Modifier.padding(end = 8.dp))
+            LazyRow(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(FilterMode.entries.size) { i ->
+                    val f = FilterMode.entries[i]
+                    FilterChip(selected = filter == f && selectedShelfId == null, onClick = {
+                        filter = f
+                        selectedShelfId = null
+                        selectedShelfName = ""
+                    }, label = { Text(f.label, fontSize = 13.sp) })
                 }
-                Spacer(Modifier.weight(1f))
-                BadgedBox(badge = { if (selectedShelfIds.isNotEmpty() || selectedTagIds.isNotEmpty()) Badge() }) {
-                    IconButton(onClick = { showFilterPanel = true }, modifier = Modifier.onGloballyPositioned { anchorBounds = it.boundsInWindow() }) { Icon(Icons.Default.FilterList, "筛选") }
+                items(bookshelves.size) { i ->
+                    val shelf = bookshelves[i]
+                    FilterChip(selected = selectedShelfId == shelf.id, onClick = {
+                        if (selectedShelfId == shelf.id) {
+                            selectedShelfId = null
+                            selectedShelfName = ""
+                        } else {
+                            selectedShelfId = shelf.id
+                            selectedShelfName = shelf.name
+                            filter = FilterMode.ALL
+                        }
+                    }, label = { Text(shelf.name, fontSize = 13.sp) },
+                        leadingIcon = { Icon(Icons.Default.Book, null, Modifier.size(16.dp)) }
+                    )
                 }
+            }
+            if (selectedShelfId != null) {
+                Text("书架: $selectedShelfName", fontSize = 13.sp, color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp))
             }
             if (books.isEmpty()) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -645,25 +628,12 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                             onToggleSelect = onToggleSelect,
                             onTap = onTap,
                             onLongClick = onLongClick,
-                            onDelete = onDelete,
-                            tagColors = bookTagColors[b.id] ?: emptyList())
+                            onDelete = onDelete)
                     }
                 }
             }
         }
     }
-    FilterPanelSheet(show = showFilterPanel, onDismiss = { showFilterPanel = false }, bookshelves = bookshelves, tags = allTags, selectedShelfIds = selectedShelfIds, selectedTagIds = selectedTagIds, onShelfChange = { selectedShelfIds = it }, onTagChange = { selectedTagIds = it }, onClearAll = { selectedShelfIds = emptySet(); selectedTagIds = emptySet() }, anchorBounds = anchorBounds)
-
-    showTagPickerForBook?.let { b ->
-        TagPickerDialog(onDismiss = { showTagPickerForBook = null }, dao = dao, scope = scope, bookIds = setOf(b.id)) { showTagPickerForBook = null }
-    }
-    if (showTagPickerForMulti) {
-        TagPickerDialog(onDismiss = { showTagPickerForMulti = false }, dao = dao, scope = scope, bookIds = selectedBooks) { showTagPickerForMulti = false }
-    }
-    showShelfPickerForBook?.let { b ->
-        ShelfPickerDialog(onDismiss = { showShelfPickerForBook = null }, dao = dao, scope = scope, bookIds = setOf(b.id)) { showShelfPickerForBook = null }
-    }
-
     if (showDonation) DonationDialog(onDismiss = { showDonation = false })
 
     val remoteDownloadInfo by com.mangareader.smbbridge.RemoteDownloadDialogState.dialogState.collectAsState()
@@ -702,7 +672,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun BookCard(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, isSelected: Boolean, decodePx: Int, onToggleSelect: () -> Unit, onTap: () -> Unit, onLongClick: () -> Unit, onDelete: () -> Unit, tagColors: List<Long> = emptyList()) {
+private fun BookCard(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, isSelected: Boolean, decodePx: Int, onToggleSelect: () -> Unit, onTap: () -> Unit, onLongClick: () -> Unit, onDelete: () -> Unit) {
     val ctx = LocalContext.current
     // ★ LV119 对齐参考项目：直接用 coverPath (cv:...) 作为 Coil3 model，
     //   CoverFetcher 返回原始字节 → Coil3 decoders 自动识别动图（GIF/WebP/APNG）
@@ -797,12 +767,6 @@ private fun BookCard(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, isS
         }
         Box(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface).padding(horizontal = 8.dp, vertical = 6.dp)) {
             Text(text = b.title, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurface)
-        }
-        if (tagColors.isNotEmpty()) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                tagColors.take(3).forEach { c -> Box(Modifier.size(6.dp).clip(CircleShape).background(Color(c))) }
-                if (tagColors.size > 3) Text("+${tagColors.size - 3}", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
         }
         }
     }
