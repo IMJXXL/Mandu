@@ -1,26 +1,44 @@
 package com.mangareader.ui
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Book
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Popup
 import com.mangareader.data.Bookshelf
+import com.mangareader.data.ShelfSortMode
 import com.mangareader.data.Tag
+import com.mangareader.data.TagSortMode
+import kotlin.math.roundToInt
 
-@OptIn(ExperimentalMaterial3Api::class)
+private fun sortBookshelves(list: List<Bookshelf>, mode: ShelfSortMode): List<Bookshelf> = when (mode) {
+    ShelfSortMode.BY_NAME -> list.sortedBy { it.name }
+    ShelfSortMode.BY_CREATED -> list.sortedByDescending { it.createdAt }
+    ShelfSortMode.MANUAL -> list.sortedBy { it.sortOrder }
+}
+
+private fun sortTags(list: List<Tag>, mode: TagSortMode): List<Tag> = when (mode) {
+    TagSortMode.BY_NAME -> list.sortedBy { it.name }
+    TagSortMode.BY_CREATED -> list.sortedBy { it.id }
+    TagSortMode.MANUAL -> list.sortedBy { it.sortOrder }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun FilterPanelSheet(
     show: Boolean,
@@ -31,55 +49,66 @@ fun FilterPanelSheet(
     selectedTagIds: Set<Long>,
     onShelfChange: (Set<Long>) -> Unit,
     onTagChange: (Set<Long>) -> Unit,
-    onClearAll: () -> Unit
+    onClearAll: () -> Unit,
+    shelfSortMode: ShelfSortMode,
+    tagSortMode: TagSortMode,
+    onShelfSortModeChange: (ShelfSortMode) -> Unit,
+    onTagSortModeChange: (TagSortMode) -> Unit,
+    anchorBounds: Rect
 ) {
     if (!show) return
-    var tagQuery by remember { mutableStateOf("") }
-    val filteredTags = if (tagQuery.isNotEmpty()) tags.filter { it.name.contains(tagQuery) } else tags
-    Box(Modifier.fillMaxSize()) {
-        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.5f)).clickable { onDismiss() })
-        Surface(
-            modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight().width(320.dp),
-            color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 4.dp
-        ) {
-            Column(Modifier.padding(16.dp).verticalScroll(rememberScrollState())) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Text("筛选", style = MaterialTheme.typography.titleMedium)
-                    TextButton(onClick = onClearAll) { Text("一键清除") }
-                }
-                Spacer(Modifier.height(16.dp))
-                Text("书架", fontWeight = androidx.compose.ui.text.font.FontWeight.Medium, fontSize = 14.sp)
-                Spacer(Modifier.height(8.dp))
-                bookshelves.forEach { shelf ->
-                    Row(
-                        Modifier.fillMaxWidth().clickable { onShelfChange(if (shelf.id in selectedShelfIds) selectedShelfIds - shelf.id else selectedShelfIds + shelf.id) }.padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Checkbox(checked = shelf.id in selectedShelfIds, onCheckedChange = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text(shelf.name, fontSize = 14.sp)
+    var query by remember { mutableStateOf("") }
+    val filteredShelves = if (query.isNotEmpty()) bookshelves.filter { it.name.contains(query) } else bookshelves
+    val filteredTags = if (query.isNotEmpty()) tags.filter { it.name.contains(query) } else tags
+    val sortedShelves = sortBookshelves(filteredShelves, shelfSortMode)
+    val sortedTags = sortTags(filteredTags, tagSortMode)
+    val density = LocalDensity.current
+    Popup(alignment = Alignment.TopStart, offset = IntOffset(anchorBounds.left.roundToInt(), anchorBounds.bottom.roundToInt())) {
+        Box(Modifier.fillMaxSize()) {
+            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.5f)).clickable { onDismiss() })
+            Surface(
+                modifier = Modifier.width(320.dp).heightIn(max = 400.dp),
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 4.dp
+            ) {
+                Column(Modifier.padding(16.dp).verticalScroll(rememberScrollState())) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Text("筛选", style = MaterialTheme.typography.titleMedium)
+                        TextButton(onClick = onClearAll) { Text("一键清除") }
                     }
-                }
-                Spacer(Modifier.height(16.dp))
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                Spacer(Modifier.height(16.dp))
-                Text("标签", fontWeight = androidx.compose.ui.text.font.FontWeight.Medium, fontSize = 14.sp)
-                Spacer(Modifier.height(8.dp))
-                if (tags.size > 8) {
-                    OutlinedTextField(value = tagQuery, onValueChange = { tagQuery = it }, label = { Text("搜索标签") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(value = query, onValueChange = { query = it }, label = { Text("搜索书架与标签") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    Spacer(Modifier.height(16.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Text("书架", fontWeight = androidx.compose.ui.text.font.FontWeight.Medium, fontSize = 14.sp)
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            ShelfSortMode.entries.forEach { mode ->
+                                FilterChip(selected = shelfSortMode == mode, onClick = { onShelfSortModeChange(mode) }, label = { Text(mode.label, fontSize = 11.sp) })
+                            }
+                        }
+                    }
                     Spacer(Modifier.height(8.dp))
-                }
-                filteredTags.forEach { tag ->
-                    Row(
-                        Modifier.fillMaxWidth().clickable { onTagChange(if (tag.id in selectedTagIds) selectedTagIds - tag.id else selectedTagIds + tag.id) }.padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Checkbox(checked = tag.id in selectedTagIds, onCheckedChange = null)
-                        Spacer(Modifier.width(8.dp))
-                        Box(Modifier.size(10.dp).clip(CircleShape).background(Color(tag.color)))
-                        Spacer(Modifier.width(6.dp))
-                        Text(tag.name, fontSize = 14.sp)
+                    FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        sortedShelves.forEach { shelf ->
+                            FilterChip(selected = shelf.id in selectedShelfIds, onClick = { onShelfChange(if (shelf.id in selectedShelfIds) selectedShelfIds - shelf.id else selectedShelfIds + shelf.id) }, label = { Text(shelf.name, fontSize = 13.sp) }, leadingIcon = { Icon(androidx.compose.material.icons.Icons.Default.Book, null, Modifier.size(14.dp)) })
+                        }
+                    }
+                    Spacer(Modifier.height(16.dp))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    Spacer(Modifier.height(16.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Text("标签", fontWeight = androidx.compose.ui.text.font.FontWeight.Medium, fontSize = 14.sp)
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            TagSortMode.entries.forEach { mode ->
+                                FilterChip(selected = tagSortMode == mode, onClick = { onTagSortModeChange(mode) }, label = { Text(mode.label, fontSize = 11.sp) })
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        sortedTags.forEach { tag ->
+                            FilterChip(selected = tag.id in selectedTagIds, onClick = { onTagChange(if (tag.id in selectedTagIds) selectedTagIds - tag.id else selectedTagIds + tag.id) }, label = { Text(tag.name, fontSize = 13.sp) }, leadingIcon = { Box(Modifier.size(8.dp).clip(CircleShape).background(Color(tag.color))) })
+                        }
                     }
                 }
             }

@@ -33,8 +33,11 @@ import androidx.navigation.navOptions
 import com.mangareader.ui.Library
 import com.mangareader.ui.Reader
 import com.mangareader.ui.SettingsScreen
+import com.mangareader.ui.ShelfTagManageScreen
+import com.mangareader.ui.Reader
 import com.mangareader.ui.Theme
 import com.mangareader.ui.AppTheme
+import androidx.compose.ui.platform.LocalContext
 
 class MainActivity : ComponentActivity() {
     override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
@@ -158,6 +161,16 @@ class MainActivity : ComponentActivity() {
                                     navOptions { launchSingleTop = true },
                                 )
                             },
+                            onOpenShelfTagManage = { nav.navigate("shelf_tag_manage") },
+                        )
+                    }
+                    composable("shelf_tag_manage") {
+                        val ctx = LocalContext.current
+                        val app = ctx.applicationContext as com.mangareader.App
+                        ShelfTagManageScreen(
+                            onBack = { nav.popBackStack() },
+                            dao = app.db.mangaDao(),
+                            scope = rememberCoroutineScope(),
                         )
                     }
                 }

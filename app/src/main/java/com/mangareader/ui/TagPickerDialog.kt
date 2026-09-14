@@ -22,10 +22,15 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun TagPickerDialog(onDismiss: () -> Unit, dao: MangaDao, scope: CoroutineScope, bookIds: Set<Long>, onConfirm: () -> Unit) {
     var allTags by remember { mutableStateOf(listOf<Tag>()) }
     var selected by remember { mutableStateOf(setOf<Long>()) }
+    var showCreate by remember { mutableStateOf(false) }
+    var newName by remember { mutableStateOf("") }
+    var newColor by remember { mutableStateOf("#FF7C8CF8") }
+    val palette = listOf(0xFF7C8CF8, 0xFFE57373, 0xFFFFB74D, 0xFF81C784, 0xFF4DD0E1, 0xFFBA68C8, 0xFFF06292, 0xFFA1887F, 0xFF90A4AE)
     LaunchedEffect(Unit) {
         allTags = withContext(Dispatchers.IO) { dao.getAllTagsList() }
         val existing = withContext(Dispatchers.IO) { dao.getTagsForBooks(bookIds.toList()) }
@@ -48,6 +53,8 @@ fun TagPickerDialog(onDismiss: () -> Unit, dao: MangaDao, scope: CoroutineScope,
                         Text(t.name, fontSize = 14.sp)
                     }
                 }
+                Spacer(Modifier.height(8.dp))
+                TextButton(onClick = { showCreate = true }) { Text("+ 新建标签") }
             }
         },
         confirmButton = {
@@ -70,4 +77,22 @@ fun TagPickerDialog(onDismiss: () -> Unit, dao: MangaDao, scope: CoroutineScope,
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
     )
+    if (showCreate) {
+        val parsedColor = runCatching { android.graphics.Color.parseColor(newColor) }.getOrNull()
+        AlertDialog(onDismissRequest = { showCreate = false }, title = { Text("新建标签") },
+            text = {
+                Column {
+                    OutlinedTextField(value = newName, onValueChange = { newName = it }, label = { Text("名称") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(value = newColor, onValueChange = { newColor = it }, label = { Text("颜色(hex)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    if (newColor.isNotEmpty() && parsedColor == null) Text("色值非法", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                    Spacer(Modifier.height(8.dp))
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        palette.forEach { c -> Box(Modifier.size(24.dp).clip(CircleShape).background(Color(c)).clickable { newColor = String.format("#%08X", c) }) }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { if (newName.isNotBlank() && parsedColor != null && allTags.none { it.name == newName.trim() }) { scope.launch(Dispatchers.IO) { val newId = dao.insertTag(Tag(name = newName.trim(), color = parsedColor.toLong() and 0xFFFFFFFFL)); allTags = dao.getAllTagsList(); selected = selected + newId; showCreate = false; newName = ""; newColor = "#FF7C8CF8" } } }) { Text("创建") } },
+            dismissButton = { TextButton(onClick = { showCreate = false }) { Text("取消") } })
+    }
 }

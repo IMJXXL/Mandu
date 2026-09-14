@@ -41,6 +41,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -157,8 +159,12 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
     var bookTagColors by remember { mutableStateOf(mapOf<Long, List<Long>>()) }
     var showTagPickerForBook by remember { mutableStateOf<Book?>(null) }
     var showTagPickerForMulti by remember { mutableStateOf(false) }
+    var showShelfPickerForBook by remember { mutableStateOf<Book?>(null) }
     var shelfBookIds by remember { mutableStateOf<Set<Long>?>(null) }
     var tagBookIds by remember { mutableStateOf<Set<Long>?>(null) }
+    var panelShelfSortMode by remember { mutableStateOf(com.mangareader.data.ShelfSortMode.BY_CREATED) }
+    var panelTagSortMode by remember { mutableStateOf(com.mangareader.data.TagSortMode.BY_CREATED) }
+    var anchorBounds by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
 
     var lastReading by remember { mutableStateOf<ReadingProgress?>(null) }
 
@@ -419,6 +425,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                     Text("来源: ${b.source}")
                     Spacer(Modifier.height(12.dp))
                     TextButton(onClick = { showTagPickerForBook = b }) { Text("编辑标签") }
+                    TextButton(onClick = { showShelfPickerForBook = b }) { Text("添加到书架") }
                 }
             },
             confirmButton = { TextButton(onClick = { showBookInfo = null }) { Text("关闭") } },
@@ -610,7 +617,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                 }
                 Spacer(Modifier.weight(1f))
                 BadgedBox(badge = { if (selectedShelfIds.isNotEmpty() || selectedTagIds.isNotEmpty()) Badge() }) {
-                    IconButton(onClick = { showFilterPanel = true }) { Icon(Icons.Default.FilterList, "筛选") }
+                    IconButton(onClick = { showFilterPanel = true }, modifier = Modifier.onGloballyPositioned { anchorBounds = it.boundsInWindow() }) { Icon(Icons.Default.FilterList, "筛选") }
                 }
             }
             if (books.isEmpty()) {
@@ -646,13 +653,16 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
             }
         }
     }
-    FilterPanelSheet(show = showFilterPanel, onDismiss = { showFilterPanel = false }, bookshelves = bookshelves, tags = allTags, selectedShelfIds = selectedShelfIds, selectedTagIds = selectedTagIds, onShelfChange = { selectedShelfIds = it }, onTagChange = { selectedTagIds = it }, onClearAll = { selectedShelfIds = emptySet(); selectedTagIds = emptySet() })
+    FilterPanelSheet(show = showFilterPanel, onDismiss = { showFilterPanel = false }, bookshelves = bookshelves, tags = allTags, selectedShelfIds = selectedShelfIds, selectedTagIds = selectedTagIds, onShelfChange = { selectedShelfIds = it }, onTagChange = { selectedTagIds = it }, onClearAll = { selectedShelfIds = emptySet(); selectedTagIds = emptySet() }, shelfSortMode = panelShelfSortMode, tagSortMode = panelTagSortMode, onShelfSortModeChange = { panelShelfSortMode = it }, onTagSortModeChange = { panelTagSortMode = it }, anchorBounds = anchorBounds)
 
     showTagPickerForBook?.let { b ->
         TagPickerDialog(onDismiss = { showTagPickerForBook = null }, dao = dao, scope = scope, bookIds = setOf(b.id)) { showTagPickerForBook = null }
     }
     if (showTagPickerForMulti) {
         TagPickerDialog(onDismiss = { showTagPickerForMulti = false }, dao = dao, scope = scope, bookIds = selectedBooks) { showTagPickerForMulti = false }
+    }
+    showShelfPickerForBook?.let { b ->
+        ShelfPickerDialog(onDismiss = { showShelfPickerForBook = null }, dao = dao, scope = scope, bookIds = setOf(b.id)) { showShelfPickerForBook = null }
     }
 
     if (showDonation) DonationDialog(onDismiss = { showDonation = false })
