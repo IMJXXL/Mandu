@@ -162,8 +162,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
     var showShelfPickerForBook by remember { mutableStateOf<Book?>(null) }
     var shelfBookIds by remember { mutableStateOf<Set<Long>?>(null) }
     var tagBookIds by remember { mutableStateOf<Set<Long>?>(null) }
-    var panelShelfSortMode by remember { mutableStateOf(com.mangareader.data.ShelfSortMode.BY_CREATED) }
-    var panelTagSortMode by remember { mutableStateOf(com.mangareader.data.TagSortMode.BY_CREATED) }
+
     var anchorBounds by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
 
     var lastReading by remember { mutableStateOf<ReadingProgress?>(null) }
@@ -611,13 +610,13 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                     }
                 }
             }
-            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp).onGloballyPositioned { anchorBounds = it.boundsInWindow() }, verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 FilterMode.entries.forEach { f ->
                     FilterChip(selected = filter == f, onClick = { filter = f }, label = { Text(f.label, fontSize = 13.sp) }, modifier = Modifier.padding(end = 8.dp))
                 }
                 Spacer(Modifier.weight(1f))
                 BadgedBox(badge = { if (selectedShelfIds.isNotEmpty() || selectedTagIds.isNotEmpty()) Badge() }) {
-                    IconButton(onClick = { showFilterPanel = true }) { Icon(Icons.Default.FilterList, "筛选") }
+                    IconButton(onClick = { showFilterPanel = true }, modifier = Modifier.onGloballyPositioned { anchorBounds = it.boundsInWindow() }) { Icon(Icons.Default.FilterList, "筛选") }
                 }
             }
             if (books.isEmpty()) {
@@ -653,7 +652,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
             }
         }
     }
-    FilterPanelSheet(show = showFilterPanel, onDismiss = { showFilterPanel = false }, bookshelves = bookshelves, tags = allTags, selectedShelfIds = selectedShelfIds, selectedTagIds = selectedTagIds, onShelfChange = { selectedShelfIds = it }, onTagChange = { selectedTagIds = it }, onClearAll = { selectedShelfIds = emptySet(); selectedTagIds = emptySet() }, shelfSortMode = panelShelfSortMode, tagSortMode = panelTagSortMode, onShelfSortModeChange = { panelShelfSortMode = it }, onTagSortModeChange = { panelTagSortMode = it }, anchorBounds = anchorBounds)
+    FilterPanelSheet(show = showFilterPanel, onDismiss = { showFilterPanel = false }, bookshelves = bookshelves, tags = allTags, selectedShelfIds = selectedShelfIds, selectedTagIds = selectedTagIds, onShelfChange = { selectedShelfIds = it }, onTagChange = { selectedTagIds = it }, onClearAll = { selectedShelfIds = emptySet(); selectedTagIds = emptySet() }, anchorBounds = anchorBounds)
 
     showTagPickerForBook?.let { b ->
         TagPickerDialog(onDismiss = { showTagPickerForBook = null }, dao = dao, scope = scope, bookIds = setOf(b.id)) { showTagPickerForBook = null }
