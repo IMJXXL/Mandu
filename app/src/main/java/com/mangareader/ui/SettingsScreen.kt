@@ -490,7 +490,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
                 Spacer(Modifier.height(8.dp))
             }
             }
-            items(folders, key = { it.id }) { f ->
+            items(folders, key = { "folder_${it.id}" }) { f ->
                 val dateFormat = remember { java.text.SimpleDateFormat("MM-dd HH:mm") }
                 Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
@@ -554,7 +554,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
             item {
             if (bookshelves.isEmpty()) Text("还没有书架", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            itemsIndexed(bookshelves, key = { _, it -> it.id }) { index, shelf ->
+            itemsIndexed(bookshelves, key = { _, it -> "shelf_${it.id}" }) { index, shelf ->
                     val maxUp = index * shelfItemHeight
                     val maxDown = (bookshelves.size - 1 - index) * shelfItemHeight
                     Surface(
