@@ -46,7 +46,8 @@ data class Bookshelf(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
     val createdAt: Long = System.currentTimeMillis(),
-    val sortOrder: Int = 0
+    val sortOrder: Int = 0,
+    val sortMode: String = "BY_CREATED"
 )
 
 @Entity(
@@ -64,7 +65,9 @@ data class BookshelfItem(
 data class Tag(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
-    val color: Long = 0xFF7C8CF8
+    val color: Long = 0xFF7C8CF8,
+    val sortOrder: Int = 0,
+    val sortMode: String = "BY_CREATED"
 )
 
 @Entity(
@@ -80,6 +83,11 @@ data class TagLink(
     val tagId: Long,
     val bookId: Long
 )
+
+enum class TagSortMode(val label: String) { MANUAL("手动"), BY_NAME("按名称"), BY_CREATED("按创建时间") }
+enum class ShelfSortMode(val label: String) { MANUAL("手动"), BY_NAME("按名称"), BY_CREATED("按创建时间") }
+
+data class BookTag(val bookId: Long, val tagId: Long, val color: Long)
 
 @Entity(tableName = "reading_history",
     indices = [Index("bookId"), Index("timestamp")])
@@ -485,6 +493,9 @@ interface MangaDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertTag(tag: Tag): Long
 
+    @Update
+    suspend fun updateTag(tag: Tag)
+
     @Delete
     suspend fun deleteTag(tag: Tag)
 
@@ -514,6 +525,24 @@ interface MangaDao {
 
     @Query("SELECT COUNT(*) FROM tag_links WHERE tagId = :tagId")
     suspend fun countBooksInTag(tagId: Long): Int
+
+    @Query("SELECT tl.bookId AS bookId, t.id AS tagId, t.color AS color FROM tag_links tl INNER JOIN tags t ON t.id = tl.tagId WHERE tl.bookId IN (:bookIds)")
+    suspend fun getTagsForBooks(bookIds: List<Long>): List<BookTag>
+
+    @Query("SELECT DISTINCT b.* FROM manga_books b INNER JOIN tag_links tl ON b.id = tl.bookId WHERE tl.tagId IN (:tagIds) AND b.isHidden = 0 ORDER BY b.title ASC")
+    fun getBooksByTags(tagIds: List<Long>): Flow<List<Book>>
+
+    @Query("SELECT DISTINCT b.* FROM manga_books b INNER JOIN bookshelf_items bi ON b.id = bi.bookId WHERE bi.bookshelfId IN (:bookshelfIds) AND b.isHidden = 0 ORDER BY b.title ASC")
+    fun getBooksByBookshelves(bookshelfIds: List<Long>): Flow<List<Book>>
+
+    @Query("UPDATE tags SET sortOrder = :sortOrder WHERE id = :id")
+    suspend fun updateTagSort(id: Long, sortOrder: Int)
+
+    @Query("UPDATE tags SET sortMode = :sortMode WHERE id = :id")
+    suspend fun updateTagSortMode(id: Long, sortMode: String)
+
+    @Query("UPDATE bookshelves SET sortMode = :sortMode WHERE id = :id")
+    suspend fun updateBookshelfSortMode(id: Long, sortMode: String)
 
     // ==================== §23 阅读记忆 ====================
 
@@ -934,7 +963,7 @@ data class DownloadTaskEntity(
 
 @Database(
     entities = [Book::class, Folder::class, ReadingHistory::class, Bookshelf::class, BookshelfItem::class, Tag::class, TagLink::class, ReadingProgress::class, Bookmark::class, com.ehviewer.core.database.model.SmbSourceEntity::class, com.ehviewer.core.database.model.LibraryRootEntity::class, com.ehviewer.core.database.model.LocalGalleryEntity::class, com.ehviewer.core.database.model.WebDavSourceEntity::class, DownloadTaskEntity::class],
-    version = 16,
+    version = 17,
     exportSchema = false
 )
 abstract class MangaDatabase : com.ehviewer.core.database.LocalLibraryDatabase() {
@@ -1134,13 +1163,21 @@ abstract class MangaDatabase : com.ehviewer.core.database.LocalLibraryDatabase()
             }
         }
 
+        private val MIGRATION_16_17 = object : androidx.room.migration.Migration(16, 17) {
+            override fun migrate(database: androidx.sqlite.db.SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE tags ADD COLUMN sortOrder INTEGER NOT NULL DEFAULT 0")
+                database.execSQL("ALTER TABLE tags ADD COLUMN sortMode TEXT NOT NULL DEFAULT 'BY_CREATED'")
+                database.execSQL("ALTER TABLE bookshelves ADD COLUMN sortMode TEXT NOT NULL DEFAULT 'BY_CREATED'")
+            }
+        }
+
         fun getDatabase(context: Context): MangaDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
                     context.applicationContext,
                     MangaDatabase::class.java,
                     "manga_reader_db"
-                ).addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16)
+                ).addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17)
                 .build()
                 INSTANCE = instance
                 instance
