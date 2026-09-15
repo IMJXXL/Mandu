@@ -542,7 +542,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
                             Text("开源许可", fontSize = 14.sp, fontWeight = FontWeight.Medium)
                             Spacer(Modifier.height(4.dp))
                             FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                LicenseLink("SubsamplingScaleImageView (Tachiyomi)", "https://github.com/niceSaber/SubsamplingScaleImagePicker")
+
                                 LicenseLink("Coil", "https://github.com/coil-kt/coil")
                                 LicenseLink("Apache Commons Compress", "https://github.com/apache/commons-compress")
                                 LicenseLink("junrar", "https://github.com/junrar/junrar")
@@ -564,10 +564,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
                             }
                             Spacer(Modifier.height(8.dp))
                             Text("特别感谢", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                            Text("· TachiyomiSY — 阅读器架构与功能设计的重要参考", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Text("· MHark — 读取机制与性能的重要参考", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text("· LocalViewer — SMB/WebDAV 的重要参考", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text("· FooIbar — Komga 客户端实现参考", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Text("· 感谢 FooIbar 与 zmz125000 允许暂不开源使用相关成果", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Spacer(Modifier.height(4.dp))
                             Text("感谢所有开源项目的贡献者，让这一切成为可能。", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
