@@ -20,6 +20,7 @@ fun RenameBatchDialog(
     var suffix by remember { mutableStateOf("") }
     var template by remember { mutableStateOf("{序号}") }
     var startNum by remember { mutableStateOf("1") }
+    var errorMsg by remember { mutableStateOf<String?>(null) }
 
     val canConfirm = when (mode) {
         0 -> findText.isNotEmpty()
@@ -33,15 +34,15 @@ fun RenameBatchDialog(
         title = { Text("批量重命名（已选 ${books.size} 本）") },
         text = {
             Column {
-                TabRow(selectedTabIndex = mode) {
+                TabRow(selectedTabIndex = mode, containerColor = MaterialTheme.colorScheme.surfaceContainerHigh) {
                     listOf("查找替换", "前缀后缀", "序号").forEachIndexed { i, label ->
-                        Tab(selected = mode == i, onClick = { mode = i }, text = { Text(label) })
+                        Tab(selected = mode == i, onClick = { mode = i; errorMsg = null }, text = { Text(label) })
                     }
                 }
                 Spacer(Modifier.height(12.dp))
                 when (mode) {
                     0 -> {
-                        OutlinedTextField(findText, { findText = it }, label = { Text("查找") },
+                        OutlinedTextField(findText, { findText = it; errorMsg = null }, label = { Text("查找") },
                             singleLine = true, modifier = Modifier.fillMaxWidth())
                         Spacer(Modifier.height(8.dp))
                         OutlinedTextField(replaceText, { replaceText = it }, label = { Text("替换为") },
@@ -60,7 +61,15 @@ fun RenameBatchDialog(
                         Spacer(Modifier.height(8.dp))
                         OutlinedTextField(startNum, { startNum = it.filter { c -> c.isDigit() } },
                             label = { Text("起始序号") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                        Spacer(Modifier.height(4.dp))
+                        Text("输入01自动2位填充，也可用{序号:3}指定",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
+                }
+                errorMsg?.let {
+                    Spacer(Modifier.height(8.dp))
+                    Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 }
             }
         },
@@ -75,8 +84,9 @@ fun RenameBatchDialog(
                         1 -> books.map { b -> b.id to (prefix + b.title + suffix) }
                         2 -> {
                             val start = startNum.toIntOrNull() ?: 1
+                            val leadingZeros = if (startNum.length > 1 && startNum.startsWith("0")) startNum.length else 0
                             val padMatch = Regex("\\{序号:(\\d+)\\}").find(template)
-                            val padWidth = padMatch?.groupValues?.get(1)?.toIntOrNull() ?: 0
+                            val padWidth = padMatch?.groupValues?.get(1)?.toIntOrNull() ?: leadingZeros
                             val tpl = if (padMatch != null) template.replace(padMatch.value, "{序号}") else template
                             books.mapIndexed { i, b ->
                                 val num = start + i
@@ -86,7 +96,11 @@ fun RenameBatchDialog(
                         }
                         else -> emptyList()
                     }
-                    onConfirm(updates)
+                    if (updates.isEmpty()) {
+                        errorMsg = "没有匹配的书"
+                    } else {
+                        onConfirm(updates)
+                    }
                 }
             ) { Text("确定") }
         },

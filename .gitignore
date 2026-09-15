@@ -33,3 +33,4 @@ check_*.py
 analyze_comments.py
 crash_buf.txt
 tmp_logcat*.txt
+device_log*.txt
