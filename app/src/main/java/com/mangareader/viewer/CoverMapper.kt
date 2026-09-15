@@ -73,7 +73,7 @@ class CoverFetcher(
                     fileSystem = options.fileSystem,
                 ),
                 mimeType = mime,
-                dataSource = DataSource.MEMORY,
+                dataSource = DataSource.NETWORK,
             )
         }
 
@@ -115,7 +115,7 @@ class CoverFetcher(
                     fileSystem = options.fileSystem,
                 ),
                 mimeType = mime,
-                dataSource = DataSource.MEMORY,
+                dataSource = DataSource.NETWORK,
             )
         }
 
