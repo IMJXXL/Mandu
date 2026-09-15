@@ -12,6 +12,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -41,9 +42,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -51,6 +54,8 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.IntOffset
+import kotlin.math.roundToInt
 import android.graphics.drawable.Drawable
 import coil3.compose.AsyncImage
 import coil3.compose.SubcomposeAsyncImage
@@ -662,6 +667,8 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
         val isLandscape = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
         var sliderCols by remember { mutableStateOf(if (isLandscape) landscapeCols else portraitCols) }
         var layoutSheetVisible by remember { mutableStateOf(false) }
+        var dragOffset by remember { mutableStateOf(0f) }
+
         LaunchedEffect(Unit) { layoutSheetVisible = true }
         Box(
             modifier = Modifier
@@ -683,6 +690,19 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(max = (LocalConfiguration.current.screenHeightDp * 0.6f).dp)
+                        .offset { IntOffset(0, dragOffset.roundToInt()) }
+                        .pointerInput(Unit) {
+                            detectVerticalDragGestures(
+                                onDragEnd = {
+                                    if (dragOffset > 200f) { layoutSheetVisible = false; showLayoutMenu = false }
+                                    dragOffset = 0f
+                                },
+                                onVerticalDrag = { change, delta ->
+                                    if (delta > 0) dragOffset += delta
+                                    change.consume()
+                                }
+                            )
+                        }
                         .clickable(interactionSource = null, indication = null, onClick = {}),
                     shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
                     color = MaterialTheme.colorScheme.background,
@@ -694,7 +714,19 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                             .padding(24.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                Text("布局模式", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                        Box(
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .width(32.dp)
+                                    .height(4.dp)
+                                    .clip(RoundedCornerShape(2.dp))
+                                    .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
+                            )
+                        }
+                        Text("布局模式", fontSize = 14.sp, fontWeight = FontWeight.Medium)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf("紧凑网格", "松散网格", "仅封面", "列表").forEachIndexed { i, label ->
                         FilterChip(
