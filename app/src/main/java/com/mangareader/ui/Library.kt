@@ -50,6 +50,7 @@ import androidx.compose.ui.unit.sp
 import android.graphics.drawable.Drawable
 import coil3.compose.AsyncImage
 import coil3.compose.SubcomposeAsyncImage
+
 import com.hippo.ehviewer.coil.coverThumb
 import com.hippo.ehviewer.library.naturalCompare
 import com.mangareader.App
@@ -126,6 +127,8 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
     val resolvedCols = LayoutColumnsResolver.currentValue(configuration.orientation, portraitCols, landscapeCols)
     val gridCols = LayoutColumnsResolver.toGridCols(resolvedCols)
     val effectiveCols = if (resolvedCols in 1..8) resolvedCols else autoCols
+    var layoutMode by remember { mutableStateOf(prefs.getInt("layout_mode", 0)) }
+    var showLayoutMenu by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
     var debouncedQuery by remember { mutableStateOf("") }
 
@@ -492,6 +495,20 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                 actions = {
                     IconButton(onClick = { isMultiSelect = true }) { Icon(Icons.Default.Edit, "编辑") }
                     IconButton(onClick = { showSort = true }) { Icon(Icons.Default.Sort, "排序") }
+                    IconButton(onClick = { showLayoutMenu = true }) { Icon(Icons.Default.GridView, "布局") }
+                    DropdownMenu(expanded = showLayoutMenu, onDismissRequest = { showLayoutMenu = false }) {
+                        listOf("紧凑网格", "松散网格", "仅封面", "列表").forEachIndexed { i, label ->
+                            DropdownMenuItem(
+                                text = { Text(label) },
+                                onClick = {
+                                    layoutMode = i
+                                    prefs.edit().putInt("layout_mode", i).apply()
+                                    showLayoutMenu = false
+                                },
+                                leadingIcon = { if (layoutMode == i) Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.primary) else Spacer(Modifier.size(24.dp)) }
+                            )
+                        }
+                    }
                     IconButton(onClick = {
                         val next = !sortAsc
                         sortAsc = next
@@ -625,22 +642,40 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                     }
                 }
             } else {
-                // ★ 封面解码尺寸：按列数/边距推导（CoverThumb 规则），避免 600×800 过度解码
                 val thumbDecodePx = com.hippo.ehviewer.coil.CoverThumb.gridDecodePx(
                     LocalConfiguration.current.screenWidthDp, effectiveCols, 12.dp, 8.dp,
                 )
-                LazyVerticalGrid(columns = gridCols, contentPadding = PaddingValues(12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    items(books, key = { it.id }, contentType = { "book" }) { b ->
-                        val onToggleSelect = remember(b.id, isMultiSelect) { { selectedBooks = if (b.id in selectedBooks) selectedBooks - b.id else selectedBooks + b.id } }
-                        val onTap = remember(b.id, isMultiSelect) { { if (isMultiSelect) { selectedBooks = if (b.id in selectedBooks) selectedBooks - b.id else selectedBooks + b.id } else openBookThrottled(b.id, null) } }
-                        val onLongClick = remember(b.id) { { showBookInfo = b } }
-                        val onDelete = remember(b.id) { { deleteTarget = b } }
-                        BookCard(b, engine, isMultiSelect, b.id in selectedBooks, thumbDecodePx,
-                            onToggleSelect = onToggleSelect,
-                            onTap = onTap,
-                            onLongClick = onLongClick,
-                            onDelete = onDelete)
+                if (layoutMode == 3) {
+                    androidx.compose.foundation.lazy.LazyColumn(
+                        contentPadding = PaddingValues(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        items(books, key = { it.id }, contentType = { "book" }) { b ->
+                            val onToggleSelect = remember(b.id, isMultiSelect) { { selectedBooks = if (b.id in selectedBooks) selectedBooks - b.id else selectedBooks + b.id } }
+                            val onTap = remember(b.id, isMultiSelect) { { if (isMultiSelect) { selectedBooks = if (b.id in selectedBooks) selectedBooks - b.id else selectedBooks + b.id } else openBookThrottled(b.id, null) } }
+                            val onLongClick = remember(b.id) { { showBookInfo = b } }
+                            val onDelete = remember(b.id) { { deleteTarget = b } }
+                            BookListRow(b, engine, isMultiSelect, b.id in selectedBooks, thumbDecodePx,
+                                onToggleSelect = onToggleSelect,
+                                onTap = onTap,
+                                onLongClick = onLongClick,
+                                onDelete = onDelete)
+                        }
+                    }
+                } else {
+                    LazyVerticalGrid(columns = gridCols, contentPadding = PaddingValues(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        items(books, key = { it.id }, contentType = { "book" }) { b ->
+                            val onToggleSelect = remember(b.id, isMultiSelect) { { selectedBooks = if (b.id in selectedBooks) selectedBooks - b.id else selectedBooks + b.id } }
+                            val onTap = remember(b.id, isMultiSelect) { { if (isMultiSelect) { selectedBooks = if (b.id in selectedBooks) selectedBooks - b.id else selectedBooks + b.id } else openBookThrottled(b.id, null) } }
+                            val onLongClick = remember(b.id) { { showBookInfo = b } }
+                            val onDelete = remember(b.id) { { deleteTarget = b } }
+                            BookCard(b, engine, isMultiSelect, b.id in selectedBooks, thumbDecodePx, layoutMode,
+                                onToggleSelect = onToggleSelect,
+                                onTap = onTap,
+                                onLongClick = onLongClick,
+                                onDelete = onDelete)
+                        }
                     }
                 }
             }
@@ -684,7 +719,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun BookCard(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, isSelected: Boolean, decodePx: Int, onToggleSelect: () -> Unit, onTap: () -> Unit, onLongClick: () -> Unit, onDelete: () -> Unit) {
+private fun BookCard(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, isSelected: Boolean, decodePx: Int, layoutMode: Int, onToggleSelect: () -> Unit, onTap: () -> Unit, onLongClick: () -> Unit, onDelete: () -> Unit) {
     val ctx = LocalContext.current
     val prefs = remember { ctx.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE) }
     val hideAllBadges = prefs.getBoolean("hide_all_badges", false)
@@ -710,7 +745,8 @@ private fun BookCard(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, isS
         val fileExt = b.fileType.lowercase()
         val isRemoteUnsupported = (b.source == "smb" || b.source == "webdav") && b.originalPath == null && fileExt in setOf("mobi", "azw3")
 
-        Box(Modifier.fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
+        val coverRatio = if (layoutMode == 1) 0.68f else 0.72f
+        Box(Modifier.fillMaxWidth().aspectRatio(coverRatio).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
             when {
                 isRemoteUnsupported -> {
                     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
@@ -785,16 +821,85 @@ private fun BookCard(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, isS
             if (b.totalPages > 0) Text(text = "${b.readPages}/${b.totalPages}", fontSize = 10.sp, color = Color.White.copy(alpha = 0.7f), modifier = Modifier.align(Alignment.BottomEnd).padding(6.dp))
             if (progress > 0f) Text(text = "${(progress * 100).toInt()}%", fontSize = 10.sp, color = Color.White.copy(alpha = 0.9f), modifier = Modifier.align(Alignment.BottomStart).padding(6.dp))
         }
-        Box(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp)) {
-            if (!hideAllTitles) {
-                Text(text = b.title, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurface)
+        if (layoutMode != 2) {
+            Box(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp)) {
+                if (!hideAllTitles) {
+                    Text(text = b.title, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurface)
+                }
             }
         }
         }
     }
 }
 
-/** 删除 SMB 单本页缓存（原始 + HDR .jpg 兄弟），返回释放字节数 */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun BookListRow(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, isSelected: Boolean, decodePx: Int, onToggleSelect: () -> Unit, onTap: () -> Unit, onLongClick: () -> Unit, onDelete: () -> Unit) {
+    val ctx = LocalContext.current
+    val prefs = remember { ctx.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE) }
+    val hideAllBadges = prefs.getBoolean("hide_all_badges", false)
+    val progress = if (b.totalPages > 0) b.readPages.toFloat() / b.totalPages else 0f
+    val isFinished = b.totalPages > 0 && b.readPages >= b.totalPages
+    val isReading = !isFinished && (b.readPages > 0 || (b.lastReadAt != null && b.lastReadAt > 0))
+    val statusText = when {
+        isFinished -> "已读完"
+        isReading -> "阅读中"
+        else -> "未读"
+    }
+    val statusColor = when {
+        isFinished -> Color(0xFF81C784)
+        isReading -> Color(0xFFFFB74D)
+        else -> Color(0xFFE57373)
+    }
+    val fileExt = b.fileType.lowercase()
+    val isRemoteUnsupported = (b.source == "smb" || b.source == "webdav") && b.originalPath == null && fileExt in setOf("mobi", "azw3")
+
+    Surface(
+        modifier = Modifier.fillMaxWidth().combinedClickable(onClick = onTap, onLongClick = onLongClick),
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+    ) {
+        Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (isMultiSelect) {
+                Checkbox(checked = isSelected, onCheckedChange = null, colors = CheckboxDefaults.colors(checkedColor = MaterialTheme.colorScheme.primary), modifier = Modifier.padding(end = 8.dp))
+            }
+            Box(Modifier.size(width = 56.dp, height = 78.dp).clip(RoundedCornerShape(6.dp)).background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
+                when {
+                    isRemoteUnsupported -> {
+                        Icon(Icons.Filled.Download, contentDescription = null, tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f), modifier = Modifier.size(24.dp))
+                    }
+                    b.coverPath != null -> {
+                        val coverRequest = remember(b.coverPath, decodePx) {
+                            coil3.request.ImageRequest.Builder(ctx)
+                                .data(com.mangareader.viewer.CoverData(b.coverPath))
+                                .coverThumb(decodePx, memoryKey = "cover:${b.id}@${b.coverPath}", diskKey = "${b.coverPath}")
+                                .decoderFactory(com.mangareader.coil.StaticFirstFrameDecoder.Factory())
+                                .build()
+                        }
+                        coil3.compose.AsyncImage(model = coverRequest, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                    }
+                }
+                if (progress > 0f) Text(text = "${(progress * 100).toInt()}%", fontSize = 9.sp, color = Color.White.copy(alpha = 0.9f), modifier = Modifier.align(Alignment.BottomStart).padding(4.dp))
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(text = b.title, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Medium)
+                Spacer(Modifier.height(4.dp))
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (!hideAllBadges) {
+                        Surface(shape = RoundedCornerShape(4.dp), color = statusColor.copy(alpha = 0.9f)) {
+                            Text(text = statusText, modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp), fontSize = 10.sp, color = Color.White)
+                        }
+                    }
+                    if (b.source == "smb" || b.source == "webdav" || b.source == "komga") {
+                        Text(text = b.source.uppercase(), fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    if (b.totalPages > 0) Text(text = "${b.readPages}/${b.totalPages}", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+    }
+}
 private fun clearSmbPageCache(serverId: Long, remote: String): Long {
     val pagePath = com.hippo.ehviewer.smb.SmbCache.cachePathForRemoteFile(serverId, remote)
     val pageFile = java.io.File(pagePath.toString())
