@@ -51,7 +51,7 @@ class Scanner(private val ctx: Context, private val dao: MangaDao) {
             scanDirFast(auth, treeStr, docId, child, books) { found -> onProgress?.invoke(found) }
 
             if (books.isNotEmpty()) {
-                val newIds = dao.insertBooksBatch(books)
+                val newIds = dao.insertBooksWithStableId(books)
                 count = books.size
                 cacheRealPaths(books)
                 // ★ 综合方案 D：Scanner 批插书行后，给每个 d:/z: 父书预写 progress 行。
@@ -442,7 +442,7 @@ class Scanner(private val ctx: Context, private val dao: MangaDao) {
         if (ex != null) dao.updateFolder(ex.copy(lastScanAt = System.currentTimeMillis(), displayName = name))
         else dao.insertFolder(Folder(treeUri = treeStr, displayName = name, lastScanAt = System.currentTimeMillis()))
         if (books.isEmpty()) return
-        val newIds = dao.insertBooksBatch(books)
+        val newIds = dao.insertBooksWithStableId(books)
         cacheRealPaths(books)
         try {
             val engine = com.mangareader.viewer.ArchiveEngine(ctx)

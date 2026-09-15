@@ -49,7 +49,7 @@ object KomgaBookRouter {
                 }
                 existing.id
             }
-            else dao.insertBook(Book(
+            else dao.insertBookWithStableId(Book(
                 title = bookInfo.metadata.title.ifEmpty { bookInfo.name },
                 filePath = filePath,
                 source = "komga",

@@ -82,7 +82,7 @@ fun KomgaSeriesDetailScreen(
                     val coverPath = "cv:komga:${serverId}:${book.id}"
                     if (existing == null) {
                         val title = book.metadata.title.ifEmpty { book.name }
-                        val newId = dao.insertBook(Book(
+                        val newId = dao.insertBookWithStableId(Book(
                             title = title,
                             filePath = filePath,
                             source = "komga",
@@ -162,7 +162,7 @@ fun KomgaSeriesDetailScreen(
                                     if (existing != null) existing.id
                                     else {
                                         val title = book.metadata.title.ifEmpty { book.name }
-                                        dao.insertBook(Book(
+                                        dao.insertBookWithStableId(Book(
                                             title = title,
                                             filePath = filePath,
                                             source = "komga",

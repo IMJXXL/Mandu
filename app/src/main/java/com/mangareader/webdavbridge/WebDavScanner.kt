@@ -47,7 +47,7 @@ object WebDavScanner {
             val existingPaths = dao.getWebDavBooks(sourceId).map { it.filePath }.toHashSet()
             val toInsert = ctx.discovered.values.filter { it.filePath !in existingPaths }
             if (toInsert.isEmpty()) return@withContext 0
-            val rows = dao.insertBooksBatch(toInsert)
+            val rows = dao.insertBooksWithStableId(toInsert)
             val inserted = rows.count { it != -1L }
             android.util.Log.i(
                 TAG,

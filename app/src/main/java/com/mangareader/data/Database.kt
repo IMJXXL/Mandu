@@ -5,6 +5,16 @@ import androidx.compose.runtime.Immutable
 import androidx.room.*
 import kotlinx.coroutines.flow.Flow
 
+fun stableBookId(filePath: String): Long {
+    var h = -0x340d631b7bdddcdbL
+    for (c in filePath) {
+        h = h xor c.code.toLong()
+        h *= 0x100000001b3L
+    }
+    if (h == 0L) h = 1L
+    return h
+}
+
 @Entity(
     tableName = "manga_books",
     indices = [
@@ -252,6 +262,16 @@ interface MangaDao {
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertBooksBatch(books: List<Book>): List<Long>
+
+    @Transaction
+    suspend fun insertBookWithStableId(book: Book): Long {
+        return insertBook(book.copy(id = stableBookId(book.filePath)))
+    }
+
+    @Transaction
+    suspend fun insertBooksWithStableId(books: List<Book>): List<Long> {
+        return insertBooksBatch(books.map { it.copy(id = stableBookId(it.filePath)) })
+    }
 
     /** ★ SMB/WebDAV 下载完成：只记录本地缓存路径到 originalPath，不改 filePath/source/coverPath。
      *  书仍是远程书，打开时优先检查 originalPath 本地文件是否存在，有则从本地读（离线可读）。 */
@@ -724,7 +744,7 @@ interface MangaDao {
         val zPrefix = "z:a:$auth|$treeDocId|%"
         val oldBooks = getBooksByFolderParams(aPrefix, dPrefix, zPrefix)
         if (oldBooks.isEmpty()) {
-            insertBooksBatch(newBooks)
+            insertBooksWithStableId(newBooks)
             return
         }
         val oldIds = oldBooks.map { it.id }
@@ -752,7 +772,7 @@ interface MangaDao {
             } ?: nb
         }
 
-        val newIds = insertBooksBatch(mergedNew)
+        val newIds = insertBooksWithStableId(mergedNew)
 
         val newIdByPath = HashMap<String, Long>(mergedNew.size * 2)
         mergedNew.forEachIndexed { i, b ->
