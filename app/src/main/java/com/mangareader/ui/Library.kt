@@ -132,7 +132,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
     var layoutMode by remember { mutableStateOf(prefs.getInt("layout_mode", 0)) }
     var showLayoutMenu by remember { mutableStateOf(false) }
     var hideAllBadges by remember { mutableStateOf(prefs.getBoolean("hide_all_badges", false)) }
-    var hideAllTitles by remember { mutableStateOf(prefs.getBoolean("hide_all_titles", false)) }
+
     var searchQuery by remember { mutableStateOf("") }
     var debouncedQuery by remember { mutableStateOf("") }
 
@@ -645,7 +645,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                             val onTap = remember(b.id, isMultiSelect) { { if (isMultiSelect) { selectedBooks = if (b.id in selectedBooks) selectedBooks - b.id else selectedBooks + b.id } else openBookThrottled(b.id, null) } }
                             val onLongClick = remember(b.id) { { showBookInfo = b } }
                             val onDelete = remember(b.id) { { deleteTarget = b } }
-                            BookCard(b, engine, isMultiSelect, b.id in selectedBooks, thumbDecodePx, layoutMode, hideAllBadges, hideAllTitles,
+                            BookCard(b, engine, isMultiSelect, b.id in selectedBooks, thumbDecodePx, layoutMode, hideAllBadges,
                                 onToggleSelect = onToggleSelect,
                                 onTap = onTap,
                                 onLongClick = onLongClick,
@@ -747,20 +747,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                         prefs.edit().putBoolean("hide_all_badges", it).apply()
                     })
                 }
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text("隐藏所有书名", fontSize = 14.sp)
-                        Text("开启后书架与阅读器中不显示书名", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Switch(checked = hideAllTitles, onCheckedChange = {
-                        hideAllTitles = it
-                        prefs.edit().putBoolean("hide_all_titles", it).apply()
-                    })
-                }
+
             }
         }
     }
@@ -802,7 +789,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun BookCard(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, isSelected: Boolean, decodePx: Int, layoutMode: Int, hideAllBadges: Boolean, hideAllTitles: Boolean, onToggleSelect: () -> Unit, onTap: () -> Unit, onLongClick: () -> Unit, onDelete: () -> Unit) {
+private fun BookCard(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, isSelected: Boolean, decodePx: Int, layoutMode: Int, hideAllBadges: Boolean, onToggleSelect: () -> Unit, onTap: () -> Unit, onLongClick: () -> Unit, onDelete: () -> Unit) {
     val ctx = LocalContext.current
     // ★ LV119 对齐参考项目：直接用 coverPath (cv:...) 作为 Coil3 model，
     //   CoverFetcher 返回原始字节 → Coil3 decoders 自动识别动图（GIF/WebP/APNG）
@@ -856,7 +843,7 @@ private fun BookCard(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, isS
                     )
                 }
             }
-            if (layoutMode == 0 && !hideAllTitles) {
+            if (layoutMode == 0) {
                 Box(Modifier.fillMaxWidth().align(Alignment.BottomCenter).background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xAA000000))))) {
                     Text(text = b.title, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Color.White, modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 4.dp))
                 }
@@ -907,7 +894,7 @@ private fun BookCard(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, isS
             if (b.totalPages > 0) Text(text = "${b.readPages}/${b.totalPages}", fontSize = 10.sp, color = Color.White.copy(alpha = 0.7f), modifier = Modifier.align(Alignment.BottomEnd).padding(6.dp))
             if (progress > 0f) Text(text = "${(progress * 100).toInt()}%", fontSize = 10.sp, color = Color.White.copy(alpha = 0.9f), modifier = Modifier.align(Alignment.BottomStart).padding(6.dp))
         }
-        if (layoutMode == 1 && !hideAllTitles) {
+        if (layoutMode == 1) {
             Box(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp)) {
                 Text(text = b.title, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurface)
             }
