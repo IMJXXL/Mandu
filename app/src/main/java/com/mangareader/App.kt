@@ -39,7 +39,7 @@ class App : Application(), SingletonImageLoader.Factory {
         return ImageLoader.Builder(context)
             .memoryCache {
                 MemoryCache.Builder()
-                    .maxSizeBytes((Runtime.getRuntime().maxMemory() * 0.3).toLong())
+                    .maxSizePercent(context)
                     .build()
             }
             .diskCache {
