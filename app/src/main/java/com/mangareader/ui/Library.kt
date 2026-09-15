@@ -655,6 +655,8 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
     if (showLayoutMenu) {
         val isLandscape = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
         var sliderCols by remember { mutableStateOf(if (isLandscape) landscapeCols else portraitCols) }
+        var hideAllBadges by remember { mutableStateOf(prefs.getBoolean("hide_all_badges", false)) }
+        var hideAllTitles by remember { mutableStateOf(prefs.getBoolean("hide_all_titles", false)) }
         androidx.compose.material3.ModalBottomSheet(onDismissRequest = { showLayoutMenu = false }, containerColor = MaterialTheme.colorScheme.background) {
             Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Text("布局模式", fontSize = 14.sp, fontWeight = FontWeight.Medium)
@@ -668,6 +670,26 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                             },
                             label = { Text(label) },
                         )
+                    }
+                }
+                if (layoutMode != 3) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("列数（0=自动）", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                        Text(if (sliderCols == 0) "自动" else "${sliderCols}列", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Slider(
+                        value = sliderCols.toFloat(),
+                        onValueChange = { v -> sliderCols = v.toInt() },
+                        onValueChangeFinished = {
+                            if (isLandscape) com.hippo.ehviewer.Settings.thumbColumnsLandscape.value = sliderCols
+                            else com.hippo.ehviewer.Settings.thumbColumnsPortrait.value = sliderCols
+                        },
+                        valueRange = 0f..10f,
+                        steps = 10,
+                    )
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("关闭", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("10列", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
                 Text("排序方式", fontSize = 14.sp, fontWeight = FontWeight.Medium)
@@ -702,22 +724,33 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                         label = { Text("降序") },
                     )
                 }
-                if (layoutMode != 3) {
-                    Text("列数（0=自动）", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(if (sliderCols == 0) "自动" else sliderCols.toString(), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Slider(
-                            value = sliderCols.toFloat(),
-                            onValueChange = { v -> sliderCols = v.toInt() },
-                            onValueChangeFinished = {
-                                if (isLandscape) com.hippo.ehviewer.Settings.thumbColumnsLandscape.value = sliderCols
-                                else com.hippo.ehviewer.Settings.thumbColumnsPortrait.value = sliderCols
-                            },
-                            valueRange = 0f..10f,
-                            steps = 10,
-                            modifier = Modifier.weight(1f),
-                        )
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("隐藏所有角标", fontSize = 14.sp)
+                        Text("开启后书架不显示来源与状态角标", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
+                    Switch(checked = hideAllBadges, onCheckedChange = {
+                        hideAllBadges = it
+                        prefs.edit().putBoolean("hide_all_badges", it).apply()
+                    })
+                }
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("隐藏所有书名", fontSize = 14.sp)
+                        Text("开启后书架与阅读器中不显示书名", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(checked = hideAllTitles, onCheckedChange = {
+                        hideAllTitles = it
+                        prefs.edit().putBoolean("hide_all_titles", it).apply()
+                    })
                 }
             }
         }
