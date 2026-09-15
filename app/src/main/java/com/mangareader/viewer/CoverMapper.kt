@@ -121,6 +121,19 @@ class CoverFetcher(
 
 
         // ★ LV119 对齐：先尝试返回原始字节流，让 Coil3 decoders 自动识别动图（GIF/WebP/APNG）
+        val streamResult = withContext(Dispatchers.IO) {
+            try { engine.getCoverSource(coverPath) } catch (e: Exception) { android.util.Log.w("CoverFetch", "getCoverSource err: ${e.message}"); null }
+        }
+        if (streamResult != null) {
+            val (source, mime) = streamResult
+            android.util.Log.i("CoverFetch", "stream OK mime=$mime path=$coverPath")
+            return SourceFetchResult(
+                source = ImageSource(source = source, fileSystem = options.fileSystem),
+                mimeType = mime,
+                dataSource = DataSource.DISK,
+            )
+        }
+
         val raw = withContext(Dispatchers.IO) {
             try { engine.loadCoverRaw(coverPath) } catch (e: Exception) { android.util.Log.w("CoverFetch", "loadCoverRaw err: ${e.message}"); null }
         }

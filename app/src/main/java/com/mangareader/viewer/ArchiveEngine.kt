@@ -3,6 +3,8 @@ package com.mangareader.viewer
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import okio.buffer
+import okio.source
 import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import android.provider.DocumentsContract
@@ -1102,6 +1104,33 @@ class ArchiveEngine(private val ctx: Context) {
         return null
     }
 
+    fun getCoverSource(cover: String): Pair<okio.BufferedSource, String>? {
+        requireNotRemote(cover)
+        if (!cover.startsWith("cv:")) return null
+        if (cover.startsWith("cv:komga:")) return null
+        try {
+            val parts = cover.removePrefix("cv:").split("|")
+            if (parts.size < 3) return null
+            val auth = parts[0]
+            val treeStr = parts[1]
+            val docId = parts[2]
+            val fileName = (if (parts.size >= 4 && parts[3].isNotEmpty()) parts[3] else docId.substringAfterLast("/")).lowercase()
+            if (!isImg(fileName)) return null
+            val tree = makeTree(auth, treeStr)
+            val uri = DocumentsContract.buildDocumentUriUsingTree(tree, docId)
+            val inputStream = try { ctx.contentResolver.openInputStream(uri) } catch (_: Exception) { null } ?: return null
+            val mime = when {
+                fileName.endsWith(".jpg") || fileName.endsWith(".jpeg") -> "image/jpeg"
+                fileName.endsWith(".png") -> "image/png"
+                fileName.endsWith(".gif") -> "image/gif"
+                fileName.endsWith(".webp") -> "image/webp"
+                fileName.endsWith(".bmp") -> "image/bmp"
+                else -> "image/png"
+            }
+            return Pair(inputStream.source().buffer(), mime)
+        } catch (_: Exception) {}
+        return null
+    }
 
     private fun guessMimeFromBytes(bytes: ByteArray): String {
         if (bytes.size < 12) return "image/png"
