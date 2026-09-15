@@ -168,7 +168,7 @@ fun WebDavPathPickerDialog(
     onPick: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var currentPath by remember { mutableStateOf(initialPath) }
+    var currentPath by remember { mutableStateOf("") }
     var entries by remember { mutableStateOf<List<BrowseEntryRemote>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -183,7 +183,10 @@ fun WebDavPathPickerDialog(
             withContext(Dispatchers.IO) {
                 runCatching { WebDavGateway.listDirectory(source, password, currentPath) }
                     .onSuccess { entries = it }
-                    .onFailure { error = it.message?.take(100) }
+                    .onFailure { e ->
+                        val msg = e.message.orEmpty()
+                        error = if (msg.contains("404")) "路径不存在，请从根目录选择" else msg.take(100)
+                    }
             }
             loading = false
         }
