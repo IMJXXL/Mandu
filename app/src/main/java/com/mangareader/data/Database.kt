@@ -907,7 +907,7 @@ interface MangaDao {
     @Query("SELECT * FROM bookmarks")
     suspend fun exportAllBookmarks(): List<Bookmark>
 
-    @Query("SELECT id, readPages, lastReadAt FROM manga_books")
+    @Query("SELECT id, readPages, lastReadAt, filePath FROM manga_books")
     suspend fun exportAllBooksAggregate(): List<BookAggregateRow>
 
     @Query("SELECT id, isFavorite, isHidden FROM manga_books")
@@ -1045,6 +1045,7 @@ data class BookAggregateRow(
     val id: Long,
     val readPages: Int,
     val lastReadAt: Long?,
+    val filePath: String,
 )
 
 data class BookShelfFlagsRow(

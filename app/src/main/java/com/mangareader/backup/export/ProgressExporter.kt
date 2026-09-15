@@ -19,7 +19,7 @@ object ProgressExporter {
             BookmarkDto(it.id, it.bookId, it.chapterPath, it.page, it.createdAt, it.note)
         }
         val aggregate = dao.exportAllBooksAggregate().map {
-            BookAggregateDto(it.id, it.readPages, it.lastReadAt)
+            BookAggregateDto(it.id, it.readPages, it.lastReadAt, it.filePath)
         }
         return ProgressPayload(progress, history, bookmarks, aggregate)
     }

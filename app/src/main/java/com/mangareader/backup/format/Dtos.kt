@@ -40,6 +40,7 @@ data class BookAggregateDto(
     val id: Long,
     val readPages: Int,
     val lastReadAt: Long?,
+    val filePath: String = "",
 )
 
 @Serializable
