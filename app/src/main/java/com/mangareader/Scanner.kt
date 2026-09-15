@@ -562,6 +562,26 @@ class Scanner(private val ctx: Context, private val dao: MangaDao) {
             // ★ C7：单 engine 复用——hasZipImages/hasZipSubDirs 共用同一 libzip 句柄，
             //   每 zip 只解析一遍中央目录（原每处各自 new engine 重复打开）
             val sharedEngine = com.mangareader.viewer.ArchiveEngine(ctx)
+
+            // ★ 批次2：File.listFiles 快速路径——物理路径递归判断哪些子目录有漫画，
+            //   SAF 遍历时跳过空目录的 findFirstCoverInFolder（省 SAF binder IPC）
+            val fastDirsWithComics: Set<String>? = try {
+                val treeUri = Uri.parse(treeStr)
+                val rootFile = tryResolveTreeToFile(treeUri)
+                if (rootFile != null) {
+                    val t0 = System.currentTimeMillis()
+                    val children = rootFile.listFiles()
+                    if (children != null) {
+                        val result = children.filter { it.isDirectory }
+                            .filter { dirHasComics(it) }
+                            .map { it.name }
+                            .toSet()
+                        Log.d(TAG, "fastDirsWithComics: ${result.size}/${children.count { it.isDirectory }} dirs with comics in ${System.currentTimeMillis() - t0}ms")
+                        result
+                    } else null
+                } else null
+            } catch (e: Exception) { Log.d(TAG, "fastDirsWithComics fallback: ${e.message}"); null }
+
             val projection = arrayOf(
                 DocumentsContract.Document.COLUMN_DISPLAY_NAME,
                 DocumentsContract.Document.COLUMN_DOCUMENT_ID,
@@ -578,6 +598,7 @@ class Scanner(private val ctx: Context, private val dao: MangaDao) {
                     val isDir = mime == DocumentsContract.Document.MIME_TYPE_DIR
 
                     if (isDir) {
+                        if (fastDirsWithComics != null && name !in fastDirsWithComics) continue
                         val path = "d:$auth|$treeDocId|$id"
                         if (skipDedup || !isPathDuplicate(path)) {
                             // ★ C2 修复：判空与取封面合并为一次递归（原 :440+:447 同目录跑两遍
@@ -646,6 +667,51 @@ class Scanner(private val ctx: Context, private val dao: MangaDao) {
                 }
             }
         } catch (e: Exception) { Log.e(TAG, "scanDirFast: ${e.message}") }
+    }
+
+    private fun tryResolveTreeToFile(uri: Uri): File? {
+        try {
+            ctx.contentResolver.query(uri, arrayOf("_data"), null, null, null)?.use { c ->
+                if (c.moveToFirst()) {
+                    val idx = c.getColumnIndex("_data")
+                    if (idx >= 0) {
+                        val path = c.getString(idx)
+                        if (path != null) {
+                            val f = File(path)
+                            if (f.exists() && f.isDirectory) return f
+                        }
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+        val docId = DocumentsContract.getTreeDocumentId(uri)
+        if (docId.startsWith("primary:")) {
+            val relPath = docId.substringAfter("primary:")
+            val f = File("/storage/emulated/0/$relPath")
+            if (f.exists() && f.isDirectory) return f
+        }
+        val colonIdx = docId.indexOf(':')
+        if (colonIdx > 0) {
+            val storage = docId.substring(0, colonIdx)
+            val relPath = docId.substring(colonIdx + 1)
+            val f = File("/storage/$storage/$relPath")
+            if (f.exists() && f.isDirectory) return f
+        }
+        return null
+    }
+
+    private fun dirHasComics(dir: File, depth: Int = 0): Boolean {
+        if (depth > 8) return false
+        val children = dir.listFiles() ?: return false
+        for (child in children) {
+            if (child.isFile) {
+                val name = child.name
+                if (name.isComic() || name.isImg()) return true
+            } else if (child.isDirectory) {
+                if (dirHasComics(child, depth + 1)) return true
+            }
+        }
+        return false
     }
 
     // 递归查找文件夹内第一本漫画（按名称排序），用作封面
