@@ -53,6 +53,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
      *  idx → 入坑时间戳；同页 5s 内已在加载→复用在途任务；坑龄≥5s 视为挂死残留，覆盖放行自愈。
      *  值仍等于自己那次时间戳才 remove（防误删后来者的坑）。 */
     private val inflightLoads = java.util.concurrent.ConcurrentHashMap<Int, Long>()
+    private val preloadSemaphore = kotlinx.coroutines.sync.Semaphore(1)
     private var pageList: List<ArchiveEngine.PageMeta> = emptyList()
     private var currentPage = 0
 
@@ -93,8 +94,10 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
      *    对齐参考项目 LruCache 字节预算淘汰——原无上限 LinkedHashMap 导致 40 解码器累积 OOM。 */
     private val pageAnimDrawables = object : java.util.LinkedHashMap<Int, Drawable>(16, 0.75f, false) {
         override fun removeEldestEntry(eldest: Map.Entry<Int, Drawable>): Boolean {
-            if (size > 7) {
+            if (size > 3) {
+                if (eldest.key == currentPage) return false
                 try { (eldest.value as? android.graphics.drawable.Animatable)?.stop() } catch (_: Throwable) {}
+                inflightLoads.remove(eldest.key)
                 return true
             }
             return false
@@ -842,7 +845,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         } catch (_: Exception) { false }
     }
 
-    private fun loadPageAsync(idx: Int) {
+    private fun loadPageAsync(idx: Int, isPreload: Boolean = false) {
         if (idx < 0 || idx >= pageList.size) return
         val cached = bitmapCache[idx]
         if (cached != null && !cached.isRecycled) {
@@ -871,6 +874,8 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         inflightLoads[idx] = nowTs
         if (remotePageSupply != null && idx == currentPage) remotePageSupply?.onFocus(idx)
         val job = loadScope.launch {
+            var acquired = false
+            if (isPreload) { preloadSemaphore.acquire(); acquired = true }
             try {
             // ★ SMB/WebDAV：远程供给会话不使用本地 native archive 句柄
             if (remotePageSupply == null) ensureNativeArchive()
@@ -882,8 +887,8 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 //   512MB 堆 OOM 闪退（log_export_0905_214705 实锤：loadDirPageRaw 12~17MB 分配失败）。
                 //   v1.2 静图走 engine.loadPage（原生下采样 Bitmap）；动图走 peek + APNG4Android Drawable。
                 val meta = pageList[idx]
-                // ① 动图：peek 种类 → raw → APNG4Android Drawable → pageAnimDrawables
-                val kind: AnimKind = withContext(Dispatchers.IO) {
+                val knownKind = pageAnimFlags.firstOrNull { it.pageIdx == idx }?.kind
+                val kind: AnimKind = if (knownKind != null) knownKind else withContext(Dispatchers.IO) {
                     runCatching { engine?.peekAnimKindFast(treePath, meta) }.getOrNull() ?: AnimKind.NONE
                 }
                 if (kind != AnimKind.NONE) {
@@ -1002,6 +1007,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 }
             }
             } finally {
+                if (acquired) preloadSemaphore.release()
                 if (inflightLoads[idx] == nowTs) inflightLoads.remove(idx)
                 (kotlin.coroutines.coroutineContext[kotlinx.coroutines.Job])?.let { loadJobs.remove(idx, it) }
             }
@@ -1036,32 +1042,15 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         // 超分联动：报当前页；只有"整本"作用域下才前后预载
         try { com.mangareader.sr.SrPipeline.onPageChanged(centerIdx, pageList.size) } catch (_: Exception) {}
         if (doublePageMode) {
-            // In double page mode, load both pages of current spread and adjacent spreads
             val leftIdx = centerIdx - (centerIdx % 2)
             loadPageAsync(leftIdx)
             if (leftIdx + 1 < pageList.size) loadPageAsync(leftIdx + 1)
-            if (leftIdx - 2 >= 0) { loadPageAsync(leftIdx - 2); loadPageAsync(leftIdx - 1) }
-            if (leftIdx + 2 < pageList.size) { loadPageAsync(leftIdx + 2); if (leftIdx + 3 < pageList.size) loadPageAsync(leftIdx + 3) }
+            if (leftIdx - 2 >= 0) { loadPageAsync(leftIdx - 2, isPreload = true); loadPageAsync(leftIdx - 1, isPreload = true) }
+            if (leftIdx + 2 < pageList.size) { loadPageAsync(leftIdx + 2, isPreload = true); if (leftIdx + 3 < pageList.size) loadPageAsync(leftIdx + 3, isPreload = true) }
         } else {
             loadPageAsync(centerIdx)
-            val nearRange = if (com.hippo.ehviewer.Settings.isEinkMode) 1 else 2
-            for (i in 1..nearRange) {
-                val fwd = centerIdx + i
-                if (fwd < pageList.size) loadPageAsync(fwd)
-                val bwd = centerIdx - i
-                if (bwd >= 0) loadPageAsync(bwd)
-            }
-        }
-        // ★ LV119 对齐参考项目：不再预 peek 动图——loadPageAsync 内部用 Coil3 自动识别动图
-        if (!doublePageMode) {
-            val farRange = if (com.hippo.ehviewer.Settings.isEinkMode) 2 else 5
-            for (delta in -farRange..farRange) {
-                val target = centerIdx + delta
-                if (target !in pageList.indices) continue
-                if (bitmapCache[target] == null && pageAnimDrawables[target] == null) {
-                    loadPageAsync(target)
-                }
-            }
+            if (centerIdx + 1 < pageList.size) loadPageAsync(centerIdx + 1, isPreload = true)
+            if (centerIdx - 1 >= 0) loadPageAsync(centerIdx - 1, isPreload = true)
         }
     }
 
