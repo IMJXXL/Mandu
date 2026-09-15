@@ -64,6 +64,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.distinctUntilChanged
 
 enum class SortMode(val label: String) { LAST("最近阅读"), NAME("名称"), DATE("添加时间"), PROGRESS("阅读进度") }
 enum class FilterMode(val label: String) { ALL("全部"), READING("阅读中"), UNREAD("未读"), FINISHED("已读完"), FAV("收藏") }
@@ -215,10 +216,12 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                 SortMode.PROGRESS -> dao.getVisibleBooksByProgress()
             }
         }
-        flow.collect {
-            val ordered = if (sort == SortMode.NAME) {
-                it.sortedWith(Comparator { a, b -> naturalCompare(a.title, b.title) })
-            } else it
+        flow.distinctUntilChanged().collect {
+            val ordered = withContext(Dispatchers.IO) {
+                if (sort == SortMode.NAME) {
+                    it.sortedWith(Comparator { a, b -> naturalCompare(a.title, b.title) })
+                } else it
+            }
             books = if (sortAsc) ordered.reversed() else ordered
         }
     }
