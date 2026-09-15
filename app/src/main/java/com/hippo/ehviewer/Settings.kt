@@ -227,6 +227,8 @@ object Settings : DataStorePreferences(null) {
     val listThumbSize = intPref("list_tile_size", 40)
     val detailSize = intPref("detail_size_2", 0)
     val thumbColumns = intPref("thumb_columns", 3)
+    val thumbColumnsPortrait = intPref("thumb_columns_portrait", 0)
+    val thumbColumnsLandscape = intPref("thumb_columns_landscape", 0)
 
     /**
      * When false, SMB/WebDAV **folder gallery** image covers are not downloaded

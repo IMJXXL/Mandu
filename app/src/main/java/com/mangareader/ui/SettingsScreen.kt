@@ -27,6 +27,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -258,6 +259,38 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
                         prefs.edit().putBoolean("global_hide", newHide).apply()
                         Toast.makeText(ctx, if (newHide) "已全局隐藏" else "已取消全局隐藏", Toast.LENGTH_SHORT).show()
                     })
+                }
+            }
+            }
+
+            item {
+            val configuration = LocalConfiguration.current
+            val isLandscape = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+            val currentPref = if (isLandscape) com.hippo.ehviewer.Settings.thumbColumnsLandscape else com.hippo.ehviewer.Settings.thumbColumnsPortrait
+            var sliderVal by remember { mutableStateOf(currentPref.value.toFloat()) }
+            var currentVal by remember { mutableStateOf(currentPref.value) }
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.GridView, null, modifier = Modifier.size(24.dp))
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text("书库列数", fontSize = 16.sp)
+                            Text(if (currentVal == 0) "自动" else "$currentVal 列", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Slider(
+                        value = sliderVal,
+                        onValueChange = { sliderVal = it; currentVal = it.toInt() },
+                        onValueChangeFinished = {
+                            val v = sliderVal.toInt()
+                            currentPref.value = v
+                            currentVal = v
+                        },
+                        valueRange = 0f..8f,
+                        steps = 7,
+                    )
                 }
             }
             }

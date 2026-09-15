@@ -120,8 +120,11 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
             else -> 3
         }
     }
-    var manualCols by remember { mutableStateOf<Int?>(null) }
-    val effectiveCols = manualCols ?: autoCols
+    val portraitCols = com.hippo.ehviewer.Settings.thumbColumnsPortrait.value
+    val landscapeCols = com.hippo.ehviewer.Settings.thumbColumnsLandscape.value
+    val resolvedCols = LayoutColumnsResolver.currentValue(configuration.orientation, portraitCols, landscapeCols)
+    val gridCols = LayoutColumnsResolver.toGridCols(resolvedCols)
+    val effectiveCols = if (resolvedCols in 1..8) resolvedCols else autoCols
     var searchQuery by remember { mutableStateOf("") }
     var debouncedQuery by remember { mutableStateOf("") }
 
@@ -476,19 +479,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                     }) {
                         Icon(if (sortAsc) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward, "排序方向")
                     }
-                    val colsCandidates = if (isTablet) listOf(1, 3, 4, 6) else listOf(1, 2, 3, 4, 5)
-                    IconButton(onClick = {
-                        val idx = colsCandidates.indexOf(effectiveCols).coerceAtLeast(0)
-                        manualCols = colsCandidates[(idx + 1) % colsCandidates.size]
-                    }) {
-                        Icon(when (effectiveCols) {
-                            1 -> Icons.Default.ViewList
-                            2 -> Icons.Default.ViewModule
-                            3 -> Icons.Default.GridView
-                            4 -> Icons.Default.Dashboard
-                            else -> Icons.Default.Apps
-                        }, "布局")
-                    }
+
                     IconButton(onClick = { showSearch = !showSearch }) { Icon(if (showSearch) Icons.Filled.Close else Icons.Default.Search, "搜索") }
                     // ★ F 历史记录页入口
                     IconButton(onClick = onOpenHistory) { Icon(Icons.Default.History, "阅读历史") }
@@ -617,7 +608,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                 val thumbDecodePx = com.hippo.ehviewer.coil.CoverThumb.gridDecodePx(
                     LocalConfiguration.current.screenWidthDp, effectiveCols, 12.dp, 8.dp,
                 )
-                LazyVerticalGrid(columns = GridCells.Fixed(effectiveCols), contentPadding = PaddingValues(12.dp),
+                LazyVerticalGrid(columns = gridCols, contentPadding = PaddingValues(12.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     items(books, key = { it.id }, contentType = { "book" }) { b ->
                         val onToggleSelect = remember(b.id, isMultiSelect) { { selectedBooks = if (b.id in selectedBooks) selectedBooks - b.id else selectedBooks + b.id } }
