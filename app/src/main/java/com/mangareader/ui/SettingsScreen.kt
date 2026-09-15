@@ -264,38 +264,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
             }
 
             item {
-            val configuration = LocalConfiguration.current
-            val isLandscape = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
-            val currentPref = if (isLandscape) com.hippo.ehviewer.Settings.thumbColumnsLandscape else com.hippo.ehviewer.Settings.thumbColumnsPortrait
-            var sliderVal by remember { mutableStateOf(currentPref.value.toFloat()) }
-            var currentVal by remember { mutableStateOf(currentPref.value) }
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.GridView, null, modifier = Modifier.size(24.dp))
-                        Spacer(Modifier.width(12.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text("书库列数", fontSize = 16.sp)
-                            Text(if (currentVal == 0) "自动" else "$currentVal 列", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    Slider(
-                        value = sliderVal,
-                        onValueChange = { sliderVal = it; currentVal = it.toInt() },
-                        onValueChangeFinished = {
-                            val v = sliderVal.toInt()
-                            currentPref.value = v
-                            currentVal = v
-                        },
-                        valueRange = 0f..8f,
-                        steps = 7,
-                    )
-                }
-            }
-            }
 
-            item {
             Card(Modifier.fillMaxWidth().clickable { showDonation = true }) {
                 Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.Favorite, null, modifier = Modifier.size(24.dp))
@@ -585,6 +554,8 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
                                 LicenseLink("libzip", "https://github.com/niceSaber/libzip")
                                 LicenseLink("APNG4Android (penfeizhou)", "https://github.com/penfeizhou/APNG4Android")
                                 LicenseLink("LocalViewer (GPL v3)", "https://github.com/zmz125000/LocalViewer")
+                                LicenseLink("TachiyomiSY", "https://github.com/NightstarTeam/TachiyomiSY")
+                                LicenseLink("Mihon", "https://github.com/mihonapp/mihon")
                                 LicenseLink("ncnn (Tencent)", "https://github.com/Tencent/ncnn")
                                 LicenseLink("Real-CUGAN 模型 (bilibili/ailab)", "https://github.com/bilibili/ailab")
                                 LicenseLink("Real-ESRGAN 模型 (xinntao)", "https://github.com/xinntao/Real-ESRGAN")
@@ -597,6 +568,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
                             Text("· MHark — 读取机制与性能的重要参考", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Text("· LocalViewer — SMB/WebDAV 的重要参考", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Text("· FooIbar — Komga 客户端实现参考", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("· 感谢 FooIbar 与 zmz125000 允许暂不开源使用相关成果", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Spacer(Modifier.height(4.dp))
                             Text("感谢所有开源项目的贡献者，让这一切成为可能。", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }

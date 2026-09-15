@@ -106,7 +106,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
     }
     var sortAsc by remember { mutableStateOf(prefs.getBoolean("library_sort_asc", false)) }
     var filter by remember { mutableStateOf(FilterMode.ALL) }
-    var showSort by remember { mutableStateOf(false) }
+
     val configuration = LocalConfiguration.current
     val isTablet = configuration.smallestScreenWidthDp >= 600
     val autoCols = if (isTablet) {
@@ -122,8 +122,8 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
             else -> 3
         }
     }
-    val portraitCols = com.hippo.ehviewer.Settings.thumbColumnsPortrait.value
-    val landscapeCols = com.hippo.ehviewer.Settings.thumbColumnsLandscape.value
+    val portraitCols by com.hippo.ehviewer.Settings.thumbColumnsPortrait.valueFlow().collectAsState(initial = com.hippo.ehviewer.Settings.thumbColumnsPortrait.value)
+    val landscapeCols by com.hippo.ehviewer.Settings.thumbColumnsLandscape.valueFlow().collectAsState(initial = com.hippo.ehviewer.Settings.thumbColumnsLandscape.value)
     val resolvedCols = LayoutColumnsResolver.currentValue(configuration.orientation, portraitCols, landscapeCols)
     val gridCols = LayoutColumnsResolver.toGridCols(resolvedCols)
     val effectiveCols = if (resolvedCols in 1..8) resolvedCols else autoCols
@@ -494,29 +494,12 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
                 actions = {
                     IconButton(onClick = { isMultiSelect = true }) { Icon(Icons.Default.Edit, "编辑") }
-                    IconButton(onClick = { showSort = true }) { Icon(Icons.Default.Sort, "排序") }
                     IconButton(onClick = { showLayoutMenu = true }) { Icon(Icons.Default.GridView, "布局") }
-
-                    IconButton(onClick = {
-                        val next = !sortAsc
-                        sortAsc = next
-                        prefs.edit().putBoolean("library_sort_asc", next).apply()
-                    }) {
-                        Icon(if (sortAsc) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward, "排序方向")
-                    }
 
                     IconButton(onClick = { showSearch = !showSearch }) { Icon(if (showSearch) Icons.Filled.Close else Icons.Default.Search, "搜索") }
                     // ★ F 历史记录页入口
                     IconButton(onClick = onOpenHistory) { Icon(Icons.Default.History, "阅读历史") }
                     IconButton(onClick = onSettings) { Icon(Icons.Default.Settings, "设置") }
-                    DropdownMenu(expanded = showSort, onDismissRequest = { showSort = false }) {
-                        SortMode.entries.forEach { s -> DropdownMenuItem(text = { Text(s.label) }, onClick = {
-                            sort = s
-                            prefs.edit().putString("library_sort", s.name).apply()
-                            showSort = false
-                        },
-                            leadingIcon = { if (sort == s) Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.primary) else Spacer(Modifier.size(24.dp)) }) }
-                    }
                 }
             )
         },
@@ -672,7 +655,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
     if (showLayoutMenu) {
         val isLandscape = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
         var sliderCols by remember { mutableStateOf(if (isLandscape) landscapeCols else portraitCols) }
-        androidx.compose.material3.ModalBottomSheet(onDismissRequest = { showLayoutMenu = false }) {
+        androidx.compose.material3.ModalBottomSheet(onDismissRequest = { showLayoutMenu = false }, containerColor = MaterialTheme.colorScheme.background) {
             Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Text("布局模式", fontSize = 14.sp, fontWeight = FontWeight.Medium)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -686,6 +669,38 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                             label = { Text(label) },
                         )
                     }
+                }
+                Text("排序方式", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SortMode.entries.forEach { s ->
+                        FilterChip(
+                            selected = sort == s,
+                            onClick = {
+                                sort = s
+                                prefs.edit().putString("library_sort", s.name).apply()
+                            },
+                            label = { Text(s.label) },
+                        )
+                    }
+                }
+                Text("排序方向", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                        selected = sortAsc,
+                        onClick = {
+                            sortAsc = true
+                            prefs.edit().putBoolean("library_sort_asc", true).apply()
+                        },
+                        label = { Text("升序") },
+                    )
+                    FilterChip(
+                        selected = !sortAsc,
+                        onClick = {
+                            sortAsc = false
+                            prefs.edit().putBoolean("library_sort_asc", false).apply()
+                        },
+                        label = { Text("降序") },
+                    )
                 }
                 if (layoutMode != 3) {
                     Text("列数（0=自动）", fontSize = 14.sp, fontWeight = FontWeight.Medium)
