@@ -10,6 +10,8 @@ import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.*
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -659,15 +661,39 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
     if (showLayoutMenu) {
         val isLandscape = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
         var sliderCols by remember { mutableStateOf(if (isLandscape) landscapeCols else portraitCols) }
-        androidx.compose.material3.ModalBottomSheet(onDismissRequest = { showLayoutMenu = false }, containerColor = MaterialTheme.colorScheme.background) {
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .height((LocalConfiguration.current.screenHeightDp * 0.6f).dp)
-                    .verticalScroll(rememberScrollState())
-                    .padding(24.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+        var layoutSheetVisible by remember { mutableStateOf(false) }
+        LaunchedEffect(Unit) { layoutSheetVisible = true }
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = if (layoutSheetVisible) 0.3f else 0f))
+                .clickable(
+                    interactionSource = null,
+                    indication = null,
+                    onClick = { layoutSheetVisible = false; showLayoutMenu = false }
+                ),
+            contentAlignment = Alignment.BottomCenter,
+        ) {
+            AnimatedVisibility(
+                visible = layoutSheetVisible,
+                enter = slideInVertically(tween(300)) { it },
+                exit = slideOutVertically(tween(300)) { it }
             ) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = (LocalConfiguration.current.screenHeightDp * 0.6f).dp)
+                        .clickable(interactionSource = null, indication = null, onClick = {}),
+                    shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+                    color = MaterialTheme.colorScheme.background,
+                ) {
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState())
+                            .padding(24.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
                 Text("布局模式", fontSize = 14.sp, fontWeight = FontWeight.Medium)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf("紧凑网格", "松散网格", "仅封面", "列表").forEachIndexed { i, label ->
@@ -748,6 +774,8 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                     })
                 }
 
+                    }
+                }
             }
         }
     }
