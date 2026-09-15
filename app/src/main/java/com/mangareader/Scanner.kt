@@ -37,7 +37,7 @@ class Scanner(private val ctx: Context, private val dao: MangaDao) {
         private val scanMutex = kotlinx.coroutines.sync.Mutex()
     }
 
-    suspend fun scan(uri: Uri, onProgress: ((Int) -> Unit)? = null): Int = withContext(Dispatchers.IO) {
+    suspend fun scan(uri: Uri, onProgress: ((Int) -> Unit)? = null): Int = withContext(Dispatchers.IO + kotlinx.coroutines.NonCancellable) {
         scanMutex.withLock {
         var count = 0
         try {
@@ -419,7 +419,7 @@ class Scanner(private val ctx: Context, private val dao: MangaDao) {
     /**
      * Phase 1: 仅元数据扫描（不入库、不加载封面），极速返回 Book 列表供 UI 立即提示成功。
      */
-    suspend fun scanMetaOnly(uri: Uri, onProgress: ((Int) -> Unit)? = null): List<Book> = withContext(Dispatchers.IO) {
+    suspend fun scanMetaOnly(uri: Uri, onProgress: ((Int) -> Unit)? = null): List<Book> = withContext(Dispatchers.IO + kotlinx.coroutines.NonCancellable) {
         scanMutex.withLock {
             val books = mutableListOf<Book>()
             val treeStr = uri.toString()
@@ -477,7 +477,7 @@ class Scanner(private val ctx: Context, private val dao: MangaDao) {
     }
 
     /** Phase 1: 仅元数据扫描（不入库、不加载封面），极速返回 Book 列表供 UI 立即提示成功。 */
-    suspend fun rescanMetaOnly(f: Folder, onProgress: ((Int) -> Unit)? = null): List<Book> = withContext(Dispatchers.IO) {
+    suspend fun rescanMetaOnly(f: Folder, onProgress: ((Int) -> Unit)? = null): List<Book> = withContext(Dispatchers.IO + kotlinx.coroutines.NonCancellable) {
         scanMutex.withLock {
             val books = mutableListOf<Book>()
             val uri = Uri.parse(f.treeUri)
@@ -507,7 +507,7 @@ class Scanner(private val ctx: Context, private val dao: MangaDao) {
     /** 刷新：Phase 1 极速扫元数据 → 返回真实 (新增, 移除) 数；Phase 2 后台入库+封面。
      *  ★ 文案修正：books 是全量清单（含未变的书），原来直接把 books.size 当"新增"报——
      *  书架没变也提示"新增 N 本"。现在与库中现存路径集合对比出真实增删数。 */
-    suspend fun rescanAndCommit(f: Folder, onProgress: ((Int) -> Unit)? = null): Pair<Int, Int> = withContext(Dispatchers.IO) {
+    suspend fun rescanAndCommit(f: Folder, onProgress: ((Int) -> Unit)? = null): Pair<Int, Int> = withContext(Dispatchers.IO + kotlinx.coroutines.NonCancellable) {
         if (RescanSnapshotManager.isSnapshotActive()) return@withContext Pair(0, 0)
         val treeUri = Uri.parse(f.treeUri)
         val auth = treeUri.authority ?: ""
@@ -562,7 +562,12 @@ class Scanner(private val ctx: Context, private val dao: MangaDao) {
             // ★ C7：单 engine 复用——hasZipImages/hasZipSubDirs 共用同一 libzip 句柄，
             //   每 zip 只解析一遍中央目录（原每处各自 new engine 重复打开）
             val sharedEngine = com.mangareader.viewer.ArchiveEngine(ctx)
-            ctx.contentResolver.query(childUri, null, null, null, null)?.use { c ->
+            val projection = arrayOf(
+                DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                DocumentsContract.Document.COLUMN_MIME_TYPE
+            )
+            ctx.contentResolver.query(childUri, projection, null, null, null)?.use { c ->
                 val ni = c.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
                 val ii = c.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
                 val mi = c.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE)
@@ -652,7 +657,12 @@ class Scanner(private val ctx: Context, private val dao: MangaDao) {
         val comics = mutableListOf<Pair<String, String>>()
         val subFolders = mutableListOf<String>()
         try {
-            ctx.contentResolver.query(childUri, null, null, null, null)?.use { c ->
+            val projection = arrayOf(
+                DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                DocumentsContract.Document.COLUMN_MIME_TYPE
+            )
+            ctx.contentResolver.query(childUri, projection, null, null, null)?.use { c ->
                 val ni = c.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
                 val ii = c.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
                 val mi = c.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE)
