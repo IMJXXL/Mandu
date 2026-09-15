@@ -65,6 +65,26 @@ object SmbPasswordStore {
         prefs.edit().remove(KEY_PREFIX + sourceId).apply()
     }
 
+    fun getEncrypted(sourceId: Long): String? = prefs.getString(KEY_PREFIX + sourceId, null)
+
+    fun setEncrypted(sourceId: Long, encryptedValue: String) {
+        prefs.edit().putString(KEY_PREFIX + sourceId, encryptedValue).apply()
+    }
+
+    fun exportAllEncrypted(): Map<String, String> {
+        val result = mutableMapOf<String, String>()
+        prefs.all.forEach { (k, v) ->
+            if (k.startsWith(KEY_PREFIX) && v is String) result[k] = v
+        }
+        return result
+    }
+
+    fun importAllEncrypted(entries: Map<String, String>) {
+        val editor = prefs.edit()
+        entries.forEach { (k, v) -> editor.putString(k, v) }
+        editor.apply()
+    }
+
     private fun getOrCreateKey(): SecretKey {
         val ks = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
         (ks.getEntry(KEY_ALIAS, null) as? KeyStore.SecretKeyEntry)?.secretKey?.let { return it }

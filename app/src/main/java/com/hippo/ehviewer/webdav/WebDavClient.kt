@@ -22,6 +22,7 @@ import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.timeout
 import io.ktor.client.request.header
 import io.ktor.client.request.prepareGet
+import io.ktor.client.request.preparePut
 import io.ktor.client.request.request
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsChannel
@@ -1067,4 +1068,84 @@ object WebDavClient {
         }
         return absPath.removePrefix(rootPath).trimStart('/').let { decodeHref(it) }
     }
+
+    suspend fun uploadFile(
+        source: WebDavSourceEntity,
+        password: String,
+        relativeFilePath: String,
+        localFile: java.io.File,
+        onProgress: ((Long, Long) -> Unit)? = null,
+    ): Long = withIOContext {
+        withTransportRetry {
+            val url = absoluteUrl(source, relativeFilePath)
+            val auth = basicAuthHeader(source.username, password)
+            val totalBytes = localFile.length()
+            http().preparePut(url) {
+                timeout {
+                    connectTimeoutMillis = DL_CONNECT_MS
+                    requestTimeoutMillis = 0
+                    socketTimeoutMillis = DL_SOCKET_MS
+                }
+                auth?.let { header(HttpHeaders.Authorization, it) }
+                header(HttpHeaders.ContentLength, totalBytes.toString())
+                setBody(localFile.readBytes())
+            }.execute { response ->
+                if (response.status.value !in 200..299) {
+                    error("WebDAV PUT ${response.status.value} for $relativeFilePath")
+                }
+            }
+            onProgress?.invoke(totalBytes, totalBytes)
+            totalBytes
+        }
+    }
+
+    suspend fun mkcol(
+        source: WebDavSourceEntity,
+        password: String,
+        relativeDir: String,
+    ): Boolean = withIOContext {
+        try {
+            withTransportRetry {
+                val url = absoluteUrl(source, relativeDir)
+                val auth = basicAuthHeader(source.username, password)
+                http().request(url) {
+                    method = HttpMethod("MKCOL")
+                    auth?.let { header(HttpHeaders.Authorization, it) }
+                }.status.value in 200..299
+            }
+        } catch (_: Exception) {
+            true
+        }
+    }
+
+    suspend fun deleteFile(
+        source: WebDavSourceEntity,
+        password: String,
+        relativeFilePath: String,
+    ) = withIOContext {
+        withTransportRetry {
+            val url = absoluteUrl(source, relativeFilePath)
+            val auth = basicAuthHeader(source.username, password)
+            http().request(url) {
+                method = HttpMethod.Delete
+                auth?.let { header(HttpHeaders.Authorization, it) }
+            }
+        }
+    }
+
+    suspend fun listAllFiles(
+        source: WebDavSourceEntity,
+        password: String,
+        remoteDir: String,
+    ): List<RemoteFileEntry> = withIOContext {
+        listChildren(source, password, remoteDir).map {
+            RemoteFileEntry(it.name, it.size, it.lastModifiedMs)
+        }
+    }
 }
+
+data class RemoteFileEntry(
+    val name: String,
+    val size: Long,
+    val lastModified: Long,
+)

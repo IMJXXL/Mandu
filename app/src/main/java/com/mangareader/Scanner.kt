@@ -8,6 +8,7 @@ import android.util.Log
 import com.mangareader.data.Book
 import com.mangareader.data.Folder
 import com.mangareader.data.MangaDao
+import com.mangareader.backup.snapshot.RescanSnapshotManager
 import com.mangareader.zip.CommonsZipHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -386,6 +387,7 @@ class Scanner(private val ctx: Context, private val dao: MangaDao) {
     }
 
     suspend fun rescan(f: Folder): Int = withContext(Dispatchers.IO) {
+        if (RescanSnapshotManager.isSnapshotActive()) return@withContext 0
         scanMutex.withLock {
         var count = 0
         try {
@@ -506,6 +508,7 @@ class Scanner(private val ctx: Context, private val dao: MangaDao) {
      *  ★ 文案修正：books 是全量清单（含未变的书），原来直接把 books.size 当"新增"报——
      *  书架没变也提示"新增 N 本"。现在与库中现存路径集合对比出真实增删数。 */
     suspend fun rescanAndCommit(f: Folder, onProgress: ((Int) -> Unit)? = null): Pair<Int, Int> = withContext(Dispatchers.IO) {
+        if (RescanSnapshotManager.isSnapshotActive()) return@withContext Pair(0, 0)
         val treeUri = Uri.parse(f.treeUri)
         val auth = treeUri.authority ?: ""
         val docId = DocumentsContract.getTreeDocumentId(treeUri)
