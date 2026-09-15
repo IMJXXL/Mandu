@@ -187,6 +187,8 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
     var showToc by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     var showSrPanel by remember { mutableStateOf(false) }
+    var showRename by remember { mutableStateOf(false) }
+    var renameInput by remember { mutableStateOf("") }
     var showSrQueue by remember { mutableStateOf(false) }
     var srReadyTick by remember { mutableStateOf(0) }
     // ★ v1.13 C-2 无感切换遮罩：提交 mode 前同步 view.draw 截当前画面，盖住
@@ -1689,6 +1691,10 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
                                 book = b.copy(isFavorite = newFav)
                             }
                         }
+                    },
+                    onRenameClick = {
+                        renameInput = book?.title ?: ""
+                        showRename = true
                     }
                 )
             }
@@ -2155,6 +2161,36 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
                 TextButton(onClick = { markAsReadNow(); showComplete = false }) { Text("标记已读") }
             },
             dismissButton = { TextButton(onClick = { showComplete = false }) { Text("继续浏览") } })
+    }
+
+    if (showRename) {
+        AlertDialog(
+            onDismissRequest = { showRename = false },
+            title = { Text("重命名") },
+            text = {
+                OutlinedTextField(
+                    value = renameInput,
+                    onValueChange = { renameInput = it },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val newTitle = renameInput.trim()
+                    if (newTitle.isNotEmpty() && newTitle != book?.title) {
+                        book?.let { b ->
+                            scope.launch {
+                                withContext(Dispatchers.IO) { dao.updateBookTitle(b.id, newTitle) }
+                                book = b.copy(title = newTitle)
+                                showRename = false
+                            }
+                        }
+                    }
+                }) { Text("保存") }
+            },
+            dismissButton = { TextButton(onClick = { showRename = false }) { Text("取消") } }
+        )
     }
 
 

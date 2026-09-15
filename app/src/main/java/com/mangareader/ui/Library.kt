@@ -147,6 +147,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
     BackHandler(isMultiSelect) { isMultiSelect = false; selectedBooks = emptySet() }
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var showShelfDialog by remember { mutableStateOf(false) }
+    var showRenameBatch by remember { mutableStateOf(false) }
     var showCreateShelf by remember { mutableStateOf(false) }
     var newShelfName by remember { mutableStateOf("") }
 
@@ -350,6 +351,22 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
             confirmButton = {}, dismissButton = { TextButton(onClick = { showShelfDialog = false }) { Text("关闭") } })
     }
 
+    if (showRenameBatch) {
+        val selectedBookList = books.filter { it.id in selectedBooks }
+        RenameBatchDialog(
+            books = selectedBookList,
+            onConfirm = { updates ->
+                scope.launch {
+                    withContext(Dispatchers.IO) { dao.updateBookTitlesBatch(updates) }
+                    showRenameBatch = false
+                    isMultiSelect = false
+                    selectedBooks = emptySet()
+                }
+            },
+            onDismiss = { showRenameBatch = false }
+        )
+    }
+
     if (showCreateShelf) {
         AlertDialog(onDismissRequest = { showCreateShelf = false }, title = { Text("新建书架") },
             text = {
@@ -521,6 +538,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
             if (isMultiSelect && selectedBooks.isNotEmpty()) Surface(color = MaterialTheme.colorScheme.primaryContainer) {
                 Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
                     TextButton(onClick = { showShelfDialog = true }) { Text("添加到书架", color = MaterialTheme.colorScheme.primary) }
+                    TextButton(onClick = { showRenameBatch = true }) { Text("重命名", color = MaterialTheme.colorScheme.primary) }
                     TextButton(onClick = { showDeleteConfirm = true }) { Text("删除", color = MaterialTheme.colorScheme.error) }
                 }
             }

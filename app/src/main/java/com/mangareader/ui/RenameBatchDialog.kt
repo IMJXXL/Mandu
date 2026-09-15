@@ -1,0 +1,95 @@
+package com.mangareader.ui
+
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import com.mangareader.data.Book
+
+@Composable
+fun RenameBatchDialog(
+    books: List<Book>,
+    onConfirm: (List<Pair<Long, String>>) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var mode by remember { mutableStateOf(0) }
+    var findText by remember { mutableStateOf("") }
+    var replaceText by remember { mutableStateOf("") }
+    var prefix by remember { mutableStateOf("") }
+    var suffix by remember { mutableStateOf("") }
+    var template by remember { mutableStateOf("{序号}") }
+    var startNum by remember { mutableStateOf("1") }
+
+    val canConfirm = when (mode) {
+        0 -> findText.isNotEmpty()
+        1 -> prefix.isNotEmpty() || suffix.isNotEmpty()
+        2 -> template.contains("{序号}")
+        else -> false
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("批量重命名（已选 ${books.size} 本）") },
+        text = {
+            Column {
+                TabRow(selectedTabIndex = mode) {
+                    listOf("查找替换", "前缀后缀", "序号").forEachIndexed { i, label ->
+                        Tab(selected = mode == i, onClick = { mode = i }, text = { Text(label) })
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                when (mode) {
+                    0 -> {
+                        OutlinedTextField(findText, { findText = it }, label = { Text("查找") },
+                            singleLine = true, modifier = Modifier.fillMaxWidth())
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedTextField(replaceText, { replaceText = it }, label = { Text("替换为") },
+                            singleLine = true, modifier = Modifier.fillMaxWidth())
+                    }
+                    1 -> {
+                        OutlinedTextField(prefix, { prefix = it }, label = { Text("前缀") },
+                            singleLine = true, modifier = Modifier.fillMaxWidth())
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedTextField(suffix, { suffix = it }, label = { Text("后缀") },
+                            singleLine = true, modifier = Modifier.fillMaxWidth())
+                    }
+                    2 -> {
+                        OutlinedTextField(template, { template = it }, label = { Text("模板") },
+                            singleLine = true, modifier = Modifier.fillMaxWidth())
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedTextField(startNum, { startNum = it.filter { c -> c.isDigit() } },
+                            label = { Text("起始序号") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = canConfirm,
+                onClick = {
+                    val updates = when (mode) {
+                        0 -> books.mapNotNull { b ->
+                            if (b.title.contains(findText)) b.id to b.title.replace(findText, replaceText) else null
+                        }
+                        1 -> books.map { b -> b.id to (prefix + b.title + suffix) }
+                        2 -> {
+                            val start = startNum.toIntOrNull() ?: 1
+                            val padMatch = Regex("\\{序号:(\\d+)\\}").find(template)
+                            val padWidth = padMatch?.groupValues?.get(1)?.toIntOrNull() ?: 0
+                            val tpl = if (padMatch != null) template.replace(padMatch.value, "{序号}") else template
+                            books.mapIndexed { i, b ->
+                                val num = start + i
+                                val numStr = if (padWidth > 0) num.toString().padStart(padWidth, '0') else num.toString()
+                                b.id to tpl.replace("{序号}", numStr)
+                            }
+                        }
+                        else -> emptyList()
+                    }
+                    onConfirm(updates)
+                }
+            ) { Text("确定") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
+    )
+}

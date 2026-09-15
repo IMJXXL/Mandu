@@ -318,6 +318,14 @@ interface MangaDao {
     @Query("UPDATE manga_books SET isHidden = :hidden")
     suspend fun setHiddenAll(hidden: Boolean)
 
+    @Query("UPDATE manga_books SET title = :title WHERE id = :id")
+    suspend fun updateBookTitle(id: Long, title: String)
+
+    @Transaction
+    suspend fun updateBookTitlesBatch(updates: List<Pair<Long, String>>) {
+        updates.forEach { (id, title) -> updateBookTitle(id, title) }
+    }
+
     // ★ C8 修复：前缀由 Kotlin 侧拼好作为单参传入（旧写法右侧非常量表达式使 filePath 索引失效，
     //   rescan 高频全表扫）。前缀逐字符复刻旧拼接：a/z 带尾 '|'，d 不带。
     //   SAF authority/treeDocId 不含 %/_ 通配符，直接 LIKE 安全。
