@@ -3,6 +3,15 @@ package com.mangareader.data
 import android.content.Context
 import android.content.SharedPreferences
 
+private fun SharedPreferences.safeGetBoolean(key: String, default: Boolean): Boolean =
+    try { getBoolean(key, default) } catch (_: ClassCastException) { default }
+private fun SharedPreferences.safeGetInt(key: String, default: Int): Int =
+    try { getInt(key, default) } catch (_: ClassCastException) { default }
+private fun SharedPreferences.safeGetFloat(key: String, default: Float): Float =
+    try { getFloat(key, default) } catch (_: ClassCastException) { default }
+private fun SharedPreferences.safeGetLong(key: String, default: Long): Long =
+    try { getLong(key, default) } catch (_: ClassCastException) { default }
+
 data class ReaderConfig(
     val scrollMode: ScrollMode = ScrollMode.HORIZONTAL_LEFT,
     val clickFlipType: ClickFlipType = ClickFlipType.LEFT_RIGHT,
@@ -107,42 +116,42 @@ data class ReaderConfig(
             return ReaderConfig(
                 scrollMode = try { ScrollMode.valueOf(prefs.getString("${prefix}scrollMode", "HORIZONTAL_LEFT")!!) } catch (_: Exception) { ScrollMode.HORIZONTAL_LEFT },
                 clickFlipType = try { ClickFlipType.valueOf(prefs.getString("${prefix}clickFlipType", "LEFT_RIGHT")!!) } catch (_: Exception) { ClickFlipType.LEFT_RIGHT },
-                isFlipAnimation = prefs.getBoolean("isFlipAnimation", true),
-                isShowPageNum = prefs.getBoolean("isShowPageNum", true),
-                isKeepScreenOn = prefs.getBoolean("isKeepScreenOn", true),
-                isTrimWhiteBorder = prefs.getBoolean("${prefix}isTrimWhiteBorder", false),
-                trimFactor = prefs.getFloat("${prefix}trimFactor", 0.02f),
-                trimThreshold = prefs.getInt("${prefix}trimThreshold", 220),
-                trimWhiteRatio = prefs.getFloat("${prefix}trimWhiteRatio", 0.90f),
-                imageMarginH = prefs.getInt("${prefix}imageMarginH", 0),
+                isFlipAnimation = prefs.safeGetBoolean("isFlipAnimation", true),
+                isShowPageNum = prefs.safeGetBoolean("isShowPageNum", true),
+                isKeepScreenOn = prefs.safeGetBoolean("isKeepScreenOn", true),
+                isTrimWhiteBorder = prefs.safeGetBoolean("${prefix}isTrimWhiteBorder", false),
+                trimFactor = prefs.safeGetFloat("${prefix}trimFactor", 0.02f),
+                trimThreshold = prefs.safeGetInt("${prefix}trimThreshold", 220),
+                trimWhiteRatio = prefs.safeGetFloat("${prefix}trimWhiteRatio", 0.90f),
+                imageMarginH = prefs.safeGetInt("${prefix}imageMarginH", 0),
                 readBackground = try { ReadBackground.valueOf(prefs.getString("${prefix}readBackground", "DEFAULT")!!) } catch (_: Exception) { ReadBackground.DEFAULT },
-                isEinkMode = prefs.getBoolean("${prefix}isEinkMode", false),
-                einkDecodeSize = prefs.getInt("${prefix}einkDecodeSize", 1920),
-                einkUiHideDelay = prefs.getLong("${prefix}einkUiHideDelay", 6000L),
-                pdfQuality = prefs.getFloat("${prefix}pdfQuality", 3.0f),
-                isImmersiveMode = prefs.getBoolean("isImmersiveMode", true),
-                orientation = prefs.getInt("orientation", -1),
-                autoFlipInterval = prefs.getInt("${prefix}autoFlipInterval", 0),
-                isGrayscale = prefs.getBoolean("${prefix}isGrayscale", false),
-                isInvertColors = prefs.getBoolean("${prefix}isInvertColors", false),
-                isFlipFlashEnabled = prefs.getBoolean("${prefix}isFlipFlashEnabled", false),
-                flipFlashDuration = prefs.getInt("${prefix}flipFlashDuration", 100),
-                flipFlashInterval = prefs.getInt("${prefix}flipFlashInterval", 1),
-                flipFlashColor = prefs.getInt("${prefix}flipFlashColor", 0),
+                isEinkMode = prefs.safeGetBoolean("${prefix}isEinkMode", false),
+                einkDecodeSize = prefs.safeGetInt("${prefix}einkDecodeSize", 1920),
+                einkUiHideDelay = prefs.safeGetLong("${prefix}einkUiHideDelay", 6000L),
+                pdfQuality = prefs.safeGetFloat("${prefix}pdfQuality", 3.0f),
+                isImmersiveMode = prefs.safeGetBoolean("isImmersiveMode", true),
+                orientation = prefs.safeGetInt("orientation", -1),
+                autoFlipInterval = prefs.safeGetInt("${prefix}autoFlipInterval", 0),
+                isGrayscale = prefs.safeGetBoolean("${prefix}isGrayscale", false),
+                isInvertColors = prefs.safeGetBoolean("${prefix}isInvertColors", false),
+                isFlipFlashEnabled = prefs.safeGetBoolean("${prefix}isFlipFlashEnabled", false),
+                flipFlashDuration = prefs.safeGetInt("${prefix}flipFlashDuration", 100),
+                flipFlashInterval = prefs.safeGetInt("${prefix}flipFlashInterval", 1),
+                flipFlashColor = prefs.safeGetInt("${prefix}flipFlashColor", 0),
                 pageLayout = try { PageLayout.valueOf(prefs.getString("${prefix}pageLayout", "SINGLE")!!) } catch (_: Exception) { PageLayout.SINGLE },
-                useSSIV = prefs.getBoolean("${prefix}useSSIV", true),
-                landscapeZoom = prefs.getBoolean("landscapeZoom", false),
-                fitScreen = prefs.getBoolean("fitScreen", false),
-                panNavigation = prefs.getBoolean("${prefix}panNavigation", true),
-                doublePageShift = prefs.getInt("${prefix}doublePageShift", 0),
-                doublePageSplit = prefs.getBoolean("${prefix}doublePageSplit", false),
-                doublePageReverse = prefs.getBoolean("${prefix}doublePageReverse", false),
+                useSSIV = prefs.safeGetBoolean("${prefix}useSSIV", true),
+                landscapeZoom = prefs.safeGetBoolean("landscapeZoom", false),
+                fitScreen = prefs.safeGetBoolean("fitScreen", false),
+                panNavigation = prefs.safeGetBoolean("${prefix}panNavigation", true),
+                doublePageShift = prefs.safeGetInt("${prefix}doublePageShift", 0),
+                doublePageSplit = prefs.safeGetBoolean("${prefix}doublePageSplit", false),
+                doublePageReverse = prefs.safeGetBoolean("${prefix}doublePageReverse", false),
 
-                autoWebtoon = prefs.getBoolean("autoWebtoon", true),
-                chapterTransition = prefs.getBoolean("chapterTransition", true),
-                centerGapType = prefs.getInt("${prefix}centerGapType", 0),
-                seamlessNextVolume = prefs.getBoolean("seamlessNextVolume", false),
-                forceFullDecode = prefs.getBoolean("forceFullDecode", false)
+                autoWebtoon = prefs.safeGetBoolean("autoWebtoon", true),
+                chapterTransition = prefs.safeGetBoolean("chapterTransition", true),
+                centerGapType = prefs.safeGetInt("${prefix}centerGapType", 0),
+                seamlessNextVolume = prefs.safeGetBoolean("seamlessNextVolume", false),
+                forceFullDecode = prefs.safeGetBoolean("forceFullDecode", false)
             )
         }
     }
