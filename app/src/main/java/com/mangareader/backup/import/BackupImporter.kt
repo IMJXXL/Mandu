@@ -50,6 +50,7 @@ object BackupImporter {
                     onProgress("正在恢复阅读进度")
                     totalImported += ProgressImporter.`import`(dao, payload.progress, conflictStrategy)
                 } catch (e: Exception) {
+                    android.util.Log.e("BackupImport", "阅读进度恢复失败", e)
                     failedCategories.add("阅读进度")
                 }
             }
@@ -60,6 +61,7 @@ object BackupImporter {
                     SettingsImporter.`import`(context, payload.settings)
                     totalImported++
                 } catch (e: Exception) {
+                    android.util.Log.e("BackupImport", "阅读设置恢复失败", e)
                     failedCategories.add("阅读设置")
                 }
             }
@@ -69,6 +71,7 @@ object BackupImporter {
                     onProgress("正在恢复书架分类")
                     totalImported += ShelfImporter.`import`(dao, payload.shelf, conflictStrategy)
                 } catch (e: Exception) {
+                    android.util.Log.e("BackupImport", "书架分类恢复失败", e)
                     failedCategories.add("书架分类")
                 }
             }
@@ -78,6 +81,7 @@ object BackupImporter {
                     onProgress("正在恢复连接配置")
                     totalImported += ConnectionsImporter.`import`(context, dao, payload.connections, conflictStrategy)
                 } catch (e: Exception) {
+                    android.util.Log.e("BackupImport", "连接配置恢复失败", e)
                     failedCategories.add("连接配置")
                 }
             }

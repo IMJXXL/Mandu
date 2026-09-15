@@ -17,12 +17,14 @@ class ScheduledBackupWorker(
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
+        val isManual = inputData.getBoolean("manual", false)
         val config = ScheduledBackupConfigStore.load(applicationContext)
-        if (!config.enabled) return Result.success()
+        if (!isManual && !config.enabled) return Result.success()
 
         try {
             val treeUriStr = com.hippo.ehviewer.Settings.backupDirUri.value
             if (treeUriStr.isNullOrEmpty()) {
+                android.util.Log.e("ScheduledBackup", "backupDirUri 未设置")
                 return Result.failure()
             }
 
@@ -32,6 +34,7 @@ class ScheduledBackupWorker(
                 BackupContentSelection(),
             )
             if (exportResult is ExportResult.Failure) {
+                android.util.Log.e("ScheduledBackup", "导出失败: ${exportResult.error} - ${exportResult.message}")
                 return Result.failure()
             }
             val success = exportResult as ExportResult.Success
@@ -51,12 +54,16 @@ class ScheduledBackupWorker(
                     } finally {
                         tempFile.delete()
                     }
+                } else {
+                    android.util.Log.e("ScheduledBackup", "WebDAV source ${config.webdavSourceId} 未找到")
                 }
             }
 
             ScheduledBackupConfigStore.save(applicationContext, config.copy(lastBackupAt = System.currentTimeMillis()))
+            android.util.Log.i("ScheduledBackup", "备份成功: ${success.fileName}")
             return Result.success()
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            android.util.Log.e("ScheduledBackup", "备份异常", e)
             return Result.failure()
         }
     }

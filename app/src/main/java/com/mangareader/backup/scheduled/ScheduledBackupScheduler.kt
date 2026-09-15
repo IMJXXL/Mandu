@@ -8,6 +8,7 @@ import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
+import androidx.work.workDataOf
 import java.util.concurrent.TimeUnit
 
 object ScheduledBackupScheduler {
@@ -39,7 +40,9 @@ object ScheduledBackupScheduler {
     }
 
     fun triggerNow(context: Context) {
-        val request = OneTimeWorkRequestBuilder<ScheduledBackupWorker>().build()
+        val request = OneTimeWorkRequestBuilder<ScheduledBackupWorker>()
+            .setInputData(workDataOf("manual" to true))
+            .build()
         WorkManager.getInstance(context.applicationContext)
             .enqueueUniqueWork("${WORK_NAME}_now", ExistingWorkPolicy.REPLACE, request)
     }

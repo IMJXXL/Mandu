@@ -10,6 +10,7 @@ import com.mangareader.data.Bookmark
 object ProgressImporter {
     suspend fun `import`(dao: MangaDao, payload: ProgressPayload, strategy: ConflictStrategy): Int {
         var count = 0
+        android.util.Log.i("ProgressImport", "进度${payload.readingProgress.size}条 历史${payload.readingHistory.size}条 书签${payload.bookmarks.size}条 聚合${payload.mangaBooksAggregate.size}条")
         if (payload.readingProgress.isNotEmpty()) {
             val items = payload.readingProgress.map {
                 ReadingProgress(it.id, it.bookId, it.path, it.lastPage, it.completed, it.updatedAt, it.animDialogChoice, it.totalPages)
