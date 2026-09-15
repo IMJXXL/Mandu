@@ -21,9 +21,11 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -129,6 +131,8 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
     val effectiveCols = if (resolvedCols in 1..8) resolvedCols else autoCols
     var layoutMode by remember { mutableStateOf(prefs.getInt("layout_mode", 0)) }
     var showLayoutMenu by remember { mutableStateOf(false) }
+    var hideAllBadges by remember { mutableStateOf(prefs.getBoolean("hide_all_badges", false)) }
+    var hideAllTitles by remember { mutableStateOf(prefs.getBoolean("hide_all_titles", false)) }
     var searchQuery by remember { mutableStateOf("") }
     var debouncedQuery by remember { mutableStateOf("") }
 
@@ -626,7 +630,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                             val onTap = remember(b.id, isMultiSelect) { { if (isMultiSelect) { selectedBooks = if (b.id in selectedBooks) selectedBooks - b.id else selectedBooks + b.id } else openBookThrottled(b.id, null) } }
                             val onLongClick = remember(b.id) { { showBookInfo = b } }
                             val onDelete = remember(b.id) { { deleteTarget = b } }
-                            BookListRow(b, engine, isMultiSelect, b.id in selectedBooks, thumbDecodePx,
+                            BookListRow(b, engine, isMultiSelect, b.id in selectedBooks, thumbDecodePx, hideAllBadges,
                                 onToggleSelect = onToggleSelect,
                                 onTap = onTap,
                                 onLongClick = onLongClick,
@@ -641,7 +645,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                             val onTap = remember(b.id, isMultiSelect) { { if (isMultiSelect) { selectedBooks = if (b.id in selectedBooks) selectedBooks - b.id else selectedBooks + b.id } else openBookThrottled(b.id, null) } }
                             val onLongClick = remember(b.id) { { showBookInfo = b } }
                             val onDelete = remember(b.id) { { deleteTarget = b } }
-                            BookCard(b, engine, isMultiSelect, b.id in selectedBooks, thumbDecodePx, layoutMode,
+                            BookCard(b, engine, isMultiSelect, b.id in selectedBooks, thumbDecodePx, layoutMode, hideAllBadges, hideAllTitles,
                                 onToggleSelect = onToggleSelect,
                                 onTap = onTap,
                                 onLongClick = onLongClick,
@@ -655,10 +659,15 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
     if (showLayoutMenu) {
         val isLandscape = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
         var sliderCols by remember { mutableStateOf(if (isLandscape) landscapeCols else portraitCols) }
-        var hideAllBadges by remember { mutableStateOf(prefs.getBoolean("hide_all_badges", false)) }
-        var hideAllTitles by remember { mutableStateOf(prefs.getBoolean("hide_all_titles", false)) }
         androidx.compose.material3.ModalBottomSheet(onDismissRequest = { showLayoutMenu = false }, containerColor = MaterialTheme.colorScheme.background) {
-            Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .height((LocalConfiguration.current.screenHeightDp * 0.6f).dp)
+                    .verticalScroll(rememberScrollState())
+                    .padding(24.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
                 Text("布局模式", fontSize = 14.sp, fontWeight = FontWeight.Medium)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf("紧凑网格", "松散网格", "仅封面", "列表").forEachIndexed { i, label ->
@@ -793,11 +802,8 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun BookCard(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, isSelected: Boolean, decodePx: Int, layoutMode: Int, onToggleSelect: () -> Unit, onTap: () -> Unit, onLongClick: () -> Unit, onDelete: () -> Unit) {
+private fun BookCard(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, isSelected: Boolean, decodePx: Int, layoutMode: Int, hideAllBadges: Boolean, hideAllTitles: Boolean, onToggleSelect: () -> Unit, onTap: () -> Unit, onLongClick: () -> Unit, onDelete: () -> Unit) {
     val ctx = LocalContext.current
-    val prefs = remember { ctx.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE) }
-    val hideAllBadges = prefs.getBoolean("hide_all_badges", false)
-    val hideAllTitles = prefs.getBoolean("hide_all_titles", false)
     // ★ LV119 对齐参考项目：直接用 coverPath (cv:...) 作为 Coil3 model，
     //   CoverFetcher 返回原始字节 → Coil3 decoders 自动识别动图（GIF/WebP/APNG）
     val progress = if (b.totalPages > 0) b.readPages.toFloat() / b.totalPages else 0f
@@ -912,10 +918,8 @@ private fun BookCard(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, isS
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun BookListRow(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, isSelected: Boolean, decodePx: Int, onToggleSelect: () -> Unit, onTap: () -> Unit, onLongClick: () -> Unit, onDelete: () -> Unit) {
+private fun BookListRow(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, isSelected: Boolean, decodePx: Int, hideAllBadges: Boolean, onToggleSelect: () -> Unit, onTap: () -> Unit, onLongClick: () -> Unit, onDelete: () -> Unit) {
     val ctx = LocalContext.current
-    val prefs = remember { ctx.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE) }
-    val hideAllBadges = prefs.getBoolean("hide_all_badges", false)
     val progress = if (b.totalPages > 0) b.readPages.toFloat() / b.totalPages else 0f
     val isFinished = b.totalPages > 0 && b.readPages >= b.totalPages
     val isReading = !isFinished && (b.readPages > 0 || (b.lastReadAt != null && b.lastReadAt > 0))
@@ -972,7 +976,31 @@ private fun BookListRow(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, 
                     if (b.source == "smb" || b.source == "webdav" || b.source == "komga") {
                         Text(text = b.source.uppercase(), fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    if (b.totalPages > 0) Text(text = "${b.readPages}/${b.totalPages}", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(text = fileExt.uppercase(), fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                if (progress > 0f && b.totalPages > 0) {
+                    Spacer(Modifier.height(6.dp))
+                    LinearProgressIndicator(
+                        progress = { progress },
+                        modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
+                        trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                    )
+                }
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(horizontalAlignment = Alignment.End) {
+                if (b.totalPages > 0) {
+                    Text(text = "${b.readPages}/${b.totalPages}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                if (progress > 0f) {
+                    Text(text = "${(progress * 100).toInt()}%", fontSize = 10.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
+                }
+                b.lastReadAt?.takeIf { it > 0 }?.let {
+                    Text(
+                        text = java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.getDefault()).format(java.util.Date(it)),
+                        fontSize = 10.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
         }
