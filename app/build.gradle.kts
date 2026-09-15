@@ -6,6 +6,7 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
     id("org.jetbrains.kotlin.plugin.serialization")
     id("com.google.devtools.ksp")
+    id("androidx.baselineprofile")
 }
 
 android {
@@ -101,7 +102,12 @@ versionName = "1.3"
     }
 }
 
+baselineProfile {
+    mergeIntoMain = true
+}
+
 dependencies {
+    baselineProfile(project(":baseline-profile"))
     val composeBom = platform("androidx.compose:compose-bom:2024.10.00")
     implementation(composeBom)
 

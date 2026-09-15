@@ -16,6 +16,7 @@ dependencyResolutionManagement {
 
 rootProject.name = "MangaReader"
 include(":app")
+include(":baseline-profile")
 // ★ §24 P1：APNG4Android 4 个 module（source include 到 app/lib/apng4android/<m>/）
 //   恢复本地动图 v1.2 方案（用户 2026-09-05 裁定 APNG 引擎更好；仅本地路径使用）
 include(":frameanimation")
