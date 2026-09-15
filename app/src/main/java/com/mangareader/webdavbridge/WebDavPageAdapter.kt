@@ -129,7 +129,11 @@ class WebDavPageAdapter(
         var sample = 1
         val maxEdge = maxOf(bounds.outWidth, bounds.outHeight)
         val screenMax = readerView?.resources?.displayMetrics?.let { maxOf(it.widthPixels, it.heightPixels) } ?: 2560
-        while (maxEdge / (sample * 2) >= screenMax * 2) sample *= 2
+        val prefs = readerView?.context?.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE)
+        val forceFull = prefs?.getBoolean("forceFullDecode", false) == true && prefs.getBoolean("isEinkMode", false) == false
+        if (!forceFull) {
+            while (maxEdge / (sample * 2) >= screenMax * 2) sample *= 2
+        }
         opts.inSampleSize = sample
         return BitmapFactory.decodeByteArray(raw, 0, raw.size, opts)
     }

@@ -574,6 +574,40 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
         }
     }
 
+    suspend fun enterKomgaReader(
+        b: com.mangareader.data.Book,
+        path: String,
+        targetPage: Int,
+    ): List<com.mangareader.viewer.ArchiveEngine.PageMeta> {
+        loading = true
+        smbUnsupportedInfo = null
+        try {
+            val saved = withContext(Dispatchers.IO) {
+                runCatching { dao.getProgress(b.id, path) }.getOrNull()
+            }
+            val resumePage = if (targetPage >= 0) targetPage else (saved?.lastPage ?: 0)
+            when (val r = com.mangareader.komgabridge.reader.KomgaBookRouter.openKomgaBook(path, resumePage)) {
+                is com.mangareader.komgabridge.reader.KomgaBookRouter.OpenResult.Supported ->
+                    return attachRemoteSession(r.supply, saved, targetPage)
+                is com.mangareader.komgabridge.reader.KomgaBookRouter.OpenResult.Unsupported -> {
+                    android.widget.Toast.makeText(ctx, "该 EPUB 为文字电子书，不支持图片阅读", android.widget.Toast.LENGTH_SHORT).show()
+                    viewing = false; loading = false; back()
+                    return emptyList()
+                }
+                is com.mangareader.komgabridge.reader.KomgaBookRouter.OpenResult.Failed -> {
+                    android.widget.Toast.makeText(ctx, r.message, android.widget.Toast.LENGTH_SHORT).show()
+                    viewing = false; loading = false; return emptyList()
+                }
+            }
+        } catch (t: Throwable) {
+            android.util.Log.w("Reader", "enterKomgaReader failed", t)
+            android.widget.Toast.makeText(ctx, "打开失败：${t.message?.take(80)}", android.widget.Toast.LENGTH_SHORT).show()
+            viewing = false
+            loading = false
+            return emptyList()
+        }
+    }
+
     /**
      * ★ 本地文件系统路径的归档阅读入口（下载到本地缓存的 mobi/azw3/rar/7z 等）。
      * ArchiveEngine.listPages 只支持 SAF 路径，文件系统路径走 useArchivePageLoader +
@@ -697,6 +731,8 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
             return if (path.startsWith("smb:")) enterRemoteReader(b, path, targetPage, isSmb = true)
                    else enterRemoteReader(b, path, targetPage, isSmb = false)
         }
+
+        if (path.startsWith("komga:")) return enterKomgaReader(b, path, targetPage)
 
         // ★ 修复：文件系统路径（下载到本地缓存的归档）走 useArchivePageLoader，
         //   ArchiveEngine.listPages 只支持 SAF 路径（a:/d: 前缀），文件系统路径会返回空。
@@ -1636,8 +1672,10 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
                     val name = p.name.ifEmpty { p.ext.substringAfterLast("/").substringBeforeLast(".") }
                     "${cur + 1}/${displayPages.size}  $name"
                 } else ""
+                val hideAllTitlesPrefs = ctx.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE)
+                val hideAllTitles = hideAllTitlesPrefs.getBoolean("hide_all_titles", false)
                 ReaderTopBar(
-                    title = book?.title ?: "",
+                    title = if (hideAllTitles) "" else (book?.title ?: ""),
                     subtitle = pageSubtitle,
                     viewing = viewing,
                     bgColor = bgColor,

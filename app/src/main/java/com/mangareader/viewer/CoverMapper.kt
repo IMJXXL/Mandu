@@ -77,6 +77,48 @@ class CoverFetcher(
             )
         }
 
+        if (coverPath.startsWith("cv:komga:")) {
+            android.util.Log.i("CoverFetch", "komga cover request: $coverPath")
+            val raw = withContext(Dispatchers.IO) {
+                try {
+                    val body = coverPath.removePrefix("cv:komga:")
+                    val serverId = body.substringBefore(':', "")
+                    val bookId = body.substringAfter(':', "")
+                    if (serverId.isEmpty() || bookId.isEmpty()) {
+                        android.util.Log.w("CoverFetch", "komga cover parse failed: serverId=$serverId bookId=$bookId")
+                        return@withContext null
+                    }
+                    val store = com.mangareader.komgabridge.data.KomgaConnectionStore(com.mangareader.komgabridge.KomgaBridges.context)
+                    val conn = store.getConnection(serverId)
+                    if (conn == null) {
+                        android.util.Log.w("CoverFetch", "komga connection not found: $serverId")
+                        return@withContext null
+                    }
+                    val client = com.mangareader.komgabridge.api.KomgaHttpClient.client(conn.allowSelfSignedCert)
+                    val api = com.mangareader.komgabridge.api.KomgaApiClient(conn, client)
+                    val thumbUrl = api.bookThumbnailUrl(bookId)
+                    android.util.Log.i("CoverFetch", "komga thumb url: $thumbUrl")
+                    val bytes = api.downloadBytes(thumbUrl)
+                    client.close()
+                    val hex = bytes.takeIf { it.isNotEmpty() }?.let { "%02X%02X".format(it[0], it[1]) } ?: "empty"
+                    android.util.Log.i("CoverFetch", "komga cover OK size=${bytes.size} hex=$hex path=$coverPath")
+                    Pair(bytes, "image/jpeg")
+                } catch (e: Exception) {
+                    android.util.Log.w("CoverFetch", "komga cover err: ${e.javaClass.simpleName}: ${e.message}")
+                    null
+                }
+            } ?: throw RuntimeException("Komga cover load failed: $coverPath")
+            val (bytes, mime) = raw
+            return SourceFetchResult(
+                source = ImageSource(
+                    source = Buffer().write(bytes),
+                    fileSystem = options.fileSystem,
+                ),
+                mimeType = mime,
+                dataSource = DataSource.MEMORY,
+            )
+        }
+
 
         // ★ LV119 对齐：先尝试返回原始字节流，让 Coil3 decoders 自动识别动图（GIF/WebP/APNG）
         val raw = withContext(Dispatchers.IO) {

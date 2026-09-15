@@ -270,6 +270,12 @@ interface MangaDao {
     @Query("DELETE FROM manga_books WHERE (source = 'smb' AND filePath LIKE 'smb:' || :serverId || ':%') OR (source = 'local' AND originalPath LIKE 'smb:' || :serverId || ':%')")
     suspend fun deleteSmbBooks(serverId: Long)
 
+    @Query("DELETE FROM manga_books WHERE source = 'komga' AND filePath LIKE 'komga:' || :serverId || ':%'")
+    suspend fun deleteKomgaBooks(serverId: String)
+
+    @Query("SELECT * FROM manga_books WHERE source = 'komga' AND filePath = :filePath LIMIT 1")
+    suspend fun getKomgaBookByPath(filePath: String): Book?
+
     /** ★ SMB 书源整源隐藏/显示（对齐本地文件夹的隐藏机制；含已下载到本地的书） */
     @Query("UPDATE manga_books SET isHidden = :hidden WHERE (source = 'smb' AND filePath LIKE 'smb:' || :serverId || ':%') OR (source = 'local' AND originalPath LIKE 'smb:' || :serverId || ':%')")
     suspend fun setSmbBooksHidden(serverId: Long, hidden: Boolean)
@@ -883,7 +889,161 @@ interface MangaDao {
         }
         return DedupResult(outcomes, migratedProgress, migratedHistory, migratedShelf, migratedTags, migratedBookmarks)
     }
+
+    @Query("SELECT * FROM reading_progress")
+    suspend fun exportAllProgress(): List<ReadingProgress>
+
+    @Query("SELECT * FROM reading_history")
+    suspend fun exportAllHistory(): List<ReadingHistory>
+
+    @Query("SELECT * FROM bookmarks")
+    suspend fun exportAllBookmarks(): List<Bookmark>
+
+    @Query("SELECT id, readPages, lastReadAt FROM manga_books")
+    suspend fun exportAllBooksAggregate(): List<BookAggregateRow>
+
+    @Query("SELECT id, isFavorite, isHidden FROM manga_books")
+    suspend fun exportAllBooksShelfFlags(): List<BookShelfFlagsRow>
+
+    @Query("SELECT * FROM bookshelves")
+    suspend fun exportAllBookshelves(): List<Bookshelf>
+
+    @Query("SELECT * FROM bookshelf_items")
+    suspend fun exportAllBookshelfItems(): List<BookshelfItem>
+
+    @Query("SELECT * FROM tags")
+    suspend fun exportAllTags(): List<Tag>
+
+    @Query("SELECT * FROM tag_links")
+    suspend fun exportAllTagLinks(): List<TagLink>
+
+    @Query("SELECT * FROM imported_folders")
+    suspend fun exportAllImportedFolders(): List<Folder>
+
+    @Query("SELECT * FROM SMB_SOURCES")
+    suspend fun exportAllSmbSources(): List<com.ehviewer.core.database.model.SmbSourceEntity>
+
+    @Query("SELECT * FROM WEBDAV_SOURCES")
+    suspend fun exportAllWebDavSources(): List<com.ehviewer.core.database.model.WebDavSourceEntity>
+
+    @Query("SELECT * FROM LIBRARY_ROOTS")
+    suspend fun exportAllLibraryRoots(): List<com.ehviewer.core.database.model.LibraryRootEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertProgressReplace(items: List<ReadingProgress>)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertProgressIgnore(items: List<ReadingProgress>)
+
+    @Query("DELETE FROM reading_progress")
+    suspend fun clearAllProgress()
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertHistoryReplace(items: List<ReadingHistory>)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertHistoryIgnore(items: List<ReadingHistory>)
+
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertBookmarksReplace(items: List<Bookmark>)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertBookmarksIgnore(items: List<Bookmark>)
+
+    @Query("DELETE FROM bookmarks")
+    suspend fun clearAllBookmarks()
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertBookshelvesReplace(items: List<Bookshelf>)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertBookshelvesIgnore(items: List<Bookshelf>)
+
+    @Query("DELETE FROM bookshelves")
+    suspend fun clearAllBookshelves()
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertBookshelfItemsReplace(items: List<BookshelfItem>)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertBookshelfItemsIgnore(items: List<BookshelfItem>)
+
+    @Query("DELETE FROM bookshelf_items")
+    suspend fun clearAllBookshelfItems()
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertTagsReplace(items: List<Tag>)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertTagsIgnore(items: List<Tag>)
+
+    @Query("DELETE FROM tags")
+    suspend fun clearAllTags()
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertTagLinksReplace(items: List<TagLink>)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertTagLinksIgnore(items: List<TagLink>)
+
+    @Query("DELETE FROM tag_links")
+    suspend fun clearAllTagLinks()
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertSmbSourcesReplace(items: List<com.ehviewer.core.database.model.SmbSourceEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertSmbSourcesIgnore(items: List<com.ehviewer.core.database.model.SmbSourceEntity>)
+
+    @Query("DELETE FROM SMB_SOURCES")
+    suspend fun clearAllSmbSources()
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertWebDavSourcesReplace(items: List<com.ehviewer.core.database.model.WebDavSourceEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertWebDavSourcesIgnore(items: List<com.ehviewer.core.database.model.WebDavSourceEntity>)
+
+    @Query("DELETE FROM WEBDAV_SOURCES")
+    suspend fun clearAllWebDavSources()
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertLibraryRootsReplace(items: List<com.ehviewer.core.database.model.LibraryRootEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertLibraryRootsIgnore(items: List<com.ehviewer.core.database.model.LibraryRootEntity>)
+
+    @Query("DELETE FROM LIBRARY_ROOTS")
+    suspend fun clearAllLibraryRoots()
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertImportedFoldersReplace(items: List<Folder>)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertImportedFoldersIgnore(items: List<Folder>)
+
+    @Query("DELETE FROM imported_folders")
+    suspend fun clearAllImportedFolders()
+
+    @Query("UPDATE manga_books SET readPages = :readPages, lastReadAt = :lastReadAt WHERE id = :id")
+    suspend fun updateBookAggregate(id: Long, readPages: Int, lastReadAt: Long?)
+
+    @Query("UPDATE manga_books SET isFavorite = :isFavorite, isHidden = :isHidden WHERE id = :id")
+    suspend fun updateBookShelfFlags(id: Long, isFavorite: Boolean, isHidden: Boolean)
 }
+
+data class BookAggregateRow(
+    val id: Long,
+    val readPages: Int,
+    val lastReadAt: Long?,
+)
+
+data class BookShelfFlagsRow(
+    val id: Long,
+    val isFavorite: Boolean,
+    val isHidden: Boolean,
+)
 
 /** ★ 书库去重结果（日志 + prefs/SR 队列迁移用） */
 data class DedupOutcome(
@@ -932,9 +1092,60 @@ data class DownloadTaskEntity(
     val createdAt: Long = System.currentTimeMillis(),
 )
 
+@Entity(
+    tableName = "komga_series_cache",
+    indices = [Index(value = ["serverId", "seriesId"], unique = true)]
+)
+data class KomgaSeriesCacheEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val serverId: String,
+    val seriesId: String,
+    val libraryId: String = "",
+    val title: String = "",
+    val summary: String = "",
+    val authors: String = "",
+    val status: String = "",
+    val tags: String = "",
+    val genres: String = "",
+    val readingDirection: String = "",
+    val coverUrl: String = "",
+    val cachedAt: Long = System.currentTimeMillis(),
+)
+
+@Entity(
+    tableName = "komga_book_memo",
+    indices = [Index(value = ["serverId", "bookId"], unique = true)]
+)
+data class KomgaBookMemoEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val serverId: String,
+    val bookId: String,
+    val seriesId: String = "",
+    val title: String = "",
+    val number: Int = 0,
+    val pageCount: Int = 0,
+    val summary: String = "",
+    val mediaType: String = "",
+    val mediaProfile: String = "",
+    val cachedAt: Long = System.currentTimeMillis(),
+)
+
+@Entity(
+    tableName = "komga_progress_sync_queue",
+    indices = [Index(value = ["serverId", "bookId"])]
+)
+data class KomgaProgressSyncQueueEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val serverId: String,
+    val bookId: String,
+    val page: Int = 0,
+    val completed: Boolean = false,
+    val createdAt: Long = System.currentTimeMillis(),
+)
+
 @Database(
-    entities = [Book::class, Folder::class, ReadingHistory::class, Bookshelf::class, BookshelfItem::class, Tag::class, TagLink::class, ReadingProgress::class, Bookmark::class, com.ehviewer.core.database.model.SmbSourceEntity::class, com.ehviewer.core.database.model.LibraryRootEntity::class, com.ehviewer.core.database.model.LocalGalleryEntity::class, com.ehviewer.core.database.model.WebDavSourceEntity::class, DownloadTaskEntity::class],
-    version = 16,
+    entities = [Book::class, Folder::class, ReadingHistory::class, Bookshelf::class, BookshelfItem::class, Tag::class, TagLink::class, ReadingProgress::class, Bookmark::class, com.ehviewer.core.database.model.SmbSourceEntity::class, com.ehviewer.core.database.model.LibraryRootEntity::class, com.ehviewer.core.database.model.LocalGalleryEntity::class, com.ehviewer.core.database.model.WebDavSourceEntity::class, DownloadTaskEntity::class, KomgaSeriesCacheEntity::class, KomgaBookMemoEntity::class, KomgaProgressSyncQueueEntity::class],
+    version = 17,
     exportSchema = false
 )
 abstract class MangaDatabase : com.ehviewer.core.database.LocalLibraryDatabase() {
@@ -1134,13 +1345,63 @@ abstract class MangaDatabase : com.ehviewer.core.database.LocalLibraryDatabase()
             }
         }
 
+        private val MIGRATION_16_17 = object : androidx.room.migration.Migration(16, 17) {
+            override fun migrate(database: androidx.sqlite.db.SupportSQLiteDatabase) {
+                database.execSQL("""
+                    CREATE TABLE IF NOT EXISTS komga_series_cache (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        serverId TEXT NOT NULL,
+                        seriesId TEXT NOT NULL,
+                        libraryId TEXT NOT NULL DEFAULT '',
+                        title TEXT NOT NULL DEFAULT '',
+                        summary TEXT NOT NULL DEFAULT '',
+                        authors TEXT NOT NULL DEFAULT '',
+                        status TEXT NOT NULL DEFAULT '',
+                        tags TEXT NOT NULL DEFAULT '',
+                        genres TEXT NOT NULL DEFAULT '',
+                        readingDirection TEXT NOT NULL DEFAULT '',
+                        coverUrl TEXT NOT NULL DEFAULT '',
+                        cachedAt INTEGER NOT NULL DEFAULT 0
+                    )
+                """.trimIndent())
+                database.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_komga_series_cache_serverId_seriesId ON komga_series_cache(serverId, seriesId)")
+                database.execSQL("""
+                    CREATE TABLE IF NOT EXISTS komga_book_memo (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        serverId TEXT NOT NULL,
+                        bookId TEXT NOT NULL,
+                        seriesId TEXT NOT NULL DEFAULT '',
+                        title TEXT NOT NULL DEFAULT '',
+                        number INTEGER NOT NULL DEFAULT 0,
+                        pageCount INTEGER NOT NULL DEFAULT 0,
+                        summary TEXT NOT NULL DEFAULT '',
+                        mediaType TEXT NOT NULL DEFAULT '',
+                        mediaProfile TEXT NOT NULL DEFAULT '',
+                        cachedAt INTEGER NOT NULL DEFAULT 0
+                    )
+                """.trimIndent())
+                database.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_komga_book_memo_serverId_bookId ON komga_book_memo(serverId, bookId)")
+                database.execSQL("""
+                    CREATE TABLE IF NOT EXISTS komga_progress_sync_queue (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        serverId TEXT NOT NULL,
+                        bookId TEXT NOT NULL,
+                        page INTEGER NOT NULL DEFAULT 0,
+                        completed INTEGER NOT NULL DEFAULT 0,
+                        createdAt INTEGER NOT NULL DEFAULT 0
+                    )
+                """.trimIndent())
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_komga_progress_sync_queue_serverId_bookId ON komga_progress_sync_queue(serverId, bookId)")
+            }
+        }
+
         fun getDatabase(context: Context): MangaDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
                     context.applicationContext,
                     MangaDatabase::class.java,
                     "manga_reader_db"
-                ).addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16)
+                ).addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17)
                 .fallbackToDestructiveMigrationOnDowngrade()
                 .build()
                 INSTANCE = instance

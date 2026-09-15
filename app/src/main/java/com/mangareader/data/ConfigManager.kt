@@ -45,6 +45,7 @@ class ConfigManager(private val context: Context) {
             put("autoWebtoon", config.autoWebtoon)
             put("chapterTransition", config.chapterTransition)
             put("centerGapType", config.centerGapType)
+            put("forceFullDecode", config.forceFullDecode)
         }
         prefs.edit().putString("config_$name", json.toString()).apply()
     }
@@ -87,7 +88,8 @@ class ConfigManager(private val context: Context) {
                 doublePageReverse = json.optBoolean("doublePageReverse", false),
                 autoWebtoon = json.optBoolean("autoWebtoon", true),
                 chapterTransition = json.optBoolean("chapterTransition", true),
-                centerGapType = json.optInt("centerGapType", 0)
+                centerGapType = json.optInt("centerGapType", 0),
+                forceFullDecode = json.optBoolean("forceFullDecode", false)
             )
         } catch (_: Exception) { null }
     }

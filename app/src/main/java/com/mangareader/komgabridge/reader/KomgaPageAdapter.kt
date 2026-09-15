@@ -1,0 +1,61 @@
+package com.mangareader.komgabridge.reader
+
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.util.Log
+import com.mangareader.komgabridge.KomgaConstants
+import com.mangareader.komgabridge.api.KomgaApiClient
+import com.mangareader.komgabridge.api.model.PageDto
+import com.mangareader.native.RemotePageSupply
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.util.concurrent.CopyOnWriteArrayList
+
+class KomgaPageAdapter(
+    private val pages: List<PageDto>,
+    private val apiClient: KomgaApiClient,
+    private val komgaBookId: String,
+    private val isPdf: Boolean = false,
+    private val progressWriter: KomgaProgressWriter? = null,
+) : RemotePageSupply {
+
+    override val pageCount: Int = pages.size
+
+    override val onPageCountGrow: MutableList<(Int) -> Unit> = CopyOnWriteArrayList()
+
+    override suspend fun loadPageRaw(index: Int): ByteArray? = withContext(Dispatchers.IO) {
+        try {
+            val pageNumber = index + 1
+            val bytes = apiClient.downloadBytes(apiClient.pageImageUrl(komgaBookId, pageNumber, isPdf))
+            progressWriter?.onPageChanged(index)
+            bytes
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (t: Throwable) {
+            Log.w(KomgaConstants.LOG_TAG, "loadPageRaw($index) failed: ${t.message}")
+            null
+        }
+    }
+
+    override suspend fun loadBitmap(index: Int): Bitmap? = withContext(Dispatchers.IO) {
+        val raw = loadPageRaw(index) ?: return@withContext null
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(raw, 0, raw.size, bounds)
+        val opts = BitmapFactory.Options()
+        var sample = 1
+        val prefs = com.mangareader.komgabridge.KomgaBridges.context.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE)
+        val forceFull = prefs.getBoolean("forceFullDecode", false) && !prefs.getBoolean("isEinkMode", false)
+        if (!forceFull) {
+            val maxEdge = maxOf(bounds.outWidth, bounds.outHeight)
+            while (maxEdge / (sample * 2) >= 2560 * 2) sample *= 2
+        }
+        opts.inSampleSize = sample
+        BitmapFactory.decodeByteArray(raw, 0, raw.size, opts)
+    }
+
+    override fun onFocus(index: Int) {}
+
+    override suspend fun close() {
+        progressWriter?.flush()
+    }
+}

@@ -54,7 +54,7 @@ fun ShelfManageScreen(onBack: () -> Unit) {
                 title = { Text("书架管理") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") } },
                 actions = {
-                    TextButton(onClick = { showCreateShelf = true }) { Text("+ 新建", color = MaterialTheme.colorScheme.primary) }
+                    IconButton(onClick = { showCreateShelf = true }) { Icon(Icons.Default.Add, "新建书架") }
                 }
             )
         }

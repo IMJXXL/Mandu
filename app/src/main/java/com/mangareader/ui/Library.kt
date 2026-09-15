@@ -674,6 +674,9 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
 @Composable
 private fun BookCard(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, isSelected: Boolean, decodePx: Int, onToggleSelect: () -> Unit, onTap: () -> Unit, onLongClick: () -> Unit, onDelete: () -> Unit) {
     val ctx = LocalContext.current
+    val prefs = remember { ctx.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE) }
+    val hideAllBadges = prefs.getBoolean("hide_all_badges", false)
+    val hideAllTitles = prefs.getBoolean("hide_all_titles", false)
     // ★ LV119 对齐参考项目：直接用 coverPath (cv:...) 作为 Coil3 model，
     //   CoverFetcher 返回原始字节 → Coil3 decoders 自动识别动图（GIF/WebP/APNG）
     val progress = if (b.totalPages > 0) b.readPages.toFloat() / b.totalPages else 0f
@@ -687,7 +690,7 @@ private fun BookCard(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, isS
 
     Surface(
         modifier = Modifier.combinedClickable(onClick = onTap, onLongClick = onLongClick),
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(8.dp),
         color = Color.Transparent,
     ) {
         Column {
@@ -695,7 +698,7 @@ private fun BookCard(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, isS
         val fileExt = b.fileType.lowercase()
         val isRemoteUnsupported = (b.source == "smb" || b.source == "webdav") && b.originalPath == null && fileExt in setOf("mobi", "azw3")
 
-        Box(Modifier.fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)).background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
+        Box(Modifier.fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
             when {
                 isRemoteUnsupported -> {
                     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
@@ -705,6 +708,7 @@ private fun BookCard(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, isS
                     }
                 }
                 b.coverPath != null -> {
+                    if (b.source == "komga") android.util.Log.i("CoverFetch", "BookCard komga coverPath=${b.coverPath} title=${b.title}")
                     val coverRequest = remember(b.coverPath, decodePx) {
                         coil3.request.ImageRequest.Builder(ctx)
                             .data(com.mangareader.viewer.CoverData(b.coverPath))
@@ -725,36 +729,40 @@ private fun BookCard(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, isS
                 }
             }
             Box(Modifier.fillMaxWidth().height(36.dp).align(Alignment.BottomCenter).background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.5f)))))
-            Surface(Modifier.align(Alignment.TopEnd).padding(4.dp), RoundedCornerShape(6.dp), color = status.second.copy(alpha = 0.9f)) {
-                Text(text = status.first, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp), fontSize = 10.sp, color = Color.White)
+            if (!hideAllBadges) {
+                Surface(Modifier.align(Alignment.TopEnd).padding(4.dp), RoundedCornerShape(6.dp), color = status.second.copy(alpha = 0.9f)) {
+                    Text(text = status.first, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp), fontSize = 10.sp, color = Color.White)
+                }
             }
             // ★ 来源角标（任务A）：远程书显示来源，已下载书显示"已下载"来源
-            if (b.source == "smb" || b.source == "webdav") {
-                Surface(
-                    Modifier.align(Alignment.TopStart).padding(4.dp),
-                    RoundedCornerShape(6.dp),
-                    color = if (b.source == "smb") Color(0xCC4A7BD4) else Color(0xCC8A5CD4),
-                ) {
-                    Text(
-                        text = if (b.source == "smb") "SMB" else "WebDAV",
-                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
-                        fontSize = 9.sp,
-                        color = Color.White,
-                    )
-                }
-            } else if (b.originalPath != null) {
-                val isFromSmb = b.originalPath!!.startsWith("smb:")
-                Surface(
-                    Modifier.align(Alignment.TopStart).padding(4.dp),
-                    RoundedCornerShape(6.dp),
-                    color = if (isFromSmb) Color(0xCC4A7BD4) else Color(0xCC8A5CD4),
-                ) {
-                    Text(
-                        text = if (isFromSmb) "SMB↓" else "WebDAV↓",
-                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
-                        fontSize = 9.sp,
-                        color = Color.White,
-                    )
+            if (!hideAllBadges) {
+                if (b.source == "smb" || b.source == "webdav" || b.source == "komga") {
+                    Surface(
+                        Modifier.align(Alignment.TopStart).padding(4.dp),
+                        RoundedCornerShape(6.dp),
+                        color = if (b.source == "smb") Color(0xCC4A7BD4) else if (b.source == "webdav") Color(0xCC8A5CD4) else Color(0xCC5CB85C),
+                    ) {
+                        Text(
+                            text = if (b.source == "smb") "SMB" else if (b.source == "webdav") "WebDAV" else "Komga",
+                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                            fontSize = 9.sp,
+                            color = Color.White,
+                        )
+                    }
+                } else if (b.originalPath != null) {
+                    val isFromSmb = b.originalPath!!.startsWith("smb:")
+                    Surface(
+                        Modifier.align(Alignment.TopStart).padding(4.dp),
+                        RoundedCornerShape(6.dp),
+                        color = if (isFromSmb) Color(0xCC4A7BD4) else Color(0xCC8A5CD4),
+                    ) {
+                        Text(
+                            text = if (isFromSmb) "SMB↓" else "WebDAV↓",
+                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                            fontSize = 9.sp,
+                            color = Color.White,
+                        )
+                    }
                 }
             }
             if (isMultiSelect) {
@@ -765,8 +773,10 @@ private fun BookCard(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, isS
             if (b.totalPages > 0) Text(text = "${b.readPages}/${b.totalPages}", fontSize = 10.sp, color = Color.White.copy(alpha = 0.7f), modifier = Modifier.align(Alignment.BottomEnd).padding(6.dp))
             if (progress > 0f) Text(text = "${(progress * 100).toInt()}%", fontSize = 10.sp, color = Color.White.copy(alpha = 0.9f), modifier = Modifier.align(Alignment.BottomStart).padding(6.dp))
         }
-        Box(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface).padding(horizontal = 8.dp, vertical = 6.dp)) {
-            Text(text = b.title, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurface)
+        Box(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp)) {
+            if (!hideAllTitles) {
+                Text(text = b.title, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurface)
+            }
         }
         }
     }

@@ -91,6 +91,7 @@ class App : Application(), SingletonImageLoader.Factory {
             kotlinx.coroutines.delay(2000L)
             try { com.mangareader.data.BookDeduper.runOnce(this@App, db.mangaDao()) } catch (_: Throwable) {}
         }
+        com.mangareader.komgabridge.KomgaBridges.init(this, db)
     }
 
     private fun startBackgroundVerify() {

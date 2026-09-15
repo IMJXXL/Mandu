@@ -43,7 +43,8 @@ data class ReaderConfig(
     val chapterTransition: Boolean = true,
     val centerGapType: Int = 0,
     // ★ N1：卷末无缝续读（默认关；仅同一本书的分卷之间生效，跨书永不自动跳）
-    val seamlessNextVolume: Boolean = false
+    val seamlessNextVolume: Boolean = false,
+    val forceFullDecode: Boolean = false
 ) {
     enum class ScrollMode { VERTICAL, HORIZONTAL_LEFT, HORIZONTAL_RIGHT }
     @Deprecated("Dead code - navigation uses Int field navigationMode instead") enum class ClickFlipType { NO, LEFT_RIGHT, DIAGONAL_LB_RT, DIAGONAL_LT_RB }
@@ -94,6 +95,7 @@ data class ReaderConfig(
             putBoolean("chapterTransition", chapterTransition)
             putBoolean("seamlessNextVolume", seamlessNextVolume)
             putInt("${prefix}centerGapType", centerGapType)
+            putBoolean("forceFullDecode", forceFullDecode)
             apply()
         }
     }
@@ -139,7 +141,8 @@ data class ReaderConfig(
                 autoWebtoon = prefs.getBoolean("autoWebtoon", true),
                 chapterTransition = prefs.getBoolean("chapterTransition", true),
                 centerGapType = prefs.getInt("${prefix}centerGapType", 0),
-                seamlessNextVolume = prefs.getBoolean("seamlessNextVolume", false)
+                seamlessNextVolume = prefs.getBoolean("seamlessNextVolume", false),
+                forceFullDecode = prefs.getBoolean("forceFullDecode", false)
             )
         }
     }

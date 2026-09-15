@@ -228,6 +228,26 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
                 }
             }
 
+            item {
+                Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("强制全分辨率解码", fontSize = 16.sp)
+                        Text(
+                            if (config.isEinkMode) "墨水屏模式开启时此项无效" else "除封面外不降采样，内存增大可能卡顿，不推荐开启",
+                            fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = config.forceFullDecode,
+                        enabled = !config.isEinkMode,
+                        onCheckedChange = {
+                            config = config.copy(forceFullDecode = it)
+                            config.save(ctx)
+                        },
+                    )
+                }
+            }
+
             if (config.isEinkMode) {
                 item {
                     Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
@@ -392,6 +412,42 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
                         Text("关闭", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text("30秒", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
+                }
+            }
+
+            item {
+                var hideAllBadges by remember { mutableStateOf(prefs.getBoolean("hide_all_badges", false)) }
+                Row(
+                    Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("隐藏所有角标", fontSize = 16.sp)
+                        Text("开启后书架不显示来源与状态角标", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(checked = hideAllBadges, onCheckedChange = {
+                        hideAllBadges = it
+                        prefs.edit().putBoolean("hide_all_badges", it).apply()
+                    })
+                }
+            }
+
+            item {
+                var hideAllTitles by remember { mutableStateOf(prefs.getBoolean("hide_all_titles", false)) }
+                Row(
+                    Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("隐藏所有书名", fontSize = 16.sp)
+                        Text("开启后书架与阅读器中不显示书名", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(checked = hideAllTitles, onCheckedChange = {
+                        hideAllTitles = it
+                        prefs.edit().putBoolean("hide_all_titles", it).apply()
+                    })
                 }
             }
         }

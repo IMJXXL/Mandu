@@ -102,6 +102,10 @@ class ArchiveEngine(private val ctx: Context) {
     private val config by lazy { com.mangareader.data.ReaderConfig.load(ctx) }
 
     private val isEink by lazy { config.isEinkMode }
+    private val forceFullDecode: Boolean get() {
+        val prefs = ctx.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE)
+        return prefs.getBoolean("forceFullDecode", false) && !prefs.getBoolean("isEinkMode", false)
+    }
     private val maxDecodeSize by lazy { if (isEink) config.einkDecodeSize else 4096 }
     private val maxCoverSize by lazy {
         val dpi = ctx.resources.displayMetrics.densityDpi
@@ -781,7 +785,7 @@ class ArchiveEngine(private val ctx: Context) {
             if (realFile != null && realFile.exists() && realFile.length() > 0) {
                 val boundsOpts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                 BitmapFactory.decodeFile(realFile.absolutePath, boundsOpts)
-                val sampleSize = if (boundsOpts.outWidth > 0 && boundsOpts.outHeight > 0) {
+                val sampleSize = if (!forceFullDecode && boundsOpts.outWidth > 0 && boundsOpts.outHeight > 0) {
                     calculateSampleSize(boundsOpts.outWidth, boundsOpts.outHeight, screenMax)
                 } else 1
                 val decodeOpts = BitmapFactory.Options().apply { inSampleSize = sampleSize }
@@ -791,7 +795,7 @@ class ArchiveEngine(private val ctx: Context) {
         // fallback: SAF URI
         val boundsOpts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         try { ctx.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, boundsOpts) } } catch (_: Exception) {}
-        val sampleSize = if (boundsOpts.outWidth > 0 && boundsOpts.outHeight > 0) {
+        val sampleSize = if (!forceFullDecode && boundsOpts.outWidth > 0 && boundsOpts.outHeight > 0) {
             calculateSampleSize(boundsOpts.outWidth, boundsOpts.outHeight, screenMax)
         } else 1
         val decodeOpts = BitmapFactory.Options().apply { inSampleSize = sampleSize }
@@ -840,7 +844,7 @@ class ArchiveEngine(private val ctx: Context) {
             val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             BitmapFactory.decodeByteArray(data, 0, data.size, bounds)
             var sample = 1
-            if (bounds.outWidth > 0 && bounds.outHeight > 0) {
+            if (!forceFullDecode && bounds.outWidth > 0 && bounds.outHeight > 0) {
                 val px = bounds.outWidth.toLong() * bounds.outHeight.toLong()
                 while (px / (sample.toLong() * sample) > 6_291_456L) sample *= 2
             }
@@ -997,6 +1001,7 @@ class ArchiveEngine(private val ctx: Context) {
         requireNotRemote(cover)
 
         if (!cover.startsWith("cv:")) return null
+        if (cover.startsWith("cv:komga:")) return null
         synchronized(coverCache) { coverCache[cover]?.let { return it } }
         val diskCached = loadCoverFromDisk(cover)
         if (diskCached != null) {
@@ -1062,6 +1067,7 @@ class ArchiveEngine(private val ctx: Context) {
     fun loadCoverRaw(cover: String): Pair<ByteArray, String>? {
         requireNotRemote(cover)
         if (!cover.startsWith("cv:")) return null
+        if (cover.startsWith("cv:komga:")) return null
         try {
             val parts = cover.removePrefix("cv:").split("|")
             if (parts.size < 3) return null

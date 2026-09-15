@@ -58,6 +58,8 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
     // ★ SMB/WebDAV 服务器管理入口（smb_embed_lv119 任务2.4/12.5）
     var showSmbServers by remember { mutableStateOf(false) }
     var showWebDavServers by remember { mutableStateOf(false) }
+    var showKomgaServers by remember { mutableStateOf(false) }
+    var showBackupRestore by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) { readBooks = dao.countReadBooks() }
@@ -458,6 +460,33 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
                 }
             }
             }
+            item {
+            Card(Modifier.fillMaxWidth().clickable { showKomgaServers = true }) {
+                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Dns, null, modifier = Modifier.size(24.dp))
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Komga 服务器管理", fontSize = 16.sp)
+                        Text("配置 Komga 自建漫画服务器并在线阅读", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Icon(Icons.Default.ChevronRight, null)
+                }
+            }
+            }
+
+            item {
+            Card(Modifier.fillMaxWidth().clickable { showBackupRestore = true }) {
+                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Backup, null, modifier = Modifier.size(24.dp))
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("备份与恢复", fontSize = 16.sp)
+                        Text("导出/导入阅读数据，定时备份到 WebDAV", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Icon(Icons.Default.ChevronRight, null)
+                }
+            }
+            }
 
             item {
             Spacer(Modifier.height(16.dp))
@@ -569,6 +598,12 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
     }
     if (showWebDavServers) {
         com.mangareader.webdavbridge.WebDavServersScreen(onBack = { showWebDavServers = false }, onOpenBook = { id -> onOpenBook?.invoke(id, null) })
+    }
+    if (showKomgaServers) {
+        com.mangareader.komgabridge.ui.KomgaServersScreen(onBack = { showKomgaServers = false }, onOpenBook = { id -> onOpenBook?.invoke(id, null) })
+    }
+    if (showBackupRestore) {
+        com.mangareader.backup.ui.BackupRestoreScreen(onBack = { showBackupRestore = false })
     }
     if (showDonation) DonationDialog(onDismiss = { showDonation = false })
 }

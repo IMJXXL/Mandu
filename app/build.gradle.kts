@@ -134,6 +134,9 @@ dependencies {
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
+    // WorkManager
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
+
     // Apache Commons Compress - ZIP/7Z handling
     implementation("org.apache.commons:commons-compress:1.26.1")
 
@@ -182,11 +185,13 @@ dependencies {
     // kotlinx-serialization-cbor (GalleryPreview CborArray)
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-cbor:1.11.0")
 
-    // ktor (WebDAV HTTP client)
+    // ktor (WebDAV + Komga HTTP client)
     implementation("io.ktor:ktor-client-core:3.5.0")
     implementation("io.ktor:ktor-client-android:3.5.0")
     implementation("io.ktor:ktor-client-cio:3.5.0")
     implementation("io.ktor:ktor-client-okhttp:3.5.0")
+    implementation("io.ktor:ktor-client-content-negotiation:3.5.0")
+    implementation("io.ktor:ktor-serialization-kotlinx-json:3.5.0")
 
     // Arrow-kt (reference project autoCloseScope/Either/bracketCase)
     implementation(platform("io.arrow-kt:arrow-stack:2.2.2.1"))
