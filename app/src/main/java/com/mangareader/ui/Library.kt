@@ -496,19 +496,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                     IconButton(onClick = { isMultiSelect = true }) { Icon(Icons.Default.Edit, "编辑") }
                     IconButton(onClick = { showSort = true }) { Icon(Icons.Default.Sort, "排序") }
                     IconButton(onClick = { showLayoutMenu = true }) { Icon(Icons.Default.GridView, "布局") }
-                    DropdownMenu(expanded = showLayoutMenu, onDismissRequest = { showLayoutMenu = false }) {
-                        listOf("紧凑网格", "松散网格", "仅封面", "列表").forEachIndexed { i, label ->
-                            DropdownMenuItem(
-                                text = { Text(label) },
-                                onClick = {
-                                    layoutMode = i
-                                    prefs.edit().putInt("layout_mode", i).apply()
-                                    showLayoutMenu = false
-                                },
-                                leadingIcon = { if (layoutMode == i) Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.primary) else Spacer(Modifier.size(24.dp)) }
-                            )
-                        }
-                    }
+
                     IconButton(onClick = {
                         val next = !sortAsc
                         sortAsc = next
@@ -681,6 +669,44 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
             }
         }
     }
+    if (showLayoutMenu) {
+        val isLandscape = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+        var sliderCols by remember { mutableStateOf(if (isLandscape) landscapeCols else portraitCols) }
+        androidx.compose.material3.ModalBottomSheet(onDismissRequest = { showLayoutMenu = false }) {
+            Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text("布局模式", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("紧凑网格", "松散网格", "仅封面", "列表").forEachIndexed { i, label ->
+                        FilterChip(
+                            selected = layoutMode == i,
+                            onClick = {
+                                layoutMode = i
+                                prefs.edit().putInt("layout_mode", i).apply()
+                            },
+                            label = { Text(label) },
+                        )
+                    }
+                }
+                if (layoutMode != 3) {
+                    Text("列数（0=自动）", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(if (sliderCols == 0) "自动" else sliderCols.toString(), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Slider(
+                            value = sliderCols.toFloat(),
+                            onValueChange = { v -> sliderCols = v.toInt() },
+                            onValueChangeFinished = {
+                                if (isLandscape) com.hippo.ehviewer.Settings.thumbColumnsLandscape.value = sliderCols
+                                else com.hippo.ehviewer.Settings.thumbColumnsPortrait.value = sliderCols
+                            },
+                            valueRange = 0f..10f,
+                            steps = 10,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+            }
+        }
+    }
     if (showDonation) DonationDialog(onDismiss = { showDonation = false })
 
     val remoteDownloadInfo by com.mangareader.smbbridge.RemoteDownloadDialogState.dialogState.collectAsState()
@@ -745,7 +771,7 @@ private fun BookCard(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, isS
         val fileExt = b.fileType.lowercase()
         val isRemoteUnsupported = (b.source == "smb" || b.source == "webdav") && b.originalPath == null && fileExt in setOf("mobi", "azw3")
 
-        val coverRatio = if (layoutMode == 1) 0.68f else 0.72f
+        val coverRatio = 0.72f
         Box(Modifier.fillMaxWidth().aspectRatio(coverRatio).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
             when {
                 isRemoteUnsupported -> {
@@ -776,7 +802,13 @@ private fun BookCard(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, isS
                     )
                 }
             }
-            Box(Modifier.fillMaxWidth().height(36.dp).align(Alignment.BottomCenter).background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.5f)))))
+            if (layoutMode == 0 && !hideAllTitles) {
+                Box(Modifier.fillMaxWidth().align(Alignment.BottomCenter).background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xAA000000))))) {
+                    Text(text = b.title, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Color.White, modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 4.dp))
+                }
+            } else {
+                Box(Modifier.fillMaxWidth().height(36.dp).align(Alignment.BottomCenter).background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.5f)))))
+            }
             if (!hideAllBadges) {
                 Surface(Modifier.align(Alignment.TopEnd).padding(4.dp), RoundedCornerShape(6.dp), color = status.second.copy(alpha = 0.9f)) {
                     Text(text = status.first, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp), fontSize = 10.sp, color = Color.White)
@@ -821,11 +853,9 @@ private fun BookCard(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, isS
             if (b.totalPages > 0) Text(text = "${b.readPages}/${b.totalPages}", fontSize = 10.sp, color = Color.White.copy(alpha = 0.7f), modifier = Modifier.align(Alignment.BottomEnd).padding(6.dp))
             if (progress > 0f) Text(text = "${(progress * 100).toInt()}%", fontSize = 10.sp, color = Color.White.copy(alpha = 0.9f), modifier = Modifier.align(Alignment.BottomStart).padding(6.dp))
         }
-        if (layoutMode != 2) {
+        if (layoutMode == 1 && !hideAllTitles) {
             Box(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp)) {
-                if (!hideAllTitles) {
-                    Text(text = b.title, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurface)
-                }
+                Text(text = b.title, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurface)
             }
         }
         }
@@ -857,7 +887,7 @@ private fun BookListRow(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, 
     Surface(
         modifier = Modifier.fillMaxWidth().combinedClickable(onClick = onTap, onLongClick = onLongClick),
         shape = RoundedCornerShape(8.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        color = MaterialTheme.colorScheme.background,
     ) {
         Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
             if (isMultiSelect) {
