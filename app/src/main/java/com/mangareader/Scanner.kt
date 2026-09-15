@@ -100,6 +100,7 @@ class Scanner(private val ctx: Context, private val dao: MangaDao) {
     suspend fun preloadCovers(books: List<Book>, onProgress: ((loaded: Int, total: Int) -> Unit)? = null) {
         val coverDir = File(ctx.filesDir, "covers")
         if (!coverDir.exists()) coverDir.mkdirs()
+        val engine = com.mangareader.viewer.ArchiveEngine(ctx)
         val ok = java.util.concurrent.atomic.AtomicInteger()
         val fail = java.util.concurrent.atomic.AtomicInteger()
         val skip = java.util.concurrent.atomic.AtomicInteger()
@@ -114,28 +115,13 @@ class Scanner(private val ctx: Context, private val dao: MangaDao) {
                     sem.withPermit {
                         val coverPath = b.coverPath
                         if (coverPath == null || !coverPath.startsWith("cv:")) { noPath.incrementAndGet(); return@withPermit }
+                        if (coverPath.startsWith("cv:smb:") || coverPath.startsWith("cv:webdav:") || coverPath.startsWith("cv:komga:")) { noPath.incrementAndGet(); return@withPermit }
                         try {
                             val key = md5(coverPath)
                             val file = File(coverDir, "$key.thumb")
                             if (file.exists()) { skip.incrementAndGet(); return@withPermit }
-
-                            val parts = coverPath.removePrefix("cv:").split("|")
-                            if (parts.size < 3) { fail.incrementAndGet(); return@withPermit }
-                            val auth = parts[0]
-                            val treeDocId = parts[1]
-                            val docId = parts[2]
-                            val treeUri = Uri.parse("content://$auth/tree/${Uri.encode(treeDocId)}")
-                            val docUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, docId)
-
-                            val ext = docId.substringAfterLast(".").lowercase()
-                            if (ext in listOf("cbz", "zip", "epub")) {
-                                preloadZipCover(coverPath, docUri, file)
-                            } else if (ext in listOf("mobi", "azw", "azw3")) {
-                                preloadMobiCover(coverPath, docUri, file)
-                            } else if (ext in listOf("jpg", "jpeg", "png", "webp", "gif", "bmp")) {
-                                preloadImageCover(coverPath, docUri, file)
-                            }
-                            if (file.exists()) ok.incrementAndGet() else fail.incrementAndGet()
+                            val bmp = engine.loadCover(coverPath)
+                            if (bmp != null) ok.incrementAndGet() else fail.incrementAndGet()
                         } catch (e: Exception) {
                             Log.e(TAG, "preloadCover failed: ${e.message}")
                             fail.incrementAndGet()

@@ -199,11 +199,21 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
             val limitedDispatcher = Dispatchers.IO.limitedParallelism(3)
             val jobs = books.map { book ->
                 coverScope.launch(limitedDispatcher) {
-                    if (book.coverPath == null) return@launch
-                    val key = synchronized(md5) { md5.reset(); md5.digest(book.coverPath!!.toByteArray()) }.joinToString("") { "%02x".format(it) }
+                    val coverPath = book.coverPath ?: return@launch
+                    val key = synchronized(md5) { md5.reset(); md5.digest(coverPath.toByteArray()) }.joinToString("") { "%02x".format(it) }
                     val file = java.io.File(ctx.filesDir, "covers/$key.thumb")
                     if (file.exists()) return@launch
-                    try { engine.loadCover(book.coverPath!!) } catch (_: Exception) {}
+                    try {
+                        if (coverPath.startsWith("cv:smb:")) {
+                            val raw = com.mangareader.smbbridge.SmbCoverLoader.loadCoverRawSmb(coverPath)
+                            if (raw != null) file.writeBytes(raw.first)
+                        } else if (coverPath.startsWith("cv:webdav:")) {
+                            val raw = com.mangareader.webdavbridge.WebDavCoverLoader.loadCoverRawWebDav(coverPath)
+                            if (raw != null) file.writeBytes(raw.first)
+                        } else {
+                            engine.loadCover(coverPath)
+                        }
+                    } catch (_: Exception) {}
                 }
             }
             jobs.forEach { it.join() }
