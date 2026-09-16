@@ -34,5 +34,5 @@ analyze_comments.py
 crash_buf.txt
 tmp_logcat*.txt
 device_log*.txt
-splash_*.png
-splash_*.py
+/splash_*.png
+/splash_*.py
