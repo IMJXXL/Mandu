@@ -108,7 +108,7 @@ private fun SrPanelContent(
     val scopeState = SrUiState.scope.intValue
 
     val engineAvailable = NativeLibraryStatus.isRealESRGANAvailable
-    val vulkanOk = !SrCore.isVulkanMissing()
+    val vulkanOk = !SrCore.isVulkanMissing() || !model.requiresVulkan
     val usable = engineAvailable && vulkanOk
     val blockReason = when {
         !engineAvailable -> "超分组件加载失败，功能不可用"
@@ -249,7 +249,9 @@ private fun SrPanelContent(
         // ★ 降噪强度仅对支持的档位生效（V3 无降噪输入→灰掉+说明；CUGAN/waifu2x 按强度换变体模型）
         val denoiseCapable = model.denoiseCapable
         Text(
-            if (denoiseCapable) "降噪强度（针对扫描噪点）" else "降噪强度（动漫V3 档不支持降噪调节）",
+            if (denoiseCapable) "降噪强度（针对扫描噪点）"
+            else if (model.modelType == "lanczos") "降噪强度（无损放大档不支持降噪调节）"
+            else "降噪强度（动漫V3 档不支持降噪调节）",
             fontSize = 14.sp, fontWeight = FontWeight.Medium,
             color = if (denoiseCapable) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -445,6 +447,7 @@ private fun SrPanelContent(
         Spacer(Modifier.height(4.dp))
         Text(
             "⚡ 快速优化 1x：不放大。毫秒级去掉噪点脏斑、拉锐线条。图够大、只想要干净时选它。\n" +
+                "✨ 无损放大 2x：放大 2 倍。Lanczos3 纯 CPU 重采样，线条锐利不吃配置，没有 Vulkan 也能用。\n" +
                 "🛡 CUGAN 2x 保守：放大 2 倍。漫画特化，线条最稳。画质优先选它。\n" +
                 "⚡ 动漫V3 2x 极速：放大 2 倍。比保守档快约一倍，线条略软。省电/批量选它。\n" +
                 "🔍 动漫V3 4x 大屏：放大 4 倍。平板大屏细看用，手机上过剩。\n" +

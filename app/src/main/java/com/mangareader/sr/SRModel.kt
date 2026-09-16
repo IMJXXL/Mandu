@@ -20,6 +20,15 @@ enum class SRModel(
         modelType = "algorithm",
         isBuiltIn = true,
     ),
+    LANCZOS_2X(
+        key = "lanczos_2x",
+        displayName = "无损放大 2x",
+        scale = 2,
+        requiresVulkan = false,
+        modelDirName = "",
+        modelType = "lanczos",
+        isBuiltIn = true,
+    ),
     REALCUGAN_2X_CONSERVATIVE(
         key = "realcugan_2x_conservative",
         displayName = "CUGAN 2x 保守",
@@ -76,7 +85,7 @@ enum class SRModel(
 
     /** 降噪强度是否对本档生效（算法档映射滤波参数；CUGAN/waifu2x 映射变体模型；V3 无降噪输入） */
     val denoiseCapable: Boolean
-        get() = modelType != "realesrgan"
+        get() = modelType != "realesrgan" && modelType != "lanczos"
 
     /** 有按强度切换的变体模型（切换强度需重载引擎） */
     val hasDenoiseVariants: Boolean

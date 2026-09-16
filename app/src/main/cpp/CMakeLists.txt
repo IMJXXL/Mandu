@@ -110,3 +110,7 @@ target_link_libraries(archive_stream
     android log z
     libarchive_jni
 )
+
+add_library(lanczos_engine SHARED sr/lanczos3.cpp)
+target_compile_features(lanczos_engine PRIVATE cxx_std_17)
+target_link_libraries(lanczos_engine android log jnigraphics)

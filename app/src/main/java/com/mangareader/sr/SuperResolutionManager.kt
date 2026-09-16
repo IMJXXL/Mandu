@@ -290,6 +290,7 @@ class SuperResolutionManager(
     private fun createProcessor(model: SRModel): SuperResolutionProcessor {
         // ★ 快速优化档：无 ncnn 处理器，占位 NoOp（process() 内直接走 SrCleanupProcessor）
         if (model.modelType == "algorithm") return NoOpProcessor()
+        if (model.modelType == "lanczos") return LanczosProcessor(model)
         return try {
             RealESRGANProcessor(model)
         } catch (e: Throwable) {
