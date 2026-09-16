@@ -43,6 +43,7 @@ fun OpdsAddServerDialog(
     var allowSelfSigned by remember { mutableStateOf(initial?.allowSelfSignedCert ?: false) }
     var testing by remember { mutableStateOf(false) }
     var testResult by remember { mutableStateOf<String?>(null) }
+    var testSuccess by remember { mutableStateOf<Boolean?>(null) }
     var saving by remember { mutableStateOf(false) }
 
     val canSave = baseUrl.startsWith("http://") || baseUrl.startsWith("https://")
@@ -90,7 +91,7 @@ fun OpdsAddServerDialog(
         Column(Modifier.fillMaxSize().padding(padding).padding(16.dp).verticalScroll(rememberScrollState())) {
             OutlinedTextField(
                 value = baseUrl,
-                onValueChange = { baseUrl = it; testResult = null },
+                onValueChange = { baseUrl = it; testResult = null; testSuccess = null },
                 label = { Text("服务器地址") },
                 placeholder = { Text("https://opds.example.com/opds") },
                 isError = baseUrl.isNotEmpty() && !canSave,
@@ -138,7 +139,7 @@ fun OpdsAddServerDialog(
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
                     value = apiKey,
-                    onValueChange = { apiKey = it; testResult = null },
+                    onValueChange = { apiKey = it; testResult = null; testSuccess = null },
                     label = { Text("API 密钥") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
@@ -146,7 +147,7 @@ fun OpdsAddServerDialog(
             } else if (authType == OpdsAuthType.BASIC) {
                 OutlinedTextField(
                     value = username,
-                    onValueChange = { username = it; testResult = null },
+                    onValueChange = { username = it; testResult = null; testSuccess = null },
                     label = { Text("用户名") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
@@ -154,7 +155,7 @@ fun OpdsAddServerDialog(
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
                     value = password,
-                    onValueChange = { password = it; testResult = null },
+                    onValueChange = { password = it; testResult = null; testSuccess = null },
                     label = { Text("密码") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
@@ -172,6 +173,7 @@ fun OpdsAddServerDialog(
                     if (testing || !canSave) return@Button
                     testing = true
                     testResult = null
+                    testSuccess = null
                     scope.launch {
                         try {
                             val conn = OpdsConnection(
@@ -187,14 +189,16 @@ fun OpdsAddServerDialog(
                             )
                             val client = OpdsHttpClient.client(allowSelfSigned)
                             val api = OpdsApiClient(conn, client)
-                            val result = withContext(Dispatchers.IO) { api.testConnection() }
-                            result.fold(
-                                onSuccess = { testResult = "OK" },
-                                onFailure = { testResult = it.message ?: "连接失败" },
-                            )
+                            val result = withContext(Dispatchers.IO) { api.testConnectionAndProbe() }
+                            if (result.success && result.resolvedBaseUrl != null && result.resolvedBaseUrl != baseUrl.trim().trimEnd('/')) {
+                                baseUrl = result.resolvedBaseUrl
+                            }
+                            testResult = result.message
+                            testSuccess = result.success
                             client.close()
                         } catch (t: Throwable) {
                             testResult = t.message ?: "连接失败"
+                            testSuccess = false
                         } finally {
                             testing = false
                         }
@@ -206,7 +210,7 @@ fun OpdsAddServerDialog(
                 Spacer(Modifier.height(8.dp))
                 Text(
                     result,
-                    color = if (result == "OK") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                    color = if (testSuccess == true) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
                 )
             }
         }

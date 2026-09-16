@@ -88,6 +88,10 @@ fun OpdsBrowserScreen(serverId: String, onBack: () -> Unit, onOpenBook: (Long) -
             val resp = withContext(Dispatchers.IO) { apiClient.fetchFeed(url) }
             val bytes = withContext(Dispatchers.IO) { resp.bodyAsBytesSafe() }
             val ct = resp.contentType()
+            if (bytes.isEmpty()) {
+                error = "服务器返回空响应"
+                return
+            }
             val feed = if (ct != null && ct.match(ContentType.Application.Json)) {
                 OpdsFeedJsonParser.parse(bytes.toString(Charsets.UTF_8), url)
             } else {
@@ -105,7 +109,12 @@ fun OpdsBrowserScreen(serverId: String, onBack: () -> Unit, onOpenBook: (Long) -
             searchLink = feed.searchLink
             facets = feed.facets
         } catch (t: Throwable) {
-            error = t.message ?: "加载失败"
+            val msg = t.message ?: "加载失败"
+            error = if (msg.contains("非 Atom feed") || msg.contains("解析 feed")) {
+                "该地址返回的不是 OPDS feed，请确认服务器地址指向 OPDS feed 根路径"
+            } else {
+                msg
+            }
         } finally {
             if (append) loadingMore = false else loading = false
         }
