@@ -332,7 +332,7 @@ private fun OpdsEntryRow(
         val coverPath = "${OpdsConstants.COVER_SCHEME}$serverId:${entry.id}"
         if (entry.thumbnailLink != null) {
             AsyncImage(
-                model = coverPath,
+                model = com.mangareader.viewer.CoverData(coverPath),
                 contentDescription = null,
                 modifier = Modifier.size(56.dp, 80.dp),
                 contentScale = ContentScale.Crop,
