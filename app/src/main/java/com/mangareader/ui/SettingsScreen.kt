@@ -60,7 +60,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
     var showSmbServers by remember { mutableStateOf(false) }
     var showWebDavServers by remember { mutableStateOf(false) }
     var showKomgaServers by remember { mutableStateOf(false) }
-    var showBackupRestore by remember { mutableStateOf(false) }
+
 
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) { readBooks = dao.countReadBooks() }
@@ -477,20 +477,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
             }
 
             item {
-            Card(Modifier.fillMaxWidth().clickable { showBackupRestore = true }) {
-                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Backup, null, modifier = Modifier.size(24.dp))
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text("备份与恢复", fontSize = 16.sp)
-                        Text("导出/导入阅读数据，定时备份到 WebDAV", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Icon(Icons.Default.ChevronRight, null)
-                }
-            }
-            }
 
-            item {
             Spacer(Modifier.height(16.dp))
             }
 
@@ -606,9 +593,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
     if (showKomgaServers) {
         com.mangareader.komgabridge.ui.KomgaServersScreen(onBack = { showKomgaServers = false }, onOpenBook = { id -> onOpenBook?.invoke(id, null) })
     }
-    if (showBackupRestore) {
-        com.mangareader.backup.ui.BackupRestoreScreen(onBack = { showBackupRestore = false })
-    }
+
     if (showDonation) DonationDialog(onDismiss = { showDonation = false })
 }
 
