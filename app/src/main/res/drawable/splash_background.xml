@@ -4,6 +4,6 @@
         <color android:color="#FFFFFF"/>
     </item>
     <item android:gravity="center" android:width="180dp" android:height="180dp">
-        <bitmap android:src="@mipmap/ic_launcher_foreground" android:gravity="center"/>
+        <bitmap android:src="@drawable/splash_logo" android:gravity="center"/>
     </item>
 </layer-list>
