@@ -1214,7 +1214,11 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                         if (isRtl && hi < pageList.size) hi else lo
                     }
                 } else {
-                    if (isRtl) pageList.size - 1 - position * 2 else position * 2
+                    val nsCount = (pageList.size + 1) / 2
+                    val nsSpread = if (isRtl) nsCount - 1 - position else position
+                    val lo = 2 * nsSpread
+                    val hi = 2 * nsSpread + 1
+                    if (isRtl) (if (hi < pageList.size) hi else lo) else lo
                 }
 
                 if (shiftActive && shiftSpread == 0) {
@@ -1235,7 +1239,11 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                     val hi = 2 * shiftSpread
                     if (isRtl && hi < pageList.size) lo else hi
                 } else {
-                    if (isRtl) leftIdx - 1 else leftIdx + 1
+                    val nsCount = (pageList.size + 1) / 2
+                    val nsSpread = if (isRtl) nsCount - 1 - position else position
+                    val lo = 2 * nsSpread
+                    val hi = 2 * nsSpread + 1
+                    if (isRtl) (if (hi < pageList.size) lo else -1) else hi
                 }
                 val gapPx = if (centerGapType in 1..3) (16 * holder.itemView.context.resources.displayMetrics.density).toInt() else 0
 
