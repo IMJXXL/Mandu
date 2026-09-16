@@ -194,6 +194,13 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
     // Preload covers for books that don't have disk-cached covers yet
     val coverScope = rememberCoroutineScope()
     val md5 = remember { java.security.MessageDigest.getInstance("MD5") }
+    LaunchedEffect(books?.isNotEmpty()) {
+        if (!books.isNullOrEmpty()) {
+            kotlinx.coroutines.withContext(Dispatchers.IO) {
+                try { com.hippo.ehviewer.webdav.WebDavClient.warmUp() } catch (_: Exception) {}
+            }
+        }
+    }
     LaunchedEffect(books?.map { it.id } ?: emptyList<Long>()) {
         if (!books.isNullOrEmpty()) {
             val limitedDispatcher = Dispatchers.IO.limitedParallelism(3)

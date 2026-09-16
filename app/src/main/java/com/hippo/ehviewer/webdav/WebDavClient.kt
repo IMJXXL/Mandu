@@ -85,6 +85,7 @@ import org.xmlpull.v1.XmlPullParserFactory
  * TLS: system trust by default. [Settings.webDavInsecureTls] → trust-all for self-signed LAN.
  */
 object WebDavClient {
+    fun warmUp() { http(false) }
     private val PropFind = HttpMethod("PROPFIND")
 
     private val PropfindBody = "" +
