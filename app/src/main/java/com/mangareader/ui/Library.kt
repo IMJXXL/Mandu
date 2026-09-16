@@ -106,7 +106,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
     //   与本项目 read_mode_$bookId / library prefs 同一套风格；valueOf 包 try-catch 防枚举变更崩溃。
     val prefs = remember { ctx.getSharedPreferences("manga_reader", Context.MODE_PRIVATE) }
 
-    var books by remember { mutableStateOf(listOf<Book>()) }
+    var books by remember { mutableStateOf<List<Book>?>(null) }
     var bookshelves by remember { mutableStateOf(listOf<Bookshelf>()) }
     var sort by remember {
         mutableStateOf(
@@ -194,10 +194,10 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
     // Preload covers for books that don't have disk-cached covers yet
     val coverScope = rememberCoroutineScope()
     val md5 = remember { java.security.MessageDigest.getInstance("MD5") }
-    LaunchedEffect(books.map { it.id }) {
-        if (books.isNotEmpty()) {
+    LaunchedEffect(books?.map { it.id } ?: emptyList<Long>()) {
+        if (!books.isNullOrEmpty()) {
             val limitedDispatcher = Dispatchers.IO.limitedParallelism(3)
-            val jobs = books.map { book ->
+            val jobs = books!!.map { book ->
                 coverScope.launch(limitedDispatcher) {
                     val coverPath = book.coverPath ?: return@launch
                     val key = synchronized(md5) { md5.reset(); md5.digest(coverPath.toByteArray()) }.joinToString("") { "%02x".format(it) }
@@ -379,7 +379,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
     }
 
     if (showRenameBatch) {
-        val selectedBookList = books.filter { it.id in selectedBooks }
+        val selectedBookList = books.orEmpty().filter { it.id in selectedBooks }
         RenameBatchDialog(
             books = selectedBookList,
             onConfirm = { updates ->
@@ -489,7 +489,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                 actions = {
                     // 批量离线超分：把选中的书全部加入后台超分队列
                     IconButton(onClick = {
-                        val targets = books.filter { it.id in selectedBooks }
+                        val targets = books.orEmpty().filter { it.id in selectedBooks }
                         // 异步入队（大书 IO 不卡主线程），完成后主线程 Toast
                         com.mangareader.sr.SrBatchRunner.enqueueBooks(ctx, targets.map { it.id to it.title }) { n ->
                             (ctx as? android.app.Activity)?.runOnUiThread {
@@ -502,7 +502,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                         }
                         isMultiSelect = false; selectedBooks = emptySet()
                     }) { Icon(Icons.Default.AutoFixHigh, "批量超分") }
-                    IconButton(onClick = { selectedBooks = if (selectedBooks.isEmpty()) books.map { it.id }.toSet() else emptySet() }) {
+                    IconButton(onClick = { selectedBooks = if (selectedBooks.isEmpty()) books.orEmpty().map { it.id }.toSet() else emptySet() }) {
                         Icon(Icons.Default.SelectAll, if (selectedBooks.isEmpty()) "全选" else "取消全选")
                     }
                 },
@@ -510,7 +510,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
             ) else TopAppBar(
                 title = { Column {
                     Text("瑾", fontWeight = FontWeight.Bold, fontSize = 20.sp, modifier = Modifier.clickable { showDonation = true })
-                    Text("${books.size} 本", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("${books?.size ?: 0} 本", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 } },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
                 actions = {
@@ -623,7 +623,11 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                 Text("书架: $selectedShelfName", fontSize = 13.sp, color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp))
             }
-            if (books.isEmpty()) {
+            if (books == null) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
+                }
+            } else if (books?.isEmpty() == true) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Icon(Icons.Default.MenuBook, null, Modifier.size(72.dp), tint = MaterialTheme.colorScheme.outline)
@@ -642,7 +646,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                         contentPadding = PaddingValues(12.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        items(books, key = { it.id }, contentType = { "book" }) { b ->
+                        items(books.orEmpty(), key = { it.id }, contentType = { "book" }) { b ->
                             val onToggleSelect = remember(b.id, isMultiSelect) { { selectedBooks = if (b.id in selectedBooks) selectedBooks - b.id else selectedBooks + b.id } }
                             val onTap = remember(b.id, isMultiSelect) { { if (isMultiSelect) { selectedBooks = if (b.id in selectedBooks) selectedBooks - b.id else selectedBooks + b.id } else openBookThrottled(b.id, null) } }
                             val onLongClick = remember(b.id) { { showBookInfo = b } }
@@ -657,7 +661,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                 } else {
                     LazyVerticalGrid(columns = gridCols, contentPadding = PaddingValues(12.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        items(books, key = { it.id }, contentType = { "book" }) { b ->
+                        items(books.orEmpty(), key = { it.id }, contentType = { "book" }) { b ->
                             val onToggleSelect = remember(b.id, isMultiSelect) { { selectedBooks = if (b.id in selectedBooks) selectedBooks - b.id else selectedBooks + b.id } }
                             val onTap = remember(b.id, isMultiSelect) { { if (isMultiSelect) { selectedBooks = if (b.id in selectedBooks) selectedBooks - b.id else selectedBooks + b.id } else openBookThrottled(b.id, null) } }
                             val onLongClick = remember(b.id) { { showBookInfo = b } }
