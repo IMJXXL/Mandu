@@ -27,7 +27,7 @@ class CoverFetcher(
         //   子文件夹封面请求在进入 z: 分支前就被抛 IllegalArgumentException（空白且无日志）。
         if (!coverPath.startsWith("cv:") && !coverPath.startsWith("z:")) throw IllegalArgumentException("Not a cover request: $coverPath")
 
-        if (coverPath.startsWith("cv:") && !coverPath.startsWith("cv:smb:") && !coverPath.startsWith("cv:webdav:") && !coverPath.startsWith("cv:komga:")) {
+        if (coverPath.startsWith("cv:") && !coverPath.startsWith("cv:smb:") && !coverPath.startsWith("cv:webdav:") && !coverPath.startsWith("cv:komga:") && !coverPath.startsWith("cv:opds:")) {
             val thumbBytes = withContext(Dispatchers.IO) { engine.loadCoverThumbBytes(coverPath) }
             if (thumbBytes != null) {
                 return SourceFetchResult(
@@ -38,87 +38,15 @@ class CoverFetcher(
             }
         }
 
-        // ★ 动态封面开关（阅读设置）：关闭时由请求级 StaticFirstFrameDecoder 解首帧，
-        //   开启时走 Coil 全局动图解码器播放动画（对齐参考项目 coverThumb 管线）
-
-        // ★ ItemCard 动图封面（文件夹子卷）：z: 路径走 loadItemCoverRaw（首页原始字节）
-        if (coverPath.startsWith("z:")) {
+        if (coverPath.startsWith("cv:opds:")) {
             val raw = withContext(Dispatchers.IO) {
                 try {
-                    val r = engine.loadItemCoverRaw(coverPath)
-                    android.util.Log.i("CoverFetch", "item cover raw=${r?.first?.size ?: -1}B path=$coverPath")
-                    r
+                    com.mangareader.opdsbridge.cover.OpdsCoverLoader.loadCoverRawOpds(coverPath)
                 } catch (e: Exception) {
-                    android.util.Log.w("CoverFetch", "item cover err: ${e.message}"); null
-                }
-            } ?: throw RuntimeException("Item cover load failed: $coverPath")
-            val (bytes, mime) = raw
-            return SourceFetchResult(
-                source = ImageSource(source = Buffer().write(bytes), fileSystem = options.fileSystem),
-                mimeType = mime,
-                dataSource = DataSource.MEMORY,
-            )
-        }
-
-        // ★ SMB/WebDAV 封面分流（任务5.2/15.2）：远程封面委托对应 CoverLoader，
-        //   `cv:` 本地前缀逻辑零改动（仅新增分支；远程路径被 ArchiveEngine 守卫拦截，严禁落入下方 engine 调用）
-        //   dynOn=true（动态封面开）→ wantRaw：原始字节路径，GIF/WebP 动图封面可播放
-        if (coverPath.startsWith("cv:smb:") || coverPath.startsWith("cv:webdav:")) {
-            val raw = withContext(Dispatchers.IO) {
-                try {
-                    if (coverPath.startsWith("cv:smb:")) {
-                        com.mangareader.smbbridge.SmbCoverLoader.loadCoverRawSmb(coverPath, wantRaw = data.dynOn)
-                    } else {
-                        com.mangareader.webdavbridge.WebDavCoverLoader.loadCoverRawWebDav(coverPath, wantRaw = data.dynOn)
-                    }
-                } catch (e: Exception) {
-                    android.util.Log.w("CoverFetch", "remote cover err: ${e.message}")
+                    android.util.Log.w("CoverFetch", "opds cover err: ${e.message}")
                     null
                 }
-            } ?: throw RuntimeException("Remote cover load failed: $coverPath")
-            val (bytes, mime) = raw
-            android.util.Log.i("CoverFetch", "remote raw OK mime=$mime size=${bytes.size} path=$coverPath")
-            return SourceFetchResult(
-                source = ImageSource(
-                    source = Buffer().write(bytes),
-                    fileSystem = options.fileSystem,
-                ),
-                mimeType = mime,
-                dataSource = DataSource.NETWORK,
-            )
-        }
-
-        if (coverPath.startsWith("cv:komga:")) {
-            android.util.Log.i("CoverFetch", "komga cover request: $coverPath")
-            val raw = withContext(Dispatchers.IO) {
-                try {
-                    val body = coverPath.removePrefix("cv:komga:")
-                    val serverId = body.substringBefore(':', "")
-                    val bookId = body.substringAfter(':', "")
-                    if (serverId.isEmpty() || bookId.isEmpty()) {
-                        android.util.Log.w("CoverFetch", "komga cover parse failed: serverId=$serverId bookId=$bookId")
-                        return@withContext null
-                    }
-                    val store = com.mangareader.komgabridge.data.KomgaConnectionStore(com.mangareader.komgabridge.KomgaBridges.context)
-                    val conn = store.getConnection(serverId)
-                    if (conn == null) {
-                        android.util.Log.w("CoverFetch", "komga connection not found: $serverId")
-                        return@withContext null
-                    }
-                    val client = com.mangareader.komgabridge.api.KomgaHttpClient.client(conn.allowSelfSignedCert)
-                    val api = com.mangareader.komgabridge.api.KomgaApiClient(conn, client)
-                    val thumbUrl = api.bookThumbnailUrl(bookId)
-                    android.util.Log.i("CoverFetch", "komga thumb url: $thumbUrl")
-                    val bytes = api.downloadBytes(thumbUrl)
-                    client.close()
-                    val hex = bytes.takeIf { it.isNotEmpty() }?.let { "%02X%02X".format(it[0], it[1]) } ?: "empty"
-                    android.util.Log.i("CoverFetch", "komga cover OK size=${bytes.size} hex=$hex path=$coverPath")
-                    Pair(bytes, "image/jpeg")
-                } catch (e: Exception) {
-                    android.util.Log.w("CoverFetch", "komga cover err: ${e.javaClass.simpleName}: ${e.message}")
-                    null
-                }
-            } ?: throw RuntimeException("Komga cover load failed: $coverPath")
+            } ?: throw RuntimeException("OPDS cover load failed: $coverPath")
             val (bytes, mime) = raw
             return SourceFetchResult(
                 source = ImageSource(

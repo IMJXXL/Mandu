@@ -115,7 +115,7 @@ class Scanner(private val ctx: Context, private val dao: MangaDao) {
                     sem.withPermit {
                         val coverPath = b.coverPath
                         if (coverPath == null || !coverPath.startsWith("cv:")) { noPath.incrementAndGet(); return@withPermit }
-                        if (coverPath.startsWith("cv:smb:") || coverPath.startsWith("cv:webdav:") || coverPath.startsWith("cv:komga:")) { noPath.incrementAndGet(); return@withPermit }
+                        if (coverPath.startsWith("cv:smb:") || coverPath.startsWith("cv:webdav:") || coverPath.startsWith("cv:komga:") || coverPath.startsWith("cv:opds:")) { noPath.incrementAndGet(); return@withPermit }
                         try {
                             val key = md5(coverPath)
                             val file = File(coverDir, "$key.thumb")

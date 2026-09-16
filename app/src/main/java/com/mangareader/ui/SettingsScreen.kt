@@ -60,6 +60,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
     var showSmbServers by remember { mutableStateOf(false) }
     var showWebDavServers by remember { mutableStateOf(false) }
     var showKomgaServers by remember { mutableStateOf(false) }
+    var showOpdsServers by remember { mutableStateOf(false) }
 
 
     LaunchedEffect(Unit) {
@@ -475,6 +476,19 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
                 }
             }
             }
+            item {
+            Card(Modifier.fillMaxWidth().clickable { showOpdsServers = true }) {
+                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Dns, null, modifier = Modifier.size(24.dp))
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("OPDS 服务器管理", fontSize = 16.sp)
+                        Text("配置 OPDS 漫画服务器（Kavita/LANraragi/Calibre 等）", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Icon(Icons.Default.ChevronRight, null)
+                }
+            }
+            }
 
             item {
 
@@ -592,6 +606,9 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
     }
     if (showKomgaServers) {
         com.mangareader.komgabridge.ui.KomgaServersScreen(onBack = { showKomgaServers = false }, onOpenBook = { id -> onOpenBook?.invoke(id, null) })
+    }
+    if (showOpdsServers) {
+        com.mangareader.opdsbridge.ui.OpdsServersScreen(onBack = { showOpdsServers = false }, onOpenBook = { id -> onOpenBook?.invoke(id, null) })
     }
 
     if (showDonation) DonationDialog(onDismiss = { showDonation = false })

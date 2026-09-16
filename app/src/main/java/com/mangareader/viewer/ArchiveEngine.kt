@@ -1012,6 +1012,7 @@ class ArchiveEngine(private val ctx: Context) {
 
         if (!cover.startsWith("cv:")) return null
         if (cover.startsWith("cv:komga:")) return null
+        if (cover.startsWith("cv:opds:")) return null
         synchronized(coverCache) { coverCache[cover]?.let { return it } }
         val diskCached = loadCoverFromDisk(cover)
         if (diskCached != null) {
@@ -1078,6 +1079,7 @@ class ArchiveEngine(private val ctx: Context) {
         requireNotRemote(cover)
         if (!cover.startsWith("cv:")) return null
         if (cover.startsWith("cv:komga:")) return null
+        if (cover.startsWith("cv:opds:")) return null
         try {
             val parts = cover.removePrefix("cv:").split("|")
             if (parts.size < 3) return null
@@ -1116,6 +1118,7 @@ class ArchiveEngine(private val ctx: Context) {
         requireNotRemote(cover)
         if (!cover.startsWith("cv:")) return null
         if (cover.startsWith("cv:komga:")) return null
+        if (cover.startsWith("cv:opds:")) return null
         try {
             val parts = cover.removePrefix("cv:").split("|")
             if (parts.size < 3) return null

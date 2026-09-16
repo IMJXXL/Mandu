@@ -610,6 +610,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
         }
     }
 
+
     /**
      * ★ 本地文件系统路径的归档阅读入口（下载到本地缓存的 mobi/azw3/rar/7z 等）。
      * ArchiveEngine.listPages 只支持 SAF 路径，文件系统路径走 useArchivePageLoader +
@@ -660,6 +661,35 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
             }
         } catch (t: Throwable) {
             android.util.Log.w("Reader", "enterLocalArchiveReader failed", t)
+            android.widget.Toast.makeText(ctx, "打开失败：${t.message?.take(80)}", android.widget.Toast.LENGTH_SHORT).show()
+            viewing = false
+            loading = false
+            return emptyList()
+        }
+    }
+
+    suspend fun enterOpdsReader(
+        b: com.mangareader.data.Book,
+        path: String,
+        targetPage: Int,
+    ): List<com.mangareader.viewer.ArchiveEngine.PageMeta> {
+        loading = true
+        smbUnsupportedInfo = null
+        try {
+            val saved = withContext(Dispatchers.IO) {
+                runCatching { dao.getProgress(b.id, path) }.getOrNull()
+            }
+            val resumePage = if (targetPage >= 0) targetPage else (saved?.lastPage ?: 0)
+            when (val r = com.mangareader.opdsbridge.reader.OpdsBookRouter.openOpdsBook(path, resumePage)) {
+                is com.mangareader.opdsbridge.reader.OpdsBookRouter.OpenResult.Ready ->
+                    return enterLocalArchiveReader(b, r.localCachePath, targetPage)
+                is com.mangareader.opdsbridge.reader.OpdsBookRouter.OpenResult.Failed -> {
+                    android.widget.Toast.makeText(ctx, r.message, android.widget.Toast.LENGTH_SHORT).show()
+                    viewing = false; loading = false; return emptyList()
+                }
+            }
+        } catch (t: Throwable) {
+            android.util.Log.w("Reader", "enterOpdsReader failed", t)
             android.widget.Toast.makeText(ctx, "打开失败：${t.message?.take(80)}", android.widget.Toast.LENGTH_SHORT).show()
             viewing = false
             loading = false
@@ -735,6 +765,8 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
         }
 
         if (path.startsWith("komga:")) return enterKomgaReader(b, path, targetPage)
+
+        if (path.startsWith("opds:")) return enterOpdsReader(b, path, targetPage)
 
         // ★ 修复：文件系统路径（下载到本地缓存的归档）走 useArchivePageLoader，
         //   ArchiveEngine.listPages 只支持 SAF 路径（a:/d: 前缀），文件系统路径会返回空。
