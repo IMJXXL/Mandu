@@ -1203,15 +1203,21 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             debugLabel?.visibility = View.GONE
 
             if (doublePageMode) {
-                // Shift mode: position 0 shows first page alone, position 1+ shows merged pairs starting from page 1
-                val leftIdx = if (shiftDoublePage && pageList.size > 1) {
-                    if (position == 0) 0 else 1 + (position - 1) * 2
+                val shiftActive = shiftDoublePage && pageList.size > 1
+                val shiftCount = if (shiftActive) 1 + pageList.size / 2 else 0
+                val shiftSpread = if (shiftActive) (if (isRtl) shiftCount - 1 - position else position) else 0
+
+                val leftIdx = if (shiftActive) {
+                    if (shiftSpread == 0) 0 else {
+                        val lo = 2 * shiftSpread - 1
+                        val hi = 2 * shiftSpread
+                        if (isRtl && hi < pageList.size) hi else lo
+                    }
                 } else {
                     if (isRtl) pageList.size - 1 - position * 2 else position * 2
                 }
 
-                // In shift mode, position 0 is a single page
-                if (shiftDoublePage && position == 0 && pageList.size > 1) {
+                if (shiftActive && shiftSpread == 0) {
                     val bmp = bitmapCache[leftIdx]
                     if (bmp != null && !bmp.isRecycled) {
                         val needFitWidth = bmp.width > holder.itemView.width
@@ -1224,13 +1230,19 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                     return
                 }
 
-                val rightIdx = if (isRtl) leftIdx - 1 else leftIdx + 1
+                val rightIdx = if (shiftActive) {
+                    val lo = 2 * shiftSpread - 1
+                    val hi = 2 * shiftSpread
+                    if (isRtl && hi < pageList.size) lo else hi
+                } else {
+                    if (isRtl) leftIdx - 1 else leftIdx + 1
+                }
                 val gapPx = if (centerGapType in 1..3) (16 * holder.itemView.context.resources.displayMetrics.density).toInt() else 0
 
                 // wide image split: 全图加载到SSIV，视口定位显示左/右半边
                 if (doublePageSplitEnabled) {
                     val leftBmp = bitmapCache[leftIdx]
-                    if (leftBmp != null && !leftBmp.isRecycled && leftBmp.width.toFloat() / leftBmp.height > 1.5f) {
+                    if (leftBmp != null && !leftBmp.isRecycled && leftBmp.width > leftBmp.height) {
                         val showRight = isRtl != doublePageReverseEnabled
                         holder.setImageSplit(leftBmp, showRight, useSSIV, landscapeZoomEnabled)
                         return

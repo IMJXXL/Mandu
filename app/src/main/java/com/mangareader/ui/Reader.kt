@@ -1860,15 +1860,11 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
                             }
                             true
                         }
-                        // ★ N1 共享章末处理器：RTL 版式"向后读"的末端是第 0 页端，其余版式是末页端；
-                        //   反方向（回第一章）永不触发无缝
                         val handleChapterEnd = { isLast: Boolean ->
-                            val forwardEnd = if (mode == Mode.RTL) !isLast else isLast
+                            val forwardEnd = isLast
                             if (forwardEnd && trySeamlessNextVolume()) {
                                 // 静默切换已启动
                             } else if (config.chapterTransition && tocItems.size > 1) {
-                                // ★ 修复：过渡页按钮方向用 forwardEnd（带阅读方向语义）——
-                                //   RTL 末端回调带回的是 isLast=false，直接透传会错显"返回上一章"
                                 chapterTransitionIsLast = forwardEnd
                                 showChapterTransition = true
                             }
