@@ -72,26 +72,24 @@ class App : Application(), SingletonImageLoader.Factory {
     override fun onCreate() {
         super.onCreate()
         try { System.loadLibrary("archive_stream") } catch (_: Throwable) {}
-        // SMB/WebDAV 集成胶水层初始化（任务1.5）：DB 注入 + appCtx 锚点
-        com.mangareader.smbbridge.SmbAppContextBridge.init(this)
-        com.mangareader.smbbridge.SmbDbBridge.mangaDatabase = db
-        com.mangareader.webdavbridge.WebDavDbBridge.mangaDatabase = db
-        com.mangareader.smbbridge.SmbDownloadQueue.init(this)
-        com.mangareader.smbbridge.SmbDownloadQueue.setDownloadFn { taskId, task, ctx ->
-            com.mangareader.smbbridge.RemoteDownloadExecutor.execute(taskId, task, ctx)
-        }
         SignatureVerifier.verify(this, "F6D95465BE7D17C1B3BE2B0C59969C22")
         startBackgroundVerify()
         crashHandler.init()
-        crashHandler.clearOldCrashLogs()
         startAnrWatchdog()
-        try { com.mangareader.sr.SrCore.init(this) } catch (_: Throwable) {}
-        // ★ 书库一次性去重（幂等；延迟 2s 避开启动 IO 高峰。DB 迁移在单事务内，失败整体回滚下次重试）
         appScope.launch {
+            com.mangareader.smbbridge.SmbAppContextBridge.init(this@App)
+            com.mangareader.smbbridge.SmbDbBridge.mangaDatabase = db
+            com.mangareader.webdavbridge.WebDavDbBridge.mangaDatabase = db
+            com.mangareader.smbbridge.SmbDownloadQueue.init(this@App)
+            com.mangareader.smbbridge.SmbDownloadQueue.setDownloadFn { taskId, task, ctx ->
+                com.mangareader.smbbridge.RemoteDownloadExecutor.execute(taskId, task, ctx)
+            }
+            crashHandler.clearOldCrashLogs()
+            try { com.mangareader.sr.SrCore.init(this@App) } catch (_: Throwable) {}
+            com.mangareader.komgabridge.KomgaBridges.init(this@App, db)
             kotlinx.coroutines.delay(2000L)
             try { com.mangareader.data.BookDeduper.runOnce(this@App, db.mangaDao()) } catch (_: Throwable) {}
         }
-        com.mangareader.komgabridge.KomgaBridges.init(this, db)
     }
 
     private fun startBackgroundVerify() {

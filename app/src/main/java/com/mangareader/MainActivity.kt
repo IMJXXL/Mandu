@@ -61,7 +61,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        SignatureVerifier.verify(this, "F6D95465BE7D17C1B3BE2B0C59969C22")
+
         enableEdgeToEdge()
         requestAllFilesAccess()
         val prefs = getSharedPreferences("manga_reader", MODE_PRIVATE)
