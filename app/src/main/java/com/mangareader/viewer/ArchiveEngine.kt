@@ -222,6 +222,14 @@ class ArchiveEngine(private val ctx: Context) {
         return bytes.joinToString("") { "%02x".format(it) }
     }
 
+    fun loadCoverThumbBytes(cover: String): ByteArray? {
+        try {
+            val file = File(coverDir, "${md5(cover)}.thumb")
+            if (file.exists()) return file.readBytes()
+        } catch (_: Exception) {}
+        return null
+    }
+
     private fun saveCoverToDisk(key: String, bmp: Bitmap) {
         try {
             evictOldCoverFiles()

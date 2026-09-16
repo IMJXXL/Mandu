@@ -27,6 +27,17 @@ class CoverFetcher(
         //   子文件夹封面请求在进入 z: 分支前就被抛 IllegalArgumentException（空白且无日志）。
         if (!coverPath.startsWith("cv:") && !coverPath.startsWith("z:")) throw IllegalArgumentException("Not a cover request: $coverPath")
 
+        if (coverPath.startsWith("cv:") && !coverPath.startsWith("cv:smb:") && !coverPath.startsWith("cv:webdav:") && !coverPath.startsWith("cv:komga:")) {
+            val thumbBytes = withContext(Dispatchers.IO) { engine.loadCoverThumbBytes(coverPath) }
+            if (thumbBytes != null) {
+                return SourceFetchResult(
+                    source = ImageSource(source = Buffer().write(thumbBytes), fileSystem = options.fileSystem),
+                    mimeType = "image/jpeg",
+                    dataSource = DataSource.DISK,
+                )
+            }
+        }
+
         // ★ 动态封面开关（阅读设置）：关闭时由请求级 StaticFirstFrameDecoder 解首帧，
         //   开启时走 Coil 全局动图解码器播放动画（对齐参考项目 coverThumb 管线）
 
