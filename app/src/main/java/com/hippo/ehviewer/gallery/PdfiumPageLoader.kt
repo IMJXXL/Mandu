@@ -44,11 +44,19 @@ suspend inline fun <T> usePdfiumPageLoader(
         val reader = NativeEngine.PdfRangeReader { position, readSize ->
             val buf = ByteArray(readSize)
             val read = source.readAt(position, buf, 0, readSize)
-            if (read > 0) buf.copyOf(read) else null
+            if (read > 0) {
+                buf.copyOf(read)
+            } else {
+                android.util.Log.w("PdfiumOpen", "readAt failed cacheKey=$cacheKey pos=$position size=$readSize read=$read")
+                null
+            }
         }
 
         val opened = withContext(Dispatchers.IO) {
             NativeEngine.pdfOpenCustom(pdfKey, size, reader)
+        }
+        if (!opened) {
+            android.util.Log.e("PdfiumOpen", "pdfOpenCustom failed cacheKey=$cacheKey size=$size")
         }
         check(opened) { "pdfium failed to open PDF: $cacheKey" }
 

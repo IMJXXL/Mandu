@@ -11,7 +11,12 @@ import com.hippo.ehviewer.webdav.WebDavCache
 import com.hippo.ehviewer.webdav.WebDavPasswordStore
 import com.hippo.ehviewer.webdav.WebDavRepository
 import java.io.File
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -34,22 +39,42 @@ object WebDavCoverLoader {
 
     private val dedup = java.util.concurrent.ConcurrentHashMap<String, Mutex>()
 
-    suspend fun loadCoverRawWebDav(coverPath: String, wantRaw: Boolean = false): Pair<ByteArray, String>? = withContext(Dispatchers.IO) {
+    @Volatile
+    private var scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    fun cancelAll() {
+        val old = scope
+        scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        old.cancel()
+    }
+
+    suspend fun loadCoverRawWebDav(coverPath: String, wantRaw: Boolean = false): Pair<ByteArray, String>? {
+        val currentScope = scope
+        val deferred = currentScope.async {
+            loadCoverRawWebDavInternal(coverPath, wantRaw)
+        }
+        return try {
+            deferred.await()
+        } catch (e: CancellationException) {
+            deferred.cancel()
+            null
+        } catch (t: Throwable) {
+            android.util.Log.w(TAG, "loadCoverRawWebDav failed: ${t.message}")
+            null
+        }
+    }
+
+    private suspend fun loadCoverRawWebDavInternal(coverPath: String, wantRaw: Boolean = false): Pair<ByteArray, String>? = withContext(Dispatchers.IO) {
         val ref = WebDavPaths.parseCoverPath(coverPath) ?: return@withContext null
         if (WebDavUnsupportedFormatHandler.isUnsupported(ref.ext)) return@withContext null
 
         val mutex = dedup.getOrPut(coverPath) { Mutex() }
         try {
-            // ★ NonCancellable（对齐 SmbCoverLoader）：即使 Coil 滚动取消请求，也完成
-            //   封面提取并缓存到磁盘，下次书架加载即可命中磁盘缓存
-            withContext(kotlinx.coroutines.NonCancellable) {
-                mutex.withLock {
-                    // 归档/文档格式永远先走缩略图降采样（loadCoverByArchiveCache），
-                    // 避免下载 10MB+ 原始页（wantRaw 仅对文件夹书/直接图片文件有意义，
-                    // 它们的 loadCoverByArchiveCache 返回 null 后 fallback 到原始字节路径）。
-                    loadCoverByArchiveCache(ref) ?: loadCoverByTransientSession(ref)
-                }
+            mutex.withLock {
+                loadCoverByArchiveCache(ref) ?: loadCoverByTransientSession(ref)
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (t: Throwable) {
             android.util.Log.w(TAG, "loadCoverRawWebDav failed: ${t.message}")
             null

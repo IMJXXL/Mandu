@@ -49,6 +49,7 @@ private val SMB_CACHE_ENTRIES = listOf(
     CacheEntry("归档封面缩略图", "归档第一页封面（本地/SMB/WebDAV 共享）", "cache/archive_thumb"),
     CacheEntry("RAR/7z 提取缓存", "RAR/CBR/7z 归档提取的页文件", "cache/solid_extract"),
     CacheEntry("PDF/EPUB 提取缓存", "PDF/EPUB 文档提取的页文件", "cache/document_extract"),
+
 )
 
 @OptIn(ExperimentalMaterial3Api::class)

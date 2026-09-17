@@ -43,7 +43,7 @@ class Scanner(private val ctx: Context, private val dao: MangaDao) {
         try {
             val treeStr = uri.toString()
             val docId = DocumentsContract.getTreeDocumentId(uri)
-            val name = docId.substringAfterLast("/").replace("%20", " ")
+    val name = docId.substringAfterLast("/").substringAfter(":").replace("%20", " ")
             val auth = uri.authority ?: ""
             val child = DocumentsContract.buildChildDocumentsUriUsingTree(uri, docId)
 
@@ -423,7 +423,7 @@ class Scanner(private val ctx: Context, private val dao: MangaDao) {
     private suspend fun commitScanResults(books: List<Book>, treeStr: String, auth: String, docId: String) {
         // ★ 回归修复：两阶段改造后此函数漏了 Folder 登记，导入的文件夹不进"已导入文件夹"列表，
         //   刷新/一键扫描入口缺失。照抄老 scan() 的 upsert（本次没扫到书也要登记）
-        val name = docId.substringAfterLast("/").replace("%20", " ")
+        val name = docId.substringAfterLast("/").substringAfter(":").replace("%20", " ")
         val ex = dao.getFolderByUri(treeStr)
         if (ex != null) dao.updateFolder(ex.copy(lastScanAt = System.currentTimeMillis(), displayName = name))
         else dao.insertFolder(Folder(treeUri = treeStr, displayName = name, lastScanAt = System.currentTimeMillis()))

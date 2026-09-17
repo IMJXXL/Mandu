@@ -36,6 +36,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = null) {
@@ -157,59 +158,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
             Spacer(Modifier.height(12.dp))
             }
             item {
-            // ★ 临时调试：一键导出运行日志（崩溃/ANR/logcat），分享给开发者远程排查（smb_embed_lv119 用户要求）
-            Card(Modifier.fillMaxWidth().clickable {
-                scope.launch {
-                    try {
-                        val ts = java.text.SimpleDateFormat("MMdd_HHmmss", java.util.Locale.getDefault()).format(java.util.Date())
-                        val out = java.io.File(ctx.getExternalFilesDir(null), "log_export_$ts.txt")
-                        withContext(Dispatchers.IO) {
-                            val sb = StringBuilder()
-                            sb.append("=== MangaReader 日志包 $ts ===\n")
-                            runCatching {
-                                val pm = ctx.packageManager.getPackageInfo(ctx.packageName, 0)
-                                sb.append("version: ${pm.versionName} (${pm.longVersionCode})\n")
-                                sb.append("device: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL} API ${android.os.Build.VERSION.SDK_INT}\n")
-                            }
-                            java.io.File(ctx.getExternalFilesDir(null), "crash_logs").listFiles()?.sortedBy { it.name }?.forEach { f ->
-                                sb.append("\n===== crash/${f.name} =====\n").append(runCatching { f.readText() }.getOrDefault("<unreadable>")).append('\n')
-                            }
-                            java.io.File(ctx.getExternalFilesDir(null), "anr_log.txt").takeIf { it.isFile }?.let { f ->
-                                sb.append("\n===== anr_log.txt (tail 400 lines) =====\n")
-                                runCatching { f.readText().lines().takeLast(400).joinToString("\n") }.getOrNull()?.let { sb.append(it).append('\n') }
-                            }
-                            runCatching {
-                                val p = Runtime.getRuntime().exec(arrayOf("logcat", "-d", "-v", "time", "-t", "3000"))
-                                sb.append("\n===== logcat (last 3000 lines) =====\n")
-                                sb.append(p.inputStream.readBytes().toString(Charsets.UTF_8))
-                                p.destroy()
-                            }
-                            out.writeText(sb.toString())
-                        }
-                        val uri = androidx.core.content.FileProvider.getUriForFile(ctx, "com.mangareader.fileprovider", out)
-                        val share = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                            type = "text/plain"
-                            putExtra(android.content.Intent.EXTRA_STREAM, uri)
-                            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                        }
-                        ctx.startActivity(android.content.Intent.createChooser(share, "分享日志包"))
-                        android.widget.Toast.makeText(ctx, "已生成：${out.absolutePath}", android.widget.Toast.LENGTH_LONG).show()
-                    } catch (e: Throwable) {
-                        android.widget.Toast.makeText(ctx, "导出失败：${e.message}", android.widget.Toast.LENGTH_SHORT).show()
-                    }
-                }
-            }) {
-                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.BugReport, null, modifier = Modifier.size(24.dp))
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text("导出运行日志（临时）", fontSize = 16.sp)
-                        Text("打包崩溃/ANR/logcat 并弹出分享，用于远程排查", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-            }
-            }
-            item {
+
             Spacer(Modifier.height(8.dp))
             Card(Modifier.fillMaxWidth().clickable { showFolderManage = true }) {
                 Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -482,7 +431,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
                     Icon(Icons.Default.Dns, null, modifier = Modifier.size(24.dp))
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
-                        Text("OPDS 服务器管理", fontSize = 16.sp)
+                        Text("OPDS 服务器管理 Beta", fontSize = 16.sp)
                         Text("配置 OPDS 漫画服务器（Kavita/LANraragi/Calibre 等）", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Icon(Icons.Default.ChevronRight, null)
@@ -491,6 +440,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
             }
 
             item {
+
 
             Spacer(Modifier.height(16.dp))
             }

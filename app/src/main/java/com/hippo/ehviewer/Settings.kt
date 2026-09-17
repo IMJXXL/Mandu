@@ -598,16 +598,7 @@ object Settings : DataStorePreferences(null) {
     val readerLibDirectBitmap = boolPref("pref_reader_lib_direct_bitmap", false)
 
     /**
-     * Window HDR presentation only: when a composed page has a gain map and the
-     * display supports HDR, set [android.view.Window.setColorMode] to
-     * [android.content.pm.ActivityInfo.COLOR_MODE_HDR].
-     *
-     * Does **not** disable convert (JXR/PQ/JXL → Ultra HDR) or gain-map decode —
-     * those always run so files open; off = SDR base presentation without window HDR.
-     */
-    val readerHdrDisplay = boolPref("pref_reader_hdr_display", false)
 
-    /**
      * OPPO / OnePlus / realme **ProXDR** HEIC: after platform HEIC decode, attach
      * [android.graphics.Gainmap] from the proprietary trailer (same present path as
      * Ultra HDR / gain-map AVIF — **no** UHDR JPEG convert). Off = SDR base only.

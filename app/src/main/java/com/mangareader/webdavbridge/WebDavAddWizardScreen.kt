@@ -79,7 +79,7 @@ fun WebDavAddWizardScreen(onBack: () -> Unit, onSaved: () -> Unit, initial: WebD
         val result = withContext(Dispatchers.IO) {
             runCatching {
                 WebDavClient.testConnection(temp, password).getOrThrow()
-                WebDavGateway.listDirectory(temp, password, "")
+                WebDavGateway.listDirectory(temp, password, "", useCache = false)
             }
         }
         busy = false
@@ -100,7 +100,7 @@ fun WebDavAddWizardScreen(onBack: () -> Unit, onSaved: () -> Unit, initial: WebD
         val src = tempSource ?: return
         busy = true
         dirEntries = withContext(Dispatchers.IO) {
-            runCatching { WebDavGateway.listDirectory(src, password, d) }.getOrDefault(emptyList())
+            runCatching { WebDavGateway.listDirectory(src, password, d, useCache = false) }.getOrDefault(emptyList())
         }
         busy = false
     }

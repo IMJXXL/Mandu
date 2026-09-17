@@ -45,7 +45,7 @@ class App : Application(), SingletonImageLoader.Factory {
             .diskCache {
                 DiskCache.Builder()
                     .directory(context.cacheDir.toOkioPath() / "image_cache")
-                    .maxSizeBytes(5L * 1024 * 1024 * 1024)
+                    .maxSizeBytes(10L * 1024 * 1024 * 1024)
                     .build()
             }
             .crossfade(300)
@@ -54,7 +54,7 @@ class App : Application(), SingletonImageLoader.Factory {
                 (getSystemService(ACTIVITY_SERVICE) as? ActivityManager)?.getMemoryInfo(mi)
                 mi.totalMem < 3L * 1024 * 1024 * 1024
             })
-            .fetcherCoroutineContext(Dispatchers.IO.limitedParallelism(8))
+            .fetcherCoroutineContext(Dispatchers.IO.limitedParallelism(12))
             .decoderCoroutineContext(Dispatchers.IO.limitedParallelism(3))
             .serviceLoaderEnabled(false)
             .components {

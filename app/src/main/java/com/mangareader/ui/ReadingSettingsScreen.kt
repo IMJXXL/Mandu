@@ -32,7 +32,7 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
             it.copy(readBackground = com.mangareader.data.ReaderConfig.ReadBackground.WHITE)
         } else it
     }) }
-    var autoRefresh by remember { mutableStateOf(prefs.getBoolean("auto_refresh", false)) }
+
 
     Scaffold(
         topBar = {
@@ -355,23 +355,7 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
             }
 
             item {
-                Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("HDR 显示", fontSize = 16.sp)
-                        Text("需原生 HDR 屏支持，低亮度屏（<600nit）开启后可能发黄", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    var hdrDisplay by remember { mutableStateOf(Settings.readerHdrDisplay.value) }
-                    Switch(
-                        checked = hdrDisplay,
-                        onCheckedChange = {
-                            hdrDisplay = it
-                            Settings.readerHdrDisplay.value = it
-                        },
-                    )
-                }
-            }
 
-            item {
                 Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
                     Text("PDF加载质量", fontSize = 16.sp)
                     Spacer(Modifier.height(4.dp))

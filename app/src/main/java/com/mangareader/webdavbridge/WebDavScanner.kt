@@ -70,8 +70,20 @@ object WebDavScanner {
         for (entry in entries) {
             if (ctx.discovered.size >= MAX_BOOKS) return
             when (entry) {
-                is BrowseEntryRemote.Directory ->
-                    walk(ctx, joinDir(relDir, entry.relativeName), depth + 1, onProgress)
+                is BrowseEntryRemote.Directory -> {
+                    val remoteDir = joinDir(relDir, entry.relativeName)
+                    val coverRemote = findFirstCoverRemote(ctx, remoteDir, 0)
+                    if (coverRemote != null) {
+                        putBook(
+                            ctx,
+                            remotePath = remoteDir,
+                            title = entry.name.ifEmpty { remoteDir.substringAfterLast('/') },
+                            ext = "",
+                            coverRemote = coverRemote,
+                            totalPages = null,
+                        )
+                    }
+                }
                 is BrowseEntryRemote.FolderGallery -> {
                     if (entry.imageFileNames.isEmpty()) continue
                     val remoteDir = joinDir(relDir, entry.relativeName)
@@ -99,6 +111,35 @@ object WebDavScanner {
             }
             if (ctx.discovered.isNotEmpty()) onProgress?.invoke(ctx.discovered.size)
         }
+    }
+
+    private suspend fun findFirstCoverRemote(ctx: ScanCtx, relDir: String, depth: Int): String? {
+        if (depth > MAX_DEPTH) return null
+        val entries = runCatching { WebDavGateway.listDirectory(ctx.source, ctx.password, relDir) }
+            .getOrDefault(emptyList())
+        for (entry in entries) {
+            when (entry) {
+                is BrowseEntryRemote.FolderGallery -> {
+                    if (entry.imageFileNames.isNotEmpty()) {
+                        return joinDir(joinDir(relDir, entry.relativeName), entry.imageFileNames.first())
+                    }
+                }
+                is BrowseEntryRemote.ArchiveGallery -> {
+                    return joinDir(relDir, entry.fileName)
+                }
+                is BrowseEntryRemote.Directory -> {
+                    val subCover = findFirstCoverRemote(ctx, joinDir(relDir, entry.relativeName), depth + 1)
+                    if (subCover != null) return subCover
+                }
+                else -> {
+                    val ext = extOf(entry.name)
+                    if (ext in SCANNABLE_FORMATS) {
+                        return joinDir(relDir, entry.name)
+                    }
+                }
+            }
+        }
+        return null
     }
 
     private fun putBook(

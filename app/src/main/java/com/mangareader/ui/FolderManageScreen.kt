@@ -16,7 +16,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
+
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -25,7 +25,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -35,14 +35,24 @@ import androidx.compose.ui.unit.sp
 import com.mangareader.App
 import com.mangareader.Scanner
 import com.mangareader.data.Folder
+import com.mangareader.smbbridge.CacheEntry
+import com.mangareader.smbbridge.CacheManagementCard
+import com.mangareader.smbbridge.SectionCard
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+private val LOCAL_CACHE_ENTRIES = listOf(
+
+    CacheEntry("归档封面缩略图", "归档第一页封面（本地/SMB/WebDAV 共享）", "cache/archive_thumb"),
+    CacheEntry("本地封面缓存", "本地导入书籍的封面缩略图", "files/covers"),
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FolderManageScreen(onBack: () -> Unit) {
-    BackHandler { onBack() }
+    var showSettings by remember { mutableStateOf(false) }
+    BackHandler { if (showSettings) showSettings = false else onBack() }
     val ctx = LocalContext.current
     val app = ctx.applicationContext as App
     val dao = remember { app.db.mangaDao() }
@@ -54,9 +64,12 @@ fun FolderManageScreen(onBack: () -> Unit) {
     var scanTarget by remember { mutableStateOf("") }
     var scanCount by remember { mutableIntStateOf(0) }
     var showDeleteFolder by remember { mutableStateOf<Folder?>(null) }
+    var showRenameFolder by remember { mutableStateOf<Folder?>(null) }
     var showNomediaDialog by remember { mutableStateOf<android.net.Uri?>(null) }
     var folderHiddenMap by remember { mutableStateOf<Map<Long, Boolean>>(emptyMap()) }
     var verifyZipContent by remember { mutableStateOf(prefs.getBoolean("scan_verify_zip_content", false)) }
+    var autoRefresh by remember { mutableStateOf(prefs.getBoolean("auto_refresh", false)) }
+
 
     LaunchedEffect(folders) {
         if (folders.isNotEmpty()) {
@@ -99,6 +112,9 @@ fun FolderManageScreen(onBack: () -> Unit) {
                 title = { Text("本地漫画管理") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") } },
                 actions = {
+                    IconButton(onClick = { showSettings = true }) {
+                        Icon(Icons.Default.Settings, "本地漫画设置")
+                    }
                     IconButton(onClick = { picker.launch(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply { putExtra("android.content.extra.SHOW_ADVANCED", true) }) }) {
                         Icon(Icons.Default.Add, "导入文件夹")
                     }
@@ -107,29 +123,7 @@ fun FolderManageScreen(onBack: () -> Unit) {
         }
     ) { pad ->
         Column(Modifier.padding(pad).fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
-            Surface(
-                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)),
-                color = MaterialTheme.colorScheme.surfaceVariant
-            ) {
-                Column(Modifier.padding(12.dp)) {
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text("扫描时校验压缩包内容", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                            Text(
-                                "开启后：.zip/.cbz 须内部含图才视为漫画\n防止非漫画 archive 被误识别\n代价：大书库扫描会变慢",
-                                fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                lineHeight = 14.sp
-                            )
-                        }
-                        Switch(checked = verifyZipContent, onCheckedChange = { v ->
-                            verifyZipContent = v
-                            prefs.edit().putBoolean("scan_verify_zip_content", v).apply()
-                        })
-                    }
-                }
-            }
-            Spacer(Modifier.height(16.dp))
+
             if (folders.isEmpty()) {
                 Text("还没有导入文件夹", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else if (folders.size >= 2) {
@@ -162,48 +156,56 @@ fun FolderManageScreen(onBack: () -> Unit) {
             }
             folders.forEach { f ->
                 val dateFormat = remember(f.id) { java.text.SimpleDateFormat("MM-dd HH:mm") }
-                Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(f.displayName, fontWeight = FontWeight.Medium, fontSize = 14.sp)
-                        Text("扫描于 ${if (f.lastScanAt > 0) dateFormat.format(java.util.Date(f.lastScanAt)) else "未扫描"}",
-                            fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    TextButton(onClick = {
-                        scope.launch {
-                            scanning = true; scanTarget = "正在扫描「${f.displayName}」..."; scanCount = 0
-                            val (addedN, removedN) = withContext(Dispatchers.IO) { scanner.rescanAndCommit(f) { count -> scanCount = count } }
-                            scanCount = addedN
-                            scanning = false
-                            val msg = when {
-                                addedN == 0 && removedN == 0 -> "刷新完成，书架无变化"
-                                else -> "刷新成功：新增 $addedN 本、移除 $removedN 本，封面后台加载中"
+                Card(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                    Column(Modifier.padding(12.dp)) {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Folder, null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
+                            Spacer(Modifier.width(8.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(f.displayName, fontWeight = FontWeight.Medium, fontSize = 14.sp)
+                                Text("扫描于 ${if (f.lastScanAt > 0) dateFormat.format(java.util.Date(f.lastScanAt)) else "未扫描"}",
+                                    fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
-                            Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show()
-                            scanning = false
+                            val folderHidden = folderHiddenMap[f.id] ?: false
+                            Switch(checked = !folderHidden, onCheckedChange = { show ->
+                                folderHiddenMap = folderHiddenMap + (f.id to !show)
+                                scope.launch {
+                                    withContext(Dispatchers.IO) {
+                                        val treeUri = android.net.Uri.parse(f.treeUri)
+                                        val auth = treeUri.authority ?: ""
+                                        val treeDocId = android.net.Uri.decode(treeUri.lastPathSegment ?: "").removePrefix("tree:")
+                                        dao.setHiddenByFolderParams("a:$auth|$treeDocId|%", "d:$auth|$treeDocId%", "z:a:$auth|$treeDocId|%", !show)
+                                    }
+                                    Toast.makeText(ctx, if (show) "已显示「${f.displayName}」的漫画" else "已隐藏「${f.displayName}」的漫画", Toast.LENGTH_SHORT).show()
+                                }
+                            })
                         }
-                    }) { Text("刷新") }
-                    val folderHidden = folderHiddenMap[f.id] ?: false
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(if (folderHidden) "隐藏" else "已显示", fontSize = 12.sp,
-                            color = if (folderHidden) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary)
-                    Switch(checked = !folderHidden, onCheckedChange = { show ->
-                        folderHiddenMap = folderHiddenMap + (f.id to !show)
-                        scope.launch {
-                            withContext(Dispatchers.IO) {
-                                val treeUri = android.net.Uri.parse(f.treeUri)
-                                val auth = treeUri.authority ?: ""
-                                val treeDocId = android.net.Uri.decode(treeUri.lastPathSegment ?: "").removePrefix("tree:")
-                                dao.setHiddenByFolderParams("a:$auth|$treeDocId|%", "d:$auth|$treeDocId%", "z:a:$auth|$treeDocId|%", !show)
-                            }
-                            Toast.makeText(ctx, if (show) "已显示「${f.displayName}」的漫画" else "已隐藏「${f.displayName}」的漫画", Toast.LENGTH_SHORT).show()
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                            TextButton(onClick = {
+                                scope.launch {
+                                    scanning = true; scanTarget = "正在扫描「${f.displayName}」..."; scanCount = 0
+                                    val (addedN, removedN) = withContext(Dispatchers.IO) { scanner.rescanAndCommit(f) { count -> scanCount = count } }
+                                    scanCount = addedN
+                                    scanning = false
+                                    val msg = when {
+                                        addedN == 0 && removedN == 0 -> "刷新完成，书架无变化"
+                                        else -> "刷新成功：新增 $addedN 本、移除 $removedN 本，封面后台加载中"
+                                    }
+                                    Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show()
+                                    scanning = false
+                                }
+                            }) { Text("刷新") }
+                            TextButton(onClick = { showRenameFolder = f }) { Text("重命名") }
+                            TextButton(onClick = { showDeleteFolder = f }) { Text("删除", color = MaterialTheme.colorScheme.error) }
                         }
-                    })
                     }
-                    TextButton(onClick = { showDeleteFolder = f }) { Text("删除", color = MaterialTheme.colorScheme.error) }
                 }
             }
+
+
         }
     }
+
 
     if (showDeleteFolder != null) {
         val f = showDeleteFolder!!
@@ -255,6 +257,35 @@ fun FolderManageScreen(onBack: () -> Unit) {
             dismissButton = { TextButton(onClick = { showNomediaDialog = null }) { Text("跳过") } })
     }
 
+    if (showRenameFolder != null) {
+        val f = showRenameFolder!!
+        var renameText by remember(f.id) { mutableStateOf(f.displayName) }
+        AlertDialog(
+            onDismissRequest = { showRenameFolder = null },
+            title = { Text("重命名文件夹") },
+            text = {
+                OutlinedTextField(
+                    value = renameText,
+                    onValueChange = { renameText = it },
+                    singleLine = true,
+                    label = { Text("文件夹名称") }
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (renameText.isNotBlank()) {
+                        scope.launch {
+                            withContext(Dispatchers.IO) { dao.updateFolder(f.copy(displayName = renameText.trim())) }
+                            showRenameFolder = null
+                            Toast.makeText(ctx, "已重命名", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }) { Text("确定") }
+            },
+            dismissButton = { TextButton(onClick = { showRenameFolder = null }) { Text("取消") } }
+        )
+    }
+
     if (scanning) {
         val infiniteTransition = rememberInfiniteTransition(label = "scan")
         val animProgress by infiniteTransition.animateFloat(
@@ -285,5 +316,46 @@ fun FolderManageScreen(onBack: () -> Unit) {
                     Text("已发现 $scanCount 本漫画", fontSize = 14.sp, color = MaterialTheme.colorScheme.primary)
                 }
             }, confirmButton = {})
+    }
+
+    if (showSettings) {
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { Text("本地漫画设置") },
+                    navigationIcon = { IconButton(onClick = { showSettings = false }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") } },
+                )
+            }
+        ) { pad ->
+            Column(Modifier.padding(pad).fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
+                SectionCard("扫描设置") {
+                    Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("扫描时校验压缩包内容", fontSize = 16.sp)
+                            Text("开启后：.zip/.cbz 须内部含图才视为漫画\n防止非漫画 archive 被误识别\n代价：大书库扫描会变慢", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(checked = verifyZipContent, onCheckedChange = { v ->
+                            verifyZipContent = v
+                            prefs.edit().putBoolean("scan_verify_zip_content", v).apply()
+                        })
+                    }
+                    Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("启动自动刷新", fontSize = 16.sp)
+                            Text("打开应用时自动扫描本地文件夹发现新书", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(checked = autoRefresh, onCheckedChange = { v ->
+                            autoRefresh = v
+                            prefs.edit().putBoolean("auto_refresh", v).apply()
+                        })
+                    }
+                }
+                CacheManagementCard(
+                    ctx = ctx,
+                    scope = scope,
+                    entries = LOCAL_CACHE_ENTRIES,
+                )
+            }
+        }
     }
 }

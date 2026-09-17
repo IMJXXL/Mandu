@@ -11,12 +11,12 @@ plugins {
 
 android {
     namespace = "com.mangareader"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.mangareader"
         minSdk = 26
-        targetSdk = 36
+        targetSdk = 37
 versionCode = 34
 versionName = "1.3"
 

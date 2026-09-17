@@ -12,11 +12,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.mangareader.komgabridge.KomgaScanner
 import com.mangareader.komgabridge.api.KomgaApiClient
 import com.mangareader.komgabridge.api.KomgaHttpClient
 import com.mangareader.komgabridge.data.KomgaAuthType
 import com.mangareader.komgabridge.data.KomgaConnection
 import com.mangareader.komgabridge.data.KomgaConnectionStore
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -58,7 +60,7 @@ fun KomgaAddServerDialog(
                             saving = true
                             scope.launch {
                                 try {
-                                    withContext(Dispatchers.IO) {
+                                    val connId = withContext(Dispatchers.IO) {
                                         val conn = KomgaConnection(
                                             id = initial?.id ?: UUID.randomUUID().toString(),
                                             name = name.trim(),
@@ -70,8 +72,13 @@ fun KomgaAddServerDialog(
                                             allowSelfSignedCert = allowSelfSigned,
                                         )
                                         store.saveConnection(conn)
+                                        conn.id
                                     }
+                                    Toast.makeText(ctx, "已保存，开始扫描入库", Toast.LENGTH_SHORT).show()
                                     onSaved()
+                                    CoroutineScope(Dispatchers.IO).launch {
+                                        KomgaScanner.scanKomgaServer(connId)
+                                    }
                                 } catch (t: Throwable) {
                                     Toast.makeText(ctx, t.message ?: "保存失败", Toast.LENGTH_SHORT).show()
                                 } finally {

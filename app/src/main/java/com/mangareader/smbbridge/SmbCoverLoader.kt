@@ -11,7 +11,12 @@ import com.hippo.ehviewer.smb.SmbCache
 import com.hippo.ehviewer.smb.SmbPasswordStore
 import com.hippo.ehviewer.smb.SmbRepository
 import java.io.File
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -35,20 +40,42 @@ object SmbCoverLoader {
 
     private val dedup = java.util.concurrent.ConcurrentHashMap<String, Mutex>()
 
-    suspend fun loadCoverRawSmb(coverPath: String, wantRaw: Boolean = false): Pair<ByteArray, String>? = withContext(Dispatchers.IO) {
+    @Volatile
+    private var scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
+    fun cancelAll() {
+        val old = scope
+        scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        old.cancel()
+    }
+
+    suspend fun loadCoverRawSmb(coverPath: String, wantRaw: Boolean = false): Pair<ByteArray, String>? {
+        val currentScope = scope
+        val deferred = currentScope.async {
+            loadCoverRawSmbInternal(coverPath, wantRaw)
+        }
+        return try {
+            deferred.await()
+        } catch (e: CancellationException) {
+            deferred.cancel()
+            null
+        } catch (t: Throwable) {
+            android.util.Log.w(TAG, "loadCoverRawSmb failed: ${t.message}")
+            null
+        }
+    }
+
+    private suspend fun loadCoverRawSmbInternal(coverPath: String, wantRaw: Boolean = false): Pair<ByteArray, String>? = withContext(Dispatchers.IO) {
         val ref = SmbPaths.parseCoverPath(coverPath) ?: return@withContext null
         if (SmbUnsupportedFormatHandler.isUnsupported(ref.ext)) return@withContext null
 
         val mutex = dedup.getOrPut(coverPath) { Mutex() }
         try {
-            // ★ NonCancellable：即使 Coil 滚动取消请求，也完成封面提取并缓存到磁盘，
-            //   下次书架加载即可命中磁盘缓存（避免"点开一次才有封面"问题）
-            withContext(kotlinx.coroutines.NonCancellable) {
-                mutex.withLock {
-                    loadCoverByArchiveCache(ref) ?: loadCoverByTransientSession(ref)
-                }
+            mutex.withLock {
+                loadCoverByArchiveCache(ref) ?: loadCoverByTransientSession(ref)
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (t: Throwable) {
             android.util.Log.w(TAG, "loadCoverRawSmb failed: ${t.message}")
             null
