@@ -89,7 +89,7 @@ data class ReaderConfig(
             putFloat("${prefix}pdfQuality", pdfQuality)
             putBoolean("isImmersiveMode", isImmersiveMode)
             putInt("orientation", orientation)
-            putInt("${prefix}autoFlipInterval", autoFlipInterval)
+            putInt("autoFlipInterval", autoFlipInterval)
             putBoolean("${prefix}isGrayscale", isGrayscale)
             putBoolean("${prefix}isInvertColors", isInvertColors)
             putBoolean("${prefix}isFlipFlashEnabled", isFlipFlashEnabled)
@@ -138,7 +138,7 @@ data class ReaderConfig(
                 pdfQuality = prefs.safeGetFloat("${prefix}pdfQuality", 3.0f),
                 isImmersiveMode = prefs.safeGetBoolean("isImmersiveMode", true),
                 orientation = prefs.safeGetInt("orientation", -1),
-                autoFlipInterval = prefs.safeGetInt("${prefix}autoFlipInterval", 0),
+                autoFlipInterval = prefs.safeGetInt("autoFlipInterval", 0),
                 isGrayscale = prefs.safeGetBoolean("${prefix}isGrayscale", false),
                 isInvertColors = prefs.safeGetBoolean("${prefix}isInvertColors", false),
                 isFlipFlashEnabled = prefs.safeGetBoolean("${prefix}isFlipFlashEnabled", false),

@@ -179,7 +179,7 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
                     Text(if (config.autoFlipInterval == 0) "当前: 关闭" else "当前: ${config.autoFlipInterval / 1000.0}秒", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.primary)
                     Slider(
                         value = config.autoFlipInterval.toFloat(),
-                        onValueChange = { config = config.copy(autoFlipInterval = it.toInt()) },
+                        onValueChange = { config = config.copy(autoFlipInterval = Math.round(it).toInt()) },
                         onValueChangeFinished = { config.save(ctx) },
                         valueRange = 0f..30000f, steps = 29, modifier = Modifier.fillMaxWidth()
                     )
