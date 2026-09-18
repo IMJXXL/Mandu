@@ -1687,6 +1687,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
         activePagerRef?.imageMarginH = config.imageMarginH
         activePagerRef?.setTrimWhiteBorder(config.isTrimWhiteBorder, config.trimThreshold, config.trimWhiteRatio)
         activePagerRef?.setTileModeEnabled(config.tileModeEnabled)
+        activePagerRef?.setAutoFlipInterval(config.autoFlipInterval)
         activePagerRef?.pageBgColor = bgColor.toArgb()
         activeWebtoonRef?.imageMarginH = config.imageMarginH
         activeWebtoonRef?.gapEnabled = (mode == Mode.WEBTOON_GAP)
