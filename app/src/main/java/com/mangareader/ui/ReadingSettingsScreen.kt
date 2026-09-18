@@ -13,6 +13,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -215,24 +216,8 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
             item {
                 Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text("墨水屏模式", fontSize = 16.sp)
-                        Text("降低分辨率解码、减少预加载、缩短UI自动隐藏时间以减少残影", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Switch(
-                        checked = config.isEinkMode,
-                        onCheckedChange = {
-                            config = config.copy(isEinkMode = it)
-                            config.save(ctx)
-                        },
-                    )
-                }
-            }
-
-            item {
-                Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("瓦片解码(tile)", fontSize = 16.sp)
-                        Text("开启后长图按可见区域局部解码，内存占用更低；超分、白边裁剪、旋转适配不生效", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("按需解码", fontSize = 16.sp)
+                        Text("旨在解决超长图降采样问题，开启后按可见区域局部解码，内存占用更低；超分、白边裁剪、旋转适配不生效", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Switch(
                         checked = config.tileModeEnabled,
@@ -249,9 +234,9 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
                 Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
                     Text("降采样档位", fontSize = 16.sp, fontWeight = FontWeight.Medium)
                     Spacer(Modifier.height(4.dp))
-                    Text(if (tierDisabled) "tile 或墨水屏模式下固定标准档" else "大图自动降采样以减少内存占用", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("大图自动降采样以减少内存占用", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(8.dp))
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(Modifier.fillMaxWidth().alpha(if (tierDisabled) 0.4f else 1f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         listOf("标准" to com.mangareader.data.ReaderConfig.DownsampleTier.STANDARD, "高清" to com.mangareader.data.ReaderConfig.DownsampleTier.HD, "超清" to com.mangareader.data.ReaderConfig.DownsampleTier.ULTRA_HD, "原图" to com.mangareader.data.ReaderConfig.DownsampleTier.ORIGINAL).forEach { (label, tier) ->
                             Surface(
                                 modifier = Modifier.weight(1f).clickable {
@@ -269,6 +254,22 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
                         }
                     }
                     Spacer(Modifier.height(12.dp))
+                }
+            }
+
+            item {
+                Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("墨水屏模式", fontSize = 16.sp)
+                        Text("降低分辨率解码、减少预加载、缩短UI自动隐藏时间以减少残影", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(
+                        checked = config.isEinkMode,
+                        onCheckedChange = {
+                            config = config.copy(isEinkMode = it)
+                            config.save(ctx)
+                        },
+                    )
                 }
             }
 
