@@ -198,6 +198,8 @@ fun NativeReaderScreen(
         // ★ SMB/WebDAV：供给必须在 setup 之前挂接——setup 内 preloadAround 会立刻触发 loadPageAsync
         if (delegate is PagerReaderView) delegate.remotePageSupply = remoteSupply
         if (delegate is WebtoonReaderView) delegate.remotePageSupply = remoteSupply
+        if (delegate is PagerReaderView) delegate.setTileModeEnabled(tileModeEnabled)
+        if (delegate is WebtoonReaderView) delegate.setTileModeEnabled(tileModeEnabled)
         // ★ §34.3：verticalPager 传给 pagerView.setup（webtoon 走默认 false 无影响）
         delegate.setup(engine, treePath, pages, savedPage, isVertical, 0, isRtl, verticalPager)
         // Apply new config parameters to the delegate
@@ -207,7 +209,6 @@ fun NativeReaderScreen(
             delegate.setFitScreen(fitScreen)
             delegate.setTrimWhiteBorder(trimWhiteBorder, trimThreshold, trimWhiteRatio)
             delegate.setPanNavigation(panNavigation)
-            delegate.setTileModeEnabled(tileModeEnabled)
         }
         if (delegate is PagerReaderView) {
             delegate.setDoublePageReverse(doublePageReverse)
@@ -218,7 +219,6 @@ fun NativeReaderScreen(
             delegate.trimWhiteBorder = trimWhiteBorder
             delegate.trimThreshold = trimThreshold
             delegate.trimWhiteRatio = trimWhiteRatio
-            delegate.setTileModeEnabled(tileModeEnabled)
         }
         // ★ P0-2：切换交接——本次 setup 后立即从总线接管旧实例移交的位图（跨实例），首帧绑定直接命中缓存
         android.util.Log.w("NES", "setup delegate=${System.identityHashCode(delegate)} v=$isVertical vp=$verticalPager tree=$treePath")
