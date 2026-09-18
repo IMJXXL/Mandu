@@ -73,26 +73,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     private var trimThreshold: Int = 220
     private var trimWhiteRatio: Float = 0.90f
     private var panNavigation = false
-    private var autoFlipInterval: Int = 0
-    private val autoFlipHandler = android.os.Handler(android.os.Looper.getMainLooper())
-    private val autoFlipRunnable = object : Runnable {
-        override fun run() {
-            android.util.Log.d("AutoFlip", "run cur=$currentPage total=${pageList.size} scrolling=$isScrolling interval=$autoFlipInterval")
-            if (pageList.isNotEmpty() && currentPage < pageList.size - 1 && !isScrolling) {
-                nextPage()
-            }
-            if (autoFlipInterval > 0 && pageList.isNotEmpty() && currentPage < pageList.size - 1) {
-                autoFlipHandler.postDelayed(this, autoFlipInterval.toLong())
-            }
-        }
-    }
-    private fun restartAutoFlip() {
-        autoFlipHandler.removeCallbacks(autoFlipRunnable)
-        android.util.Log.d("AutoFlip", "restart interval=$autoFlipInterval cur=$currentPage total=${pageList.size}")
-        if (autoFlipInterval > 0 && pageList.isNotEmpty() && currentPage < pageList.size - 1) {
-            autoFlipHandler.postDelayed(autoFlipRunnable, autoFlipInterval.toLong())
-        }
-    }
+
     private var pageLayoutMode = 0 // 0=SINGLE, 1=DOUBLE, 2=AUTO
     var pageBgColor: Int = android.graphics.Color.parseColor("#111111")
     var imageMarginH: Int = 0
@@ -468,7 +449,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                     com.mangareader.viewer.ArchiveEngine.d("PagerView", "onPageSelected pos=$position pageIdx=$pageIdx realPos=$realPos rtl=$isRtl double=$doublePageMode total=${pageList.size} curPage=$currentPage")
                     if (realPos in pageList.indices && realPos != currentPage) {
                         currentPage = realPos; onPageChanged?.invoke(currentPage)
-                        restartAutoFlip()
+
                         // ★ 2026-09-09 跳页调度：翻页选中即取消远端 inflight，不等 IDLE
                         prioritizeLoad(realPos)
                         // ★ N1：双页模式最后跨页 realPos 可能是 N-2（奇偶错位），末页判据放宽到倒数第二页；
@@ -496,7 +477,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                     isScrolling = state != ViewPager2.SCROLL_STATE_IDLE
                     if (!isScrolling) {
                         preloadAround(currentPage)
-                        restartAutoFlip()
+
                         // ★ Bug#14：如果当前页或附近页是动图但 IDLE 之前 onBindViewHolder 因 isScrolling=true
                         //   skip 了 loadAnimPageAsync，现在 IDLE 后无法再触发它（preloadAround 只走静图路径）。
                         //   主动 notifyItemChanged 让 RV 重 bind 当前页 → 走动图分支的 loadAnimPageAsync。
@@ -647,7 +628,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         // ★ v1.13 C-1：无条件补载（loadPageAsync 自带 cache-miss 幂等守卫，代价近零）——
         //   双保险：即使未来某路径 release 未清身份字段，也不会再出现"轻量分支零补载"死局
         preloadAround(startPage)
-        restartAutoFlip()
+
     }
 
     fun setNavigationMode(mode: Int) {
@@ -670,10 +651,6 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         this.tileModeEnabled = enabled
     }
 
-    fun setAutoFlipInterval(intervalMs: Int) {
-        this.autoFlipInterval = intervalMs
-        restartAutoFlip()
-    }
 
     fun setTrimWhiteBorder(trim: Boolean, threshold: Int = trimThreshold, whiteRatio: Float = trimWhiteRatio) {
         if (trimWhiteBorder == trim && trimThreshold == threshold && trimWhiteRatio == whiteRatio) return
@@ -1146,7 +1123,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     }
 
     override fun release() {
-        autoFlipHandler.removeCallbacks(autoFlipRunnable)
+
         srEventJob?.cancel(); srEventJob = null
         // ★ §24 二代释放动图 Drawable（停 + 清 map），防 View 销毁后 decoder 跑漏内存
         pageAnimDrawables.values.forEach { try { if (it is Animatable && it.isRunning) it.stop() } catch (_: Throwable) {} }

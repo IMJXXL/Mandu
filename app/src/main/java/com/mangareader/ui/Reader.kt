@@ -1687,7 +1687,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
         activePagerRef?.imageMarginH = config.imageMarginH
         activePagerRef?.setTrimWhiteBorder(config.isTrimWhiteBorder, config.trimThreshold, config.trimWhiteRatio)
         activePagerRef?.setTileModeEnabled(config.tileModeEnabled)
-        activePagerRef?.setAutoFlipInterval(config.autoFlipInterval)
+
         activePagerRef?.pageBgColor = bgColor.toArgb()
         activeWebtoonRef?.imageMarginH = config.imageMarginH
         activeWebtoonRef?.gapEnabled = (mode == Mode.WEBTOON_GAP)
@@ -1696,6 +1696,16 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
         activeWebtoonRef?.trimWhiteRatio = config.trimWhiteRatio
         activeWebtoonRef?.setTileModeEnabled(config.tileModeEnabled)
         activeWebtoonRef?.pageBgColor = bgColor.toArgb()
+    }
+
+    LaunchedEffect(config.autoFlipInterval, viewing, isVerticalMode, activePagerRef, activeWebtoonRef) {
+        val interval = config.autoFlipInterval
+        if (interval > 0 && viewing) {
+            while (true) {
+                delay(interval.toLong())
+                if (isVerticalMode) activeWebtoonRef?.nextPage() else activePagerRef?.nextPage()
+            }
+        }
     }
 
     var webtoonViewRef by remember { mutableStateOf<View?>(null) }
