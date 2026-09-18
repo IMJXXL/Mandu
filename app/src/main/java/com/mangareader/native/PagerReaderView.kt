@@ -77,6 +77,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     private val autoFlipHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private val autoFlipRunnable = object : Runnable {
         override fun run() {
+            android.util.Log.d("AutoFlip", "run cur=$currentPage total=${pageList.size} scrolling=$isScrolling interval=$autoFlipInterval")
             if (pageList.isNotEmpty() && currentPage < pageList.size - 1 && !isScrolling) {
                 nextPage()
             }
@@ -87,6 +88,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     }
     private fun restartAutoFlip() {
         autoFlipHandler.removeCallbacks(autoFlipRunnable)
+        android.util.Log.d("AutoFlip", "restart interval=$autoFlipInterval cur=$currentPage total=${pageList.size}")
         if (autoFlipInterval > 0 && pageList.isNotEmpty() && currentPage < pageList.size - 1) {
             autoFlipHandler.postDelayed(autoFlipRunnable, autoFlipInterval.toLong())
         }
@@ -645,6 +647,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         // ★ v1.13 C-1：无条件补载（loadPageAsync 自带 cache-miss 幂等守卫，代价近零）——
         //   双保险：即使未来某路径 release 未清身份字段，也不会再出现"轻量分支零补载"死局
         preloadAround(startPage)
+        restartAutoFlip()
     }
 
     fun setNavigationMode(mode: Int) {
