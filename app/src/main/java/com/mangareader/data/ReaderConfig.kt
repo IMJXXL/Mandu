@@ -53,7 +53,9 @@ data class ReaderConfig(
     val centerGapType: Int = 0,
     // ★ N1：卷末无缝续读（默认关；仅同一本书的分卷之间生效，跨书永不自动跳）
     val seamlessNextVolume: Boolean = false,
-    val forceFullDecode: Boolean = false
+    val forceFullDecode: Boolean = false,
+    val tileModeEnabled: Boolean = false,
+    val downsampleTier: DownsampleTier = DownsampleTier.STANDARD
 ) {
     enum class ScrollMode { VERTICAL, HORIZONTAL_LEFT, HORIZONTAL_RIGHT }
     @Deprecated("Dead code - navigation uses Int field navigationMode instead") enum class ClickFlipType { NO, LEFT_RIGHT, DIAGONAL_LB_RT, DIAGONAL_LT_RB }
@@ -62,6 +64,9 @@ data class ReaderConfig(
     }
     enum class ReadBackground { DEFAULT, LIGHT, DARK, WHITE, GRAY }
     enum class PageLayout(val label: String) { SINGLE("单页"), DOUBLE("双页"), DOUBLE_SHIFTED("双页跳过首页") }
+    enum class DownsampleTier(val threshold: Long, val label: String) {
+        STANDARD(6_291_456L, "标准"), HD(12_582_912L, "高清"), ULTRA_HD(25_165_824L, "超清"), ORIGINAL(Long.MAX_VALUE, "原图")
+    }
 
     fun save(context: Context, bookId: Long = -1) {
         val prefs = context.getSharedPreferences("manga_reader", Context.MODE_PRIVATE)
@@ -105,6 +110,8 @@ data class ReaderConfig(
             putBoolean("seamlessNextVolume", seamlessNextVolume)
             putInt("${prefix}centerGapType", centerGapType)
             putBoolean("forceFullDecode", forceFullDecode)
+            putBoolean("tileModeEnabled", tileModeEnabled)
+            putString("downsampleTier", downsampleTier.name)
             apply()
         }
     }
@@ -151,7 +158,11 @@ data class ReaderConfig(
                 chapterTransition = prefs.safeGetBoolean("chapterTransition", true),
                 centerGapType = prefs.safeGetInt("${prefix}centerGapType", 0),
                 seamlessNextVolume = prefs.safeGetBoolean("seamlessNextVolume", false),
-                forceFullDecode = prefs.safeGetBoolean("forceFullDecode", false)
+                forceFullDecode = prefs.safeGetBoolean("forceFullDecode", false),
+                tileModeEnabled = prefs.safeGetBoolean("tileModeEnabled", false),
+                downsampleTier = if (prefs.contains("downsampleTier")) {
+                    try { DownsampleTier.valueOf(prefs.getString("downsampleTier", "STANDARD")!!) } catch (_: Exception) { DownsampleTier.STANDARD }
+                } else if (prefs.safeGetBoolean("forceFullDecode", false)) DownsampleTier.ORIGINAL else DownsampleTier.STANDARD
             )
         }
     }

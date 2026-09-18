@@ -250,6 +250,28 @@ private fun ReadingModeTab(config: ReaderConfig, mode: Mode, onConfigChange: (Re
                 onConfigChange(config.copy(trimWhiteRatio = it))
             }
         }
+        CheckboxItem("瓦片解码(tile)（开启后长图按可见区域局部解码，内存占用更低；超分、白边裁剪、旋转适配不生效）", config.tileModeEnabled) { onConfigChange(config.copy(tileModeEnabled = it)) }
+        SettingsChipRow("降采样档位") {
+            listOf(
+                "标准" to ReaderConfig.DownsampleTier.STANDARD,
+                "高清" to ReaderConfig.DownsampleTier.HD,
+                "超清" to ReaderConfig.DownsampleTier.ULTRA_HD,
+                "原图" to ReaderConfig.DownsampleTier.ORIGINAL
+            ).forEach { (label, tier) ->
+                FilterChip(
+                    selected = config.downsampleTier == tier,
+                    onClick = { onConfigChange(config.copy(downsampleTier = tier)) },
+                    enabled = !config.tileModeEnabled && !config.isEinkMode,
+                    label = { Text(label, fontSize = 13.sp) },
+                )
+            }
+        }
+        if (config.tileModeEnabled) {
+            Text("tile 模式下不降采样", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f), fontSize = 11.sp, modifier = Modifier.padding(start = 4.dp, bottom = 4.dp))
+        }
+        if (config.isEinkMode) {
+            Text("墨水屏固定标准降采样", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f), fontSize = 11.sp, modifier = Modifier.padding(start = 4.dp, bottom = 4.dp))
+        }
         CheckboxItem("自动放大横向图片（平板上建议关闭，关闭时宽图完整显示）", config.landscapeZoom) { onConfigChange(config.copy(landscapeZoom = it)) }
         CheckboxItem("翻页动画（点击翻页过渡）", config.isFlipAnimation) { onConfigChange(config.copy(isFlipAnimation = it)) }
         Text("以下功能设置后，需重新进入漫画生效", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f), fontSize = 11.sp, modifier = Modifier.padding(start = 4.dp, bottom = 4.dp))

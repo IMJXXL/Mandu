@@ -44,7 +44,8 @@ class KomgaPageAdapter(
         val opts = BitmapFactory.Options()
         var sample = 1
         val prefs = com.mangareader.komgabridge.KomgaBridges.context.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE)
-        val forceFull = prefs.getBoolean("forceFullDecode", false) && !prefs.getBoolean("isEinkMode", false)
+        val tierName = if (prefs.contains("downsampleTier")) prefs.getString("downsampleTier", "STANDARD") else if (prefs.getBoolean("forceFullDecode", false)) "ORIGINAL" else "STANDARD"
+        val forceFull = (tierName == "ORIGINAL") && !prefs.getBoolean("isEinkMode", false)
         if (!forceFull) {
             val maxEdge = maxOf(bounds.outWidth, bounds.outHeight)
             while (maxEdge / (sample * 2) >= 2560 * 2) sample *= 2

@@ -161,6 +161,15 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
             Log.w("Recycle", "webtoon clearBitmapCacheRecycling n=${bitmapCache.size()} view=${System.identityHashCode(this)}")
             bitmapCache.evictAll()
         }
+        clearTileFileCache()
+    }
+
+    private fun clearTileFileCache() {
+        tileFileCache.clear()
+        synchronized(tileTempFiles) {
+            tileTempFiles.forEach { f -> try { f.delete() } catch (_: Exception) {} }
+            tileTempFiles.clear()
+        }
     }
     var imageMarginH: Int = 0
         set(value) {
@@ -174,6 +183,17 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
     var rotationAdapt: Boolean = false
     var rotationReverse: Boolean = false
     var pageBgColor: Int = android.graphics.Color.parseColor("#E8E8E8")
+    private var tileModeEnabled = false
+    private val tileFileCache = java.util.concurrent.ConcurrentHashMap<Int, java.io.File>()
+    private val tileTempFiles = java.util.Collections.synchronizedSet(HashSet<java.io.File>())
+
+    fun setTileModeEnabled(enabled: Boolean) {
+        if (this.tileModeEnabled != enabled) {
+            this.tileModeEnabled = enabled
+            if (!enabled) clearTileFileCache()
+            adapter?.notifyDataSetChanged()
+        }
+    }
 
     // ★ §24 二代：条漫下"不播动图，但需检测一下数量让 Reader.kt 弹切翻页提示"
     //   保留最小信号：每个被 bind 的页异步 peek 一次；累计 ≥3 动图时回调 onAnimDetected
@@ -491,6 +511,30 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
         }
     }
 
+    private suspend fun obtainTileFile(idx: Int): java.io.File? {
+        val meta = pageList[idx]
+        val supply = remotePageSupply
+        if (supply == null) {
+            val realFile = withContext(Dispatchers.IO) { engine?.getRealFileForPage(treePath, meta) }
+            if (realFile != null && realFile.exists() && realFile.length() > 0) return realFile
+            val raw = withContext(Dispatchers.IO) { runCatching { engine?.loadPageRaw(meta, treePath) }.getOrNull() }
+            if (raw != null) return writeTileTempFile(idx, raw)
+        } else {
+            val raw = withContext(Dispatchers.IO) { runCatching { supply.loadPageRaw(idx) }.getOrNull() }
+            if (raw != null) return writeTileTempFile(idx, raw)
+        }
+        return null
+    }
+
+    private fun writeTileTempFile(idx: Int, raw: ByteArray): java.io.File? {
+        return try {
+            val file = java.io.File(context.cacheDir, "wtile_${System.identityHashCode(this)}_${idx}.tmp")
+            java.io.FileOutputStream(file).use { it.write(raw) }
+            synchronized(tileTempFiles) { tileTempFiles.add(file) }
+            file
+        } catch (_: Exception) { null }
+    }
+
     private fun loadPageAsync(idx: Int, onResult: ((Bitmap?) -> Unit)? = null) {
         if (idx < 0 || idx >= pageList.size) { onResult?.invoke(null); return }
         val cached = synchronized(bitmapCache) { bitmapCache[idx] }
@@ -536,6 +580,15 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
         val sm = maxOf(width, height).coerceAtLeast(1)
         loadScope.launch {
             try {
+            if (tileModeEnabled) {
+                val tileFile = obtainTileFile(idx)
+                if (tileFile != null) {
+                    tileFileCache[idx] = tileFile
+                    recycler.post { adapter?.notifyItemChanged(idx, "ld") }
+                    onResult?.invoke(null)
+                    return@launch
+                }
+            }
             val bmp = withContext(Dispatchers.IO) {
                 var result: Bitmap? = null
                 if (meta.source in listOf("mobi", "azw", "azw3", "pdb", "prc")) {
@@ -723,6 +776,15 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
                 }
             }
         }
+        val keepIdx = currentPage
+        for ((k, f) in tileFileCache.toMap()) {
+            if (kotlin.math.abs(k - keepIdx) > 2) {
+                tileFileCache.remove(k)
+                if (synchronized(tileTempFiles) { tileTempFiles.remove(f) }) {
+                    try { f.delete() } catch (_: Exception) {}
+                }
+            }
+        }
     }
 
     inner class PageAdapter : RecyclerView.Adapter<PageVH>() {
@@ -733,6 +795,36 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
                 layoutParams = RecyclerView.LayoutParams(RecyclerView.LayoutParams.MATCH_PARENT, RecyclerView.LayoutParams.WRAP_CONTENT).apply {
                     bottomMargin = gapPx
                 }
+            }
+            if (tileModeEnabled) {
+                val ssiv = WebtoonSSIV(parent.context).apply {
+                    layoutParams = android.widget.FrameLayout.LayoutParams(
+                        android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                        android.widget.FrameLayout.LayoutParams.WRAP_CONTENT)
+                    isZoomEnabled = true
+                    isPanEnabled = true
+                    isQuickScaleEnabled = true
+                    setMaxScale(5f)
+                    setMaxTileSize(512)
+                    setMinimumTileDpi(160)
+                    setMinimumScaleType(1)
+                    setDoubleTapZoomDuration(300)
+                    setBackgroundColor(pageBgColor)
+                    visibility = android.view.View.GONE
+                }
+                val iv = android.widget.ImageView(parent.context).apply {
+                    scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+                    setBackgroundColor(pageBgColor)
+                    adjustViewBounds = true
+                    visibility = android.view.View.VISIBLE
+                }
+                frame.addView(iv, android.widget.FrameLayout.LayoutParams(
+                    android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                    android.widget.FrameLayout.LayoutParams.WRAP_CONTENT))
+                frame.addView(ssiv, android.widget.FrameLayout.LayoutParams(
+                    android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                    android.widget.FrameLayout.LayoutParams.WRAP_CONTENT))
+                return PageVH(frame, iv, ssiv)
             }
             val iv = android.widget.ImageView(parent.context).apply {
                 scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
@@ -746,6 +838,11 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
         }
         override fun onBindViewHolder(h: PageVH, pos: Int, payloads: MutableList<Any>) {
             if (payloads.contains("ld")) {
+                val tileFile = tileFileCache[pos]
+                if (tileFile != null && tileFile.exists()) {
+                    if (h.isBound) h.setTileFile(tileFile)
+                    return
+                }
                 val cached = synchronized(bitmapCache) { bitmapCache[pos] }
                 if (cached != null && !cached.isRecycled) {
                     if (h.isBound) h.set(cached)
@@ -763,6 +860,12 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
             h.isBound = true
             h.boundPosition = pos
 
+            val tileFile = tileFileCache[pos]
+            if (tileFile != null && tileFile.exists()) {
+                h.setTileFile(tileFile)
+                ensureAnimKindAsync(pos)
+                return
+            }
             // 静图页：原路径（§24 撤回，条漫不再处理动图渲染——所有页在条漫下都按静图渲染）
             val cached = synchronized(bitmapCache) { bitmapCache[pos] }
             if (cached != null && !cached.isRecycled && cached.width > 1) {
@@ -803,20 +906,32 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
     }
 
     /** PageVH：§24 撤回，回到非 inner class 纯静图版本 */
-    class PageVH(frame: android.widget.FrameLayout, val iv: android.widget.ImageView) : RecyclerView.ViewHolder(frame) {
+    class PageVH(frame: android.widget.FrameLayout, val iv: android.widget.ImageView, val ssiv: WebtoonSSIV? = null) : RecyclerView.ViewHolder(frame) {
         private var heldBitmap: Bitmap? = null
         var hasImage = false
         var isBound = true
         var boundPosition = -1
-        /** 静态图 set */
         fun set(b: Bitmap) {
-            iv.minimumHeight = 0  // ★ v1.11 一屏占位撤除：真图到位，恢复 adjustViewBounds 真实内容高
+            iv.minimumHeight = 0
             heldBitmap = b
+            ssiv?.visibility = android.view.View.GONE
+            iv.visibility = android.view.View.VISIBLE
             iv.setImageBitmap(b)
+            hasImage = true
+        }
+        fun setTileFile(file: java.io.File) {
+            heldBitmap = null
+            iv.visibility = android.view.View.GONE
+            val ssv = ssiv ?: return
+            ssv.visibility = android.view.View.VISIBLE
+            ssv.setImage(com.davemorrissey.labs.subscaleview.ImageSource.uri(itemView.context, android.net.Uri.fromFile(file)))
             hasImage = true
         }
         fun clear() {
             heldBitmap = null; hasImage = false; isBound = false; boundPosition = -1; iv.setImageBitmap(null)
+            try { ssiv?.resetScaleAndCenter() } catch (_: Exception) {}
+            ssiv?.visibility = android.view.View.GONE
+            iv.visibility = android.view.View.VISIBLE
         }
     }
 }

@@ -1686,12 +1686,14 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
         activePagerRef?.flipAnimationEnabled = config.isFlipAnimation
         activePagerRef?.imageMarginH = config.imageMarginH
         activePagerRef?.setTrimWhiteBorder(config.isTrimWhiteBorder, config.trimThreshold, config.trimWhiteRatio)
+        activePagerRef?.setTileModeEnabled(config.tileModeEnabled)
         activePagerRef?.pageBgColor = bgColor.toArgb()
         activeWebtoonRef?.imageMarginH = config.imageMarginH
         activeWebtoonRef?.gapEnabled = (mode == Mode.WEBTOON_GAP)
         activeWebtoonRef?.trimWhiteBorder = config.isTrimWhiteBorder
         activeWebtoonRef?.trimThreshold = config.trimThreshold
         activeWebtoonRef?.trimWhiteRatio = config.trimWhiteRatio
+        activeWebtoonRef?.setTileModeEnabled(config.tileModeEnabled)
         activeWebtoonRef?.pageBgColor = bgColor.toArgb()
     }
 
@@ -1894,6 +1896,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
                             pageBgColor = bgColor.toArgb(),
                             doublePageReverse = config.doublePageReverse,
                             doublePageSplit = config.doublePageSplit,
+                            tileModeEnabled = config.tileModeEnabled,
                             verticalPager = verticalPagerEffective,
 
                             remoteSupply = smbSession,

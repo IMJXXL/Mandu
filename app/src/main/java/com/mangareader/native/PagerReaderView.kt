@@ -66,6 +66,9 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     private var useSSIV = true
     private var landscapeZoomEnabled = true
     private var fitScreenEnabled = true
+    private var tileModeEnabled = false
+    private val tileFileCache = java.util.concurrent.ConcurrentHashMap<Int, java.io.File>()
+    private val tileTempFiles = java.util.Collections.synchronizedSet(HashSet<java.io.File>())
     private var trimWhiteBorder = false
     private var trimThreshold: Int = 220
     private var trimWhiteRatio: Float = 0.90f
@@ -356,6 +359,15 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         Log.w("Recycle", "pager clearBitmapCacheRecycling n=${bitmapCache.size()} view=${System.identityHashCode(this)}")
 
         bitmapCache.evictAll()
+        clearTileFileCache()
+    }
+
+    private fun clearTileFileCache() {
+        tileFileCache.clear()
+        synchronized(tileTempFiles) {
+            tileTempFiles.forEach { f -> try { f.delete() } catch (_: Exception) {} }
+            tileTempFiles.clear()
+        }
     }
 
     // Zoom indicator paint
@@ -631,6 +643,10 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         this.fitScreenEnabled = enabled
     }
 
+    fun setTileModeEnabled(enabled: Boolean) {
+        this.tileModeEnabled = enabled
+    }
+
     fun setTrimWhiteBorder(trim: Boolean, threshold: Int = trimThreshold, whiteRatio: Float = trimWhiteRatio) {
         if (trimWhiteBorder == trim && trimThreshold == threshold && trimWhiteRatio == whiteRatio) return
         this.trimWhiteBorder = trim
@@ -845,6 +861,29 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         } catch (_: Exception) { false }
     }
 
+    private suspend fun obtainTileFile(idx: Int, supply: RemotePageSupply?): java.io.File? {
+        val meta = pageList[idx]
+        if (supply == null) {
+            val realFile = withContext(Dispatchers.IO) { engine?.getRealFileForPage(treePath, meta) }
+            if (realFile != null && realFile.exists() && realFile.length() > 0) return realFile
+            val raw = withContext(Dispatchers.IO) { runCatching { engine?.loadPageRaw(meta, treePath) }.getOrNull() }
+            if (raw != null) return writeTileTempFile(idx, raw)
+        } else {
+            val raw = withContext(Dispatchers.IO) { runCatching { supply.loadPageRaw(idx) }.getOrNull() }
+            if (raw != null) return writeTileTempFile(idx, raw)
+        }
+        return null
+    }
+
+    private fun writeTileTempFile(idx: Int, raw: ByteArray): java.io.File? {
+        return try {
+            val file = java.io.File(context.cacheDir, "tile_${System.identityHashCode(this)}_${idx}.tmp")
+            java.io.FileOutputStream(file).use { it.write(raw) }
+            synchronized(tileTempFiles) { tileTempFiles.add(file) }
+            file
+        } catch (_: Exception) { null }
+    }
+
     private fun loadPageAsync(idx: Int, isPreload: Boolean = false) {
         if (idx < 0 || idx >= pageList.size) return
         val cached = bitmapCache[idx]
@@ -881,6 +920,17 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             if (remotePageSupply == null) ensureNativeArchive()
 
             val supply = remotePageSupply
+            if (tileModeEnabled && !doublePageMode && pageAnimFlags.none { it.pageIdx == idx && it.kind != AnimKind.NONE }) {
+                val tileFile = obtainTileFile(idx, supply)
+                if (tileFile != null) {
+                    tileFileCache[idx] = tileFile
+                    withContext(Dispatchers.Main) {
+                        val adapterPos = positionOf(idx)
+                        if (adapterPos >= 0 && adapterPos < (pagerAdapter?.itemCount ?: 0)) pagerAdapter?.notifyItemChanged(adapterPos, "loaded")
+                    }
+                    return@launch
+                }
+            }
             if (supply == null) {
                 // ===== 本地路径（2026-09-05 回退 v1.2 方案：用户裁定 + OOM 修复）=====
                 //   上个会话把本地翻页改成 loadPageRaw 读原图字节 → Coil 再解码（字节+Bitmap 双份内存），
@@ -1084,6 +1134,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         nativeArchivePath = ""
         // ★ v102: 不 recycle（SSIV 可能仍持有引用，同 clearBitmapCacheRecycling）；evict 后 GC 自动回收
         bitmapCache.evictAll()
+        clearTileFileCache()
         // ★ v1.13 C-1：身份字段随缓存一并作废——下次 setup 必命中 pagesChanged=true 走全量重建
         //   （重建 adapter + setCurrentItem + preloadAround 补载），根治模式切换白屏
         pageList = emptyList()
@@ -1105,6 +1156,14 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             if (kotlin.math.abs(k - keep) > 2) {
                 // ★ v102: 只 remove 不 recycle（SSIV 可能仍持有引用）；GC 兜底回收
                 bitmapCache.remove(k)
+            }
+        }
+        for ((k, f) in tileFileCache.toMap()) {
+            if (kotlin.math.abs(k - keep) > 2) {
+                tileFileCache.remove(k)
+                if (synchronized(tileTempFiles) { tileTempFiles.remove(f) }) {
+                    try { f.delete() } catch (_: Exception) {}
+                }
             }
         }
         // ★ F3.4：低内存补收动图缓冲（pageAnimDrawables 已有 LRU 上限 7 + animRawCache 自估可上百 MB）。
@@ -1288,6 +1347,11 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 if (animDrawable != null) {
                     holder.setAnimDrawable(realIdx, animDrawable)
                     if (realIdx == currentPage) startAnimIfNotRunning(realIdx)
+                    return
+                }
+                val tileFile = tileFileCache[realIdx]
+                if (tileFile != null && tileFile.exists()) {
+                    holder.setImageFile(tileFile, landscapeZoomEnabled)
                     return
                 }
                 val bmp = bitmapCache[realIdx]

@@ -228,25 +228,6 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
                 }
             }
 
-            item {
-                Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("强制全分辨率解码", fontSize = 16.sp)
-                        Text(
-                            if (config.isEinkMode) "墨水屏模式开启时此项无效" else "除封面外不降采样，内存增大可能卡顿，不推荐开启",
-                            fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Switch(
-                        checked = config.forceFullDecode,
-                        enabled = !config.isEinkMode,
-                        onCheckedChange = {
-                            config = config.copy(forceFullDecode = it)
-                            config.save(ctx)
-                        },
-                    )
-                }
-            }
 
             if (config.isEinkMode) {
                 item {

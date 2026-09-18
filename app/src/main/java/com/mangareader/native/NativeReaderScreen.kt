@@ -134,6 +134,7 @@ fun NativeReaderScreen(
     pageBgColor: Int = android.graphics.Color.parseColor("#111111"),
     doublePageReverse: Boolean = false,
     doublePageSplit: Boolean = false,
+    tileModeEnabled: Boolean = false,
     /** ★ §34.3：VERT_PAGER 模式——竖向翻页走 PagerReaderView（不是 webtoon 连续滚动） */
     verticalPager: Boolean = false,
     /** ★ SMB/WebDAV 页面供给（design.md 2.2.2）：非 null 时阅读页面走远程会话。
@@ -206,6 +207,7 @@ fun NativeReaderScreen(
             delegate.setFitScreen(fitScreen)
             delegate.setTrimWhiteBorder(trimWhiteBorder, trimThreshold, trimWhiteRatio)
             delegate.setPanNavigation(panNavigation)
+            delegate.setTileModeEnabled(tileModeEnabled)
         }
         if (delegate is PagerReaderView) {
             delegate.setDoublePageReverse(doublePageReverse)
@@ -216,6 +218,7 @@ fun NativeReaderScreen(
             delegate.trimWhiteBorder = trimWhiteBorder
             delegate.trimThreshold = trimThreshold
             delegate.trimWhiteRatio = trimWhiteRatio
+            delegate.setTileModeEnabled(tileModeEnabled)
         }
         // ★ P0-2：切换交接——本次 setup 后立即从总线接管旧实例移交的位图（跨实例），首帧绑定直接命中缓存
         android.util.Log.w("NES", "setup delegate=${System.identityHashCode(delegate)} v=$isVertical vp=$verticalPager tree=$treePath")

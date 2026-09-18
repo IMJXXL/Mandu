@@ -157,6 +157,17 @@ private fun ReadingModeTab(config: ReaderConfig, mode: Mode, onConfigChange: (Re
             )
         }
         TsyCheckbox("裁剪边缘", config.isTrimWhiteBorder) { onConfigChange(config.copy(isTrimWhiteBorder = it)) }
+        TsyCheckbox("瓦片解码(tile)（超分、白边裁剪、旋转适配不生效）", config.tileModeEnabled) { onConfigChange(config.copy(tileModeEnabled = it)) }
+        TsySection("降采样档位") {
+            TsyChipRow(
+                items = listOf("标准" to ReaderConfig.DownsampleTier.STANDARD,
+                    "高清" to ReaderConfig.DownsampleTier.HD,
+                    "超清" to ReaderConfig.DownsampleTier.ULTRA_HD,
+                    "原图" to ReaderConfig.DownsampleTier.ORIGINAL),
+                selected = config.downsampleTier,
+                onSelect = { if (!config.tileModeEnabled && !config.isEinkMode) onConfigChange(config.copy(downsampleTier = it as ReaderConfig.DownsampleTier)) }
+            )
+        }
         TsyCheckbox("自动放大横向图片", config.landscapeZoom) { onConfigChange(config.copy(landscapeZoom = it)) }
         TsyCheckbox("漫画完整显示", config.fitScreen) { onConfigChange(config.copy(fitScreen = it)) }
         TsyCheckbox("图片放大时先平移再翻页", config.panNavigation) { onConfigChange(config.copy(panNavigation = it)) }
