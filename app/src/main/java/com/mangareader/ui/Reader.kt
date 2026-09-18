@@ -104,7 +104,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
     // 监听 SharedPreferences 外部修改，自动触发 config 重读
     DisposableEffect(bookId) {
         val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-            if (key?.startsWith("book_${bookId}_") == true || key == "scrollMode" || key == "readBackground") {
+            if (key?.startsWith("book_${bookId}_") == true || key in setOf("scrollMode", "readBackground", "autoFlipInterval", "tileModeEnabled", "downsampleTier", "isEinkMode", "isTrimWhiteBorder", "trimThreshold", "trimWhiteRatio", "imageMarginH", "isFlipAnimation", "landscapeZoom", "fitScreen", "panNavigation", "doublePageSplit", "doublePageReverse", "pageLayout", "useSSIV", "forceFullDecode", "isFlipFlashEnabled", "flipFlashDuration", "flipFlashInterval", "flipFlashColor", "einkDecodeSize", "einkUiHideDelay", "pdfQuality", "isGrayscale", "isInvertColors", "centerGapType", "doublePageShift", "seamlessNextVolume")) {
                 configVersion++
             }
         }
