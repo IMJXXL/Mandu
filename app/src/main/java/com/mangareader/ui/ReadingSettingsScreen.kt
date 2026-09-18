@@ -228,6 +228,50 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
                 }
             }
 
+            item {
+                Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("瓦片解码(tile)", fontSize = 16.sp)
+                        Text("开启后长图按可见区域局部解码，内存占用更低；超分、白边裁剪、旋转适配不生效", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(
+                        checked = config.tileModeEnabled,
+                        onCheckedChange = {
+                            config = config.copy(tileModeEnabled = it)
+                            config.save(ctx)
+                        },
+                    )
+                }
+            }
+
+            item {
+                val tierDisabled = config.tileModeEnabled || config.isEinkMode
+                Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+                    Text("降采样档位", fontSize = 16.sp, fontWeight = FontWeight.Medium)
+                    Spacer(Modifier.height(4.dp))
+                    Text(if (tierDisabled) "tile 或墨水屏模式下固定标准档" else "大图自动降采样以减少内存占用", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.height(8.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf("标准" to com.mangareader.data.ReaderConfig.DownsampleTier.STANDARD, "高清" to com.mangareader.data.ReaderConfig.DownsampleTier.HD, "超清" to com.mangareader.data.ReaderConfig.DownsampleTier.ULTRA_HD, "原图" to com.mangareader.data.ReaderConfig.DownsampleTier.ORIGINAL).forEach { (label, tier) ->
+                            Surface(
+                                modifier = Modifier.weight(1f).clickable {
+                                    if (!tierDisabled) {
+                                        config = config.copy(downsampleTier = tier)
+                                        config.save(ctx)
+                                    }
+                                },
+                                shape = MaterialTheme.shapes.medium,
+                                color = if (config.downsampleTier == tier) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                tonalElevation = if (config.downsampleTier == tier) 4.dp else 0.dp,
+                            ) {
+                                Text(label, fontSize = 13.sp, modifier = Modifier.padding(12.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center, color = if (config.downsampleTier == tier) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface)
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                }
+            }
+
 
             if (config.isEinkMode) {
                 item {
