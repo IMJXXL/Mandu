@@ -29,6 +29,10 @@ class ZipMemberByteSource private constructor(
     override val isRandomAccess: Boolean
         get() = entry.method == ZipCentralDirectory.METHOD_STORE && !entry.isEncrypted
 
+    override fun dropQueuedReads() = zip.dropQueuedReads()
+
+    override fun requestReconnect() = zip.requestReconnect()
+
     @Synchronized
     override fun readAt(offset: Long, buf: ByteArray, off: Int, len: Int): Int {
         if (len <= 0) return 0
