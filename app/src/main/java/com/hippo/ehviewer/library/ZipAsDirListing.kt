@@ -379,8 +379,9 @@ object ZipAsDirListing {
     }
 
     fun zipRootListingFromCd(cd: ZipCentralDirectory, innerPrefix: String = ""): ZipRootListing {
-        // ★ B2 回退：采样判混合包的短路会导致部分 CD 进入分类链，实测引发"循环进入"，
-        //   恢复对所有 zip 全量 peek（CD 字节节省待上游完整 UI 簇再启用）
+        if (!cd.gallery) {
+            return ZipRootListing(emptyList(), emptyMap(), classified = false)
+        }
         val peek = listChildren(cd, innerPrefix)
         val leaves = peek.filter { it.isDirectory && isPromotableLeafDirName(it.name) }
         val leavesToPeek = if (leaves.size in 1..SMB_PROMOTE_MAX_LEAVES) {
@@ -394,7 +395,7 @@ object ZipAsDirListing {
         for (leaf in leavesToPeek) {
             grand[leaf.name] = listChildren(cd, joinPrefix(innerPrefix, leaf.name))
         }
-        return ZipRootListing(peek, grand)
+        return ZipRootListing(peek, grand, classified = true)
     }
 
     /**
