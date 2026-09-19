@@ -15,6 +15,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.InsertDriveFile
@@ -29,6 +31,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ehviewer.core.database.model.WebDavSourceEntity
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.itemsIndexed as gridItemsIndexed
 import com.mangareader.browse.BrowseCover
 import com.mangareader.browse.BrowseCoverThumb
 import com.mangareader.browse.BrowseCovers
@@ -59,6 +64,8 @@ fun WebDavBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -
     var entries by remember { mutableStateOf<List<BrowseEntryRemote>>(emptyList()) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    // B2 列表/网格模式（全局记忆，对齐上游 BrowseModePersist）
+    val listMode by Settings.browseListMode.valueFlow().collectAsState(initial = Settings.browseListMode.value)
 
     var isMultiSelectMode by remember { mutableStateOf(false) }
     var selectedRemotes by remember { mutableStateOf<Set<String>>(emptySet()) }
@@ -367,6 +374,12 @@ fun WebDavBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -
                     }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
                 },
                 actions = {
+                    IconButton(onClick = { Settings.browseListMode.value = !listMode }) {
+                        Icon(
+                            if (listMode) Icons.Default.GridView else Icons.Default.ViewList,
+                            if (listMode) "切换网格" else "切换列表",
+                        )
+                    }
                     IconButton(onClick = {
                         if (searchMode) exitSearch() else searchMode = true
                     }) { Icon(Icons.Default.Search, "搜索") }
@@ -511,6 +524,58 @@ fun WebDavBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -
                 loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
                 entries.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text("空目录", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                !listMode -> {
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(3),
+                        contentPadding = PaddingValues(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxSize(),
+                    ) {
+                        gridItemsIndexed(entries, key = { i, e -> "$i-${e.name}" }) { _, e ->
+                            val dl = extractDownloadable(e)
+                            val remotePath = dl?.first
+                            val isSelected = remotePath != null && remotePath in selectedRemotes
+                            val subtitle = when (e) {
+                                is BrowseEntryRemote.Directory -> "文件夹"
+                                is BrowseEntryRemote.FolderGallery -> "图片文件夹 · ${e.pageCount} 张"
+                                is BrowseEntryRemote.ArchiveGallery -> e.fileName.substringAfterLast('.', "").uppercase()
+                                is BrowseEntryRemote.VideoFile -> null
+                                else -> e.name.substringAfterLast('.', "").uppercase()
+                            }
+                            com.mangareader.browse.BrowseItemGridCell(
+                                name = e.name,
+                                cover = source?.id?.let { sid -> BrowseCovers.davCover(sid, dir, e) },
+                                subtitle = subtitle,
+                                isSelected = isSelected,
+                                showCheckbox = isMultiSelectMode && remotePath != null,
+                                onClick = {
+                                    if (isMultiSelectMode && remotePath != null) {
+                                        selectedRemotes = if (isSelected) selectedRemotes - remotePath else selectedRemotes + remotePath
+                                    } else {
+                                        when (e) {
+                                            is BrowseEntryRemote.Directory -> {
+                                                val target = if (dir.isEmpty()) e.relativeName else "$dir/${e.relativeName}"
+                                                dir = target
+                                            }
+                                            is BrowseEntryRemote.FolderGallery -> addFolder(e.relativeName)
+                                            is BrowseEntryRemote.ArchiveGallery -> addArchive(joinRel(e.fileName), e.name, e.fileName.substringAfterLast('.', "").lowercase())
+                                            else -> {
+                                                val ext = e.name.substringAfterLast('.', "").lowercase()
+                                                if (ext in WebDavScanner.SCANNABLE_FORMATS) addArchive(joinRel(e.name), e.name, ext)
+                                            }
+                                        }
+                                    }
+                                },
+                                onLongClick = {
+                                    longPressedName = e.name
+                                    longPressedRemote = remotePath
+                                    showItemMenu = true
+                                },
+                            )
+                        }
+                    }
                 }
                 else -> LazyColumn(Modifier.fillMaxSize()) {
                     items(entries) { e ->

@@ -259,6 +259,8 @@ object Settings : DataStorePreferences(null) {
      * Off = always open zip/cbz as archive reader. Default on. Settings → General / browse menu.
      */
     val browseZipAsDir = boolPref("browse_zip_as_dir", true)
+    /** 浏览页列表/网格模式（true=列表，false=网格）——SMB/WebDAV 浏览共用 */
+    val browseListMode = boolPref("browse_list_mode", true)
 
     /**
      * Default folder-gallery open gesture.
