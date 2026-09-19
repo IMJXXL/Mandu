@@ -526,8 +526,10 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
         },
         floatingActionButton = {
             val globalHide = ctx.getSharedPreferences("manga_reader", Context.MODE_PRIVATE).getBoolean("global_hide", false)
+            // ★ 阅读设置 → 显示 可关：首页「继续阅读」按钮显隐（home_continue_read，默认开）
+            val homeContinueOn = ctx.getSharedPreferences("manga_reader", Context.MODE_PRIVATE).getBoolean("home_continue_read", true)
             val lr = lastReading
-            if (!isMultiSelect && !globalHide && lr != null) {
+            if (!isMultiSelect && !globalHide && homeContinueOn && lr != null) {
                 Surface(
                     onClick = { openBookThrottled(lr.bookId, lr.path) },
                     shape = RoundedCornerShape(20.dp),

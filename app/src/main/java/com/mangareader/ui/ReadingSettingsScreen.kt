@@ -129,6 +129,24 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
                             dismissButton = { TextButton(onClick = { showDefaultModeDialog = false }) { Text("取消") } }
                         )
                     }
+
+                    // ★ 继续阅读显隐开关（2026-09-19）：首页全局继续阅读 + 书内多层继续阅读
+                    var homeContinue by remember { mutableStateOf(prefs.getBoolean("home_continue_read", true)) }
+                    Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("首页「继续阅读」", fontSize = 16.sp)
+                            Text("书架右下角的继续阅读按钮（全局最近阅读的一本书）", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(checked = homeContinue, onCheckedChange = { homeContinue = it; prefs.edit().putBoolean("home_continue_read", it).apply() })
+                    }
+                    var inBookContinue by remember { mutableStateOf(prefs.getBoolean("inbook_continue_read", true)) }
+                    Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("书内「继续阅读」", fontSize = 16.sp)
+                            Text("打开文件夹层级时显示继续阅读入口，直达当前层及以下最近阅读的那一卷", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(checked = inBookContinue, onCheckedChange = { inBookContinue = it; prefs.edit().putBoolean("inbook_continue_read", it).apply() })
+                    }
                 }
             }
 

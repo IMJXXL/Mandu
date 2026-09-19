@@ -2176,7 +2176,56 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                         }
                     }
                 }
-                items.isNotEmpty() -> ItemGrid(items, engine, bgColor, progressForToc, { openItem(it) }, Modifier.fillMaxSize().background(bgColor))
+                items.isNotEmpty() -> {
+                    // ★ 书内多层「继续阅读」（2026-09-19）：目录网格层顶部显示入口，
+                    //   打开"当前层级及以下"最近阅读的那一卷（progressForToc 已含全书进度，
+                    //   按 navStack 路径的文档尾段做层级前缀匹配，兼容 smb:/d:/a:/z: 四种格式）。
+                    val inBookContinueOn = prefs.getBoolean("inbook_continue_read", true)
+                    val continueTarget = if (inBookContinueOn) {
+                        remember(items, navStack, progressForToc) {
+                            computeInBookContinueTarget(navStack.lastOrNull(), progressForToc)
+                        }
+                    } else {
+                        null
+                    }
+                    if (continueTarget == null) {
+                        ItemGrid(items, engine, bgColor, progressForToc, { openItem(it) }, Modifier.fillMaxSize().background(bgColor))
+                    } else {
+                        Column(Modifier.fillMaxSize().background(bgColor)) {
+                            Surface(color = bgColor.copy(alpha = 0.96f), modifier = Modifier.fillMaxWidth()) {
+                                Row(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            navStack = navStack + continueTarget.path
+                                            loading = true; viewing = false; pageList = emptyList(); errorMsg = null
+                                            scope.launch {
+                                                try { enterReader(navStack.last()) } catch (e: Exception) { errorMsg = "加载失败: ${e.message}" }
+                                                loading = false
+                                            }
+                                        }
+                                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Icon(Icons.Default.PlayArrow, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp))
+                                    Spacer(Modifier.width(8.dp))
+                                    Column(Modifier.weight(1f)) {
+                                        Text("继续阅读", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.primary)
+                                        Text(
+                                            continuePathTail(continueTarget.path)
+                                                .trimEnd('/', '\\').substringAfterLast('/').substringAfterLast('\\'),
+                                            fontSize = 11.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+                                }
+                            }
+                            ItemGrid(items, engine, bgColor, progressForToc, { openItem(it) }, Modifier.fillMaxWidth().weight(1f).background(bgColor))
+                        }
+                    }
+                }
                 else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("没有内容") }
                 }
                 // 翻页闪烁效果
@@ -2515,6 +2564,29 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             },
         )
     }
+}
+
+/**
+ * ★ 书内「继续阅读」目标计算：从该书全部进度行里，找 [currentPath]（当前目录层级）
+ * 自身以外、其子树内最近（updatedAt 最大）的一条。
+ * 路径尾段规范化（continuePathTail）：smb:/webdav: 取全路径；d:/a: 取第 3 段文档 id
+ * （注意 a: 是 auth|tree|doc|ext 四段，取 last 会拿到扩展名导致永远匹配不上）；
+ * z: 取最后一段（压缩包内 sub 路径）。"…/A" 不会误配兄弟 "…/AB"。
+ */
+private fun continuePathTail(p: String): String = when {
+    p.startsWith("z:") -> p.substringAfterLast('|', p)
+    p.startsWith("a:") || p.startsWith("d:") -> p.split('|').getOrNull(2) ?: p
+    else -> p
+}
+
+private fun computeInBookContinueTarget(currentPath: String?, rows: List<com.mangareader.data.ReadingProgress>): com.mangareader.data.ReadingProgress? {
+    if (currentPath == null) return null
+    val curTail = continuePathTail(currentPath)
+    val base = if (curTail.endsWith("/") || curTail.endsWith("\\")) curTail else "$curTail/"
+    return rows.filter { r ->
+        val t = continuePathTail(r.path)
+        t != curTail && t.startsWith(base)
+    }.maxByOrNull { it.updatedAt }
 }
 
 @Composable
