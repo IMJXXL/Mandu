@@ -2212,8 +2212,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                                     Column(Modifier.weight(1f)) {
                                         Text("继续阅读", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.primary)
                                         Text(
-                                            continuePathTail(continueTarget.path)
-                                                .trimEnd('/', '\\').substringAfterLast('/').substringAfterLast('\\'),
+                                            continueDisplayName(continueTarget.path),
                                             fontSize = 11.sp,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             maxLines = 1,
@@ -2566,17 +2565,57 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     }
 }
 
-/**
- * ★ 书内「继续阅读」目标计算：从该书全部进度行里，找 [currentPath]（当前目录层级）
- * 自身以外、其子树内最近（updatedAt 最大）的一条。
- * 路径尾段规范化（continuePathTail）：smb:/webdav: 取全路径；d:/a: 取第 3 段文档 id
- * （注意 a: 是 auth|tree|doc|ext 四段，取 last 会拿到扩展名导致永远匹配不上）；
- * z: 取最后一段（压缩包内 sub 路径）。"…/A" 不会误配兄弟 "…/AB"。
- */
+private fun skipTwoSegments(rest: String): String? {
+    val first = rest.indexOf('|')
+    if (first == -1) return null
+    val second = rest.indexOf('|', first + 1)
+    if (second == -1) return null
+    return rest.substring(second + 1)
+}
+
 private fun continuePathTail(p: String): String = when {
-    p.startsWith("z:") -> p.substringAfterLast('|', p)
-    p.startsWith("a:") || p.startsWith("d:") -> p.split('|').getOrNull(2) ?: p
+    p.startsWith("z:") -> {
+        val inner = p.removePrefix("z:").removePrefix("a:")
+        val subIdx = inner.indexOf("//")
+        if (subIdx == -1) {
+            skipTwoSegments(inner) ?: p
+        } else {
+            val archivePart = inner.substring(0, subIdx)
+            val subPart = inner.substring(subIdx)
+            skipTwoSegments(archivePart)?.let { it + subPart } ?: p
+        }
+    }
+    p.startsWith("a:") || p.startsWith("d:") -> {
+        val rest = if (p.startsWith("a:")) p.removePrefix("a:") else p.removePrefix("d:")
+        skipTwoSegments(rest) ?: p
+    }
     else -> p
+}
+
+private fun continueDisplayName(p: String): String = when {
+    p.startsWith("z:") -> {
+        val inner = p.removePrefix("z:")
+        val subIdx = inner.indexOf("//")
+        if (subIdx == -1) {
+            inner.trimEnd('/', '\\').substringAfterLast('/').substringAfterLast('\\').substringAfterLast('%')
+        } else {
+            val subPath = inner.substring(subIdx + 2).trimEnd('/', '\\')
+            if (subPath.isNotEmpty()) {
+                subPath.substringAfterLast('/').substringAfterLast('\\')
+            } else {
+                inner.substring(0, subIdx).trimEnd('/', '\\').substringAfterLast('/').substringAfterLast('\\').substringAfterLast('%')
+            }
+        }
+    }
+    p.startsWith("a:") || p.startsWith("d:") -> {
+        val doc = p.split('|').getOrNull(2)
+        if (doc != null) {
+            doc.trimEnd('/', '\\').substringAfterLast('/').substringAfterLast('\\').substringAfterLast('%')
+        } else {
+            p.trimEnd('/', '\\').substringAfterLast('/').substringAfterLast('\\')
+        }
+    }
+    else -> p.trimEnd('/', '\\').substringAfterLast('/').substringAfterLast('\\')
 }
 
 private fun computeInBookContinueTarget(currentPath: String?, rows: List<com.mangareader.data.ReadingProgress>): com.mangareader.data.ReadingProgress? {
