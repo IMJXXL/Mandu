@@ -264,24 +264,8 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -> U
     val allRemotes = allDownloadable.map { it.second.first }.toSet()
     val allSelected = selectedRemotes.isNotEmpty() && selectedRemotes.containsAll(allRemotes)
 
-    fun startBatchDownload() {
-        val treeUriStr = Settings.smbDownloadDirTreeUri.value
-        if (treeUriStr.isNullOrEmpty()) {
-            showNoDirDialog = true
-            return
-        }
-        val treeUri = Uri.parse(treeUriStr)
-        val canWrite = ctx.contentResolver.persistedUriPermissions.any {
-            it.uri == treeUri && it.isWritePermission
-        }
-        if (!canWrite) {
-            Toast.makeText(ctx, "下载目录不可写，请重新设置", Toast.LENGTH_LONG).show()
-            return
-        }
+    fun queueBatchDownload(toDownload: List<Pair<BrowseEntryRemote, Triple<String, String, String>>>) {
         val src = source ?: return
-        val toDownload = allDownloadable.filter { it.second.first in selectedRemotes }
-        if (toDownload.isEmpty()) return
-
         scope.launch(Dispatchers.IO) {
             val dao = SmbDbBridge.mangaDatabase?.mangaDao()
             for ((_, info) in toDownload) {
@@ -302,6 +286,65 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -> U
         isMultiSelectMode = false
         selectedRemotes = emptySet()
         Toast.makeText(ctx, "已加入下载队列（${toDownload.size} 本）", Toast.LENGTH_SHORT).show()
+    }
+
+    // ★ E3：大文件确认门（对齐上游 >100MB 确认 + 下载 snackbar）
+    var showLargeConfirm by remember { mutableStateOf<Pair<Int, Int>?>(null) } // (最大MB, 本数)
+
+    fun startBatchDownload() {
+        val treeUriStr = Settings.smbDownloadDirTreeUri.value
+        if (treeUriStr.isNullOrEmpty()) {
+            showNoDirDialog = true
+            return
+        }
+        val treeUri = Uri.parse(treeUriStr)
+        val canWrite = ctx.contentResolver.persistedUriPermissions.any {
+            it.uri == treeUri && it.isWritePermission
+        }
+        if (!canWrite) {
+            Toast.makeText(ctx, "下载目录不可写，请重新设置", Toast.LENGTH_LONG).show()
+            return
+        }
+        val src = source ?: return
+        val toDownload = allDownloadable.filter { it.second.first in selectedRemotes }
+        if (toDownload.isEmpty()) return
+
+        // 先探最大体积：超过 128MB 的归档弹确认，防手滑拉爆流量
+        scope.launch(Dispatchers.IO) {
+            var maxBytes = 0L
+            for ((_, info) in toDownload) {
+                val (remotePath, _, ext) = info
+                if (ext !in SmbScanner.SCANNABLE_FORMATS) continue
+                val s = runCatching { SmbGateway.fileSizeOrNull(src, password, remotePath) }.getOrNull() ?: continue
+                if (s > maxBytes) maxBytes = s
+            }
+            withContext(Dispatchers.Main) {
+                if (maxBytes > 128L * 1024L * 1024L) {
+                    showLargeConfirm = ((maxBytes + 1024L * 1024L - 1) / (1024L * 1024L)).toInt() to toDownload.size
+                } else {
+                    queueBatchDownload(toDownload)
+                }
+            }
+        }
+    }
+
+    if (showLargeConfirm != null) {
+        val (maxMb, count) = showLargeConfirm!!
+        AlertDialog(
+            onDismissRequest = { showLargeConfirm = null },
+            title = { Text("大文件下载确认") },
+            text = { Text("共 $count 本，最大约 $maxMb MB（超过 128 MB）。继续下载到本地？") },
+            confirmButton = {
+                TextButton(onClick = {
+                    val pending = allDownloadable.filter { it.second.first in selectedRemotes }
+                    showLargeConfirm = null
+                    queueBatchDownload(pending)
+                }) { Text("继续下载") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLargeConfirm = null }) { Text("取消") }
+            },
+        )
     }
 
     Scaffold(
