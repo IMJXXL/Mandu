@@ -12,15 +12,34 @@ import com.mangareader.smbbridge.SmbAppContextBridge
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.tarsin.kt.install
 import okio.Path
+
+/**
+ * PDF range reads block the calling thread inside pdfium's synchronous read
+ * callback ([NativeEngine.PdfRangeReader] → [ArchiveByteSource.readAt] →
+ * runBlocking). Running that on [Dispatchers.IO] parks shared workers one per
+ * in-flight render; enough concurrent renders starve the pool that the HTTP
+ * engine and DataStore need, deadlocking every reader. A small dedicated pool
+ * caps the fan-out and keeps the parked threads private.
+ */
+@PublishedApi
+internal val pdfiumDispatcher: CoroutineDispatcher by lazy {
+    val counter = AtomicInteger()
+    Executors.newFixedThreadPool(2) { r ->
+        Thread(r, "pdfium-render-" + counter.incrementAndGet())
+    }.asCoroutineDispatcher()
+}
 
 /**
  * Remote PDF reader via pdfium FPDF_LoadCustomDocument: range-reads the remote
@@ -52,7 +71,7 @@ suspend inline fun <T> usePdfiumPageLoader(
             }
         }
 
-        val opened = withContext(Dispatchers.IO) {
+        val opened = withContext(pdfiumDispatcher) {
             NativeEngine.pdfOpenCustom(pdfKey, size, reader)
         }
         if (!opened) {
@@ -63,7 +82,7 @@ suspend inline fun <T> usePdfiumPageLoader(
         install({ source }, { s, _ -> s.close() })
         install({ pdfKey }, { key, _ -> NativeEngine.pdfClose(key) })
 
-        val pageCount = withContext(Dispatchers.IO) { NativeEngine.pdfGetPageCount(pdfKey) }
+        val pageCount = withContext(pdfiumDispatcher) { NativeEngine.pdfGetPageCount(pdfKey) }
         check(pageCount > 0) { "PDF has no pages: $cacheKey" }
 
         val ctx = SmbAppContextBridge.appCtx
@@ -145,7 +164,8 @@ suspend inline fun <T> usePdfiumPageLoader(
                         return
                     }
                     renderJobs[index]?.cancel()
-                    renderJobs[index] = hostScope.launch(Dispatchers.IO) {
+                    renderJobs[index] = hostScope.launch(pdfiumDispatcher) {
+                        val renderStart = android.os.SystemClock.elapsedRealtime()
                         try {
                             val pageSize = NativeEngine.pdfGetPageSize(pdfKey, index)
                                 ?: error("pdfium getPageSize failed for page $index")
@@ -170,10 +190,20 @@ suspend inline fun <T> usePdfiumPageLoader(
                             }
                             val path = DocumentExtractCache.writePage(cacheKey, index, "jpg", bytes)
                             pagePaths[index] = path
+                            android.util.Log.d(
+                                "PdfRender",
+                                "page=" + index + " done ms=" + (android.os.SystemClock.elapsedRealtime() - renderStart),
+                            )
                             onReady()
                         } catch (e: CancellationException) {
+                            android.util.Log.d("PdfRender", "page=" + index + " cancelled")
                             throw e
                         } catch (t: Throwable) {
+                            android.util.Log.w(
+                                "PdfRender",
+                                "page=" + index + " failed ms=" + (android.os.SystemClock.elapsedRealtime() - renderStart),
+                                t,
+                            )
                             if (interactive) notifyPageFailed(index, t.message)
                         }
                     }

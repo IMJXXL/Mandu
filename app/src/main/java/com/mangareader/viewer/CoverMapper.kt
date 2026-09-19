@@ -9,9 +9,26 @@ import coil3.fetch.Fetcher
 import coil3.fetch.SourceFetchResult
 import coil3.key.Keyer
 import coil3.request.Options
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.withContext
 import okio.Buffer
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
+
+/**
+ * Blocking cover loads park their calling thread (remote branches runBlocking on
+ * network reads inside ArchiveEngine). A flood of concurrent covers on
+ * [Dispatchers.IO] parks one worker per request and starves the pool the HTTP
+ * engine needs — a small dedicated pool caps the fan-out instead.
+ */
+private val coverIoDispatcher: CoroutineDispatcher by lazy {
+    val counter = AtomicInteger()
+    Executors.newFixedThreadPool(2) { r ->
+        Thread(r, "cover-io-" + counter.incrementAndGet())
+    }.asCoroutineDispatcher()
+}
 
 /** ★ LV119：自定义数据类型，避免 Coil3 内置 String Fetcher 把 cv: 当 URI 解析 */
 data class CoverData(val path: String, val dynOn: Boolean = false)
@@ -158,7 +175,7 @@ class CoverFetcher(
         android.util.Log.w("CoverFetch", "raw null, fallback to Bitmap for $coverPath")
 
         // fallback：mobi/pdf 等无法返回原始字节的格式，用 Bitmap → PNG
-        val bitmap: Bitmap? = withContext(Dispatchers.IO) {
+        val bitmap: Bitmap? = withContext(coverIoDispatcher) {
             try { engine.loadCover(coverPath) } catch (e: Exception) { null }
         }
         if (bitmap == null) throw RuntimeException("Cover load failed: $coverPath")
@@ -191,7 +208,7 @@ class ItemCoverFetcher(
     private val options: Options,
 ) : Fetcher {
     override suspend fun fetch(): FetchResult {
-        val bitmap = withContext(Dispatchers.IO) {
+        val bitmap = withContext(coverIoDispatcher) {
             try { engine.loadCoverForItem(item) } catch (e: Exception) { null }
         } ?: throw RuntimeException("Item cover load failed: ${item.name}")
         val baos = java.io.ByteArrayOutputStream()
