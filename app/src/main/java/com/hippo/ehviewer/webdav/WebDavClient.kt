@@ -702,6 +702,8 @@ object WebDavClient {
                     ZipMemberByteSource.uncompressedSize(zip, member)
                 }
             }.getOrElse { e ->
+                // ★ 对齐上游：协程取消不能被吞成 null（调用方会误以为"文件不存在"继续跑）
+                if (e is kotlinx.coroutines.CancellationException) throw e
                 if (e is ZipMemberTooLargeException) throw e
                 null
             }
