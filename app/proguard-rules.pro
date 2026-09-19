@@ -26,6 +26,11 @@
 #   默认规则虽保 native 方法所在类名，显式冻结整包杜绝 R8 任何合并/改名风险（发布保险）。
 -keep class com.mangareader.sr.** { *; }
 
+# ★ native 包 JNI 回调（pdfium_wrapper.cpp 通过 GetMethodID 回调 PdfRangeReader.readBlock）：
+#   R8 混淆 SAM 接口类名/方法名后 JNI FindClass 找不到 → NoSuchMethodError。
+#   NativeEngine 有 native 方法默认保留，但 PdfRangeReader 是纯 Java 接口会被改名。
+-keep class com.mangareader.native.** { *; }
+
 # ==================== SMB + WebDAV 集成（smb_embed_lv119 任务9.1/19.1） ====================
 # 拷入的参考项目 com.hippo.ehviewer 包：JNI 桥接（ArchiveStreamBridge 的 nativeRead/nativeSeek
 # 按 JNI 符号注册）、smbj 反射、ktor 序列化符号均需类名/成员名冻结。
