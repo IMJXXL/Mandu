@@ -55,7 +55,7 @@ suspend inline fun <T> useZipFolderPageLoader(
         }
 
         val loader = install(
-            object : PageLoader(this, info, start, size) {
+            object : PageLoader(this, info, start, size, decodeImages = false) {
                 override val title by lazy {
                     info?.title
                         ?: prefix.substringAfterLast('/').ifEmpty {

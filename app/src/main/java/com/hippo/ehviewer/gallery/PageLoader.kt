@@ -86,6 +86,14 @@ abstract class PageLoader(
     startPage: Int,
     initialSize: Int,
     val hasAds: Boolean = false,
+    /**
+     * ★ E7 止浪费：false = 跳过解码阶段。我们移植版的 UI 直接消费原始字节
+     * （SmbPageAdapter.loadPageRaw → Coil/BitmapFactory 二次解码、SSIV 瓦片、
+     * 超分），从不读取 [PageStatus.Ready] 的解码产物——解码纯属浪费
+     * （每页多一次全尺寸解码 + pageImageCache 堆占用）。字节预取 demand
+     * 管线原样保留。Pdfium/DocumentExtract 特例保持默认（内部管线未审计）。
+     */
+    val decodeImages: Boolean = true,
 ) : ReaderSession {
     /**
      * Page count. Snapshot-backed so Compose pager/list recompose when solid extract
@@ -661,6 +669,11 @@ abstract class PageLoader(
      */
     fun notifySourceReady(index: Int, orgImg: Boolean = false) {
         if (index !in 0 until size) return
+        if (!decodeImages) {
+            // ★ E7：跳过解码；释放解码槽记账，字节侧 inflight 由 onRequest 语义自管
+            releaseInflight(index)
+            return
+        }
         if (!isDecodeDemanded(index)) {
             // A cancelled/old source operation completed after a seek or reversal.
             releaseInflight(index)

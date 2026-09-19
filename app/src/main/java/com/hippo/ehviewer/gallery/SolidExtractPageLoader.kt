@@ -169,6 +169,7 @@ suspend inline fun <T> useSolidExtractPageLoader(
                     startPage.coerceIn(0, (engine.listedCount() - 1).coerceAtLeast(0)),
                     engine.listedCount(),
                     hasAds,
+                    decodeImages = false,
                 ) {
                     override val title by lazy { info?.title ?: titleHint }
 
@@ -440,6 +441,7 @@ fun cachedSolidLoader(
         startPage.coerceIn(0, (members.size - 1).coerceAtLeast(0)),
         members.size,
         hasAds,
+        decodeImages = false,
     ) {
         override val title by lazy { info?.title ?: titleHint }
 

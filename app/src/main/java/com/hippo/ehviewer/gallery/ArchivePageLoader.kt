@@ -103,7 +103,7 @@ suspend inline fun <T> useArchivePageLoader(
             val mtime = f.takeIf { it.isFile }?.lastModified() ?: 0L
             val len = f.takeIf { it.isFile }?.length() ?: 0L
             val loader = install(
-                object : PageLoader(this, info, startPage, size, hasAds) {
+                object : PageLoader(this, info, startPage, size, hasAds, decodeImages = false) {
                     override val title by lazy {
                         if (info != null) {
                             info.title ?: ""

@@ -239,6 +239,7 @@ suspend inline fun <T> useStreamArchivePageLoader(
                     startPage.coerceIn(0, (listedCount - 1).coerceAtLeast(0)),
                     listedCount,
                     hasAds,
+                    decodeImages = false,
                 ) {
                     override val title by lazy { info?.title ?: titleHint }
 
@@ -729,6 +730,7 @@ internal fun cachedStreamLoader(
         startPage.coerceIn(0, (pageCount - 1).coerceAtLeast(0)),
         pageCount,
         hasAds,
+        decodeImages = false,
     ) {
         override val title by lazy { info?.title ?: titleHint }
 

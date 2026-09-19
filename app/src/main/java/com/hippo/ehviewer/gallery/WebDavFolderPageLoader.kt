@@ -60,7 +60,7 @@ suspend inline fun <T> useWebDavFolderPageLoader(
         val ramPages = ConcurrentHashMap<Int, ByteArray>()
 
         val loader = install(
-            object : PageLoader(this, info, startPage.coerceIn(0, size - 1), size) {
+            object : PageLoader(this, info, startPage.coerceIn(0, size - 1), size, decodeImages = false) {
                 override val title by lazy {
                     info?.title
                         ?: remoteDir.substringAfterLast('/').ifEmpty { source.displayName }

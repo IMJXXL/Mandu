@@ -139,6 +139,7 @@ suspend inline fun <T> useTarChunkPageLoader(
                 startPage.coerceIn(0, (engine.listedCount() - 1).coerceAtLeast(0)),
                 engine.listedCount(),
                 hasAds,
+                decodeImages = false,
             ) {
                 override val title by lazy { info?.title ?: titleHint }
 
