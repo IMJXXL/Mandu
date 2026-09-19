@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.InsertDriveFile
+import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material3.*
@@ -27,6 +28,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -41,7 +43,9 @@ import com.hippo.ehviewer.Settings
 import com.hippo.ehviewer.library.BrowseContentMode
 import com.hippo.ehviewer.library.BrowseEntryRemote
 import com.hippo.ehviewer.library.IMAGE_EXTENSIONS
+import com.hippo.ehviewer.library.ZipAsDirListing
 import com.hippo.ehviewer.library.filterRemoteByContentMode
+import com.hippo.ehviewer.library.isImageFileName
 import com.hippo.ehviewer.webdav.WebDavCache
 import com.hippo.ehviewer.webdav.WebDavGateway
 import com.hippo.ehviewer.webdav.WebDavClient
@@ -496,8 +500,14 @@ fun WebDavBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long, I
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                 )
                 LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
-                    items(searchHits) { h ->
+                    items(searchHits, key = { h -> h.name + "@" + searchHitPath(h) }) { h ->
                         val hitExt = h.name.substringAfterLast('.', "").lowercase()
+                        val hitPlaceholder = when {
+                            h is BrowseEntryRemote.Directory -> Icons.Default.Folder
+                            h is BrowseEntryRemote.FolderGallery -> Icons.Default.Folder
+                            h is BrowseEntryRemote.VideoFile -> Icons.Default.Movie
+                            else -> Icons.Default.Download
+                        }
                         Row(
                             Modifier.fillMaxWidth()
                                 .combinedClickable(
@@ -514,8 +524,20 @@ fun WebDavBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long, I
                                                 addArchive(remote, h.name, hitExt)
                                             }
                                             is BrowseEntryRemote.FolderGallery -> {
-                                                val zipSeg = h.relativeName.substringBefore('/')
-                                                val target = listOf(searchDir, zipSeg).filter { it.isNotEmpty() }.joinToString("/")
+                                                // zip-as-dir 画廊：进 zip 根；真实目录：进完整相对路径
+                                                val rel = h.relativeName.replace('\\', '/')
+                                                val target = if (ZipAsDirListing.zipFileRootName(rel) != null) {
+                                                    listOf(searchDir, rel.substringBefore('/')).filter { it.isNotEmpty() }.joinToString("/")
+                                                } else {
+                                                    listOf(searchDir, rel).filter { it.isNotEmpty() }.joinToString("/")
+                                                }
+                                                exitSearch()
+                                                dir = target
+                                            }
+                                            is BrowseEntryRemote.RegularFile -> {
+                                                // 命中散图：先进入其所在目录，再由用户点图直达该页
+                                                val parent = h.fileName.replace('\\', '/').substringBeforeLast('/')
+                                                val target = listOf(searchDir, parent).filter { it.isNotEmpty() }.joinToString("/")
                                                 exitSearch()
                                                 dir = target
                                             }
@@ -526,17 +548,12 @@ fun WebDavBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long, I
                                 .padding(horizontal = 16.dp, vertical = 10.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Icon(
-                                when (h) {
-                                    is BrowseEntryRemote.Directory -> Icons.Default.Folder
-                                    is BrowseEntryRemote.FolderGallery -> Icons.Default.Folder
-                                    else -> Icons.Default.InsertDriveFile
-                                },
-                                null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(20.dp),
+                            BrowseCoverThumb(
+                                modifier = Modifier.size(56.dp),
+                                cover = source?.id?.let { sid -> davHitCover(sid, searchDir, h) },
+                                placeholder = hitPlaceholder,
                             )
-                            Spacer(Modifier.width(10.dp))
+                            Spacer(Modifier.width(12.dp))
                             Column {
                                 Text(h.name, fontSize = 14.sp, maxLines = 1)
                                 val rel = when (h) {
@@ -587,7 +604,10 @@ fun WebDavBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long, I
                                 is BrowseEntryRemote.ArchiveGallery ->
                                     if (WebDavUnsupportedFormatHandler.isUnsupported(e.fileName.substringAfterLast('.', ""))) Icons.Default.Download
                                     else Icons.Default.InsertDriveFile
-                                else -> Icons.Default.InsertDriveFile
+                                is BrowseEntryRemote.VideoFile -> Icons.Default.Movie
+                                else ->
+                                    if (e.name.substringAfterLast('.', "").lowercase() in IMAGE_EXTENSIONS) Icons.Default.Download
+                                    else Icons.Default.InsertDriveFile
                             }
                             com.mangareader.browse.BrowseItemGridCell(
                                 name = e.name,
@@ -717,6 +737,7 @@ fun WebDavBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long, I
                                 },
                                 Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                                 cover = source?.id?.let { sid -> BrowseCovers.davCover(sid, dir, e) },
+                                placeholder = Icons.Default.Download,
                             )
                             is BrowseEntryRemote.VideoFile -> FileRow(
                                 e.name, joinRel(e.name),
@@ -732,6 +753,7 @@ fun WebDavBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long, I
                                     showItemMenu = true
                                 },
                                 Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                                placeholder = Icons.Default.Movie,
                             )
                             else -> {
                                 val ext = e.name.substringAfterLast('.', "").lowercase()
@@ -754,6 +776,7 @@ fun WebDavBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long, I
                                     },
                                     Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                                     cover = source?.id?.let { sid -> BrowseCovers.davCover(sid, dir, e) },
+                                    placeholder = if (ext in IMAGE_EXTENSIONS) Icons.Default.Download else Icons.Default.InsertDriveFile,
                                 )
                             }
                         }
@@ -821,6 +844,41 @@ fun WebDavBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long, I
     }
 }
 
+/** 深搜命中行的封面（命中路径相对 [searchDir]）：目录取封面名、档案取归档首页、图片取自身。 */
+private fun davHitCover(sourceId: Long, searchDir: String, h: BrowseEntryRemote): BrowseCover? {
+    fun join(parent: String, child: String): String =
+        if (parent.isEmpty()) child.trim('/') else "${parent.trim('/')}/${child.trim('/')}"
+    return when (h) {
+        is BrowseEntryRemote.Directory ->
+            h.coverFileName?.takeIf { isImageFileName(it) }
+                ?.let { BrowseCover.DavImage(sourceId, join(join(searchDir, h.relativeName), it)) }
+        is BrowseEntryRemote.FolderGallery ->
+            h.coverFileName?.takeIf { isImageFileName(it) }?.let { cover ->
+                val rel = h.relativeName.replace('\\', '/')
+                if (ZipAsDirListing.zipFileRootName(rel) != null) {
+                    BrowseCover.DavArchive(sourceId, join(searchDir, rel.substringBefore('/')))
+                } else {
+                    BrowseCover.DavImage(sourceId, join(join(searchDir, rel.substringBeforeLast('/')), rel.substringAfterLast('/')))
+                }
+            }
+        is BrowseEntryRemote.ArchiveGallery ->
+            BrowseCover.DavArchive(sourceId, join(searchDir, join(h.parentRelativeName, h.fileName)))
+        is BrowseEntryRemote.RegularFile ->
+            if (isImageFileName(h.fileName)) BrowseCover.DavImage(sourceId, join(searchDir, h.fileName)) else null
+        else -> null
+    }
+}
+
+/** 命中行的稳定 key（同目录同名不同类型不会撞 key）。 */
+private fun searchHitPath(h: BrowseEntryRemote): String = when (h) {
+    is BrowseEntryRemote.Directory -> h.relativeName
+    is BrowseEntryRemote.ArchiveGallery -> "${h.parentRelativeName}/${h.fileName}"
+    is BrowseEntryRemote.FolderGallery -> h.relativeName
+    is BrowseEntryRemote.VideoFile -> h.fileName
+    is BrowseEntryRemote.RegularFile -> h.fileName
+    else -> ""
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun FileRow(
@@ -832,6 +890,7 @@ private fun FileRow(
     onLongClick: () -> Unit,
     modifier: Modifier = Modifier,
     cover: BrowseCover? = null,
+    placeholder: ImageVector = Icons.Default.InsertDriveFile,
 ) {
     val ext = remotePath.substringBefore(':').substringAfterLast('.', "").lowercase()
     Row(
@@ -848,12 +907,12 @@ private fun FileRow(
             Spacer(Modifier.width(8.dp))
         }
         if (cover != null) {
-            BrowseCoverThumb(modifier = Modifier.size(56.dp), cover = cover, placeholder = Icons.Default.InsertDriveFile)
+            BrowseCoverThumb(modifier = Modifier.size(56.dp), cover = cover, placeholder = placeholder)
             Spacer(Modifier.width(12.dp))
         } else {
             val unsupported = WebDavUnsupportedFormatHandler.isUnsupported(ext)
             Icon(
-                if (unsupported) Icons.Default.Download else Icons.Default.InsertDriveFile,
+                if (unsupported) Icons.Default.Download else placeholder,
                 null,
                 tint = if (unsupported) MaterialTheme.colorScheme.primary.copy(alpha = 0.5f) else MaterialTheme.colorScheme.primary,
             )
