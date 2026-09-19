@@ -65,6 +65,7 @@ suspend inline fun <T> useSmbFolderPageLoader(
         // B1 convert mode: cap concurrent lib downloads (full convert is serial in
         // HdrConvertCache.fullConvertSlots). Direct-Bitmap uses normal prefetchSlots.
         val libHdrPrefetchSlots = Semaphore(2)
+        val ramPrefetchSlots = Semaphore(RAM_PREFETCH_PERMITS)
         /** Loader 已关闭（退出阅读器/hop）：置位后不再允许重入队下载。 */
         val closed = java.util.concurrent.atomic.AtomicBoolean(false)
 
@@ -237,7 +238,7 @@ suspend inline fun <T> useSmbFolderPageLoader(
                                 cacheOff = skipDisk,
                                 libHdr = isLibHdrCandidate(nameForSlot),
                                 interactiveSlots = interactiveSlots,
-                                ramPrefetchSlots = prefetchSlots,
+                                ramPrefetchSlots = ramPrefetchSlots,
                                 libHdrPrefetchSlots = libHdrPrefetchSlots,
                                 prefetchSlots = prefetchSlots,
                             ) {
