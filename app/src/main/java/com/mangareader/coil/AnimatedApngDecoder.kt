@@ -41,40 +41,40 @@ class AnimatedApngDecoder(private val source: ByteBuffer) : Decoder {
             result: SourceFetchResult,
             options: Options,
             imageLoader: ImageLoader,
-        ) = if (isApng(result.source.source())) {
+        ) = if (isApngSource(result.source.source())) {
             result.source.toByteBufferOrNull()?.let { AnimatedApngDecoder(it) }
         } else {
             null
         }
-
-        /** PNG signature + an `acTL` chunk before `IDAT`/`IEND` (APNG spec requirement). */
-        private fun isApng(source: okio.BufferedSource): Boolean = try {
-            source.peek().use { peek ->
-                if (!peek.request(8)) return false
-                val sig = peek.readByteArray(8)
-                if (!sig.contentEquals(
-                        byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A),
-                    )
-                ) {
-                    return false
-                }
-                while (peek.request(8)) {
-                    val len = peek.readInt()
-                    if (len < 0) return false
-                    val type = peek.readUtf8(4)
-                    when (type) {
-                        "acTL" -> return true
-                        "IDAT", "IEND" -> return false
-                    }
-                    if (!peek.request(len + 4L)) return false
-                    peek.skip(len + 4L)
-                }
-                false
-            }
-        } catch (_: Exception) {
-            false
-        }
     }
+}
+
+/** PNG signature + an `acTL` chunk before `IDAT`/`IEND` (APNG spec requirement). */
+internal fun isApngSource(source: okio.BufferedSource): Boolean = try {
+    source.peek().use { peek ->
+        if (!peek.request(8)) return false
+        val sig = peek.readByteArray(8)
+        if (!sig.contentEquals(
+                byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A),
+            )
+        ) {
+            return false
+        }
+        while (peek.request(8)) {
+            val len = peek.readInt()
+            if (len < 0) return false
+            val type = peek.readUtf8(4)
+            when (type) {
+                "acTL" -> return true
+                "IDAT", "IEND" -> return false
+            }
+            if (!peek.request(len + 4L)) return false
+            peek.skip(len + 4L)
+        }
+        false
+    }
+} catch (_: Exception) {
+    false
 }
 
 private fun ImageSource.toByteBufferOrNull(): ByteBuffer? {

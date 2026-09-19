@@ -70,6 +70,9 @@ class App : Application(), SingletonImageLoader.Factory {
                 // 不抢先注册远端 APNG 只会显示静态首帧（对齐上游动图嗅探的 apng 分支）。
                 add(com.mangareader.coil.AnimatedApngDecoder.Factory)
                 add(AnimatedImageDecoder.Factory(false))
+                // 静态封面/图片升级 HARDWARE 位图（GPU 纹理），书架滚动更省 CPU（对齐上游）。
+                // 动图 drawable 与带 gainmap 的 Ultra HDR 不受影响（拦截器自过滤）。
+                add(com.hippo.ehviewer.coil.HardwareBitmapInterceptor)
             }
             .build()
     }

@@ -904,7 +904,7 @@ private fun BookCard(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, isS
                                 memoryKey = "cover:${b.id}@${b.coverPath}",
                                 diskKey = "${b.coverPath}",
                             )
-                            .decoderFactory(com.mangareader.coil.StaticFirstFrameDecoder.Factory())
+                            .decoderFactory(com.mangareader.coil.ApngFirstFrameDecoder)
                             .build()
                     }
                     coil3.compose.AsyncImage(
@@ -1014,7 +1014,7 @@ private fun BookListRow(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, 
                             coil3.request.ImageRequest.Builder(ctx)
                                 .data(com.mangareader.viewer.CoverData(b.coverPath))
                                 .coverThumb(decodePx, memoryKey = "cover:${b.id}@${b.coverPath}", diskKey = "${b.coverPath}")
-                                .decoderFactory(com.mangareader.coil.StaticFirstFrameDecoder.Factory())
+                                .decoderFactory(com.mangareader.coil.ApngFirstFrameDecoder)
                                 .build()
                         }
                         coil3.compose.AsyncImage(model = coverRequest, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
