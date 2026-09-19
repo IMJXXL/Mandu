@@ -29,6 +29,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ehviewer.core.database.model.WebDavSourceEntity
+import com.mangareader.browse.BrowseCover
+import com.mangareader.browse.BrowseCoverThumb
+import com.mangareader.browse.BrowseCovers
 import com.hippo.ehviewer.Settings
 import com.hippo.ehviewer.library.BrowseEntryRemote
 import com.hippo.ehviewer.library.IMAGE_EXTENSIONS
@@ -540,7 +543,11 @@ fun WebDavBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -
                                     }, modifier = Modifier.size(24.dp))
                                     Spacer(Modifier.width(8.dp))
                                 }
-                                Icon(Icons.Default.Folder, null, tint = Color(0xFF8FB8E8))
+                                BrowseCoverThumb(
+                                    modifier = Modifier.size(56.dp),
+                                    cover = source?.id?.let { sid -> BrowseCovers.davCover(sid, dir, e) },
+                                    placeholder = Icons.Default.Folder,
+                                )
                                 Spacer(Modifier.width(12.dp))
                                 Text(e.name, fontSize = 15.sp, modifier = Modifier.weight(1f))
                             }
@@ -569,7 +576,11 @@ fun WebDavBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -
                                     }, modifier = Modifier.size(24.dp))
                                     Spacer(Modifier.width(8.dp))
                                 }
-                                Icon(Icons.Default.Folder, null, tint = Color(0xFF9DE8B8))
+                                BrowseCoverThumb(
+                                    modifier = Modifier.size(56.dp),
+                                    cover = source?.id?.let { sid -> BrowseCovers.davCover(sid, dir, e) },
+                                    placeholder = Icons.Default.Folder,
+                                )
                                 Spacer(Modifier.width(12.dp))
                                 Column(Modifier.weight(1f)) {
                                     Text(e.name, fontSize = 15.sp)
@@ -592,6 +603,7 @@ fun WebDavBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -
                                     showItemMenu = true
                                 },
                                 Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                                cover = source?.id?.let { sid -> BrowseCovers.davCover(sid, dir, e) },
                             )
                             is BrowseEntryRemote.VideoFile -> FileRow(
                                 e.name, joinRel(e.name),
@@ -626,6 +638,7 @@ fun WebDavBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -
                                         showItemMenu = true
                                     },
                                     Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                                    cover = source?.id?.let { sid -> BrowseCovers.davCover(sid, dir, e) },
                                 )
                             }
                         }
@@ -703,6 +716,7 @@ private fun FileRow(
     onOpen: () -> Unit,
     onLongClick: () -> Unit,
     modifier: Modifier = Modifier,
+    cover: BrowseCover? = null,
 ) {
     val ext = remotePath.substringBefore(':').substringAfterLast('.', "").lowercase()
     Row(
@@ -718,8 +732,13 @@ private fun FileRow(
             )
             Spacer(Modifier.width(8.dp))
         }
-        Icon(Icons.Default.InsertDriveFile, null, tint = MaterialTheme.colorScheme.primary)
-        Spacer(Modifier.width(12.dp))
+        if (cover != null) {
+            BrowseCoverThumb(modifier = Modifier.size(56.dp), cover = cover)
+            Spacer(Modifier.width(12.dp))
+        } else {
+            Icon(Icons.Default.InsertDriveFile, null, tint = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.width(12.dp))
+        }
         Column(Modifier.weight(1f)) {
             Text(name, fontSize = 15.sp)
             Text(ext.uppercase(), fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)

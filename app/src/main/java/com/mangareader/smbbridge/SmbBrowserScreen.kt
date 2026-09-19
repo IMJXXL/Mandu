@@ -38,6 +38,9 @@ import com.hippo.ehviewer.collectAsState
 import com.hippo.ehviewer.library.BrowseEntryRemote
 import com.hippo.ehviewer.library.IMAGE_EXTENSIONS
 
+import com.mangareader.browse.BrowseCover
+import com.mangareader.browse.BrowseCoverThumb
+import com.mangareader.browse.BrowseCovers
 import com.hippo.ehviewer.smb.SmbCache
 import com.hippo.ehviewer.smb.SmbGateway
 import com.hippo.ehviewer.smb.SmbPasswordStore
@@ -154,6 +157,7 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -> U
 
     suspend fun listDir(d: String): List<BrowseEntryRemote> = withContext(Dispatchers.IO) {
         val src = source ?: return@withContext emptyList()
+        android.util.Log.d("SmbBrowseTap", "listDir \"$d\"")
         runCatching { SmbGateway.listDirectory(src, password, d) }
             .onFailure { error = SmbErrors.humanizeSmb(it).take(120) }
             .getOrDefault(emptyList())
@@ -539,7 +543,9 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -> U
                                             if (isMultiSelectMode && remotePath != null) {
                                                 selectedRemotes = if (isSelected) selectedRemotes - remotePath else selectedRemotes + remotePath
                                             } else {
-                                                dir = if (dir.isEmpty()) e.relativeName else "$dir/${e.relativeName}"
+                                                val target = if (dir.isEmpty()) e.relativeName else "$dir/${e.relativeName}"
+                                                android.util.Log.d("SmbBrowseTap", "enter dir=\"$dir\" -> \"$target\" name=${e.name} rel=${e.relativeName} class=${e::class.simpleName}")
+                                                dir = target
                                             }
                                         },
                                         onLongClick = {
@@ -557,7 +563,11 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -> U
                                     }, modifier = Modifier.size(24.dp))
                                     Spacer(Modifier.width(8.dp))
                                 }
-                                Icon(Icons.Default.Folder, null, tint = Color(0xFF8FB8E8))
+                                BrowseCoverThumb(
+                                    modifier = Modifier.size(56.dp),
+                                    cover = source?.id?.let { sid -> BrowseCovers.smbCover(sid, dir, e) },
+                                    placeholder = Icons.Default.Folder,
+                                )
                                 Spacer(Modifier.width(12.dp))
                                 Text(e.name, fontSize = 15.sp, modifier = Modifier.weight(1f))
                             }
@@ -586,7 +596,11 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -> U
                                     }, modifier = Modifier.size(24.dp))
                                     Spacer(Modifier.width(8.dp))
                                 }
-                                Icon(Icons.Default.Folder, null, tint = Color(0xFF9DE8B8))
+                                BrowseCoverThumb(
+                                    modifier = Modifier.size(56.dp),
+                                    cover = source?.id?.let { sid -> BrowseCovers.smbCover(sid, dir, e) },
+                                    placeholder = Icons.Default.Folder,
+                                )
                                 Spacer(Modifier.width(12.dp))
                                 Column(Modifier.weight(1f)) {
                                     Text(e.name, fontSize = 15.sp)
@@ -609,6 +623,7 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -> U
                                     showItemMenu = true
                                 },
                                 Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                                cover = source?.id?.let { sid -> BrowseCovers.smbCover(sid, dir, e) },
                             )
                             is BrowseEntryRemote.VideoFile -> FileRow(
                                 e.name, joinRel(e.name),
@@ -643,6 +658,7 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -> U
                                         showItemMenu = true
                                     },
                                     Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                                    cover = source?.id?.let { sid -> BrowseCovers.smbCover(sid, dir, e) },
                                 )
                             }
                         }
@@ -723,6 +739,7 @@ private fun FileRow(
     onOpen: () -> Unit,
     onLongClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
+    cover: BrowseCover? = null,
 ) {
     val ext = remotePath.substringBefore(':').substringAfterLast('.', "").lowercase()
     Row(
@@ -737,8 +754,13 @@ private fun FileRow(
             )
             Spacer(Modifier.width(8.dp))
         }
-        Icon(Icons.Default.InsertDriveFile, null, tint = MaterialTheme.colorScheme.primary)
-        Spacer(Modifier.width(12.dp))
+        if (cover != null) {
+            BrowseCoverThumb(modifier = Modifier.size(56.dp), cover = cover)
+            Spacer(Modifier.width(12.dp))
+        } else {
+            Icon(Icons.Default.InsertDriveFile, null, tint = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.width(12.dp))
+        }
         Column(Modifier.weight(1f)) {
             Text(name, fontSize = 15.sp)
             Text(ext.uppercase(), fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
