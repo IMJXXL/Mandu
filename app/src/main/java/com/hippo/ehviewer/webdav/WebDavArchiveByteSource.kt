@@ -212,6 +212,9 @@ private class RawWebDavArchiveByteSource(
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
         // Snapshot then cancel — concurrent withTrackedJob finally-removes are fine.
+        // Never touch the shared WebDavClient here: closing it would wedge other
+        // sources' in-flight reads, and only close() of the owning source may
+        // cancel this source's jobs.
         val jobs = activeJobs.toTypedArray()
         activeJobs.clear()
         for (job in jobs) {

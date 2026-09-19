@@ -36,7 +36,7 @@ import io.ktor.http.Url
 import io.ktor.http.contentType
 import io.ktor.http.encodedPath
 import io.ktor.http.takeFrom
-import io.ktor.utils.io.jvm.javaio.toInputStream
+import io.ktor.utils.io.readAvailable
 import java.io.IOException
 import java.io.OutputStream
 import java.io.RandomAccessFile
@@ -58,10 +58,12 @@ import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
 import kotlin.coroutines.coroutineContext
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withTimeout
 import okhttp3.Dispatcher
 import okhttp3.Protocol
 import org.xmlpull.v1.XmlPullParser
@@ -385,6 +387,22 @@ object WebDavClient {
         }
     }
 
+    /**
+     * Kotlin-layer per-read timeout for response body reads. Suspend channel reads
+     * release the thread while waiting, but a dead engine (closed client) never
+     * resumes them — the caller would hold [downloadGate] forever. Converting
+     * [TimeoutCancellationException] to [SocketTimeoutException] routes the failure
+     * through [withTransportRetry]'s reset + retry path.
+     */
+    private suspend fun <T> withBodyReadTimeout(block: suspend () -> T): T = try {
+        withTimeout(DL_SOCKET_MS) { block() }
+    } catch (e: TimeoutCancellationException) {
+        // SocketTimeoutException has no (message, cause) constructor.
+        val se = SocketTimeoutException("WebDAV body read timed out after ${DL_SOCKET_MS}ms")
+        se.initCause(e)
+        throw se
+    }
+
     private fun isRetryableTransport(t: Throwable): Boolean {
         var cur: Throwable? = t
         while (cur != null) {
@@ -549,11 +567,13 @@ object WebDavClient {
                     if (response.status.value !in 200..299) {
                         error("WebDAV GET ${response.status.value} for $relativeFilePath")
                     }
-                    response.bodyAsChannel().toInputStream().use { input ->
+                    response.bodyAsChannel().let { channel ->
                         val buffer = ByteArray(256 * 1024)
                         while (true) {
                             downloadContext.ensureActive()
-                            val n = input.read(buffer)
+                            val n = withBodyReadTimeout {
+                                channel.readAvailable(buffer, 0, buffer.size)
+                            }
                             if (n <= 0) break
                             out.write(buffer, 0, n)
                         }
@@ -595,13 +615,15 @@ object WebDavClient {
                         error("WebDAV prefix GET ${response.status.value} for $relativeFilePath")
                     }
                     destination.outputStream().buffered().use { out ->
-                        response.bodyAsChannel().toInputStream().use { input ->
+                        response.bodyAsChannel().let { channel ->
                             val buffer = ByteArray(256 * 1024)
                             var copied = 0L
                             while (copied < maxBytes) {
                                 downloadContext.ensureActive()
                                 val request = minOf(buffer.size.toLong(), maxBytes - copied).toInt()
-                                val read = input.read(buffer, 0, request)
+                                val read = withBodyReadTimeout {
+                                    channel.readAvailable(buffer, 0, request)
+                                }
                                 if (read <= 0) break
                                 out.write(buffer, 0, read)
                                 copied += read
@@ -765,8 +787,14 @@ object WebDavClient {
         off: Int,
         len: Int,
         sticky: Boolean = false,
-    ): Int = withIOContext {
-        downloadGate().withPermit {
+    ): Int {
+        // No withIOContext re-dispatch: callers on blocking threads (pdfium render,
+        // cover fetch runBlocking) must run the request inline — waiting for a free
+        // Dispatchers.IO worker while every worker is parked deadlocks the reader.
+        val started = android.os.SystemClock.elapsedRealtime()
+        var gateWait = 0L
+        val got = downloadGate().withPermit {
+            gateWait = android.os.SystemClock.elapsedRealtime() - started
             withTransportRetry(sticky) {
                 val url = absoluteUrl(source, relativeFilePath)
                 val auth = basicAuthHeader(source.username, password)
@@ -810,13 +838,15 @@ object WebDavClient {
                         }
                         else -> error("WebDAV Range GET $code for $relativeFilePath")
                     }
-                    response.bodyAsChannel().toInputStream().use { input ->
+                    // Suspend-channel reads only: the toInputStream() bridge blocks the
+                    // thread inside a native read() that cancellation cannot interrupt,
+                    // and a wedged read holds downloadGate forever.
+                    response.bodyAsChannel().let { channel ->
                         var total = 0
                         while (total < len) {
-                            val n = input.read(buf, off + total, len - total)
-                            // InputStream normally blocks or returns data, but treating a
-                            // zero-length result as progress would spin forever on a broken
-                            // WebDAV/ContentProvider bridge.
+                            val n = withBodyReadTimeout {
+                                channel.readAvailable(buf, off + total, len - total)
+                            }
                             if (n <= 0) break
                             total += n
                         }
@@ -825,6 +855,12 @@ object WebDavClient {
                 }
             }
         }
+        android.util.Log.d(
+            "WebDavRange",
+            "off=" + fileOffset + " want=" + len + " got=" + got +
+                " gate=" + gateWait + "ms total=" + (android.os.SystemClock.elapsedRealtime() - started) + "ms",
+        )
+        return got
     }
 
     /** Parse Content-Range first-byte-pos (`bytes START-END/TOTAL`). */
