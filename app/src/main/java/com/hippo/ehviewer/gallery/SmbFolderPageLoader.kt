@@ -140,12 +140,12 @@ suspend inline fun <T> useSmbFolderPageLoader(
                 override fun prefetchPages(pages: List<Int>, bounds: IntRange) {
                     if (Settings.disableReaderNetworkCache.value) return
                     pages.forEach { index ->
-                        ensureDownload(index, interactive = false)
+                        ensureDownload(index)
                     }
                 }
 
                 override fun onRequest(index: Int, force: Boolean, orgImg: Boolean) {
-                    ensureDownload(index, interactive = true) {
+                    ensureDownload(index) {
                         notifySourceReady(index, orgImg)
                     }
                 }
@@ -190,7 +190,7 @@ suspend inline fun <T> useSmbFolderPageLoader(
                  */
                 private fun ensureDownload(
                     index: Int,
-                    interactive: Boolean,
+
                     onReady: (() -> Unit)? = null,
                 ) {
                     if (closed.get() || index !in 0 until size) return
@@ -214,7 +214,7 @@ suspend inline fun <T> useSmbFolderPageLoader(
                         return
                     }
                     val job = scope.launch(Dispatchers.IO, start = CoroutineStart.LAZY) {
-                        var needsInteractive = interactive
+
                         try {
                             val skipDisk = Settings.disableReaderNetworkCache.value
                             if (skipDisk && ramPages.containsKey(index)) {
@@ -231,17 +231,16 @@ suspend inline fun <T> useSmbFolderPageLoader(
                                 dispatchReady(index)
                                 return@launch
                             }
-                            // Promote to interactive slot if the UI is waiting (joined mid-prefetch).
-                            if (readyWaiters[index]?.isNotEmpty() == true) {
-                                needsInteractive = true
-                            }
                             val nameForSlot = imageFileNames[index]
-                            val slots = when {
-                                needsInteractive -> interactiveSlots
-                                isLibHdrCandidate(nameForSlot) -> libHdrPrefetchSlots
-                                else -> prefetchSlots
-                            }
-                            slots.withPermit {
+                            withFolderNetworkPermit(
+                                isAnchor = isAnchorPage(index),
+                                cacheOff = skipDisk,
+                                libHdr = isLibHdrCandidate(nameForSlot),
+                                interactiveSlots = interactiveSlots,
+                                ramPrefetchSlots = prefetchSlots,
+                                libHdrPrefetchSlots = libHdrPrefetchSlots,
+                                prefetchSlots = prefetchSlots,
+                            ) {
                                 if (skipDisk) {
                                     downloadToRam(index)
                                 } else {
@@ -276,14 +275,14 @@ suspend inline fun <T> useSmbFolderPageLoader(
                                     waiters.forEach { addReadyWaiter(index, it) }
                                     // Release the cancelled owner before registering its retry.
                                     downloadJobs.release(index, runningJob)
-                                    ensureDownload(index, interactive = true)
+                                    ensureDownload(index)
                                 }
                             }
                         } catch (e: Throwable) {
                             // Never rethrow: a failed child would cancel the whole reader scope.
                             if (downloadJobs.owns(index, coroutineContext[Job])) {
                                 val waiters = takeReadyWaiters(index)
-                                if (waiters.isNotEmpty() || needsInteractive) {
+                                if (waiters.isNotEmpty()) {
                                     notifyPageFailed(index, e.message)
                                 }
                             }
