@@ -150,15 +150,15 @@ class SmbArchiveByteSource(
 
     override fun dropQueuedReads() {
         raw?.dropQueuedReads()
-        // ★ zip-as-dir 时 raw==null，keep-open 句柄在嵌套 inner 里——不清队会卡在预取后面
+        // Zip-as-dir: [raw] is null; the keep-open handle lives under [inner]
+        // ([ZipMemberByteSource] → nested [SmbArchiveByteSource]).
         if (raw == null) inner.dropQueuedReads()
     }
 
     /** Re-open the remote handle after the browse pool's TCP died in the background. */
     override fun requestReconnect() {
         raw?.requestReconnect()
-        val nested = inner as? SmbArchiveByteSource
-        if (nested != null && nested !== this) nested.requestReconnect()
+        if (raw == null) inner.requestReconnect()
     }
 
     override fun close() = inner.close()
@@ -212,191 +212,203 @@ private class KeepOpenSmbFileSource(
 
     init {
         worker = scope.launch {
-            while (isActive && !closed.get()) {
-                if (demand.receiveCatching().getOrNull() == null) break
-                var openAttempts = 0
-                try {
-                    while (isActive && !closed.get()) {
-                        var opened = false
-                        try {
-                            // Sticky: dedicated TCP for FUSE/external viewers (not ON_STOP pool).
-                            // Default: shared host pool for in-app reader/cover.
-                            fun drain(file: com.hierynomus.smbj.share.File, fileSize: Long) {
-                                activeFile.set(file)
-                                opened = true
-                                try {
-                                    if (closed.get()) {
-                                        runCatching { file.close() }
-                                        return
-                                    }
-                                    if (!sizeReady.isCompleted) sizeReady.complete(fileSize)
-                                    // Blocking drain: open-file callback is not a suspend lambda.
-                                    // Sticky sessions idle-ping so NAS/NAT idle timeouts do not kill the
-                                    // handle during player buffer periods (external video can pause I/O
-                                    // for minutes while still holding the Fuse FD).
-                                    runBlocking {
-                                        suspend fun handle(op: Op) {
-                                            demand.tryReceive()
-                                            if (closed.get()) {
-                                                op.result.complete(-1)
-                                                return
+            val job = coroutineContext[Job]!!
+            val cancelClose = job.closeFileOnCancelling(activeFile)
+            try {
+                while (isActive && !closed.get()) {
+                    if (demand.receiveCatching().getOrNull() == null) break
+                    var openAttempts = 0
+                    try {
+                        while (isActive && !closed.get()) {
+                            var opened = false
+                            try {
+                                // Sticky: dedicated TCP for FUSE/external viewers (not ON_STOP pool).
+                                // Default: shared host pool for in-app reader/cover.
+                                fun drain(file: com.hierynomus.smbj.share.File, fileSize: Long) {
+                                    armSmbFileForCancelClose(job, activeFile, file)
+                                    opened = true
+                                    try {
+                                        if (closed.get() || !job.isActive) {
+                                            activeFile.getAndSet(null)?.let { leftover ->
+                                                SmbAsyncClose.run { leftover.close() }
                                             }
-                                            try {
-                                                op.result.complete(
-                                                    readFullyWithRetry(file, op.offset, op.buf, op.off, op.len),
-                                                )
-                                            } catch (e: Throwable) {
-                                                if (!isShareClosedError(e)) logcat("SmbArchive", e)
-                                                op.result.completeExceptionally(e)
-                                                if (isShareClosedError(e) || closed.get()) throw e
-                                            }
+                                            return
                                         }
-                                        suspend fun runBatch(first: Op) {
-                                            val batch = ArrayList<Op>(READ_PIPELINE)
-                                            batch.add(first)
-                                            while (batch.size < READ_PIPELINE) {
-                                                batch.add(ops.tryReceive().getOrNull() ?: break)
-                                            }
-                                            if (batch.size == 1) {
-                                                handle(batch[0])
-                                                return
-                                            }
-                                            // Concurrent File.read multiplexes on one smbj session
-                                            // (message IDs / credits). readAsync is package-private.
-                                            coroutineScope {
-                                                for (op in batch) {
-                                                    launch(Dispatchers.IO) { handle(op) }
+                                        if (!sizeReady.isCompleted) sizeReady.complete(fileSize)
+                                        // Blocking drain: open-file callback is not a suspend lambda.
+                                        // Sticky sessions idle-ping so NAS/NAT idle timeouts do not kill the
+                                        // handle during player buffer periods (external video can pause I/O
+                                        // for minutes while still holding the Fuse FD).
+                                        runBlocking {
+                                            suspend fun handle(op: Op) {
+                                                demand.tryReceive()
+                                                if (closed.get()) {
+                                                    op.result.complete(-1)
+                                                    return
                                                 }
-                                            }
-                                        }
-                                        if (stickySession) {
-                                            while (isActive && !closed.get()) {
-                                                val received = withTimeoutOrNull(STICKY_IDLE_PING_MS) {
-                                                    ops.receiveCatching()
-                                                }
-                                                if (received == null) {
-                                                    if (closed.get()) break
-                                                    // Keepalive against NAS/NAT idle drop. Share may
-                                                    // already be dead after dropStickySessions (screen
-                                                    // off) — exit drain cleanly so the HTTP sticky
-                                                    // permit is released; next demand reconnects.
-                                                    try {
-                                                        file.fileInformation.standardInformation.endOfFile
-                                                    } catch (e: Throwable) {
-                                                        if (closed.get() || !isActive) break
-                                                        if (isShareClosedError(e)) {
-                                                            logcat("SmbArchive") {
-                                                                "sticky idle: transport gone, reconnect on demand"
-                                                            }
-                                                            // Queued reads must re-arm open (demand
-                                                            // may already have been consumed).
-                                                            if (!ops.isEmpty) demand.trySend(Unit)
-                                                            break
-                                                        }
-                                                        logcat("SmbArchive", e)
-                                                        throw e
+                                                try {
+                                                    op.result.complete(
+                                                        readFullyWithRetry(file, op.offset, op.buf, op.off, op.len),
+                                                    )
+                                                } catch (e: Throwable) {
+                                                    if (!isSmbExpectedCloseError(e)) logcat("SmbArchive", e)
+                                                    if (closed.get() || isSmbExpectedCloseError(e)) {
+                                                        op.result.complete(-1)
+                                                    } else {
+                                                        op.result.completeExceptionally(e)
                                                     }
-                                                    continue
+                                                    if (isSmbExpectedCloseError(e) || closed.get()) throw e
                                                 }
-                                                val op = received.getOrNull() ?: break
-                                                runBatch(op)
                                             }
-                                        } else {
-                                            // Do not iterate until ops.close(): that held the host-pool
-                                            // slot for the whole zip-as-dir reader session. Release
-                                            // after a short idle; the worker re-opens on next demand.
-                                            drainUntilIdle(
-                                                channel = ops,
-                                                idleMs = BROWSE_IDLE_RELEASE_MS,
-                                                isActive = { isActive && !closed.get() },
-                                                handle = { runBatch(it) },
-                                            )
-                                            if (!ops.isEmpty) demand.trySend(Unit)
+                                            suspend fun runBatch(first: Op) {
+                                                val batch = ArrayList<Op>(READ_PIPELINE)
+                                                batch.add(first)
+                                                while (batch.size < READ_PIPELINE) {
+                                                    batch.add(ops.tryReceive().getOrNull() ?: break)
+                                                }
+                                                if (batch.size == 1) {
+                                                    handle(batch[0])
+                                                    return
+                                                }
+                                                // Concurrent File.read multiplexes on one smbj session
+                                                // (message IDs / credits). readAsync is package-private.
+                                                coroutineScope {
+                                                    for (op in batch) {
+                                                        launch(Dispatchers.IO) { handle(op) }
+                                                    }
+                                                }
+                                            }
+                                            if (stickySession) {
+                                                while (isActive && !closed.get()) {
+                                                    val received = withTimeoutOrNull(STICKY_IDLE_PING_MS) {
+                                                        ops.receiveCatching()
+                                                    }
+                                                    if (received == null) {
+                                                        if (closed.get()) break
+                                                        // Keepalive against NAS/NAT idle drop. Share may
+                                                        // already be dead after dropStickySessions (screen
+                                                        // off) — exit drain cleanly so the HTTP sticky
+                                                        // permit is released; next demand reconnects.
+                                                        try {
+                                                            file.fileInformation.standardInformation.endOfFile
+                                                        } catch (e: Throwable) {
+                                                            if (closed.get() || !isActive) break
+                                                            if (isSmbExpectedCloseError(e)) {
+                                                                logcat("SmbArchive") {
+                                                                    "sticky idle: transport gone, reconnect on demand"
+                                                                }
+                                                                // Queued reads must re-arm open (demand
+                                                                // may already have been consumed).
+                                                                if (!ops.isEmpty) demand.trySend(Unit)
+                                                                break
+                                                            }
+                                                            logcat("SmbArchive", e)
+                                                            throw e
+                                                        }
+                                                        continue
+                                                    }
+                                                    val op = received.getOrNull() ?: break
+                                                    runBatch(op)
+                                                }
+                                            } else {
+                                                // Do not iterate until ops.close(): that held the host-pool
+                                                // slot for the whole zip-as-dir reader session. Release
+                                                // after a short idle; the worker re-opens on next demand.
+                                                drainUntilIdle(
+                                                    channel = ops,
+                                                    idleMs = BROWSE_IDLE_RELEASE_MS,
+                                                    isActive = { isActive && !closed.get() },
+                                                    handle = { runBatch(it) },
+                                                )
+                                                if (!ops.isEmpty) demand.trySend(Unit)
+                                            }
                                         }
+                                    } finally {
+                                        activeFile.compareAndSet(file, null)
                                     }
-                                } finally {
-                                    activeFile.compareAndSet(file, null)
                                 }
-                            }
-                            val playEpoch = if (videoPlay) SmbGateway.currentVideoPlayEpoch() else null
-                            when {
-                                stickySession && httpStickyPool -> {
-                                    SmbGateway.withHttpStickyOpenFile(
-                                        source,
-                                        password,
-                                        remote,
-                                        waitForSlot = httpStickyWait,
-                                        lease = checkNotNull(httpStickyLease),
-                                        videoPlayEpoch = playEpoch,
-                                        block = ::drain,
-                                    )
+                                val playEpoch = if (videoPlay) SmbGateway.currentVideoPlayEpoch() else null
+                                when {
+                                    stickySession && httpStickyPool -> {
+                                        SmbGateway.withHttpStickyOpenFile(
+                                            source,
+                                            password,
+                                            remote,
+                                            waitForSlot = httpStickyWait,
+                                            lease = checkNotNull(httpStickyLease),
+                                            videoPlayEpoch = playEpoch,
+                                            block = ::drain,
+                                        )
+                                    }
+                                    stickySession -> {
+                                        SmbGateway.withStickyOpenFile(
+                                            source,
+                                            password,
+                                            remote,
+                                            videoPlayEpoch = playEpoch,
+                                            block = ::drain,
+                                        )
+                                    }
+                                    else -> {
+                                        SmbGateway.withOpenFile(
+                                            source,
+                                            password,
+                                            remote,
+                                            yieldable = yieldable && !stickySession,
+                                            block = ::drain,
+                                        )
+                                    }
                                 }
-                                stickySession -> {
-                                    SmbGateway.withStickyOpenFile(
-                                        source,
-                                        password,
-                                        remote,
-                                        videoPlayEpoch = playEpoch,
-                                        block = ::drain,
-                                    )
-                                }
-                                else -> {
-                                    SmbGateway.withOpenFile(
-                                        source,
-                                        password,
-                                        remote,
-                                        yieldable = yieldable && !stickySession,
-                                        block = ::drain,
-                                    )
-                                }
-                            }
-                            break
-                        } catch (e: Throwable) {
-                            if (closed.get() || !isActive) throw e
-                            // Share/transport death mid-session is expected after screen-off
-                            // dropSticky / NAS idle; reconnect on next demand without Error spam.
-                            if (isShareClosedError(e)) {
-                                logcat("SmbArchive") {
-                                    "sticky share closed (${if (opened) "reconnect on demand" else "retry open"}): ${e.message}"
-                                }
-                            } else {
-                                logcat("SmbArchive", e)
-                            }
-                            if (opened) {
-                                // The active request already received its failure. Do not spin
-                                // reconnecting with no consumer; wait for fresh read demand.
-                                // Re-arm if reads are already queued (demand may be empty).
-                                if (!ops.isEmpty) demand.trySend(Unit)
                                 break
-                            }
-                            openAttempts++
-                            if (!isShareClosedError(e) || openAttempts >= MAX_OPEN_ATTEMPTS) {
-                                if (!sizeReady.isCompleted) sizeReady.completeExceptionally(e)
-                                while (true) {
-                                    val op = ops.tryReceive().getOrNull() ?: break
-                                    op.result.completeExceptionally(e)
+                            } catch (e: Throwable) {
+                                if (closed.get() || !isActive) throw e
+                                // Share/transport death mid-session is expected after screen-off
+                                // dropSticky / NAS idle; reconnect on next demand without Error spam.
+                                if (isSmbExpectedCloseError(e)) {
+                                    logcat("SmbArchive") {
+                                        "sticky share closed (${if (opened) "reconnect on demand" else "retry open"}): ${e.message}"
+                                    }
+                                } else {
+                                    logcat("SmbArchive", e)
                                 }
-                                ops.close(e)
-                                demand.close(e)
-                                return@launch
+                                if (opened) {
+                                    // The active request already received its failure. Do not spin
+                                    // reconnecting with no consumer; wait for fresh read demand.
+                                    // Re-arm if reads are already queued (demand may be empty).
+                                    if (!ops.isEmpty) demand.trySend(Unit)
+                                    break
+                                }
+                                openAttempts++
+                                if (!isSmbExpectedCloseError(e) || openAttempts >= MAX_OPEN_ATTEMPTS) {
+                                    if (!sizeReady.isCompleted) sizeReady.completeExceptionally(e)
+                                    while (true) {
+                                        val op = ops.tryReceive().getOrNull() ?: break
+                                        op.result.completeExceptionally(e)
+                                    }
+                                    ops.close(e)
+                                    demand.close(e)
+                                    return@launch
+                                }
+                                delay(OPEN_RETRY_BACKOFF_MS * openAttempts)
                             }
-                            delay(OPEN_RETRY_BACKOFF_MS * openAttempts)
                         }
+                    } catch (e: Throwable) {
+                        if (closed.get() || !isActive) break
+                        // App ON_STOP / pool drop under an open drain — expected, not a fault.
+                        if (isSmbExpectedCloseError(e)) {
+                            logcat("SmbArchive") { "share closed under drain: ${e.message}" }
+                            continue
+                        }
+                        logcat("SmbArchive", e)
                     }
-                } catch (e: Throwable) {
-                    if (closed.get() || !isActive) break
-                    // App ON_STOP / pool drop under an open drain — expected, not a fault.
-                    if (isShareClosedError(e)) {
-                        logcat("SmbArchive") { "share closed under drain: ${e.message}" }
-                        continue
-                    }
-                    logcat("SmbArchive", e)
                 }
-            }
-            failClosedSizeReady()
-            // Source closed or worker ending: fail anything still waiting.
-            for (op in ops) {
-                op.result.complete(-1)
+                failClosedSizeReady()
+                // Source closed or worker ending: fail anything still waiting.
+                for (op in ops) {
+                    op.result.complete(-1)
+                }
+            } finally {
+                cancelClose.dispose()
             }
         }
     }
@@ -440,7 +452,7 @@ private class KeepOpenSmbFileSource(
                 return -1
             }
             // App background closes the browse pool under mid-read; caller soft-fails.
-            if (isShareClosedError(e)) return -1
+            if (isSmbExpectedCloseError(e)) return -1
             logcat("SmbArchive", e)
             -1
         }
@@ -519,7 +531,7 @@ private class KeepOpenSmbFileSource(
                     if (n > 0 || len == 0) return n
                     last = IOException("SMB read returned 0 at offset=$fileOffset len=$len")
                 } catch (e: Throwable) {
-                    if (isShareClosedError(e)) throw e
+                    if (isSmbExpectedCloseError(e)) throw e
                     last = e
                 }
                 if (attempt < READ_ATTEMPTS - 1) {
@@ -537,7 +549,11 @@ private class KeepOpenSmbFileSource(
             len: Int,
         ): Int {
             if (len <= READ_CHUNK) {
-                return file.read(buf, fileOffset, off, len)
+                return try {
+                    file.read(buf, fileOffset, off, len)
+                } catch (e: Throwable) {
+                    if (isSmbExpectedCloseError(e)) -1 else throw e
+                }
             }
             var filled = 0
             while (filled < len) {
@@ -557,7 +573,13 @@ private class KeepOpenSmbFileSource(
                         val at = pos
                         val chunk = batch[i]
                         launch(Dispatchers.IO) {
-                            got[i] = file.read(buf, fileOffset + at, off + at, chunk)
+                            got[i] = try {
+                                file.read(buf, fileOffset + at, off + at, chunk)
+                            } catch (e: Throwable) {
+                                // Hop close / idle drop: sibling READs must not
+                                // CancellationException-suppress a 4-wide FILE_CLOSED fan-out.
+                                if (isSmbExpectedCloseError(e)) -1 else throw e
+                            }
                         }
                         pos += chunk
                     }
@@ -575,23 +597,6 @@ private class KeepOpenSmbFileSource(
                 if (short) continue
             }
             return filled
-        }
-
-        private fun isShareClosedError(e: Throwable): Boolean {
-            var cur: Throwable? = e
-            while (cur != null) {
-                val msg = cur.message.orEmpty()
-                if (msg.contains("DiskShare has already been closed", ignoreCase = true) ||
-                    msg.contains("Share has already been closed", ignoreCase = true) ||
-                    msg.contains("Connection closed", ignoreCase = true) ||
-                    msg.contains("Transport is closed", ignoreCase = true) ||
-                    msg.contains("Socket closed", ignoreCase = true)
-                ) {
-                    return true
-                }
-                cur = cur.cause
-            }
-            return false
         }
     }
 }

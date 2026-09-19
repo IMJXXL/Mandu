@@ -1499,6 +1499,10 @@ object SmbGateway {
         trackSource(source)
         // Dedicated 64 KiB-transact client — see [smbConfigForShareEnum].
         val smbClient = SMBClient(smbConfigForShareEnum())
+        // Socket.connect 不可取消：hop/退出时取消 Job 需从另一线程关 client 立即解阻塞
+        // （对齐上游 0919 shareEnum）
+        val connecting = java.util.concurrent.atomic.AtomicReference<SMBClient?>(smbClient)
+        val cancelClose = coroutineContext[Job]?.closeFileOnCancelling(connecting)
         val t0 = System.nanoTime()
         fun elapsedMs() = (System.nanoTime() - t0) / 1_000_000L
         try {
@@ -1752,6 +1756,9 @@ object SmbGateway {
             val fixed = fixedShare(source)
             // Empty share uses share-enum config (64 KiB transact); fixed share uses browse config.
             val smbClient = SMBClient(if (fixed.isEmpty()) smbConfigForShareEnum() else smbConfig())
+            // 取消立即关 client（对齐上游 0919 listRoots）
+            val connecting = java.util.concurrent.atomic.AtomicReference<SMBClient?>(smbClient)
+            val cancelClose = coroutineContext[Job]?.closeFileOnCancelling(connecting)
             try {
                 val connection = smbClient.connect(host, source.port)
                 try {
@@ -3130,12 +3137,9 @@ object SmbGateway {
         block: (com.hierynomus.smbj.share.File) -> T,
     ): T {
         val activeFile = AtomicReference<com.hierynomus.smbj.share.File?>(null)
-        val cancelClose = downloadContext[Job]?.invokeOnCompletion { cause ->
-            if (cause == null) return@invokeOnCompletion
-            val file = activeFile.getAndSet(null) ?: return@invokeOnCompletion
-            // Bounded pool — do not Thread().start() per cancel (mass leave-folder pile-up).
-            SmbAsyncClose.run { file.close() }
-        }
+        // ★ Job 一进 cancelling 就异步关句柄——旧 invokeOnCompletion 要等协程体返回，
+        //   对 SmbSequentialCopy 的 runBlocking 阻塞 READ 来说太晚（对齐上游 0919）
+        val cancelClose = downloadContext[Job]?.closeFileOnCancelling(activeFile)
         try {
             val loc = resolveLocation(source, relativeFilePath)
             return withShare(source, password, kind, loc.share) { share ->
@@ -3147,7 +3151,8 @@ object SmbGateway {
                     SMB2CreateDisposition.FILE_OPEN,
                     null,
                 ).use { file ->
-                    activeFile.set(file)
+                    // handler 可能早于 arm 跑完（竞态）：arm 内部发现 job 已取消会立即关
+                    armSmbFileForCancelClose(downloadContext[Job], activeFile, file)
                     try {
                         block(file)
                     } finally {
@@ -3313,12 +3318,7 @@ object SmbGateway {
             // close the client from another thread so connect unblocks now
             // instead of after SMB_IO_TIMEOUT_SEC.
             val connecting = AtomicReference(smbClient)
-            val cancelClose = coroutineContext[Job]?.invokeOnCompletion { cause ->
-                if (cause == null) return@invokeOnCompletion
-                connecting.getAndSet(null)?.let { client ->
-                    SmbAsyncClose.run { client.close() }
-                }
-            }
+            val cancelClose = coroutineContext[Job]?.closeFileOnCancelling(connecting)
             val prevTag = TrafficStats.getThreadStatsTag()
             TrafficStats.setThreadStatsTag(KeepAliveSocketFactory.SMB_TRAFFIC_TAG)
             try {
@@ -3476,21 +3476,43 @@ private fun isShareClosedError(t: Throwable): Boolean {
 /**
  * Cancel-close of an smbj [com.hierynomus.smbj.share.File] — not pooled session death.
  * [java.net.SocketTimeoutException] extends [InterruptedIOException] and is real transport loss.
+ *
+ * Hop / [SmbArchiveByteSource.KeepOpenSmbFileSource.close] closes the file under in-flight
+ * READ_PIPELINE workers; the server then returns [NtStatus.STATUS_FILE_CLOSED] (0xc0000128).
+ * 兄弟 READ 批次的取消会把 FILE_CLOSED 挂成 suppressed 异常——必须遍历（对齐上游 0919）。
  */
 private fun isFileHandleAbortError(t: Throwable): Boolean {
-    var cur: Throwable? = t
-    while (cur != null) {
-        if (cur is java.io.InterruptedIOException && cur !is java.net.SocketTimeoutException) {
-            return true
+    fun chain(start: Throwable?): Boolean {
+        var cur: Throwable? = start
+        while (cur != null) {
+            if (cur is java.io.InterruptedIOException && cur !is java.net.SocketTimeoutException) {
+                return true
+            }
+            if (cur is SMBApiException) {
+                if (cur.status == NtStatus.STATUS_FILE_CLOSED) return true
+                val code = runCatching { cur.statusCode }.getOrNull()
+                if (code != null && code and 0xFFFFFFFFL == 0xC0000128L) return true
+            }
+            val msg = cur.message.orEmpty()
+            if (msg.contains("file has already been closed", ignoreCase = true) ||
+                msg.contains("STATUS_FILE_CLOSED", ignoreCase = true) ||
+                msg.contains("0xc0000128", ignoreCase = true)
+            ) {
+                return true
+            }
+            cur = cur.cause
         }
-        val msg = cur.message.orEmpty()
-        if (msg.contains("file has already been closed", ignoreCase = true)) {
-            return true
-        }
-        cur = cur.cause
+        return false
     }
-    return false
+    if (chain(t)) return true
+    return t.suppressed.any(::chain)
 }
+
+/** Share death **or** file-id abort — archive reads treat both as quiet soft-fail; do not retry. */
+internal fun isSmbExpectedCloseError(t: Throwable): Boolean = isShareClosedError(t) || isFileHandleAbortError(t)
+
+/** True only for pooled DiskShare/session death (kill TCP). File-id abort is not this. */
+internal fun isSmbShareSessionDeath(t: Throwable): Boolean = isShareClosedError(t)
 
 private fun isTransportError(t: Throwable): Boolean {
     if (isShareClosedError(t)) return true
