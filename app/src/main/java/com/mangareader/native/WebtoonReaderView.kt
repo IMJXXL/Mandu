@@ -848,6 +848,12 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
                     if (h.isBound) h.setTileFile(tileFile)
                     return
                 }
+                val animD = synchronized(webtoonAnimDrawables) { webtoonAnimDrawables[pos] }
+                if (animD != null) {
+                    // ★ E4 修正：动图页不得被静图位图覆盖（位图晚到会顶掉 drawable）
+                    if (h.isBound) h.setAnim(animD)
+                    return
+                }
                 val cached = synchronized(bitmapCache) { bitmapCache[pos] }
                 if (cached != null && !cached.isRecycled) {
                     if (h.isBound) h.set(cached)
@@ -886,7 +892,11 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
             }
             // ★ §24 二代：每页异步 peek 一次；确认动图则拉起播放（E4）
             ensureAnimKindAsync(pos)
-            if (pageAnimFlags.firstOrNull { it.pageIdx == pos }?.kind?.let { it != AnimKind.NONE } == true) {
+            val readyAnim = synchronized(webtoonAnimDrawables) { webtoonAnimDrawables[pos] }
+            if (readyAnim != null) {
+                // 重绑时 drawable 已就绪：必须重新上屏（loadAnimAsync 会因已存在而早退）
+                h.setAnim(readyAnim)
+            } else if (pageAnimFlags.firstOrNull { it.pageIdx == pos }?.kind?.let { it != AnimKind.NONE } == true) {
                 loadAnimAsync(pos)
             }
         }
@@ -936,7 +946,16 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
          * 完成后若该页仍被绑定则 setAnim + start，未绑定则停帧等 attach 再启。
          */
         private fun loadAnimAsync(pos: Int) {
-            if (animInflight.contains(pos) || webtoonAnimDrawables.containsKey(pos)) return
+            if (webtoonAnimDrawables.containsKey(pos)) {
+                // 已加载过：把现有 drawable 补上当前 holder（主线程）
+                val existing = synchronized(webtoonAnimDrawables) { webtoonAnimDrawables[pos] }
+                recycler.post {
+                    val h = recycler.findViewHolderForAdapterPosition(pos) as? PageVH
+                    if (existing != null && h != null && h.isBound && h.boundPosition == pos) h.setAnim(existing)
+                }
+                return
+            }
+            if (animInflight.contains(pos)) return
             val kind = pageAnimFlags.firstOrNull { it.pageIdx == pos }?.kind ?: return
             if (kind == AnimKind.NONE) return
             if (!animInflight.add(pos)) return

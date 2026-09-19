@@ -1888,7 +1888,11 @@ object SmbGateway {
                 }
                 BrowseSession.CachedRemoteListing(entries = entries, sessionCurrent = sessionCurrent)
             }
-            if (cached != null) {
+            if (cached != null && cached.entries.isNotEmpty()) {
+                logcat("FolderIndex") {
+                    "SMB cache-present source=${source.id} dir=$relativeDir " +
+                        "rows=${cached.entries.size} sessionCurrent=${cached.sessionCurrent}"
+                }
                 val presented = presentListingForZipAsDirToggle(
                     source,
                     configKey,
