@@ -23,6 +23,7 @@ import com.hippo.ehviewer.library.BrowseSession
 import com.hippo.ehviewer.library.DirPresence
 import com.hippo.ehviewer.library.FolderGalleryIndex
 import com.hippo.ehviewer.library.NetworkFolderIndexCache
+import com.hippo.ehviewer.library.RemoteFileStat
 import com.hippo.ehviewer.library.RemoteChild
 import com.hippo.ehviewer.library.RemoteDirectorySlimPlan
 import com.hippo.ehviewer.library.SMB_PROMOTE_MAX_LEAVES
@@ -2745,6 +2746,40 @@ object SmbGateway {
             }
         }.getOrNull()
     }
+
+    /**
+     * Size + last-write in ONE host-pool QUERY_INFO（同一次 open 会话，非孤立 TCP）。
+     * zip-as-dir 成员直接 stat zip 本体——不做 CD 遍历。传输异常返回 null 不抛。
+     * （缓存新鲜度校验的地基，见 OriginCacheFresh；对齐上游 0919）
+     */
+    suspend fun fileStatOrNull(
+        source: SmbSourceEntity,
+        password: String,
+        relativeFilePath: String,
+    ): RemoteFileStat? = withIOContext {
+        ZipAsDirListing.zipMemberPath(relativeFilePath)?.let { (zipRel, _) ->
+            return@withIOContext fileStatOrNull(source, password, zipRel)
+        }
+        try {
+            copyOpenFile(source, password, relativeFilePath, coroutineContext) { file ->
+                val info = file.fileInformation
+                RemoteFileStat(
+                    size = info.standardInformation.endOfFile.takeIf { it >= 0L },
+                    mtimeMs = info.basicInformation.lastWriteTime.toEpochMillis().takeIf { it > 0L },
+                )
+            }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    suspend fun fileMtimeOrNull(
+        source: SmbSourceEntity,
+        password: String,
+        relativeFilePath: String,
+    ): Long? = fileStatOrNull(source, password, relativeFilePath)?.mtimeMs
 
     /**
      * One-shot random-access read (open → read → close). Prefer [withOpenFile] when

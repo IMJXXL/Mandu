@@ -53,6 +53,29 @@ object OriginDiskCache {
 
     private fun cacheDir(name: String): File = File(dataDir, "cache/$name")
 
+    /** Absolute paths of origin files a download/open session still needs. */
+    private val pinnedOriginFiles = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+    /** Pin during active use; trim skips pinned files (bytes still count toward budget). */
+    fun pinOriginFile(file: java.io.File) {
+        pinnedOriginFiles.add(file.absolutePath)
+    }
+
+    fun unpinOriginFile(file: java.io.File) {
+        pinnedOriginFiles.remove(file.absolutePath)
+    }
+
+    fun isOriginFilePinned(file: java.io.File): Boolean = pinnedOriginFiles.contains(file.absolutePath)
+
+    /** Pin with auto-unpin after [ttlMs] — open-in-external-app style short leases. */
+    fun pinOriginFileTemporarily(file: java.io.File, ttlMs: Long = 10L * 60L * 1000L) {
+        pinOriginFile(file)
+        kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            kotlinx.coroutines.delay(ttlMs)
+            unpinOriginFile(file)
+        }
+    }
+
     fun originBudgetBytes(): Long =
         // ★ 2026-09-06 用户要求：readCacheSize<=0（哨兵）= 无上限，trim 不再删除任何缓存
         if (Settings.readCacheSize.value <= 0) Long.MAX_VALUE
@@ -127,6 +150,7 @@ object OriginDiskCache {
         for (e in candidates) {
             if (total <= budget) break
             if (!e.file.isFile) continue
+            if (isOriginFilePinned(e.file)) continue
             if (e.file.delete()) {
                 total -= e.size
                 onOriginDeleted(e.file)

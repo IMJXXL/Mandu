@@ -53,10 +53,17 @@ object RemoteArchiveOpen {
     ): RemoteArchiveLocal = withIOContext {
         val remote = normalizeRemoteRelative(remoteRelativeFile)
         val cache = SmbCache.cachePathForRemoteFile(source.id, remote)
-        // Cache hit: never re-probe size or re-download.
         if (SmbCache.isCachedOnDisk(cache)) {
             SmbCache.touch(cache)
-            return@withIOContext RemoteArchiveLocal(cache, didDownload = false)
+            // ★ 缓存命中不再无条件信任：一次 QUERY_INFO 拿 size+mtime 校验新鲜度
+            // （对齐上游 OriginCacheFresh）。stat 失败/字段未知 → 保守保留缓存。
+            val stat = SmbGateway.fileStatOrNull(source, password, remote)
+            if (stat != null && OriginCacheFresh.isStale(stat, cache.toFile().length(), cache.toFile().lastModified())) {
+                SmbCache.markAbsent(cache)
+                cache.toFile().delete()
+            } else {
+                return@withIOContext RemoteArchiveLocal(cache, didDownload = false)
+            }
         }
         val size = knownSizeBytes ?: SmbGateway.fileSizeOrNull(source, password, remote)
         if (size != null && size > ARCHIVE_DOWNLOAD_WARN_BYTES && !allowLarge) {
@@ -87,7 +94,14 @@ object RemoteArchiveOpen {
         val cache = WebDavCache.cachePathForRemoteFile(source.id, remote)
         if (WebDavCache.isCachedOnDisk(cache)) {
             WebDavCache.touch(cache)
-            return@withIOContext RemoteArchiveLocal(cache, didDownload = false)
+            // ★ 同 SMB：stat（HEAD→PROPFIND）校验新鲜度，过期清缓存重下
+            val stat = WebDavClient.fileStatOrNull(source, password, remote)
+            if (stat != null && OriginCacheFresh.isStale(stat, cache.toFile().length(), cache.toFile().lastModified())) {
+                WebDavCache.markAbsent(cache)
+                cache.toFile().delete()
+            } else {
+                return@withIOContext RemoteArchiveLocal(cache, didDownload = false)
+            }
         }
         val size = knownSizeBytes ?: runCatching { WebDavClient.fileSizeOrNull(source, password, remote) }.getOrDefault(null)
         if (knownSizeBytes != null && knownSizeBytes > ARCHIVE_DOWNLOAD_WARN_BYTES && !allowLarge) {
