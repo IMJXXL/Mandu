@@ -45,9 +45,16 @@ class CoverFetcher(
         if (!coverPath.startsWith("cv:") && !coverPath.startsWith("z:")) throw IllegalArgumentException("Not a cover request: $coverPath")
 
         if (coverPath.startsWith("cv:") && !coverPath.startsWith("cv:smb:") && !coverPath.startsWith("cv:webdav:") && !coverPath.startsWith("cv:komga:") && !coverPath.startsWith("cv:opds:")) {
-            // ★ 动图封面（2026-09-19）：本地封面一律先走原始字节路径（getCoverSource /
-            // loadCoverRaw，见下方）—— JPEG 缩略图会把动图首帧固化成静图，只留给
-            // 无原始字节路径的格式（pdf/mobi）兜底
+            // ★ 2026-09-19 封面动图封存：恢复 JPEG 缩略图优先（快、静态、无变形）；
+            //   动图原始字节路径保留在下方但不再被缩略图命中挡住时才会走到
+            val thumbBytes = withContext(Dispatchers.IO) { engine.loadCoverThumbBytes(coverPath) }
+            if (thumbBytes != null) {
+                return SourceFetchResult(
+                    source = ImageSource(source = Buffer().write(thumbBytes), fileSystem = options.fileSystem),
+                    mimeType = "image/jpeg",
+                    dataSource = DataSource.DISK,
+                )
+            }
         }
 
         if (coverPath.startsWith("cv:opds:")) {
@@ -169,16 +176,6 @@ class CoverFetcher(
         }
         android.util.Log.w("CoverFetch", "raw null, fallback to Bitmap for $coverPath")
 
-        // ★ JPEG 缩略图兜底（pdf/mobi 等无原始字节路径的静态格式；动图路径已在上方返回）
-        val thumbBytes = withContext(Dispatchers.IO) { engine.loadCoverThumbBytes(coverPath) }
-        if (thumbBytes != null) {
-            return SourceFetchResult(
-                source = ImageSource(source = Buffer().write(thumbBytes), fileSystem = options.fileSystem),
-                mimeType = "image/jpeg",
-                dataSource = DataSource.DISK,
-            )
-        }
-
         // fallback：mobi/pdf 等无法返回原始字节的格式，用 Bitmap → PNG
         val bitmap: Bitmap? = withContext(coverIoDispatcher) {
             try { engine.loadCover(coverPath) } catch (e: Exception) { null }
@@ -213,19 +210,8 @@ class ItemCoverFetcher(
     private val options: Options,
 ) : Fetcher {
     override suspend fun fetch(): FetchResult {
-        // ★ 动图封面优先（对齐上游）：子项首页是动图 → 返回原始字节，
-        //   平台 AnimatedImageDecoder 按请求尺寸播放；非动图走既有位图路径不变
-        val animRaw = withContext(coverIoDispatcher) {
-            try { engine.loadItemCoverAnimatedRaw(item) } catch (e: Exception) { null }
-        }
-        if (animRaw != null) {
-            val (bytes, mime) = animRaw
-            return SourceFetchResult(
-                source = ImageSource(source = Buffer().write(bytes), fileSystem = options.fileSystem),
-                mimeType = mime,
-                dataSource = DataSource.MEMORY,
-            )
-        }
+        // ★ 2026-09-19 封面动图封存：子项封面恢复静态位图路径
+        //   （loadItemCoverAnimatedRaw 保留未调用，需要动图子项封面时恢复此段）
         val bitmap = withContext(coverIoDispatcher) {
             try { engine.loadCoverForItem(item) } catch (e: Exception) { null }
         } ?: throw RuntimeException("Item cover load failed: ${item.name}")

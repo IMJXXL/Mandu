@@ -152,7 +152,7 @@ object RemoteBrowseCoverLoader {
             val bos = java.io.ByteArrayOutputStream(512 * 1024)
             SmbGateway.downloadFile(source, password, remote, bos)
             val bytes = bos.toByteArray()
-            if (com.mangareader.viewer.ArchiveEngine.isAnimatedBytes(bytes)) {
+            if (Settings.coverAnimated.value && com.mangareader.viewer.ArchiveEngine.isAnimatedBytes(bytes)) {
                 com.mangareader.viewer.CoverAnimRawCache.writeRaw(animKey, bytes)
                 animRaw = bytes
             }
@@ -182,7 +182,7 @@ object RemoteBrowseCoverLoader {
             val bos = java.io.ByteArrayOutputStream(512 * 1024)
             WebDavClient.downloadFile(source, password, remote, bos)
             val bytes = bos.toByteArray()
-            if (com.mangareader.viewer.ArchiveEngine.isAnimatedBytes(bytes)) {
+            if (Settings.coverAnimated.value && com.mangareader.viewer.ArchiveEngine.isAnimatedBytes(bytes)) {
                 com.mangareader.viewer.CoverAnimRawCache.writeRaw(animKey, bytes)
                 animRaw = bytes
             }

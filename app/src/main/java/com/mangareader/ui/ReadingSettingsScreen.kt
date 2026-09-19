@@ -80,17 +80,6 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
                         }
                     }
 
-                    // ★ 封面动图开关（只控封面：书架/子项网格 GIF/动图WebP；阅读页动图不受影响）
-                    val coverAnimated by com.hippo.ehviewer.Settings.coverAnimated.valueFlow()
-                        .collectAsState(initial = com.hippo.ehviewer.Settings.coverAnimated.value)
-                    Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Column(Modifier.weight(1f)) {
-                            Text("封面动图", fontSize = 16.sp)
-                            Text("书架/子项网格封面播放 GIF/动图WebP；卡顿时可关闭（显示静态首帧）", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        Switch(checked = coverAnimated, onCheckedChange = { com.hippo.ehviewer.Settings.coverAnimated.value = it })
-                    }
-
                     var defaultReadModeOrdinal by remember { mutableStateOf(prefs.getInt("default_read_mode", -1)) }
                     var showDefaultModeDialog by remember { mutableStateOf(false) }
                     val defaultModeLabel =

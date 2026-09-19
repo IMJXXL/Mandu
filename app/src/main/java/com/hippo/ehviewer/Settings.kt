@@ -259,8 +259,8 @@ object Settings : DataStorePreferences(null) {
      * Off = always open zip/cbz as archive reader. Default on. Settings → General / browse menu.
      */
     val browseZipAsDir = boolPref("browse_zip_as_dir", true)
-    /** 封面动图（书架/子项网格 GIF/动图WebP 播放）；关闭=全部静态首帧 */
-    val coverAnimated = boolPref("cover_animated", true)
+    /** 封面动图总闸（2026-09-19 封存：默认且建议 false；动图播放链路代码保留但不再激活） */
+    val coverAnimated = boolPref("cover_animated", false)
     /** 浏览页列表/网格模式（true=列表，false=网格）——SMB/WebDAV 浏览共用 */
     val browseListMode = boolPref("browse_list_mode", true)
 
