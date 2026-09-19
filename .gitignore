@@ -37,3 +37,5 @@ device_log*.txt
 smb_open_log.txt
 /splash_*.png
 /splash_*.py
+full_log*.txt
+jdb_dump*.txt
