@@ -84,7 +84,9 @@ public class WebPDecoder extends FrameSeqDecoder<WebPReader, WebPWriter> {
                 vp8x = true;
             } else if (chunk instanceof ANIMChunk) {
                 anim = true;
-                this.backgroundColor = ((ANIMChunk) chunk).backgroundColor;
+                // ★ 阅读场景强制白底：ANIM chunk 声明的底色常见为黑（AI 生成动画导出习惯），
+                // 照搬会导致播放页整页变黑；透明帧（alpha 分支）不受影响。
+                this.backgroundColor = android.graphics.Color.WHITE;
                 this.loopCount = ((ANIMChunk) chunk).loopCount;
             } else if (chunk instanceof ANMFChunk) {
                 frames.add(new AnimationFrame(reader, (ANMFChunk) chunk));
