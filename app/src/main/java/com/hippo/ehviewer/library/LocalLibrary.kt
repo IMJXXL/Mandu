@@ -454,6 +454,13 @@ object LocalLibrary {
             return
         }
         val toWrite = preserveArchivePageCountsIfDisabled(previous, galleries)
+        if (toWrite.isEmpty() && previous.isNotEmpty() && canMs) {
+            val stamp = MediaStoreFs.imageIndexStamp(mediaRelative)
+            if (stamp.count > 0) {
+                logcat("LocalLibrary") { "Ignore empty scan for root ${root.id} (had ${previous.size} galleries, stamp count=${stamp.count})" }
+                return
+            }
+        }
         logcat("LocalLibrary") { "Scanned root ${root.id} (${root.displayName}): ${toWrite.size} galleries" }
         val wrote = runCatching {
             db.localGalleryDao().replaceForRoot(root.id, toWrite)
