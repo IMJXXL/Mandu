@@ -47,20 +47,33 @@ object ZipAsDirListing {
     suspend fun persistFolderIndexes(
         parentRelativeDir: String,
         interiors: Map<String, List<BrowseEntryRemote>>,
-        save: suspend (relativeDir: String, entries: List<BrowseEntryRemote>) -> List<BrowseEntryRemote>,
+        saveAll: suspend (folders: Map<String, List<BrowseEntryRemote>>) -> Map<String, List<BrowseEntryRemote>>,
         putRam: (relativeDir: String, entries: List<BrowseEntryRemote>) -> Unit,
+        parentEntries: List<BrowseEntryRemote>? = null,
     ): Map<String, List<BrowseEntryRemote>> {
-        if (interiors.isEmpty()) return emptyMap()
-        val stored = LinkedHashMap<String, List<BrowseEntryRemote>>(interiors.size)
+        val updates = LinkedHashMap<String, List<BrowseEntryRemote>>()
+        val parentKey = parentRelativeDir.replace('\\', '/').trim('/')
+        if (parentEntries != null) {
+            updates[parentKey] = parentEntries
+        }
         for ((rel, entries) in interiors) {
             val zipName = rel.substringBefore('/')
             if (!isZipArchiveFileName(zipName)) continue
-            val dir = joinPrefix(parentRelativeDir, rel)
-            val kept = save(dir, entries)
-            putRam(dir, kept)
-            stored[dir] = kept
+            updates[joinPrefix(parentRelativeDir, rel)] = entries
         }
-        return stored
+        if (updates.isEmpty()) return emptyMap()
+        val stored = saveAll(updates)
+        val out = LinkedHashMap<String, List<BrowseEntryRemote>>(updates.size)
+        for ((dir, entries) in updates) {
+            val kept = stored[dir]
+                ?: stored[dir.replace('\\', '/').trim('/')]
+                ?: entries
+            if (parentEntries == null || dir != parentKey) {
+                putRam(dir, kept)
+            }
+            out[dir] = kept
+        }
+        return out
     }
 
     /**
@@ -80,6 +93,36 @@ object ZipAsDirListing {
         return if (slash <= 0) "" else n.substring(0, slash)
     }
 
+    fun isGalleryZip(cd: ZipCentralDirectory): Boolean = cd.gallery
+
+    fun parentListingInteriors(
+        cd: ZipCentralDirectory,
+        zipFileName: String,
+    ): Map<String, List<BrowseEntryRemote>> = if (isGalleryZip(cd)) {
+        classifyAllVirtualFolders(cd, zipFileName)
+    } else {
+        emptyMap()
+    }
+
+    fun virtualFolderTree(
+        cd: ZipCentralDirectory,
+        zipFileName: String,
+    ): Map<String, List<BrowseEntryRemote>> = if (isGalleryZip(cd)) {
+        classifyAllVirtualFolders(cd, zipFileName)
+    } else {
+        uncategorizedAllVirtualFolders(cd, zipFileName)
+    }
+
+    fun listingAt(
+        cd: ZipCentralDirectory,
+        innerPrefix: String,
+        title: String,
+    ): List<BrowseEntryRemote> = if (isGalleryZip(cd)) {
+        classifyAt(cd, innerPrefix, title)
+    } else {
+        uncategorizedAt(cd, innerPrefix)
+    }
+
     /**
      * Every virtual folder in [cd] (zip root + nested dirs), keyed by zip-relative
      * path (`pack.zip`, `pack.zip/Album`). Cheap: filters the already-parsed CD.
@@ -96,6 +139,75 @@ object ZipAsDirListing {
             out[key] = classifyAt(cd, prefix, title)
         }
         return out
+    }
+
+    fun uncategorizedAllVirtualFolders(
+        cd: ZipCentralDirectory,
+        zipFileName: String,
+    ): Map<String, List<BrowseEntryRemote>> {
+        val prefixes = allDirectoryPrefixes(cd)
+        val out = LinkedHashMap<String, List<BrowseEntryRemote>>(prefixes.size)
+        for (prefix in prefixes) {
+            val key = if (prefix.isEmpty()) zipFileName else "$zipFileName/$prefix"
+            out[key] = uncategorizedAt(cd, prefix)
+        }
+        return out
+    }
+
+    fun uncategorizedAt(
+        cd: ZipCentralDirectory,
+        innerPrefix: String = "",
+    ): List<BrowseEntryRemote> {
+        val children = listChildren(cd, innerPrefix)
+        val dirs = ArrayList<BrowseEntryRemote.Directory>()
+        val archives = ArrayList<BrowseEntryRemote.ArchiveGallery>()
+        val videos = ArrayList<BrowseEntryRemote.VideoFile>()
+        val files = ArrayList<BrowseEntryRemote.RegularFile>()
+        for (child in children) {
+            if (child.isDirectory) {
+                val nested = listChildren(cd, joinPrefix(innerPrefix, child.name))
+                dirs += BrowseEntryRemote.Directory(
+                    name = child.name,
+                    hasVideo = nested.any { !it.isDirectory && isVideoFileName(it.name) },
+                    hasGallery = false,
+                    presence = if (nested.isEmpty()) DirPresence.Empty else DirPresence.Navigable,
+                    lastModifiedMs = child.lastModifiedMs,
+                    size = child.size,
+                    hidden = child.hidden || isDotHiddenName(child.name),
+                )
+                continue
+            }
+            val hidden = child.hidden || isDotHiddenName(child.name)
+            when {
+                isArchiveFileName(child.name) -> archives += BrowseEntryRemote.ArchiveGallery(
+                    name = child.name,
+                    fileName = child.name,
+                    size = child.size,
+                    lastModifiedMs = child.lastModifiedMs,
+                    hidden = hidden,
+                )
+                isVideoFileName(child.name) -> videos += BrowseEntryRemote.VideoFile(
+                    name = child.name,
+                    fileName = child.name,
+                    size = child.size,
+                    lastModifiedMs = child.lastModifiedMs,
+                    hidden = hidden,
+                )
+                else -> files += BrowseEntryRemote.RegularFile(
+                    name = child.name,
+                    fileName = child.name,
+                    size = child.size,
+                    lastModifiedMs = child.lastModifiedMs,
+                    hidden = hidden,
+                )
+            }
+        }
+        return buildList(dirs.size + archives.size + videos.size + files.size) {
+            addAll(dirs)
+            addAll(archives)
+            addAll(videos)
+            addAll(files)
+        }
     }
 
     /** Zip-root `""` plus every nested directory prefix (skips encrypted / dot-hidden). */
