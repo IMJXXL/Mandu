@@ -39,3 +39,5 @@ smb_open_log.txt
 /splash_*.py
 full_log*.txt
 jdb_dump*.txt
+.zcode_*
+mr_debug.db
