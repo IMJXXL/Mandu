@@ -703,10 +703,20 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         parentPath: String,
         auth: String,
     ): List<ArchiveEngine.Item>? {
+        // ★ 2026-09-19 修"点图片进了奇怪目录、循环打不开"：
+        //   分类器会给"当前文件夹自身的图片集合"发一条 relativeName="" 的 FolderGallery（自画廊行），
+        //   下面原来的过滤把它当成了子项 → 纯图文件夹书弹出只有"自己"一个目录项的网格，
+        //   点进去又回到同一网格 → 死循环。自画廊/空路径行不是真实子项，必须剔除；
+        //   剔完没有真实子项 → 返回 null → 走 enterRemoteReader 直接按图片页打开。
+        fun realChild(rel: String): Boolean =
+            rel.replace('\\', '/').trim('/').isNotEmpty()
         val subEntries = entries.filter {
-            it is com.hippo.ehviewer.library.BrowseEntryRemote.ArchiveGallery ||
-            it is com.hippo.ehviewer.library.BrowseEntryRemote.Directory ||
-            it is com.hippo.ehviewer.library.BrowseEntryRemote.FolderGallery
+            when (it) {
+                is com.hippo.ehviewer.library.BrowseEntryRemote.ArchiveGallery -> true
+                is com.hippo.ehviewer.library.BrowseEntryRemote.Directory -> realChild(it.relativeName)
+                is com.hippo.ehviewer.library.BrowseEntryRemote.FolderGallery -> realChild(it.relativeName)
+                else -> false
+            }
         }
         if (subEntries.isEmpty()) return null
         return subEntries.map { entry ->

@@ -501,7 +501,7 @@ fun WebDavBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long, I
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                 )
                 LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
-                    items(searchHits, key = { h -> h.name + "@" + searchHitPath(h) }) { h ->
+                    items(searchHits, key = { h -> h::class.simpleName + "@" + h.name + "@" + searchHitPath(h) }) { h ->
                         val hitExt = h.name.substringAfterLast('.', "").lowercase()
                         val hitPlaceholder = when {
                             h is BrowseEntryRemote.Directory -> Icons.Default.Folder
@@ -606,9 +606,11 @@ fun WebDavBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long, I
                                     if (WebDavUnsupportedFormatHandler.isUnsupported(e.fileName.substringAfterLast('.', ""))) Icons.Default.Download
                                     else Icons.Default.InsertDriveFile
                                 is BrowseEntryRemote.VideoFile -> Icons.Default.Movie
-                                else ->
-                                    if (e.name.substringAfterLast('.', "").lowercase() in IMAGE_EXTENSIONS) Icons.Default.Download
-                                    else Icons.Default.InsertDriveFile
+                                else -> when {
+                                    WebDavUnsupportedFormatHandler.isUnsupported(e.name.substringAfterLast('.', "")) -> Icons.Default.Download
+                                    e.name.substringAfterLast('.', "").lowercase() in IMAGE_EXTENSIONS -> Icons.Default.Download
+                                    else -> Icons.Default.InsertDriveFile
+                                }
                             }
                             com.mangareader.browse.BrowseItemGridCell(
                                 name = e.name,
@@ -786,6 +788,9 @@ fun WebDavBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long, I
             }
         }
     }
+
+    // ★ "需全量下载"对话框宿主（与书架/SMB 浏览一致，见 RemoteDownloadDialogHost 注释）
+    com.mangareader.smbbridge.RemoteDownloadDialogHost()
 
     if (showNoDirDialog) {
         AlertDialog(

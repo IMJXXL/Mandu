@@ -518,7 +518,7 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long, Int)
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                         )
                     }
-                    items(searchHits, key = { h -> h.name + "@" + searchHitPath(h) }) { h ->
+                    items(searchHits, key = { h -> h::class.simpleName + "@" + h.name + "@" + searchHitPath(h) }) { h ->
                         val hitExt = h.name.substringAfterLast('.', "").lowercase()
                         val hitPlaceholder = when {
                             h is BrowseEntryRemote.Directory -> Icons.Default.Folder
@@ -625,9 +625,11 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long, Int)
                                     if (SmbUnsupportedFormatHandler.isUnsupported(e.fileName.substringAfterLast('.', ""))) Icons.Default.Download
                                     else Icons.Default.InsertDriveFile
                                 is BrowseEntryRemote.VideoFile -> Icons.Default.Movie
-                                else ->
-                                    if (e.name.substringAfterLast('.', "").lowercase() in IMAGE_EXTENSIONS) Icons.Default.Download
-                                    else Icons.Default.InsertDriveFile
+                                else -> when {
+                                    SmbUnsupportedFormatHandler.isUnsupported(e.name.substringAfterLast('.', "")) -> Icons.Default.Download
+                                    e.name.substringAfterLast('.', "").lowercase() in IMAGE_EXTENSIONS -> Icons.Default.Download
+                                    else -> Icons.Default.InsertDriveFile
+                                }
                             }
                             com.mangareader.browse.BrowseItemGridCell(
                                 name = e.name,
@@ -812,6 +814,10 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long, Int)
         }
         }
         }
+
+    // ★ "需全量下载"对话框宿主：浏览页点 mobi/azw3 → 阅读器 Unsupported → back 后
+    //   对话框在本页弹出（与书架行为一致；原先只挂在书架，浏览页触发后无处显示）
+    com.mangareader.smbbridge.RemoteDownloadDialogHost()
 
     if (showNoDirDialog) {
         AlertDialog(
