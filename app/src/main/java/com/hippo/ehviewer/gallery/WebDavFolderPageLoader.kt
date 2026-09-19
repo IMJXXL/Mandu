@@ -25,6 +25,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import moe.tarsin.kt.install
@@ -52,6 +53,8 @@ suspend inline fun <T> useWebDavFolderPageLoader(
         val prefetchSlots = Semaphore(3)
         // Cap concurrent lib downloads; full UHDR convert is serial in HdrConvertCache.
         val libHdrPrefetchSlots = Semaphore(2)
+        /** Loader 已关闭（退出阅读器/hop）：置位后不再允许重入队下载。 */
+        val closed = java.util.concurrent.atomic.AtomicBoolean(false)
         val downloadJobs = KeyedJobRegistry<Int>()
         val readyWaiters = ConcurrentHashMap<Int, CopyOnWriteArrayList<() -> Unit>>()
         val ramPages = ConcurrentHashMap<Int, ByteArray>()
@@ -64,6 +67,8 @@ suspend inline fun <T> useWebDavFolderPageLoader(
                 }
 
                 override fun close() {
+                    closed.set(true)
+                    readyWaiters.clear()
                     downloadJobs.cancelAll()
                     super.close()
                 }
@@ -149,7 +154,7 @@ suspend inline fun <T> useWebDavFolderPageLoader(
                     interactive: Boolean,
                     onReady: (() -> Unit)? = null,
                 ) {
-                    if (index !in 0 until size) return
+                    if (closed.get() || index !in 0 until size) return
                     val name = imageFileNames[index]
                     val cache = WebDavCache.cachePath(source.id, remoteDir, name)
                     val skipDisk = Settings.disableReaderNetworkCache.value
@@ -223,6 +228,10 @@ suspend inline fun <T> useWebDavFolderPageLoader(
                         } catch (e: kotlinx.coroutines.CancellationException) {
                             val runningJob = coroutineContext[Job]
                             val owns = downloadJobs.owns(index, runningJob)
+                            // ★ loader 已 close（VM scope 仍活）时不得重入队（对齐上游 0919）
+                            if (!retryFolderDownloadAfterCancel(closed.get(), scope.coroutineContext.isActive, owns)) {
+                                throw e
+                            }
                             if (owns) {
                                 val waiters = takeReadyWaiters(index)
                                 if (waiters.isNotEmpty()) {

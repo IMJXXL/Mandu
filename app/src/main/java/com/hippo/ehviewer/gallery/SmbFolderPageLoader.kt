@@ -25,6 +25,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import moe.tarsin.kt.install
@@ -64,6 +65,9 @@ suspend inline fun <T> useSmbFolderPageLoader(
         // B1 convert mode: cap concurrent lib downloads (full convert is serial in
         // HdrConvertCache.fullConvertSlots). Direct-Bitmap uses normal prefetchSlots.
         val libHdrPrefetchSlots = Semaphore(2)
+        /** Loader 已关闭（退出阅读器/hop）：置位后不再允许重入队下载。 */
+        val closed = java.util.concurrent.atomic.AtomicBoolean(false)
+
         // In-flight downloads by page index �?join small-jump overlap, cancel large jumps.
         val downloadJobs = KeyedJobRegistry<Int>()
 
@@ -79,6 +83,8 @@ suspend inline fun <T> useSmbFolderPageLoader(
                 }
 
                 override fun close() {
+                    closed.set(true)
+                    readyWaiters.clear()
                     downloadJobs.cancelAll()
                     super.close()
                 }
@@ -187,7 +193,7 @@ suspend inline fun <T> useSmbFolderPageLoader(
                     interactive: Boolean,
                     onReady: (() -> Unit)? = null,
                 ) {
-                    if (index !in 0 until size) return
+                    if (closed.get() || index !in 0 until size) return
                     val name = imageFileNames[index]
                     val cache = SmbCache.cachePath(source.id, remoteDir, name)
                     val skipDisk = Settings.disableReaderNetworkCache.value
@@ -260,6 +266,10 @@ suspend inline fun <T> useSmbFolderPageLoader(
                             // Lost putIfAbsent must not steal waiters from the in-flight owner.
                             val runningJob = coroutineContext[Job]
                             val owns = downloadJobs.owns(index, runningJob)
+                            // ★ loader 已 close（VM scope 仍活）时不得重入队（对齐上游 0919）
+                            if (!retryFolderDownloadAfterCancel(closed.get(), scope.coroutineContext.isActive, owns)) {
+                                throw kotlinx.coroutines.CancellationException("folder loader closed")
+                            }
                             if (owns) {
                                 val waiters = takeReadyWaiters(index)
                                 if (waiters.isNotEmpty()) {
