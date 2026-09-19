@@ -20,8 +20,7 @@ import splitties.init.appCtx
  * Unified disk-cache policy for local-viewer origin images and browse thumbs.
  *
  * Network folder index metadata is preserved across this image LRU, like archive
- * `index.json` files. Other folder layouts are unchanged (smb_cache, webdav_cache,
- * archive_pages, solid_extract, document_extract, *_thumb_cache, archive_thumb,
+ * `index.json` files. Other folder layouts are unchanged (*_thumb_cache, archive_thumb,
  * video_thumb_cache).
  *
  * 1. **Origin pics** (reader pages + remote folder/archive files): one shared cap =
@@ -95,6 +94,9 @@ object OriginDiskCache {
         // Flat remote file caches (folder pages + full archive downloads).
         collectFlatOrigin(cacheDir("smb_cache"), candidates)
         collectFlatOrigin(cacheDir("webdav_cache"), candidates)
+        // ★ Zip-as-dir 解出的成员（阅读页/可选封面原图）纳入共享 LRU（对齐上游 0919）：
+        //   此前该目录完全不受 trim 管，ZipMemberCover 长期使用会无上限膨胀。
+        collectFlatOrigin(cacheDir("zip_folder_pages"), candidates)
         // Local-folder HDR → Ultra HDR derivatives (non-destructive).
         collectFlatOrigin(cacheDir("hdr_ultrahdr"), candidates)
 
