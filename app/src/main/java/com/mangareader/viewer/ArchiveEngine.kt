@@ -7,6 +7,7 @@ import okio.buffer
 import okio.source
 import android.graphics.pdf.PdfRenderer
 import android.net.Uri
+import kotlinx.coroutines.launch
 import android.provider.DocumentsContract
 import android.util.Log
 import com.mangareader.zip.CommonsZipHelper
@@ -329,6 +330,141 @@ class ArchiveEngine(private val ctx: Context) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<PageMeta>>?) = size > 20
     }
 
+    // ═══ E6：d: 文件夹书页表磁盘索引（cacheDir/dir_page_index/）═══
+    // 失效策略（用户裁定）：索引命中秒开 + 后台轻校验——校验只做一次目录条目名
+    // 查询（单 binder 往返），摘要不一致即后台重建；当前会话不中断，下次打开生效。
+
+    private val dirIndexBgScope = kotlinx.coroutines.CoroutineScope(
+        kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO
+    )
+
+    private fun dirIndexFile(path: String): File =
+        File(File(ctx.cacheDir, "dir_page_index"), sha1Hex(path) + ".json")
+
+    private fun sha1Hex(s: String): String =
+        java.security.MessageDigest.getInstance("SHA-1").digest(s.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
+
+    /** 目录条目名摘要：条目数 + 名字哈希和（名字集合不变 = 页表有效）。查询失败返回 null（保守跳过校验）。 */
+    private fun dirNamesDigest(tree: Uri, doc: String): String? {
+        return try {
+            val child = DocumentsContract.buildChildDocumentsUriUsingTree(tree, doc)
+            ctx.contentResolver.query(
+                child,
+                arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME),
+                null, null, null,
+            )?.use { c ->
+                val ni = c.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+                var count = 0
+                var hash = 0L
+                while (c.moveToNext()) {
+                    val n = c.getString(ni) ?: continue
+                    if (n.isEmpty()) continue
+                    if (isImg(n) || isComic(n)) {
+                        count++
+                        hash += n.hashCode().toLong()
+                    }
+                }
+                "n=$count,h=$hash"
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun readDirPageIndex(path: String): List<PageMeta>? {
+        val f = dirIndexFile(path)
+        if (!f.isFile || f.length() <= 0L) return null
+        return try {
+            val obj = org.json.JSONObject(f.readText())
+            val arr = obj.getJSONArray("pages")
+            val out = ArrayList<PageMeta>(arr.length())
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                out.add(
+                    PageMeta(
+                        index = o.getInt("index"),
+                        source = o.getString("source"),
+                        ext = o.getString("ext"),
+                        localIdx = o.optInt("localIdx", 0),
+                        splitSide = o.optInt("splitSide", 0),
+                        name = o.optString("name", ""),
+                    ),
+                )
+            }
+            if (out.isEmpty()) null else {
+                f.setLastModified(System.currentTimeMillis())
+                out
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun writeDirPageIndex(path: String, tree: Uri, doc: String, pages: List<PageMeta>) {
+        try {
+            val dir = File(ctx.cacheDir, "dir_page_index")
+            dir.mkdirs()
+            val digest = dirNamesDigest(tree, doc)
+            val arr = org.json.JSONArray()
+            pages.forEach { pm ->
+                arr.put(
+                    org.json.JSONObject().apply {
+                        put("index", pm.index)
+                        put("source", pm.source)
+                        put("ext", pm.ext)
+                        put("localIdx", pm.localIdx)
+                        put("splitSide", pm.splitSide)
+                        put("name", pm.name)
+                    },
+                )
+            }
+            val obj = org.json.JSONObject().apply {
+                put("digest", digest ?: "")
+                put("pages", arr)
+            }
+            val tmp = File(dir, sha1Hex(path) + ".tmp")
+            tmp.writeText(obj.toString())
+            val dest = dirIndexFile(path)
+            if (!tmp.renameTo(dest)) {
+                tmp.copyTo(dest, overwrite = true)
+                tmp.delete()
+            }
+            trimDirPageIndex(dir)
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun trimDirPageIndex(dir: File) {
+        try {
+            val files = dir.listFiles { f -> f.isFile && f.name.endsWith(".json") } ?: return
+            if (files.size <= 256) return
+            files.sortedBy { it.lastModified() }.take(files.size - 256).forEach { it.delete() }
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun scheduleDirIndexValidate(path: String, tree: Uri, doc: String) {
+        dirIndexBgScope.launch {
+            try {
+                val live = dirNamesDigest(tree, doc) ?: return@launch
+                val f = dirIndexFile(path)
+                val stored = if (f.isFile) {
+                    try { org.json.JSONObject(f.readText()).optString("digest", "") } catch (_: Exception) { "" }
+                } else ""
+                if (stored.isEmpty() || stored != live) {
+                    // 目录变了（或旧索引无摘要）：后台重建 + 落盘；当前会话保持原页表，下次打开生效
+                    val fresh = scanDir(tree, doc)
+                    if (fresh.isNotEmpty()) writeDirPageIndex(path, tree, doc, fresh)
+                    d(TAG, "dirPageIndex refreshed total=${fresh.size} path=${path.takeLast(30)}")
+                } else {
+                    f.setLastModified(System.currentTimeMillis())
+                }
+            } catch (_: Exception) {
+            }
+        }
+    }
+
     private val zipEntryCache = object : LinkedHashMap<String, List<java.util.zip.ZipEntry>>(10, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<java.util.zip.ZipEntry>>?) = size > 10
     }
@@ -356,6 +492,20 @@ class ArchiveEngine(private val ctx: Context) {
             if (cached != null) {
                 d(TAG, "listPages CACHED path=${path.takeLast(30)} total=${cached.size}")
                 return cached
+            }
+        }
+        // ★ E6：d: 文件夹书磁盘索引——命中秒开，后台轻校验兜住"目录变了但索引用旧"的窗口。
+        //   SAF 的 lastModified 不可靠（常见返回 0），失效判定用"目录条目名摘要"而不是 mtime。
+        if (path.startsWith("d:")) {
+            val p0 = parsePath(path)
+            if (p0 != null) {
+                val hit = readDirPageIndex(path)
+                if (hit != null) {
+                    synchronized(pageListCache) { pageListCache[path] = hit }
+                    scheduleDirIndexValidate(path, makeTree(p0.auth, p0.tree), p0.doc)
+                    d(TAG, "listPages DIR-INDEX hit total=${hit.size} path=${path.takeLast(30)}")
+                    return hit
+                }
             }
         }
         return try {
@@ -390,6 +540,10 @@ class ArchiveEngine(private val ctx: Context) {
                 }
             }
             synchronized(pageListCache) { pageListCache[path] = result }
+            if (path.startsWith("d:")) {
+                val p0 = parsePath(path)
+                if (p0 != null) writeDirPageIndex(path, makeTree(p0.auth, p0.tree), p0.doc, result)
+            }
             d(TAG, "listPages path=${path.takeLast(40)} total=${result.size} first5=${result.take(5).map { it.index }}")
             result
         } catch (e: Exception) {
