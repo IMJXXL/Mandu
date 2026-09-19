@@ -144,7 +144,7 @@ class MainActivity : ComponentActivity() {
                             back = { nav.popBackStack() },
                             onOpenBook = { bookId, path ->
                                 nav.navigate("reader/$bookId?jump=${android.net.Uri.encode(path)}") {
-                                    popUpTo("library")
+                                    launchSingleTop = true
                                 }
                             },
                         )
