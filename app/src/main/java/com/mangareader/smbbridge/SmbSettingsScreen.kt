@@ -80,6 +80,7 @@ fun SmbSettingsScreen(onBack: () -> Unit, onOpenDownloadQueue: () -> Unit = {}) 
                 SwitchRow("加密数据传输", "SMB 报文加密，更安全但速度略降", Settings.smbEncryptData)
                 SwitchRow("异步传输模式", "网络收发异步化，高延迟网络更稳", Settings.smbAsyncTransport)
                 SwitchRow("阅读安全并发", "低配设备建议开：降低并发连接与操作数，更稳但略慢", Settings.smbReaderSafeConcurrency)
+                IntRow("SMB 多路复用 (ops/session)", "每条 TCP 连接上重叠的文件/列表操作数（1-20，默认10）", Settings.smbOpsPerSession)
             }
             }
 

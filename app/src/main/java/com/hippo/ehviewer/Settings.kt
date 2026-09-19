@@ -358,6 +358,15 @@ object Settings : DataStorePreferences(null) {
     val smbAsyncTransport = boolPref("smb_async_transport", true).observed {
         com.hippo.ehviewer.smb.SmbGateway.onProtocolSettingsChanged()
     }
+
+    /**
+     * SMB multiplex: overlapping file/list ops per TCP session (smbj message IDs).
+     * Advanced slider 1–20, default 10. Changing drops pools so new sessions pick up the budget.
+     */
+    val smbOpsPerSession = intPref("smb_ops_per_session", 10).observed {
+        com.hippo.ehviewer.smb.SmbGateway.onPoolBudgetChanged()
+    }
+
     val downloadDelay = intPref("download_delay_3", 1000)
     val timeoutSpeed = intPref("timeout_speed_level", 6)
 

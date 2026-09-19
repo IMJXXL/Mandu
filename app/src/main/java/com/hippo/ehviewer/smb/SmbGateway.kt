@@ -155,18 +155,21 @@ object SmbGateway {
 
     /**
      * Concurrent file/list ops multiplexed on one TCP session (smbj message IDs).
-     * Default 3; reduced to 1 when [Settings.smbReaderSafeConcurrency] (original-size RAM).
+     * User-configurable 1–20 (default 10); reduced to 1 when [Settings.smbReaderSafeConcurrency].
      */
-    private const val OPS_PER_SESSION_DEFAULT = 3
     private const val OPS_PER_SESSION_SAFE = 1
+    private const val OPS_PER_SESSION_MIN = 1
+    private const val OPS_PER_SESSION_MAX = 20
     private const val CONNECTIONS_SAFE = 3
+
+    /** Extra TCP per host used only for folder list/peek. Not counted in [maxConnectionsPerHost]. */
+    private const val LIST_RESERVED_SESSIONS = 1
 
     /**
      * Hard cap on simultaneous ops **per host** (all sessions).
-     * 5×3=15 concurrent ~20MB page downloads OOMs / races Android mid-flight;
-     * 3×3=9 is the largest configuration confirmed stable on device.
+     * (5 data + 1 list) × 20 ops = 120 theoretical max; actual bounded by slider × connections.
      */
-    private const val MAX_SAFE_HOST_OPS = 18
+    private const val MAX_SAFE_HOST_OPS = (POOL_CAPACITY + LIST_RESERVED_SESSIONS) * OPS_PER_SESSION_MAX
 
     private const val KEEPALIVE_INTERVAL_MS = 40_000L
 
@@ -182,8 +185,6 @@ object SmbGateway {
     private const val MIN_WARM_DATA_SESSIONS = 1
     private const val ACQUIRE_WAIT_MS = 12_000L
 
-    /** Extra TCP per host used only for folder list/peek. Not counted in [maxConnectionsPerHost]. */
-    private const val LIST_RESERVED_SESSIONS = 1
 
     /** Long enough for large comic page transfers on a busy LAN. */
     private const val SMB_IO_TIMEOUT_SEC = 120L
@@ -214,7 +215,11 @@ object SmbGateway {
     private const val PATH_CHANGE_DEBOUNCE_MS = 1_000L
 
     /** Ops multiplexed per TCP session (fixed when the session is opened). */
-    fun opsPerSession(): Int = if (Settings.smbReaderSafeConcurrency.value) OPS_PER_SESSION_SAFE else OPS_PER_SESSION_DEFAULT
+    fun opsPerSession(): Int = if (Settings.smbReaderSafeConcurrency.value) {
+        OPS_PER_SESSION_SAFE
+    } else {
+        Settings.smbOpsPerSession.value.coerceIn(OPS_PER_SESSION_MIN, OPS_PER_SESSION_MAX)
+    }
 
     /**
      * Max TCP sessions per host. Safe mode forces [CONNECTIONS_SAFE] (3).
@@ -239,6 +244,12 @@ object SmbGateway {
     fun onReaderSafeConcurrencyChanged() {
         logcat { "SmbGateway: reader safe concurrency → connections=${maxConnectionsPerHost()} ops/session=${opsPerSession()}" }
         // Never close smbj sockets on the UI thread (see [dropAllSessions]).
+        dropAllSessionsAsync(cancelLists = true, clearCircuits = false)
+    }
+
+    /** Multiplex slider changed — drop pools so new sessions use the new op/session budget. */
+    fun onPoolBudgetChanged() {
+        logcat { "SmbGateway: pool budget → connections=${maxConnectionsPerHost()} ops/session=${opsPerSession()}" }
         dropAllSessionsAsync(cancelLists = true, clearCircuits = false)
     }
 
