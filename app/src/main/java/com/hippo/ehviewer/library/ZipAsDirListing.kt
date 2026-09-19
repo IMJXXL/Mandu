@@ -267,11 +267,8 @@ object ZipAsDirListing {
     }
 
     fun zipRootListingFromCd(cd: ZipCentralDirectory, innerPrefix: String = ""): ZipRootListing {
-        // ★ 混合 zip（采样判定非画廊）不做任何 peek：省掉子目录级 CD 扫描，也避免把
-        //   素材包误 promote 成画廊（对齐上游 0919 zipRootListingFromCd）
-        if (!cd.gallery) {
-            return ZipRootListing(emptyList(), emptyMap(), classified = false)
-        }
+        // ★ B2 回退：采样判混合包的短路会导致部分 CD 进入分类链，实测引发"循环进入"，
+        //   恢复对所有 zip 全量 peek（CD 字节节省待上游完整 UI 簇再启用）
         val peek = listChildren(cd, innerPrefix)
         val leaves = peek.filter { it.isDirectory && isPromotableLeafDirName(it.name) }
         val leavesToPeek = if (leaves.size in 1..SMB_PROMOTE_MAX_LEAVES) {
@@ -737,20 +734,6 @@ object ZipAsDirListing {
         cd: ZipCentralDirectory,
         archive: BrowseEntryRemote.ArchiveGallery,
     ): List<BrowseEntryRemote> {
-        // 混合 zip：单个可进入的普通 Directory 行（不 promote 成画廊）
-        if (!cd.gallery) {
-            return listOf(
-                BrowseEntryRemote.Directory(
-                    name = archive.name,
-                    relativeName = archive.fileName,
-                    hasVideo = false,
-                    hasGallery = false,
-                    presence = DirPresence.Navigable,
-                    lastModifiedMs = archive.lastModifiedMs,
-                    hidden = archive.hidden,
-                ),
-            )
-        }
         val listing = zipRootListingFromCd(cd)
         val fake = RemoteChild(
             name = archive.fileName,

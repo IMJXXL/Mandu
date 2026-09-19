@@ -2470,9 +2470,7 @@ object SmbGateway {
                                 knownSize = child.size,
                                 readahead = false,
                             ).use { src ->
-                                // ★ 采样模式：画廊 zip 读完 CD（行为同旧），混合包 100 个
-                                //   文件后中止——不再为列目录下载整张中央目录（对齐上游）
-                                val cd = ZipCentralDirectory.open(src, ZipCdParse.Parent) ?: return@use
+                                val cd = ZipCentralDirectory.open(src) ?: return@use
                                 out[child.name] = ZipAsDirListing.zipRootListingFromCd(cd)
                             }
                         }

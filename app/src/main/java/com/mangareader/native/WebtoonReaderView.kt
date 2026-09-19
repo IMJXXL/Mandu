@@ -851,7 +851,7 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
                 val animD = synchronized(webtoonAnimDrawables) { webtoonAnimDrawables[pos] }
                 if (animD != null) {
                     // ★ E4 修正：动图页不得被静图位图覆盖（位图晚到会顶掉 drawable）
-                    if (h.isBound) h.setAnim(animD)
+                    if (h.isBound) h.setAnim(animD, pageBgColor)
                     return
                 }
                 val cached = synchronized(bitmapCache) { bitmapCache[pos] }
@@ -895,7 +895,7 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
             val readyAnim = synchronized(webtoonAnimDrawables) { webtoonAnimDrawables[pos] }
             if (readyAnim != null) {
                 // 重绑时 drawable 已就绪：必须重新上屏（loadAnimAsync 会因已存在而早退）
-                h.setAnim(readyAnim)
+                h.setAnim(readyAnim, pageBgColor)
             } else if (pageAnimFlags.firstOrNull { it.pageIdx == pos }?.kind?.let { it != AnimKind.NONE } == true) {
                 loadAnimAsync(pos)
             }
@@ -951,7 +951,7 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
                 val existing = synchronized(webtoonAnimDrawables) { webtoonAnimDrawables[pos] }
                 recycler.post {
                     val h = recycler.findViewHolderForAdapterPosition(pos) as? PageVH
-                    if (existing != null && h != null && h.isBound && h.boundPosition == pos) h.setAnim(existing)
+                    if (existing != null && h != null && h.isBound && h.boundPosition == pos) h.setAnim(existing, pageBgColor)
                 }
                 return
             }
@@ -992,7 +992,7 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
                     recycler.post {
                         val h = recycler.findViewHolderForAdapterPosition(pos) as? PageVH
                         if (h != null && h.isBound && h.boundPosition == pos) {
-                            h.setAnim(drawable)
+                            h.setAnim(drawable, pageBgColor)
                         } else {
                             (drawable as? android.graphics.drawable.Animatable)?.stop()
                         }
@@ -1055,8 +1055,10 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
             ssv.setImage(com.davemorrissey.labs.subscaleview.ImageSource.uri(itemView.context, android.net.Uri.fromFile(file)))
             hasImage = true
         }
-        fun setAnim(d: android.graphics.drawable.Drawable) {
+        fun setAnim(d: android.graphics.drawable.Drawable, bg: Int) {
             iv.minimumHeight = 0
+            // ★ 透明帧的动图背景跟随阅读器背景色，不透出黑底
+            iv.setBackgroundColor(bg)
             heldBitmap = null
             ssiv?.visibility = android.view.View.GONE
             iv.visibility = android.view.View.VISIBLE
