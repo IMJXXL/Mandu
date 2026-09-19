@@ -22,7 +22,13 @@ class ZipMemberByteSource private constructor(
         if (entry.method == ZipCentralDirectory.METHOD_DEFLATE) Inflater(true) else null
     private var inflatedTo = 0L
     private var compressedAt = 0L
-    private val compressed = ByteArray(64 * 1024)
+    private val compressed = ByteArray(DEFLATE_IO_CHUNK)
+
+    /** Reused; 1 MiB amortizes SMB/WebDAV RTT when inflating a stored-as-deflate video. */
+    private val skipBuf = ByteArray(DEFLATE_IO_CHUNK)
+
+    /** Inflater 状态机互斥；STORE 分支不得再被它挡住（见 readAt）。 */
+    private val deflateLock = Any()
 
     override val size: Long get() = entry.uncompressedSize.coerceAtLeast(0L)
 
@@ -33,15 +39,17 @@ class ZipMemberByteSource private constructor(
 
     override fun requestReconnect() = zip.requestReconnect()
 
-    @Synchronized
     override fun readAt(offset: Long, buf: ByteArray, off: Int, len: Int): Int {
         if (len <= 0) return 0
         if (offset < 0L || offset >= size) return 0
         val want = minOf(len.toLong(), size - offset).toInt()
         return when (entry.method) {
             ZipCentralDirectory.METHOD_STORE ->
+                // STORE 是纯偏移平移，绝不能持锁：视频预取在同一个 zip 句柄上并发 4 路
+                // SMB/WebDAV 读，类级锁会把 zip-as-dir 的 4K 并发串成单队（对齐上游 0919）
                 zip.readAt(payloadOffset + offset, buf, off, want)
-            ZipCentralDirectory.METHOD_DEFLATE -> readDeflatePrefix(offset, buf, off, want)
+            ZipCentralDirectory.METHOD_DEFLATE ->
+                synchronized(deflateLock) { readDeflatePrefix(offset, buf, off, want) }
             else -> -1
         }
     }
@@ -83,7 +91,7 @@ class ZipMemberByteSource private constructor(
 
     private fun skipDeflate(bytes: Long) {
         val inf = inflater ?: return
-        val skip = ByteArray(64 * 1024)
+        val skip = skipBuf
         var left = bytes
         while (left > 0L && inflatedTo < prefixCap) {
             val n = inf.inflate(skip, 0, minOf(skip.size.toLong(), left).toInt())
@@ -105,12 +113,16 @@ class ZipMemberByteSource private constructor(
     }
 
     override fun close() {
-        inflater?.end()
+        synchronized(deflateLock) {
+            inflater?.end()
+        }
         if (ownsZip) runCatching { zip.close() }
     }
 
     companion object {
         /** Deflate members are prefix-only so thumbs never inflate a whole video. */
+        private const val DEFLATE_IO_CHUNK = 1024 * 1024
+
         const val DEFLATE_PREFIX_CAP = 16L * 1024L * 1024L
 
         fun open(
