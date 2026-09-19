@@ -38,8 +38,10 @@ import com.mangareader.browse.BrowseCover
 import com.mangareader.browse.BrowseCoverThumb
 import com.mangareader.browse.BrowseCovers
 import com.hippo.ehviewer.Settings
+import com.hippo.ehviewer.library.BrowseContentMode
 import com.hippo.ehviewer.library.BrowseEntryRemote
 import com.hippo.ehviewer.library.IMAGE_EXTENSIONS
+import com.hippo.ehviewer.library.filterRemoteByContentMode
 import com.hippo.ehviewer.webdav.WebDavCache
 import com.hippo.ehviewer.webdav.WebDavGateway
 import com.hippo.ehviewer.webdav.WebDavClient
@@ -165,6 +167,18 @@ fun WebDavBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -
             entries = listDir(dir)
             loading = false
         }
+    }
+
+    // ★ 内容模式过滤（对齐上游 filterRemoteByContentMode / Folder 模式）：
+    //   分类器对"直接含图的文件夹"会同时给出 Directory(LeafImages) 与 FolderGallery 两行，
+    //   UI 不过滤就会每个文件夹显示两次。Folder 模式隐藏合成画廊行、保留目录/散图/档案，
+    //   散图行可点击直达阅读器（openFolderImage）。
+    val visibleEntries = remember(entries) {
+        entries.filterRemoteByContentMode(
+            BrowseContentMode.Folder,
+            showHiddenFiles = true,
+            showVirtualGalleries = true,
+        )
     }
 
     fun joinRel(child: String): String = if (dir.isEmpty()) child else "$dir/$child"
@@ -533,7 +547,7 @@ fun WebDavBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         modifier = Modifier.fillMaxSize(),
                     ) {
-                        gridItemsIndexed(entries, key = { i, e -> "$i-${e.name}" }) { _, e ->
+                        gridItemsIndexed(visibleEntries, key = { i, e -> "$i-${e.name}" }) { _, e ->
                             val dl = extractDownloadable(e)
                             val remotePath = dl?.first
                             val isSelected = remotePath != null && remotePath in selectedRemotes
@@ -586,7 +600,7 @@ fun WebDavBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -
                     }
                 }
                 else -> LazyColumn(Modifier.fillMaxSize()) {
-                    items(entries) { e ->
+                    items(visibleEntries) { e ->
                         val dl = extractDownloadable(e)
                         val remotePath = dl?.first
                         val isSelected = remotePath != null && remotePath in selectedRemotes
