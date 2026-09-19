@@ -157,6 +157,7 @@ fun WebDavBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -
                     fileType = ext,
                     coverPath = WebDavPaths.coverPath(src.id, remote),
                     source = "webdav",
+                    isHidden = true,
                 )
                 dao.insertBookWithStableId(book)
             }
@@ -190,6 +191,7 @@ fun WebDavBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -
                     fileType = "",
                     coverPath = WebDavPaths.coverPath(src.id, "$remoteDir/${images.first()}"),
                     source = "webdav",
+                    isHidden = true,
                 )
                 val bookId = dao.insertBookWithStableId(book)
                 withContext(Dispatchers.Main) { if (bookId > 0) onOpenBook(bookId) }

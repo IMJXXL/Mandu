@@ -168,6 +168,7 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -> U
                     fileType = ext,
                     coverPath = SmbPaths.coverPath(src.id, src.share, remote),
                     source = "smb",
+                    isHidden = true,
                 )
                 dao.insertBookWithStableId(book)
             }
@@ -201,6 +202,7 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -> U
                     fileType = "",
                     coverPath = SmbPaths.coverPath(src.id, src.share, "$remoteDir/${images.first()}"),
                     source = "smb",
+                    isHidden = true,
                 )
                 val bookId = dao.insertBookWithStableId(book)
                 withContext(Dispatchers.Main) { if (bookId > 0) onOpenBook(bookId) }
