@@ -19,6 +19,7 @@ import com.hippo.ehviewer.library.isImageFileName
 import com.hippo.ehviewer.library.isPdfFileName
 import com.hippo.ehviewer.library.isSolidArchiveFileName
 import com.hippo.ehviewer.library.isTarArchiveFileName
+import com.hippo.ehviewer.library.isZipArchiveFileName
 import com.hippo.ehviewer.library.ZipAsDirListing
 import com.hippo.ehviewer.smb.SmbArchiveByteSource
 import com.hippo.ehviewer.smb.SmbGateway
@@ -158,11 +159,16 @@ object SmbBookRouter {
         // zip-as-dir 路径（`dir/file.zip/inner/page.webp`）→ 用 zip 文件路径打开归档，不是成员路径
         val zipSplit = ZipAsDirListing.splitZipBrowsePath(remoteRaw)
         val remote = if (zipSplit != null && zipSplit.second.isNotEmpty()) zipSplit.first else remoteRaw
+        android.util.Log.d("SmbRoute", "dispatch ref=$ref ext=${ref.ext} remoteRaw=$remoteRaw zipSplit=$zipSplit -> remote=$remote")
         val cacheKey = "smb:${source.id}:$remote"
         val titleHint = remote.substringAfterLast('/').substringBefore(':').ifEmpty { source.displayName }
 
         // 含图片目录（文件夹书）：无扩展名 → 现场列目录取图片文件名
-        if (ref.ext.isEmpty() && !remote.contains(':')) {
+        android.util.Log.d("SmbRoute", "branch: extEmpty=${ref.ext.isEmpty()} remote=$remote")
+        // ★ 修复循环进入：路径即使被存成文件夹书形态，只要指向的是 zip/cbz 档案文件，
+        //   必须按 zip 档案流式打开（否则列目录会把同一个 zip 再列出来，无限循环）
+        val remoteIsZip = isZipArchiveFileName(remote)
+        if (ref.ext.isEmpty() && !remote.contains(':') && !remoteIsZip) {
             val entries = SmbGateway.listDirectory(source, password, remote)
             val imageNames = entries
                 .filter { it !is BrowseEntryRemote.Directory && it !is BrowseEntryRemote.FolderGallery }
