@@ -128,9 +128,10 @@ class MainActivity : ComponentActivity() {
                             }
                         )
                     }
-                    composable("reader/{id}?jump={jump}", listOf(
+                    composable("reader/{id}?jump={jump}&startPage={startPage}", listOf(
                         navArgument("id") { type = NavType.LongType },
-                        navArgument("jump") { type = NavType.StringType; nullable = true; defaultValue = null }
+                        navArgument("jump") { type = NavType.StringType; nullable = true; defaultValue = null },
+                        navArgument("startPage") { type = NavType.IntType; defaultValue = -1 },
                     ),
                         enterTransition = { fadeIn(animationSpec = tween(300)) },
                         exitTransition = { fadeOut(animationSpec = tween(300)) },
@@ -141,6 +142,7 @@ class MainActivity : ComponentActivity() {
                         Reader(
                             bookId = readerId,
                             jumpPath = it.arguments?.getString("jump"),
+                            startPage = it.arguments?.getInt("startPage", -1) ?: -1,
                             back = { nav.popBackStack() },
                             onOpenBook = { bookId, path ->
                                 nav.navigate("reader/$bookId?jump=${android.net.Uri.encode(path)}") {
@@ -152,11 +154,13 @@ class MainActivity : ComponentActivity() {
                     composable("settings") {
                         SettingsScreen(
                             onBack = { nav.popBackStack() },
-                            onOpenBook = { bookId, path ->
-                                nav.navigate(
-                                    "reader/$bookId?jump=${android.net.Uri.encode(path)}",
-                                    navOptions { launchSingleTop = true },
-                                )
+                            onOpenBook = { bookId, path, startPage ->
+                                val route = buildString {
+                                    append("reader/").append(bookId)
+                                    if (path != null) append("?jump=").append(android.net.Uri.encode(path))
+                                    if (startPage >= 0) append(if (contains('?')) "&" else "?").append("startPage=").append(startPage)
+                                }
+                                nav.navigate(route) { launchSingleTop = true }
                             },
                         )
                     }

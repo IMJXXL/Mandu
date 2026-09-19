@@ -39,7 +39,7 @@ import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = null) {
+fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?, Int) -> Unit)? = null) {
     val ctx = LocalContext.current
     val app = ctx.applicationContext as App
     val dao = remember { app.db.mangaDao() }
@@ -534,7 +534,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
         com.mangareader.ui.SrQueueScreen(
             onBack = { showSrQueue = false },
             onOpenBook = { id, path ->
-                if (onOpenBook != null) onOpenBook(id, path)
+                if (onOpenBook != null) onOpenBook(id, path, -1)
             },
         )
     }
@@ -549,16 +549,16 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?) -> Unit)? = 
         FolderManageScreen(onBack = { showFolderManage = false })
     }
     if (showSmbServers) {
-        com.mangareader.smbbridge.SmbServersScreen(onBack = { showSmbServers = false }, onOpenBook = { id -> onOpenBook?.invoke(id, null) })
+        com.mangareader.smbbridge.SmbServersScreen(onBack = { showSmbServers = false }, onOpenBook = { id, page -> onOpenBook?.invoke(id, null, page) })
     }
     if (showWebDavServers) {
-        com.mangareader.webdavbridge.WebDavServersScreen(onBack = { showWebDavServers = false }, onOpenBook = { id -> onOpenBook?.invoke(id, null) })
+        com.mangareader.webdavbridge.WebDavServersScreen(onBack = { showWebDavServers = false }, onOpenBook = { id, page -> onOpenBook?.invoke(id, null, page) })
     }
     if (showKomgaServers) {
-        com.mangareader.komgabridge.ui.KomgaServersScreen(onBack = { showKomgaServers = false }, onOpenBook = { id -> onOpenBook?.invoke(id, null) })
+        com.mangareader.komgabridge.ui.KomgaServersScreen(onBack = { showKomgaServers = false }, onOpenBook = { id -> onOpenBook?.invoke(id, null, -1) })
     }
     if (showOpdsServers) {
-        com.mangareader.opdsbridge.ui.OpdsServersScreen(onBack = { showOpdsServers = false }, onOpenBook = { id -> onOpenBook?.invoke(id, null) })
+        com.mangareader.opdsbridge.ui.OpdsServersScreen(onBack = { showOpdsServers = false }, onOpenBook = { id -> onOpenBook?.invoke(id, null, -1) })
     }
 
     if (showDonation) DonationDialog(onDismiss = { showDonation = false })

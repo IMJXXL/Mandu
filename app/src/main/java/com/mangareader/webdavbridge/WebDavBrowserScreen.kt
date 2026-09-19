@@ -57,7 +57,7 @@ import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
-fun WebDavBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -> Unit = {}, onOpenSettings: () -> Unit = {}) {
+fun WebDavBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long, Int) -> Unit = { _, _ -> }, onOpenSettings: () -> Unit = {}) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var source by remember { mutableStateOf<WebDavSourceEntity?>(null) }
@@ -225,20 +225,20 @@ fun WebDavBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -
                 dao.insertBookWithStableId(book)
             }
             withContext(Dispatchers.Main) {
-                if (bookId > 0) onOpenBook(bookId)
+                if (bookId > 0) onOpenBook(bookId, -1)
             }
         }
     }
 
-    fun addFolder(dirName: String) {
+    /** 确保远程文件夹书存在（浏览插入隐藏书），就绪后回调 bookId 打开。 */
+    fun ensureWebDavFolderBook(remoteDir: String, displayName: String, onReady: (Long) -> Unit) {
         val src = source ?: return
-        val remoteDir = if (dir.isEmpty()) dirName else "$dir/$dirName"
         scope.launch(Dispatchers.IO) {
             val dao = WebDavDbBridge.mangaDatabase?.mangaDao() ?: return@launch
             val filePath = WebDavPaths.bookPath(src.id, remoteDir)
             val existing = dao.getBookByPath(filePath)
             if (existing != null) {
-                withContext(Dispatchers.Main) { onOpenBook(existing.id) }
+                withContext(Dispatchers.Main) { onReady(existing.id) }
                 return@launch
             }
             val images = listDir(remoteDir)
@@ -249,7 +249,7 @@ fun WebDavBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -
                 withContext(Dispatchers.Main) { Toast.makeText(ctx, "该文件夹不含图片", Toast.LENGTH_SHORT).show() }
             } else {
                 val book = Book(
-                    title = dirName,
+                    title = displayName,
                     filePath = filePath,
                     fileType = "",
                     coverPath = WebDavPaths.coverPath(src.id, "$remoteDir/${images.first()}"),
@@ -257,9 +257,33 @@ fun WebDavBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -
                     isHidden = true,
                 )
                 val bookId = dao.insertBookWithStableId(book)
-                withContext(Dispatchers.Main) { if (bookId > 0) onOpenBook(bookId) }
+                withContext(Dispatchers.Main) { if (bookId > 0) onReady(bookId) }
             }
         }
+    }
+
+    fun addFolder(dirName: String) = ensureWebDavFolderBook(
+        remoteDir = if (dir.isEmpty()) dirName else "$dir/$dirName",
+        displayName = dirName,
+    ) { id -> onOpenBook(id, -1) }
+
+    /**
+     * ★ 点击散图直达阅读器（对齐上游 openFolderImage）：当前目录作为文件夹书打开，
+     * 定位到被点图片在目录图片序列中的页——等价于"书架打开 A 再跳第 N 页"。
+     * 页序与阅读器一致：两者都来自同一 listDirectory 分类管线（自然排序的 RegularFile）。
+     */
+    fun openFolderImage(e: BrowseEntryRemote.RegularFile) {
+        if (e.name.substringAfterLast('.', "").lowercase() !in IMAGE_EXTENSIONS) return
+        val images = visibleEntries
+            .filterIsInstance<BrowseEntryRemote.RegularFile>()
+            .filter { it.name.substringAfterLast('.', "").lowercase() in IMAGE_EXTENSIONS }
+            .map { it.name }
+        if (images.isEmpty()) return
+        val page = images.indexOf(e.name).coerceAtLeast(0)
+        ensureWebDavFolderBook(
+            remoteDir = dir,
+            displayName = dir.substringAfterLast('/').ifEmpty { source?.displayName ?: "图片文件夹" },
+        ) { id -> onOpenBook(id, page) }
     }
 
     fun extractDownloadable(e: BrowseEntryRemote): Triple<String, String, String>? = when (e) {
@@ -585,7 +609,9 @@ fun WebDavBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -
                                             is BrowseEntryRemote.ArchiveGallery -> addArchive(joinRel(e.fileName), e.name, e.fileName.substringAfterLast('.', "").lowercase())
                                             else -> {
                                                 val ext = e.name.substringAfterLast('.', "").lowercase()
-                                                if (ext in WebDavScanner.SCANNABLE_FORMATS) addArchive(joinRel(e.name), e.name, ext)
+                                                if (e is BrowseEntryRemote.RegularFile && ext in IMAGE_EXTENSIONS) {
+                                                    openFolderImage(e)
+                                                } else if (ext in WebDavScanner.SCANNABLE_FORMATS) addArchive(joinRel(e.name), e.name, ext)
                                             }
                                         }
                                     }
@@ -715,6 +741,8 @@ fun WebDavBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -
                                     {
                                         if (isMultiSelectMode && remotePath != null) {
                                             selectedRemotes = if (isSelected) selectedRemotes - remotePath else selectedRemotes + remotePath
+                                        } else if (e is BrowseEntryRemote.RegularFile && ext in IMAGE_EXTENSIONS) {
+                                            openFolderImage(e)
                                         } else if (ext in WebDavScanner.SCANNABLE_FORMATS) {
                                             addArchive(joinRel(e.name), e.name, ext)
                                         }

@@ -88,7 +88,7 @@ object ReaderParams {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook: ((Long, String) -> Unit)? = null) {
+fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: () -> Unit, onOpenBook: ((Long, String) -> Unit)? = null) {
     val ctx = LocalContext.current
     val act = ctx as? Activity
     val app = ctx.applicationContext as App
@@ -1660,7 +1660,8 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
                     }
                 } else {
                     // ★ §23 改走 enterReader 恢复 lastPage
-                    val pages = enterReader(filePath)
+                    //   startPage >= 0：浏览页点击散图直达该页（优先于续读页，仅本次进书生效）
+                    val pages = enterReader(filePath, targetPage = startPage)
                     if (b.totalPages == 0 && pages.isNotEmpty()) withContext(Dispatchers.IO) { dao.updateBook(b.copy(totalPages = pages.size)) }
                 }
             }

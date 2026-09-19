@@ -44,7 +44,7 @@ import kotlinx.coroutines.withContext
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun WebDavServersScreen(onBack: () -> Unit, onOpenBook: ((Long) -> Unit)? = null) {
+fun WebDavServersScreen(onBack: () -> Unit, onOpenBook: ((Long, Int) -> Unit)? = null) {
     BackHandler { onBack() }
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -61,7 +61,7 @@ fun WebDavServersScreen(onBack: () -> Unit, onOpenBook: ((Long) -> Unit)? = null
 
 
     browsingId?.let { id ->
-        WebDavBrowserScreen(serverId = id, onBack = { browsingId = null }, onOpenBook = onOpenBook ?: {}, onOpenSettings = { browsingId = null; showSettings = true })
+        WebDavBrowserScreen(serverId = id, onBack = { browsingId = null }, onOpenBook = onOpenBook ?: { _, _ -> }, onOpenSettings = { browsingId = null; showSettings = true })
         return
     }
 

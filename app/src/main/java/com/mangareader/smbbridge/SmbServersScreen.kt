@@ -44,7 +44,7 @@ import kotlinx.coroutines.withContext
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SmbServersScreen(onBack: () -> Unit, onOpenBook: (Long) -> Unit = {}) {
+fun SmbServersScreen(onBack: () -> Unit, onOpenBook: (Long, Int) -> Unit = { _, _ -> }) {
     BackHandler { onBack() }
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -64,7 +64,7 @@ fun SmbServersScreen(onBack: () -> Unit, onOpenBook: (Long) -> Unit = {}) {
     }
 
     if (showDownloadQueue) {
-        SmbDownloadQueueScreen(onBack = { showDownloadQueue = false }, onOpenBook = { id -> onOpenBook(id) })
+        SmbDownloadQueueScreen(onBack = { showDownloadQueue = false }, onOpenBook = { id, page -> onOpenBook(id, page) })
         return
     }
 

@@ -29,7 +29,7 @@ import androidx.compose.ui.unit.sp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SmbDownloadQueueScreen(onBack: () -> Unit, onOpenBook: ((Long) -> Unit)? = null) {
+fun SmbDownloadQueueScreen(onBack: () -> Unit, onOpenBook: ((Long, Int) -> Unit)? = null) {
     BackHandler { onBack() }
     val tasks by SmbDownloadQueue.tasks.collectAsState()
     var taskToDelete by remember { mutableStateOf<DownloadTask?>(null) }
@@ -89,7 +89,7 @@ fun SmbDownloadQueueScreen(onBack: () -> Unit, onOpenBook: ((Long) -> Unit)? = n
                         onResume = { SmbDownloadQueue.resume(task.id) },
                         onDelete = { taskToDelete = task },
                         onOpen = if (task.status == DownloadStatus.Completed && task.bookId > 0) {
-                            { onOpenBook?.invoke(task.bookId) }
+                            { onOpenBook?.invoke(task.bookId, -1) }
                         } else null,
                     )
                 }
