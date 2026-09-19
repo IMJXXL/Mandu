@@ -29,6 +29,10 @@ object CoverAnimRawCache {
     fun readRaw(cacheKey: String): ByteArray? =
         rawFile(cacheKey).takeIf { it.isFile && it.length() > 0 }?.readBytes()
 
+    /** 副档文件本体（浏览封面动图直接以文件为 data，ImageDecoder 走文件源） */
+    fun readRawFile(cacheKey: String): File? =
+        rawFile(cacheKey).takeIf { it.isFile && it.length() > 0 }
+
     fun writeRaw(cacheKey: String, bytes: ByteArray) {
         runCatching {
             val f = rawFile(cacheKey)

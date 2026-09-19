@@ -96,7 +96,11 @@ object CoverAnimGateDecoder : Decoder.Factory {
         override suspend fun decode(): DecodeResult {
             val drawable = runInterruptible(Dispatchers.Default) {
                 val bytes = result.source.source().readByteArray()
-                val src = ImageDecoder.createSource(ByteBuffer.wrap(bytes))
+                // ImageDecoder.createSource(ByteBuffer) 要求直接缓冲区（coil 的
+                // squashToDirectByteBuffer 同因）——堆缓冲会解码失败致封面灰块
+                val buf = ByteBuffer.allocateDirect(bytes.size).put(bytes)
+                buf.flip()
+                val src = ImageDecoder.createSource(buf)
                 src.decodeDrawable { info, _ ->
                     val (srcW, srcH) = info.size
                     val (dstW, dstH) = DecodeUtils.computeDstSize(

@@ -18,6 +18,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -101,41 +102,96 @@ object RemoteBrowseCoverLoader {
     private suspend fun ensureInternal(cover: BrowseCover): Path? = when (cover) {
         is BrowseCover.SmbImage -> smbImageThumb(cover.sourceId, cover.remote)
         is BrowseCover.DavImage -> davImageThumb(cover.sourceId, cover.remote)
-        is BrowseCover.SmbArchive -> archiveThumb(
+        is BrowseCover.SmbArchive -> {
+            // ★ 动图封面（受 coverAnimated 门控）：书架探测的副档直接复用（同 cacheKey）
+            if (Settings.coverAnimated.value) {
+                com.mangareader.viewer.CoverAnimRawCache.readRawFile("smb:" + cover.sourceId + ":" + cover.remote)
+                    ?.let { return it.absolutePath.toPath() }
+            }
+            archiveThumb(
             kind = "smba",
             // cacheKey 与 SmbCoverLoader 内部口径一致：fixed-share 源的 cover.remote 已是
             // 去 share 的 prefix-space 路径；server-root 源首段即 share，两者均可直拼
             cached = { ArchiveCoverCache.tryDiskCover("smb:${cover.sourceId}:${cover.remote}") != null },
             gate = Settings.downloadNetworkArchiveThumbs.value,
             bytes = { loadSmbArchiveCoverBytes(cover.sourceId, cover.remote) },
-        )
-        is BrowseCover.DavArchive -> archiveThumb(
+            )
+        }
+        is BrowseCover.DavArchive -> {
+            if (Settings.coverAnimated.value) {
+                com.mangareader.viewer.CoverAnimRawCache.readRawFile("webdav:" + cover.sourceId + ":" + cover.remote)
+                    ?.let { return it.absolutePath.toPath() }
+            }
+            archiveThumb(
             kind = "dava",
             cached = { davArchiveCoverCached(cover.sourceId, cover.remote) },
             gate = Settings.downloadNetworkArchiveThumbs.value,
             bytes = { loadDavArchiveCoverBytes(cover.sourceId, cover.remote) },
-        )
+            )
+        }
     }
 
     /** 图片/成员封面：thumb 磁盘命中直接用；未命中受 downloadRemoteThumbs 门控。 */
     private suspend fun smbImageThumb(sourceId: Long, remote: String): Path? {
+        // ★ 动图封面（受 coverAnimated 门控）：副档动图返回原始字节文件；关闭走静态缩略图
+        val animKey = "smb:$sourceId:$remote"
+        if (Settings.coverAnimated.value) {
+            com.mangareader.viewer.CoverAnimRawCache.readRawFile(animKey)
+                ?.let { return it.absolutePath.toPath() }
+        }
         val hit = SmbCache.isCachedOnDisk(SmbCache.thumbCachePath(sourceId, remote))
         if (!hit && !Settings.downloadRemoteThumbs.value) return null
-        return SmbCache.ensureBrowseThumb(sourceId, remote, cacheOriginal = false) { out ->
-            val source = SmbRepository.load(sourceId) ?: return@ensureBrowseThumb
-            val password = try { SmbPasswordStore.get(sourceId) } catch (_: Throwable) { "" }
-            SmbGateway.downloadFile(source, password, remote, out)
+        if (hit) {
+            return SmbCache.ensureBrowseThumb(sourceId, remote, cacheOriginal = false) { }
         }
+        val source = SmbRepository.load(sourceId) ?: return null
+        val password = try { SmbPasswordStore.get(sourceId) } catch (_: Throwable) { "" }
+        var animRaw: ByteArray? = null
+        val path = SmbCache.ensureBrowseThumb(sourceId, remote, cacheOriginal = false) { out ->
+            // 只下载一次：动图写副档播放原始字节，静图直接编码缩略图
+            val bos = java.io.ByteArrayOutputStream(512 * 1024)
+            SmbGateway.downloadFile(source, password, remote, bos)
+            val bytes = bos.toByteArray()
+            if (com.mangareader.viewer.ArchiveEngine.isAnimatedBytes(bytes)) {
+                com.mangareader.viewer.CoverAnimRawCache.writeRaw(animKey, bytes)
+                animRaw = bytes
+            }
+            out.write(bytes)
+        }
+        if (animRaw != null && Settings.coverAnimated.value) {
+            return com.mangareader.viewer.CoverAnimRawCache.rawFile(animKey).absolutePath.toPath()
+        }
+        return path
     }
 
     private suspend fun davImageThumb(sourceId: Long, remote: String): Path? {
+        val animKey = "webdav:$sourceId:$remote"
+        if (Settings.coverAnimated.value) {
+            com.mangareader.viewer.CoverAnimRawCache.readRawFile(animKey)
+                ?.let { return it.absolutePath.toPath() }
+        }
         val hit = WebDavCache.isCachedOnDisk(WebDavCache.thumbCachePath(sourceId, remote))
         if (!hit && !Settings.downloadRemoteThumbs.value) return null
-        return WebDavCache.ensureBrowseThumb(sourceId, remote, cacheOriginal = false) { out ->
-            val source = WebDavRepository.load(sourceId) ?: return@ensureBrowseThumb
-            val password = try { WebDavPasswordStore.get(sourceId) } catch (_: Throwable) { "" }
-            WebDavClient.downloadFile(source, password, remote, out)
+        if (hit) {
+            return WebDavCache.ensureBrowseThumb(sourceId, remote, cacheOriginal = false) { }
         }
+        val source = WebDavRepository.load(sourceId) ?: return null
+        val password = try { WebDavPasswordStore.get(sourceId) } catch (_: Throwable) { "" }
+        var animRaw: ByteArray? = null
+        val path = WebDavCache.ensureBrowseThumb(sourceId, remote, cacheOriginal = false) { out ->
+            val bos = java.io.ByteArrayOutputStream(512 * 1024)
+            WebDavClient.downloadFile(source, password, remote, bos)
+            val bytes = bos.toByteArray()
+            if (com.mangareader.viewer.ArchiveEngine.isAnimatedBytes(bytes)) {
+                com.mangareader.viewer.CoverAnimRawCache.writeRaw(animKey, bytes)
+                animRaw = bytes
+            }
+            out.write(bytes)
+        }
+        if (animRaw != null && Settings.coverAnimated.value) {
+            return com.mangareader.viewer.CoverAnimRawCache.rawFile(animKey).absolutePath.toPath()
+        }
+        return path
     }
 
     /**
@@ -276,9 +332,11 @@ fun BrowseCoverThumb(
     placeholderSize: Dp = 28.dp,
 ) {
     val key = cover?.cacheKey ?: "none"
-    var thumbPath by remember(key) { mutableStateOf<Path?>(null) }
-    var failed by remember(key) { mutableStateOf(false) }
-    LaunchedEffect(key) {
+    // 动图开关参与 key：切换后立即按新模式重取（动图副档 / 静态缩略图）
+    val animOn by Settings.coverAnimated.valueFlow().collectAsState(initial = Settings.coverAnimated.value)
+    var thumbPath by remember(key, animOn) { mutableStateOf<Path?>(null) }
+    var failed by remember(key, animOn) { mutableStateOf(false) }
+    LaunchedEffect(key, animOn) {
         failed = false
         thumbPath = null
         if (cover != null) {
@@ -294,8 +352,16 @@ fun BrowseCoverThumb(
     ) {
         val p = thumbPath
         if (p != null) {
+            val ctx = androidx.compose.ui.platform.LocalContext.current
+            // 封面总闸解码器：动图文件按 512px 帧上限 + 播放限流播放；静态 JPEG 走平台解码
+            val req = remember(p.toString()) {
+                coil3.request.ImageRequest.Builder(ctx)
+                    .data(File(p.toString()))
+                    .decoderFactory(com.mangareader.coil.CoverAnimGateDecoder)
+                    .build()
+            }
             AsyncImage(
-                model = File(p.toString()),
+                model = req,
                 contentDescription = null,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop,
