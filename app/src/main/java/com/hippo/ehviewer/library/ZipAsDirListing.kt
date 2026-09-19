@@ -509,6 +509,18 @@ object ZipAsDirListing {
         return parentRelativeOfFile(galleryRel.replace('|', '/'))
     }
 
+    /**
+     * Scanner-side classification: a Directory/FolderGallery row that is actually a
+     * zip/cbz FILE (`a.zip`, or `a.zip/Album` under zip-as-dir presentation) must be
+     * shelved as an archive book, not a folder book — otherwise opening it lists the
+     * zip as a directory and re-presents the same zip (infinite loop).
+     * @return the zip file's root segment, or null when the row is a real directory.
+     */
+    fun zipFileRootName(relativeName: String): String? {
+        val root = relativeName.substringBefore('/').substringBefore(':')
+        return root.takeIf { isZipArchiveFileName(it) }
+    }
+
     /** Split `dir/file.zip/Album` into zip relative path + inner prefix. */
     fun splitZipBrowsePath(relativeDir: String): Pair<String, String>? {
         val segs = relativeDir.replace('\\', '/').trim('/').split('/').filter { it.isNotEmpty() }

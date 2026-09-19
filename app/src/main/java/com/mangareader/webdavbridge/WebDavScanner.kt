@@ -2,10 +2,12 @@ package com.mangareader.webdavbridge
 
 import com.ehviewer.core.database.model.WebDavSourceEntity
 import com.hippo.ehviewer.library.BrowseEntryRemote
+import com.hippo.ehviewer.library.ZipAsDirListing
 import com.hippo.ehviewer.webdav.WebDavGateway
 import com.hippo.ehviewer.webdav.WebDavPasswordStore
 import com.hippo.ehviewer.webdav.WebDavRepository
 import com.mangareader.data.Book
+import com.mangareader.data.MangaDao
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -44,7 +46,9 @@ object WebDavScanner {
             val dao = WebDavDbBridge.mangaDatabase?.mangaDao() ?: return@withContext 0
             // ★ 按 filePath 去重（对齐 SmbScanner）：insertBooksBatch 的 IGNORE 检测主键 id，
             //   新 Book id=0 不冲突，每次都"新增"。先查已有 filePath 集合过滤。
-            val existingPaths = dao.getWebDavBooks(sourceId).map { it.filePath }.toHashSet()
+            val existing = dao.getWebDavBooks(sourceId)
+            repairZipFolderBooks(dao, existing)
+            val existingPaths = existing.map { it.filePath }.toHashSet()
             val toInsert = ctx.discovered.values.filter { it.filePath !in existingPaths }
             if (toInsert.isEmpty()) return@withContext 0
             val rows = dao.insertBooksWithStableId(toInsert)
@@ -71,6 +75,14 @@ object WebDavScanner {
             if (ctx.discovered.size >= MAX_BOOKS) return
             when (entry) {
                 is BrowseEntryRemote.Directory -> {
+                    // ★ zip-as-dir：Directory 行可能是 zip/cbz 文件伪装的目录 —— 按真实身份
+                    //   （档案书）入库，否则打开时走列目录分支把同一个 zip 再列出来（循环进入）
+                    val zipName = ZipAsDirListing.zipFileRootName(entry.relativeName)
+                    if (zipName != null) {
+                        val zipRel = joinDir(relDir, zipName)
+                        putBook(ctx, zipRel, titleOf(entry.name), extOf(zipName), zipRel, null)
+                        continue
+                    }
                     val remoteDir = joinDir(relDir, entry.relativeName)
                     val coverRemote = findFirstCoverRemote(ctx, remoteDir, 0)
                     if (coverRemote != null) {
@@ -85,6 +97,14 @@ object WebDavScanner {
                     }
                 }
                 is BrowseEntryRemote.FolderGallery -> {
+                    // ★ zip-as-dir：FolderGallery 行可能是 zip/cbz 的内部清单（relativeName =
+                    //   `a.zip` 或 `a.zip/Album`）—— 书架收 zip 文件本身，不是文件夹书
+                    val zipName = ZipAsDirListing.zipFileRootName(entry.relativeName)
+                    if (zipName != null) {
+                        val zipRel = joinDir(relDir, zipName)
+                        putBook(ctx, zipRel, titleOf(entry.name), extOf(zipName), zipRel, entry.pageCount.takeIf { it > 0 })
+                        continue
+                    }
                     if (entry.imageFileNames.isEmpty()) continue
                     val remoteDir = joinDir(relDir, entry.relativeName)
                     putBook(
@@ -140,6 +160,36 @@ object WebDavScanner {
             }
         }
         return null
+    }
+
+    /**
+     * ★ 历史误存纠正：zip-as-dir 展示曾把 zip/cbz 书存成文件夹书（fileType=""），
+     *   打开时被路由进列目录分支（循环进入）。扫描时按路径中的 zip/cbz 段纠正类型，
+     *   封面改指档案本身（与 ArchiveGallery 书一致）。filePath 不动：路由的
+     *   splitZipBrowsePath 对带内部前缀的路径同样按 zip 档案打开。
+     */
+    private suspend fun repairZipFolderBooks(dao: MangaDao, existing: List<Book>) {
+        var fixed = 0
+        for (book in existing) {
+            if (book.fileType.isNotEmpty()) continue
+            val ext = zipExtInPath(book.filePath) ?: continue
+            dao.updateBook(
+                book.copy(
+                    fileType = ext,
+                    coverPath = WebDavPaths.COVER_SCHEME + book.filePath.removePrefix(WebDavPaths.SCHEME),
+                ),
+            )
+            fixed++
+        }
+        if (fixed > 0) android.util.Log.i(TAG, "repaired $fixed zip-as-dir folder-books to archive books")
+    }
+
+    /** `webdav:1/a.zip[/inner|:inner]` → "zip"：路径中第一个 zip/cbz 文件段的扩展名（无则 null） */
+    private fun zipExtInPath(filePath: String): String? {
+        val body = filePath.removePrefix(WebDavPaths.SCHEME).substringAfter(':')
+        return body.split('/', '\\').firstNotNullOfOrNull { seg ->
+            seg.substringBefore(':').takeIf { ZipAsDirListing.zipFileRootName(it) != null }?.let { extOf(it) }
+        }
     }
 
     private fun putBook(
