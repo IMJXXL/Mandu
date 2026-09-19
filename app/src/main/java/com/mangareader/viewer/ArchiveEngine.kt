@@ -43,6 +43,67 @@ class ArchiveEngine(private val ctx: Context) {
             else com.mangareader.zip.CommonsZipHelper.compareNatural(a.fileName, b.fileName)
         }
 
+        /**
+         * ★ 动图页跳过降采样（对齐上游 animated→ORIGIN）：inSampleSize 对动图不省任何
+         *   逐帧解码成本，只毁首帧画质。条漫模式下动图页按静帧显示，全分辨率观感更好。
+         *   返回 false 的情况：静图，或头部信息不足（保守按静图处理）。
+         */
+        fun isAnimatedBytes(raw: ByteArray): Boolean = when (animKindFromHead(raw, raw.size)) {
+            AnimKind.GIF, AnimKind.WEBP, AnimKind.APNG -> true
+            else -> false
+        }
+
+        /** 从头部字节判动图；返回 null 表示头部信息尚不足（需继续读） */
+        private fun animKindFromHead(head: ByteArray, len: Int): AnimKind? {
+            if (len < 12) return null
+            // GIF：magic 即动图格式（GIF 必然可播；静止单帧 GIF 漫画场景罕见，与旧全文件判定一致性可接受）
+            if (head[0] == 0x47.toByte() && head[1] == 0x49.toByte() && head[2] == 0x46.toByte() && head[3] == 0x38.toByte()) {
+                return AnimKind.GIF
+            }
+            // PNG：扫 chunk 找 acTL（APNG 标志）；遇 IDAT 仍无 acTL 即静图；IEND 终局
+            if (head[0] == 0x89.toByte() && head[1] == 0x50.toByte() && head[2] == 0x4E.toByte() && head[3] == 0x47.toByte()) {
+                var pos = 8
+                var sawIdat = false
+                while (pos + 8 <= len) {
+                    val type = String(head, pos + 4, 4, Charsets.US_ASCII)
+                    if (type == "acTL") return AnimKind.APNG
+                    if (type == "IDAT") sawIdat = true
+                    if (type == "IEND") return AnimKind.NONE
+                    val size = ((head[pos].toInt() and 0xFF) shl 24) or ((head[pos + 1].toInt() and 0xFF) shl 16) or
+                            ((head[pos + 2].toInt() and 0xFF) shl 8) or (head[pos + 3].toInt() and 0xFF)
+                    if (size < 0) break
+                    pos += 12 + size
+                }
+                // 头部窗口内没扫到结论：已见 IDAT 无 acTL → 静图；否则继续读（返回 null 驱动外层续流）
+                return if (sawIdat) AnimKind.NONE else null
+            }
+            // WEBP(RIFF....WEBP)：VP8X 块 flags bit1 = Animation
+            if (head[0] == 0x52.toByte() && head[1] == 0x49.toByte() && head[2] == 0x46.toByte() && head[3] == 0x46.toByte()
+                && head[8] == 0x57.toByte() && head[9] == 0x45.toByte() && head[10] == 0x42.toByte() && head[11] == 0x50.toByte()
+            ) {
+                var pos = 12
+                while (pos + 8 <= len) {
+                    val tag = String(head, pos, 4, Charsets.US_ASCII)
+                    val size = (head[pos + 4].toInt() and 0xFF) or ((head[pos + 5].toInt() and 0xFF) shl 8) or
+                            ((head[pos + 6].toInt() and 0xFF) shl 16) or ((head[pos + 7].toInt() and 0xFF) shl 24)
+                    when (tag) {
+                        "VP8X" -> {
+                            if (pos + 8 >= len) return null
+                            val flags = head[pos + 8].toInt()
+                            return if (flags and 0x02 != 0) AnimKind.WEBP else AnimKind.NONE
+                        }
+                        "VP8 ", "VP8L" -> return AnimKind.NONE  // 无 VP8X 的简单图必是静图
+                        "ANIM" -> return AnimKind.WEBP          // 老式动画块直判
+                    }
+                    if (size <= 0) break
+                    pos += 8 + size + (size and 1)
+                }
+                return null
+            }
+            // JPEG 等其他格式：头部即可判非动图
+            return AnimKind.NONE
+        }
+
         fun flushLog(ctx: Context) {
             try {
                 val now = System.currentTimeMillis()
@@ -576,57 +637,6 @@ class ArchiveEngine(private val ctx: Context) {
         return peekAnimKindFromRaw(raw)
     }
 
-    /** 从头部字节判动图；返回 null 表示头部信息尚不足（需继续读） */
-    private fun animKindFromHead(head: ByteArray, len: Int): AnimKind? {
-        if (len < 12) return null
-        // GIF：magic 即动图格式（GIF 必然可播；静止单帧 GIF 漫画场景罕见，与旧全文件判定一致性可接受）
-        if (head[0] == 0x47.toByte() && head[1] == 0x49.toByte() && head[2] == 0x46.toByte() && head[3] == 0x38.toByte()) {
-            return AnimKind.GIF
-        }
-        // PNG：扫 chunk 找 acTL（APNG 标志）；遇 IDAT 仍无 acTL 即静图；IEND 终局
-        if (head[0] == 0x89.toByte() && head[1] == 0x50.toByte() && head[2] == 0x4E.toByte() && head[3] == 0x47.toByte()) {
-            var pos = 8
-            var sawIdat = false
-            while (pos + 8 <= len) {
-                val type = String(head, pos + 4, 4, Charsets.US_ASCII)
-                if (type == "acTL") return AnimKind.APNG
-                if (type == "IDAT") sawIdat = true
-                if (type == "IEND") return AnimKind.NONE
-                val size = ((head[pos].toInt() and 0xFF) shl 24) or ((head[pos + 1].toInt() and 0xFF) shl 16) or
-                        ((head[pos + 2].toInt() and 0xFF) shl 8) or (head[pos + 3].toInt() and 0xFF)
-                if (size < 0) break
-                pos += 12 + size
-            }
-            // 头部窗口内没扫到结论：已见 IDAT 无 acTL → 静图；否则继续读（返回 null 驱动外层续流）
-            return if (sawIdat) AnimKind.NONE else null
-        }
-        // WEBP(RIFF....WEBP)：VP8X 块 flags bit1 = Animation
-        if (head[0] == 0x52.toByte() && head[1] == 0x49.toByte() && head[2] == 0x46.toByte() && head[3] == 0x46.toByte()
-            && head[8] == 0x57.toByte() && head[9] == 0x45.toByte() && head[10] == 0x42.toByte() && head[11] == 0x50.toByte()
-        ) {
-            var pos = 12
-            while (pos + 8 <= len) {
-                val tag = String(head, pos, 4, Charsets.US_ASCII)
-                val size = (head[pos + 4].toInt() and 0xFF) or ((head[pos + 5].toInt() and 0xFF) shl 8) or
-                        ((head[pos + 6].toInt() and 0xFF) shl 16) or ((head[pos + 7].toInt() and 0xFF) shl 24)
-                when (tag) {
-                    "VP8X" -> {
-                        if (pos + 8 >= len) return null
-                        val flags = head[pos + 8].toInt()
-                        return if (flags and 0x02 != 0) AnimKind.WEBP else AnimKind.NONE
-                    }
-                    "VP8 ", "VP8L" -> return AnimKind.NONE  // 无 VP8X 的简单图必是静图
-                    "ANIM" -> return AnimKind.WEBP          // 老式动画块直判
-                }
-                if (size <= 0) break
-                pos += 8 + size + (size and 1)
-            }
-            return null
-        }
-        // JPEG 等其他格式：头部即可判非动图
-        return AnimKind.NONE
-    }
-
     /**
      * ★ v1.13 动图提速：从已读字节判定动图类型（配合 AnimPager rawCache 单次读取复用，
      *   消除 peek/load 各自全文件读的重复 IO）。逻辑与 peekAnimKind 一致。
@@ -801,21 +811,67 @@ class ArchiveEngine(private val ctx: Context) {
             if (realFile != null && realFile.exists() && realFile.length() > 0) {
                 val boundsOpts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                 BitmapFactory.decodeFile(realFile.absolutePath, boundsOpts)
-                val sampleSize = if (downsampleThreshold < Long.MAX_VALUE && boundsOpts.outWidth > 0 && boundsOpts.outHeight > 0) {
+                // ★ 动图首帧不降采样（条漫动图页按静帧显示，全分辨率观感）；OOM 降级兜底
+                val animated = runCatching { isAnimatedBytes(readHeadBytes(realFile, 64 * 1024)) }.getOrDefault(false)
+                val sampleSize = if (animated || downsampleThreshold >= Long.MAX_VALUE || boundsOpts.outWidth <= 0 || boundsOpts.outHeight <= 0) {
+                    1
+                } else {
                     calculateSampleSize(boundsOpts.outWidth, boundsOpts.outHeight, screenMax)
-                } else 1
-                val decodeOpts = BitmapFactory.Options().apply { inSampleSize = sampleSize }
-                return BitmapFactory.decodeFile(realFile.absolutePath, decodeOpts)
+                }
+                return try {
+                    BitmapFactory.decodeFile(realFile.absolutePath, BitmapFactory.Options().apply { inSampleSize = sampleSize })
+                } catch (e: OutOfMemoryError) {
+                    System.gc()
+                    try { BitmapFactory.decodeFile(realFile.absolutePath, BitmapFactory.Options().apply { inSampleSize = 2 }) } catch (_: Exception) { null }
+                }
             }
         }
         // fallback: SAF URI
         val boundsOpts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         try { ctx.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, boundsOpts) } } catch (_: Exception) {}
-        val sampleSize = if (downsampleThreshold < Long.MAX_VALUE && boundsOpts.outWidth > 0 && boundsOpts.outHeight > 0) {
+        val animated = try {
+            ctx.contentResolver.openInputStream(uri)?.use { input -> isAnimatedBytes(readHeadBytes(input, 64 * 1024)) } ?: false
+        } catch (_: Exception) { false }
+        val sampleSize = if (animated || downsampleThreshold >= Long.MAX_VALUE || boundsOpts.outWidth <= 0 || boundsOpts.outHeight <= 0) {
+            1
+        } else {
             calculateSampleSize(boundsOpts.outWidth, boundsOpts.outHeight, screenMax)
-        } else 1
+        }
         val decodeOpts = BitmapFactory.Options().apply { inSampleSize = sampleSize }
-        return try { ctx.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, decodeOpts) } } catch (_: Exception) { null }
+        return try {
+            ctx.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, decodeOpts) }
+        } catch (e: OutOfMemoryError) {
+            System.gc()
+            try {
+                ctx.contentResolver.openInputStream(uri)?.use {
+                    BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = 2 })
+                }
+            } catch (_: Exception) { null }
+        } catch (_: Exception) { null }
+    }
+
+    /** 读文件头部字节（动图嗅探用；读不满返回实际长度） */
+    private fun readHeadBytes(f: File, max: Int): ByteArray {
+        return try {
+            f.inputStream().use { input -> readHeadBytes(input, max) }
+        } catch (_: Exception) {
+            ByteArray(0)
+        }
+    }
+
+    private fun readHeadBytes(input: java.io.InputStream, max: Int): ByteArray {
+        return try {
+            val buf = ByteArray(max)
+            var off = 0
+            while (off < max) {
+                val n = input.read(buf, off, max - off)
+                if (n <= 0) break
+                off += n
+            }
+            if (off == buf.size) buf else buf.copyOf(off)
+        } catch (_: Exception) {
+            ByteArray(0)
+        }
     }
 
     fun getPageFileUri(meta: PageMeta, treeStr: String): String? {
@@ -860,7 +916,10 @@ class ArchiveEngine(private val ctx: Context) {
             val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             BitmapFactory.decodeByteArray(data, 0, data.size, bounds)
             var sample = 1
-            if (bounds.outWidth > 0 && bounds.outHeight > 0) {
+            // ★ 动图页跳过降采样：inSampleSize 不省动图解码成本、只毁首帧画质（对齐上游 animated→ORIGIN）。
+            //   全尺寸解码的 OOM 风险由下方 catch 兜底。
+            val animated = isAnimatedBytes(data)
+            if (!animated && bounds.outWidth > 0 && bounds.outHeight > 0) {
                 val px = bounds.outWidth.toLong() * bounds.outHeight.toLong()
                 while (px / (sample.toLong() * sample) > downsampleThreshold) sample *= 2
             }

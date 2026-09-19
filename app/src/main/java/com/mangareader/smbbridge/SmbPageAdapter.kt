@@ -145,12 +145,19 @@ class SmbPageAdapter(
         val screenMax = readerView?.resources?.displayMetrics?.let { maxOf(it.widthPixels, it.heightPixels) } ?: 2560
         val prefs = readerView?.context?.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE)
         val tierName = if (prefs?.contains("downsampleTier") == true) prefs.getString("downsampleTier", "STANDARD") else if (prefs?.getBoolean("forceFullDecode", false) == true) "ORIGINAL" else "STANDARD"
-        val forceFull = (tierName == "ORIGINAL") && prefs?.getBoolean("isEinkMode", false) == false
+        // ★ 动图页跳过降采样：不省解码成本只毁首帧画质（条漫动图页为静帧显示）；OOM 降级兜底
+        val forceFull = ((tierName == "ORIGINAL") && prefs?.getBoolean("isEinkMode", false) == false) ||
+            com.mangareader.viewer.ArchiveEngine.isAnimatedBytes(raw)
         if (!forceFull) {
             while (maxEdge / (sample * 2) >= screenMax * 2) sample *= 2
         }
         opts.inSampleSize = sample
-        return BitmapFactory.decodeByteArray(raw, 0, raw.size, opts)
+        return try {
+            BitmapFactory.decodeByteArray(raw, 0, raw.size, opts)
+        } catch (e: OutOfMemoryError) {
+            System.gc()
+            try { BitmapFactory.decodeByteArray(raw, 0, raw.size, BitmapFactory.Options().apply { inSampleSize = 2 }) } catch (_: Exception) { null }
+        }
     }
 
     override suspend fun close() {

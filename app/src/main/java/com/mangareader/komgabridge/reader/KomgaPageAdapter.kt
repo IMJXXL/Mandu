@@ -45,13 +45,20 @@ class KomgaPageAdapter(
         var sample = 1
         val prefs = com.mangareader.komgabridge.KomgaBridges.context.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE)
         val tierName = if (prefs.contains("downsampleTier")) prefs.getString("downsampleTier", "STANDARD") else if (prefs.getBoolean("forceFullDecode", false)) "ORIGINAL" else "STANDARD"
-        val forceFull = (tierName == "ORIGINAL") && !prefs.getBoolean("isEinkMode", false)
+        // ★ 动图页跳过降采样：不省解码成本只毁首帧画质（条漫动图页为静帧显示）；OOM 降级兜底
+        val forceFull = ((tierName == "ORIGINAL") && !prefs.getBoolean("isEinkMode", false)) ||
+            com.mangareader.viewer.ArchiveEngine.isAnimatedBytes(raw)
         if (!forceFull) {
             val maxEdge = maxOf(bounds.outWidth, bounds.outHeight)
             while (maxEdge / (sample * 2) >= 2560 * 2) sample *= 2
         }
         opts.inSampleSize = sample
-        BitmapFactory.decodeByteArray(raw, 0, raw.size, opts)
+        return@withContext try {
+            BitmapFactory.decodeByteArray(raw, 0, raw.size, opts)
+        } catch (e: OutOfMemoryError) {
+            System.gc()
+            try { BitmapFactory.decodeByteArray(raw, 0, raw.size, BitmapFactory.Options().apply { inSampleSize = 2 }) } catch (_: Exception) { null }
+        }
     }
 
     override fun onFocus(index: Int) {}
