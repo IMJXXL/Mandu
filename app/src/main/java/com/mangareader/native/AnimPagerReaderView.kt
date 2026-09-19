@@ -54,7 +54,7 @@ class AnimPagerReaderView(context: Context) : FrameLayout(context), ReaderViewDe
     private var isRtl = false
     private var verticalPager: Boolean = false
 
-    var pageBgColor: Int = android.graphics.Color.parseColor("#111111")
+    var pageBgColor: Int = android.graphics.Color.parseColor("#FFFFFF")
     var imageMarginH: Int = 0
 
     private var loadScope: CoroutineScope = CoroutineScope(Dispatchers.Default + SupervisorJob())

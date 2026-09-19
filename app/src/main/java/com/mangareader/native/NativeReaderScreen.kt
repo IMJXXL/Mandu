@@ -131,7 +131,7 @@ fun NativeReaderScreen(
     trimWhiteRatio: Float = 0.90f,
     panNavigation: Boolean = false,
     pageLayout: Int = 0,
-    pageBgColor: Int = android.graphics.Color.parseColor("#111111"),
+    pageBgColor: Int = android.graphics.Color.parseColor("#FFFFFF"),
     doublePageReverse: Boolean = false,
     doublePageSplit: Boolean = false,
     tileModeEnabled: Boolean = false,

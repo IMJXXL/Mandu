@@ -25,7 +25,7 @@ import kotlin.math.abs
 class NativeReaderView(context: Context) : SurfaceView(context), SurfaceHolder.Callback {
 
     private val drawPaint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG)
-    private val bgPaint = Paint().apply { color = Color.parseColor("#111111") }
+    private val bgPaint = Paint().apply { color = Color.parseColor("#FFFFFF") }
     private val srcRect = Rect()
     private val dstRect = RectF()
     private val zoomPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {

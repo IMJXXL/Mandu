@@ -75,7 +75,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     private var panNavigation = false
 
     private var pageLayoutMode = 0 // 0=SINGLE, 1=DOUBLE, 2=AUTO
-    var pageBgColor: Int = android.graphics.Color.parseColor("#111111")
+    var pageBgColor: Int = android.graphics.Color.parseColor("#FFFFFF")
     var imageMarginH: Int = 0
 
     private var loadScope: CoroutineScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
