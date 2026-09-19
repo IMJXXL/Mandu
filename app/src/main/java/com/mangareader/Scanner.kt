@@ -482,6 +482,23 @@ class Scanner(private val ctx: Context, private val dao: MangaDao) {
         val docId = DocumentsContract.getTreeDocumentId(uri)
         val auth = uri.authority ?: ""
         val oldCount = dao.countBooksByFolder("a:$auth|$docId|%", "d:$auth|$docId%", "z:a:$auth|$docId|%")
+        // ★ 封面新鲜度：源文件 mtime/size 与旧行不一致（文件被替换）→ 删旧封面，
+        //   preloadCovers 的 file.exists() 跳过随即失效，封面自动重新生成。
+        //   旧行无戳（0）时视为未知，不删（避免升级后首次重扫全量重生成）。
+        for (b in books) {
+            if (b.sourceMtimeMs == 0L) continue
+            try {
+                val twin = if (b.filePath.startsWith("z:")) b.filePath.removePrefix("z:").removeSuffix("//") else "z:${b.filePath}//"
+                val old = dao.getBookByPath(b.filePath) ?: dao.getBookByPath(twin) ?: continue
+                if (old.sourceMtimeMs != 0L &&
+                    (old.sourceMtimeMs != b.sourceMtimeMs || old.sourceSizeBytes != b.sourceSizeBytes)
+                ) {
+                    val cp = b.coverPath ?: old.coverPath ?: continue
+                    val md5 = java.security.MessageDigest.getInstance("MD5").digest(cp.toByteArray()).joinToString("") { "%02x".format(it) }
+                    java.io.File(ctx.filesDir, "covers/$md5.thumb").delete()
+                }
+            } catch (_: Exception) {}
+        }
         dao.rescanFolderReplace(auth, docId, books)
         cacheRealPaths(books)
         coverScope.launch { preloadCovers(books) }
@@ -549,12 +566,15 @@ class Scanner(private val ctx: Context, private val dao: MangaDao) {
             //   每 zip 只解析一遍中央目录（原每处各自 new engine 重复打开）
             val sharedEngine = com.mangareader.viewer.ArchiveEngine(ctx)
 
+            // ★ 物理根目录（可解析时）：供逐文件 stat mtime/size 记录源文件戳
+            var physicalRoot: File? = null
             // ★ 批次2：File.listFiles 快速路径——物理路径递归判断哪些子目录有漫画，
             //   SAF 遍历时跳过空目录的 findFirstCoverInFolder（省 SAF binder IPC）
             val fastDirsWithComics: Set<String>? = try {
                 val treeUri = Uri.parse(treeStr)
                 val rootFile = tryResolveTreeToFile(treeUri)
                 if (rootFile != null) {
+                    physicalRoot = rootFile
                     val t0 = System.currentTimeMillis()
                     val children = rootFile.listFiles()
                     if (children != null) {
@@ -642,10 +662,31 @@ class Scanner(private val ctx: Context, private val dao: MangaDao) {
                         if (skipDedup || !isPathDuplicate(path)) {
                             val title = name.substringBeforeLast(".").replace(Regex("[._-]"), " ").trim()
                             val coverPath = "cv:$docId|$name"
-                            if ((ext == "cbz" || ext == "zip") && sharedEngine.hasZipSubDirs("a:$docId|$ext")) {
-                                books.add(Book(title = title, filePath = "z:a:$docId|$ext//", fileType = ext, coverPath = coverPath))
+                            // ★ 源文件戳（物理文件可解析时）：mtime+size 记入 Book，
+                            //   供下次重扫复用与封面新鲜度判定
+                            val realFile = physicalRoot?.let { root ->
+                                id.substringAfter(':', "").takeIf { it.isNotEmpty() }?.let { rel ->
+                                    File(root, rel).takeIf { it.isFile }
+                                }
+                            }
+                            val srcMtime = realFile?.lastModified() ?: 0L
+                            val srcSize = realFile?.length() ?: 0L
+                            // ★ 已知 zip 复用：重扫且旧行戳与当前文件一致 → 不再重开 zip
+                            //   判子目录（大库重扫的最大开销），沿用旧行的 a:/z: 分类
+                            val oldRow = if (skipDedup) {
+                                try { dao.getBookByPath(path) ?: dao.getBookByPath("z:$path//") } catch (_: Exception) { null }
+                            } else null
+                            val stampUnchanged = oldRow != null && srcMtime != 0L &&
+                                oldRow.sourceMtimeMs == srcMtime && oldRow.sourceSizeBytes == srcSize
+                            val hasSubDirs = if (stampUnchanged) {
+                                oldRow!!.filePath.startsWith("z:")
                             } else {
-                                books.add(Book(title = title, filePath = path, fileType = ext, coverPath = coverPath))
+                                (ext == "cbz" || ext == "zip") && sharedEngine.hasZipSubDirs("a:$docId|$ext")
+                            }
+                            if ((ext == "cbz" || ext == "zip") && hasSubDirs) {
+                                books.add(Book(title = title, filePath = "z:a:$docId|$ext//", fileType = ext, coverPath = coverPath, sourceMtimeMs = srcMtime, sourceSizeBytes = srcSize))
+                            } else {
+                                books.add(Book(title = title, filePath = path, fileType = ext, coverPath = coverPath, sourceMtimeMs = srcMtime, sourceSizeBytes = srcSize))
                             }
                             found++; onFound?.invoke(found)
                         }
