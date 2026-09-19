@@ -1354,6 +1354,27 @@ class ArchiveEngine(private val ctx: Context) {
         val cached = loadCoverFromDisk(coverKey)
         if (cached != null) return cached
 
+        if (item.auth == "webdav" || item.auth == "smb") {
+            val cvPath = "cv:${item.doc}"
+            val raw = try {
+                kotlinx.coroutines.runBlocking {
+                    if (item.auth == "webdav") {
+                        com.mangareader.webdavbridge.WebDavCoverLoader.loadCoverRawWebDav(cvPath)
+                    } else {
+                        com.mangareader.smbbridge.SmbCoverLoader.loadCoverRawSmb(cvPath)
+                    }
+                }
+            } catch (_: Exception) { null }
+            if (raw != null) {
+                val bmp = decodeCoverBitmap(raw.first)
+                if (bmp != null) {
+                    saveCoverToDisk(coverKey, bmp)
+                    return bmp
+                }
+            }
+            return null
+        }
+
         val tree = makeTree(item.auth, item.tree)
 
         if (item.dir) {

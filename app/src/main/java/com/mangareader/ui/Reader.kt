@@ -279,7 +279,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
     fun restoreUi() { restoreSystemBarsSync(act) }
 
     LaunchedEffect(viewing) {
-        if (viewing) { delay(100); hideUi() }
+        if (viewing) { delay(100); hideUi() } else { restoreUi() }
     }
 
     /**
@@ -698,6 +698,62 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
         }
     }
 
+    fun convertRemoteEntriesToItems(
+        entries: List<com.hippo.ehviewer.library.BrowseEntryRemote>,
+        parentPath: String,
+        auth: String,
+    ): List<ArchiveEngine.Item>? {
+        val subEntries = entries.filter {
+            it is com.hippo.ehviewer.library.BrowseEntryRemote.ArchiveGallery ||
+            it is com.hippo.ehviewer.library.BrowseEntryRemote.Directory ||
+            it is com.hippo.ehviewer.library.BrowseEntryRemote.FolderGallery
+        }
+        if (subEntries.isEmpty()) return null
+        return subEntries.map { entry ->
+            val isDir = entry is com.hippo.ehviewer.library.BrowseEntryRemote.Directory ||
+                         entry is com.hippo.ehviewer.library.BrowseEntryRemote.FolderGallery
+            val childName = when (entry) {
+                is com.hippo.ehviewer.library.BrowseEntryRemote.Directory -> entry.relativeName
+                is com.hippo.ehviewer.library.BrowseEntryRemote.FolderGallery -> entry.relativeName
+                is com.hippo.ehviewer.library.BrowseEntryRemote.ArchiveGallery -> entry.fileName
+                else -> entry.name
+            }
+            val childPath = if (parentPath.endsWith("/")) "$parentPath$childName" else "$parentPath/$childName"
+            ArchiveEngine.Item(
+                name = entry.name,
+                auth = auth,
+                tree = "",
+                doc = childPath,
+                dir = isDir,
+                subPath = "",
+            )
+        }
+    }
+
+    suspend fun listRemoteFolderAsItems(path: String): List<ArchiveEngine.Item>? {
+        return withContext(Dispatchers.IO) {
+            try {
+                if (path.startsWith("smb:")) {
+                    val ref = com.mangareader.smbbridge.SmbPaths.parseBookPath(path) ?: return@withContext null
+                    val source = com.hippo.ehviewer.smb.SmbRepository.load(ref.serverId) ?: return@withContext null
+                    val password = com.hippo.ehviewer.smb.SmbPasswordStore.get(ref.serverId)
+                    val remoteDir = if (source.share.isBlank()) ref.fullRel else ref.rel
+                    val entries = com.hippo.ehviewer.smb.SmbGateway.listDirectory(source, password, remoteDir)
+                    convertRemoteEntriesToItems(entries, path, "smb")
+                } else if (path.startsWith("webdav:")) {
+                    val ref = com.mangareader.webdavbridge.WebDavPaths.parseBookPath(path) ?: return@withContext null
+                    val source = com.hippo.ehviewer.webdav.WebDavRepository.load(ref.serverId) ?: return@withContext null
+                    val password = com.hippo.ehviewer.webdav.WebDavPasswordStore.get(ref.serverId)
+                    val entries = com.hippo.ehviewer.webdav.WebDavGateway.listDirectory(source, password, ref.remotePath)
+                    convertRemoteEntriesToItems(entries, path, "webdav")
+                } else null
+            } catch (e: Exception) {
+                android.util.Log.w("Reader", "listRemoteFolderAsItems failed", e)
+                null
+            }
+        }
+    }
+
     /**
      * ★ §23 阅读记忆方案 — 统一"进入阅读"入口，对齐 mihon `ReaderViewModel.init` 的恢复语义。
      * 不论从书架直点 / openFolder 进子目录 / openItem 进嵌套 / switchToNext 切下一卷 / TOC 跳章 ——
@@ -760,6 +816,17 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
                 android.widget.Toast.makeText(ctx, "正在下载中，请稍候…", android.widget.Toast.LENGTH_SHORT).show()
                 viewing = false; loading = false
                 return emptyList()
+            }
+            if (b.fileType.isEmpty() && path == b.filePath) {
+                val remoteItems = listRemoteFolderAsItems(path)
+                if (remoteItems != null) {
+                    items = remoteItems
+                    navStack = listOf(path)
+                    effectiveRootPath = path
+                    viewing = false
+                    loading = false
+                    return emptyList()
+                }
             }
             return if (path.startsWith("smb:")) enterRemoteReader(b, path, targetPage, isSmb = true)
                    else enterRemoteReader(b, path, targetPage, isSmb = false)
@@ -1094,6 +1161,17 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
         loading = true; viewing = false; pageList = emptyList(); errorMsg = null
         scope.launch {
             try {
+                if (path.startsWith("smb:") || path.startsWith("webdav:")) {
+                    val remoteItems = listRemoteFolderAsItems(path)
+                    effectiveRootPath = navStack.lastOrNull() ?: path
+                    if (remoteItems != null) {
+                        items = remoteItems
+                    } else {
+                        enterReader(path)
+                    }
+                    loading = false
+                    return@launch
+                }
                 val result = withContext(Dispatchers.IO) {
                     var r = try { engine.children(path) } catch (_: Exception) { emptyList() }
                     var newTocItems = r
@@ -1147,6 +1225,21 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
     }
 
     fun openItem(item: ArchiveEngine.Item) {
+        if (item.auth == "smb" || item.auth == "webdav") {
+            navStack = navStack + item.doc
+            if (item.dir) {
+                openFolder(navStack.last())
+            } else {
+                loading = true; viewing = false; pageList = emptyList(); errorMsg = null
+                scope.launch {
+                    try {
+                        enterReader(navStack.last())
+                    } catch (e: Exception) { errorMsg = "加载失败: ${e.message}" }
+                    loading = false
+                }
+            }
+            return
+        }
         if (item.dir) {
             val currentPath = navStack.lastOrNull()
             if (currentPath?.startsWith("z:") == true) {
@@ -1191,6 +1284,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
             }
         }
     }
+
 
     suspend fun findAdjacentBook(direction: Int): com.mangareader.data.Book? {
         return try {
@@ -1728,6 +1822,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
                     viewing = viewing,
                     bgColor = bgColor,
                     isFavorite = book?.isFavorite ?: false,
+                    isHidden = book?.isHidden ?: false,
                     onBack = ::goBack,
                     onFavoriteClick = {
                         book?.let { b ->
@@ -1741,6 +1836,14 @@ fun Reader(bookId: Long, jumpPath: String? = null, back: () -> Unit, onOpenBook:
                     onRenameClick = {
                         renameInput = book?.title ?: ""
                         showRename = true
+                    },
+                    onAddToShelfClick = {
+                        book?.let { b ->
+                            scope.launch {
+                                withContext(Dispatchers.IO) { dao.setHidden(b.id, false) }
+                                book = b.copy(isHidden = false)
+                            }
+                        }
                     }
                 )
             }

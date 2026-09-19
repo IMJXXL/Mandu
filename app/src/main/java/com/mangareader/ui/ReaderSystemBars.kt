@@ -68,7 +68,11 @@ fun restoreSystemBarsSync(activity: Activity?) {
     activity?.let { a ->
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                a.window.insetsController?.show(android.view.WindowInsets.Type.systemBars())
+                val ctrl = a.window.insetsController
+                if (ctrl != null) {
+                    ctrl.systemBarsBehavior = android.view.WindowInsetsController.BEHAVIOR_DEFAULT
+                    ctrl.show(android.view.WindowInsets.Type.systemBars())
+                }
             } else {
                 @Suppress("DEPRECATION")
                 val decorView = a.window.decorView

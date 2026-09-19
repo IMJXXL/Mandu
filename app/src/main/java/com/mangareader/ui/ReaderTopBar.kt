@@ -6,6 +6,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.LibraryAdd
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -22,9 +23,11 @@ fun ReaderTopBar(
     viewing: Boolean,
     bgColor: Color,
     isFavorite: Boolean,
+    isHidden: Boolean,
     onBack: () -> Unit,
     onFavoriteClick: () -> Unit,
-    onRenameClick: () -> Unit
+    onRenameClick: () -> Unit,
+    onAddToShelfClick: () -> Unit
 ) {
     // 根据背景亮度决定文字颜色：亮底黑字，暗底白字
     val luminance = bgColor.red * 0.299f + bgColor.green * 0.587f + bgColor.blue * 0.114f
@@ -49,6 +52,11 @@ fun ReaderTopBar(
             if (viewing) {
                 IconButton(onClick = onRenameClick) {
                     Icon(Icons.Default.Edit, "重命名", tint = textColor)
+                }
+                if (isHidden) {
+                    IconButton(onClick = onAddToShelfClick) {
+                        Icon(Icons.Default.LibraryAdd, "加入书架", tint = textColor)
+                    }
                 }
                 IconButton(onClick = onFavoriteClick) {
                     Icon(
