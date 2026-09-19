@@ -66,6 +66,9 @@ class App : Application(), SingletonImageLoader.Factory {
                 // AnimatedWebPDecoder 已退注册（对齐上游 "platform animated decoder for aWEBP"）：
                 // 其 Factory 依赖 rust webp_decoder so（ENABLE_RUST_WEBP 未开启）恒返回 null，纯死配置；
                 // 动图统一走下方平台 AnimatedImageDecoder（尊重请求尺寸，不会单张封面吃满 CPU）。
+                // APNG decoder 必须在 AnimatedImageDecoder 之前：平台 ImageDecoder 不支持 APNG，
+                // 不抢先注册远端 APNG 只会显示静态首帧（对齐上游动图嗅探的 apng 分支）。
+                add(com.mangareader.coil.AnimatedApngDecoder.Factory)
                 add(AnimatedImageDecoder.Factory(false))
             }
             .build()
