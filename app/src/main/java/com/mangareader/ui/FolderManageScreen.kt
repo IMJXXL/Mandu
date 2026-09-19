@@ -39,6 +39,7 @@ import com.mangareader.smbbridge.CacheEntry
 import com.mangareader.smbbridge.CacheManagementCard
 import com.mangareader.smbbridge.SectionCard
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -214,7 +215,9 @@ fun FolderManageScreen(onBack: () -> Unit) {
             confirmButton = {
                 TextButton(onClick = {
                     scope.launch {
-                        withContext(Dispatchers.IO) {
+                        // ★ 删除链不可取消：composition scope 在用户离开页面时会被取消，
+                        //   中途取消会留下"书删了 Folder 行还在"的外键孤儿（对齐上游 removeRoot 教训）
+                        withContext(Dispatchers.IO + NonCancellable) {
                             val treeUri = android.net.Uri.parse(f.treeUri)
                             val docId = treeUri.lastPathSegment ?: ""
                             val auth = treeUri.authority ?: ""

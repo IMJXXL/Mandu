@@ -33,6 +33,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -213,14 +214,18 @@ fun WebDavServersScreen(onBack: () -> Unit, onOpenBook: ((Long) -> Unit)? = null
                     val target = s
                     deleting = null
                     scope.launch(Dispatchers.IO) {
-                        // ★ 对应清理：先按书籍清单清除该书源的磁盘缓存
-                        val src = runCatching { WebDavRepository.load(target.id) }.getOrNull()
-                        val books = runCatching { WebDavDbBridge.mangaDatabase?.mangaDao()?.getWebDavBooks(target.id) }.getOrNull().orEmpty()
-                        clearServerBookCachesWebDav(target.id, src, books)
-                        runCatching { WebDavRepository.delete(target) }
-                        WebDavDbBridge.mangaDatabase?.mangaDao()?.deleteWebDavBooks(target.id)
-                        withContext(Dispatchers.Main) {
-                            Toast.makeText(ctx, "已删除（含缓存）", Toast.LENGTH_SHORT).show()
+                        // ★ 删除链不可取消：清缓存是长 IO，用户离开页面会取消 composition scope，
+                        //   中途取消会留下"源已删/书还在"或反过来的孤儿（对齐上游 removeRoot 教训）
+                        withContext(Dispatchers.IO + NonCancellable) {
+                            // ★ 对应清理：先按书籍清单清除该书源的磁盘缓存
+                            val src = runCatching { WebDavRepository.load(target.id) }.getOrNull()
+                            val books = runCatching { WebDavDbBridge.mangaDatabase?.mangaDao()?.getWebDavBooks(target.id) }.getOrNull().orEmpty()
+                            clearServerBookCachesWebDav(target.id, src, books)
+                            runCatching { WebDavRepository.delete(target) }
+                            WebDavDbBridge.mangaDatabase?.mangaDao()?.deleteWebDavBooks(target.id)
+                            withContext(Dispatchers.Main) {
+                                Toast.makeText(ctx, "已删除（含缓存）", Toast.LENGTH_SHORT).show()
+                            }
                         }
                     }
                 }) { Text("删除", color = MaterialTheme.colorScheme.error) }
