@@ -63,7 +63,9 @@ class App : Application(), SingletonImageLoader.Factory {
                 add(com.mangareader.viewer.CoverDataKeyer)
                 add(com.mangareader.viewer.ItemCoverFetcher.Factory(engine))
                 add(com.mangareader.viewer.ItemCoverKeyer)
-                add(com.mangareader.coil.AnimatedWebPDecoder.Factory)
+                // AnimatedWebPDecoder 已退注册（对齐上游 "platform animated decoder for aWEBP"）：
+                // 其 Factory 依赖 rust webp_decoder so（ENABLE_RUST_WEBP 未开启）恒返回 null，纯死配置；
+                // 动图统一走下方平台 AnimatedImageDecoder（尊重请求尺寸，不会单张封面吃满 CPU）。
                 add(AnimatedImageDecoder.Factory(false))
             }
             .build()
