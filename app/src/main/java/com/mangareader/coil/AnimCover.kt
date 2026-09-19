@@ -45,6 +45,14 @@ object CoverAnimGateDecoder : Decoder.Factory {
     /** 动图封面帧的最长边上限：帧越小逐帧解码/上屏越便宜（显示尺寸约 300-420px） */
     const val ANIM_COVER_MAX = 512
 
+    /**
+     * ★ 封面动图总开关（2026-09-19 封存）：用户裁定全线下线恢复静态封面。
+     * 必须与 [Settings.coverAnimated] 相与——封存只改了默认值，老用户 DataStore 里
+     * 残留的 cover_animated=true 会把浏览页动图全部复活；此常量保证代码层永远关死，
+     * 重新启用时翻回 true 即可（代码全保留）。
+     */
+    const val COVER_ANIM_ENABLED = false
+
     override fun create(
         result: SourceFetchResult,
         options: Options,
@@ -53,7 +61,7 @@ object CoverAnimGateDecoder : Decoder.Factory {
         val source = result.source.source()
         return when {
             isApngSource(source) -> StaticFirstFrame(result, options)
-            isAnimatedGifOrWebP(source) && Settings.coverAnimated.value -> AnimatedCover(result, options)
+            isAnimatedGifOrWebP(source) && COVER_ANIM_ENABLED && Settings.coverAnimated.value -> AnimatedCover(result, options)
             isAnimatedGifOrWebP(source) -> StaticFirstFrame(result, options)
             else -> null
         }

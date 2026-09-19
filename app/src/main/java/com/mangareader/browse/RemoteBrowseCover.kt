@@ -57,6 +57,13 @@ import okio.Path.Companion.toPath
 import splitties.init.appCtx
 
 /**
+ * ★ 封面动图总闸（2026-09-19 封存）：与 [com.mangareader.coil.CoverAnimGateDecoder]
+ * 的硬闸常量联动——封存后老用户 DataStore 残留的 cover_animated=true 不能复活动图。
+ */
+private fun coverAnimOn(): Boolean =
+    com.mangareader.coil.CoverAnimGateDecoder.COVER_ANIM_ENABLED && Settings.coverAnimated.value
+
+/**
  * 浏览页封面（对齐上游 BrowseCover/BrowseCoverThumb，结合本项目加载器，2026-09-19）。
  *
  * 上游浏览网格的封面都是**小尺寸 JPEG 缩略图**（OriginCache/thumb 管线），静态绘制；
@@ -104,7 +111,7 @@ object RemoteBrowseCoverLoader {
         is BrowseCover.DavImage -> davImageThumb(cover.sourceId, cover.remote)
         is BrowseCover.SmbArchive -> {
             // ★ 动图封面（受 coverAnimated 门控）：书架探测的副档直接复用（同 cacheKey）
-            if (Settings.coverAnimated.value) {
+            if (coverAnimOn()) {
                 com.mangareader.viewer.CoverAnimRawCache.readRawFile("smb:" + cover.sourceId + ":" + cover.remote)
                     ?.let { return it.absolutePath.toPath() }
             }
@@ -118,7 +125,7 @@ object RemoteBrowseCoverLoader {
             )
         }
         is BrowseCover.DavArchive -> {
-            if (Settings.coverAnimated.value) {
+            if (coverAnimOn()) {
                 com.mangareader.viewer.CoverAnimRawCache.readRawFile("webdav:" + cover.sourceId + ":" + cover.remote)
                     ?.let { return it.absolutePath.toPath() }
             }
@@ -135,7 +142,7 @@ object RemoteBrowseCoverLoader {
     private suspend fun smbImageThumb(sourceId: Long, remote: String): Path? {
         // ★ 动图封面（受 coverAnimated 门控）：副档动图返回原始字节文件；关闭走静态缩略图
         val animKey = "smb:$sourceId:$remote"
-        if (Settings.coverAnimated.value) {
+        if (coverAnimOn()) {
             com.mangareader.viewer.CoverAnimRawCache.readRawFile(animKey)
                 ?.let { return it.absolutePath.toPath() }
         }
@@ -152,13 +159,13 @@ object RemoteBrowseCoverLoader {
             val bos = java.io.ByteArrayOutputStream(512 * 1024)
             SmbGateway.downloadFile(source, password, remote, bos)
             val bytes = bos.toByteArray()
-            if (Settings.coverAnimated.value && com.mangareader.viewer.ArchiveEngine.isAnimatedBytes(bytes)) {
+            if (coverAnimOn() && com.mangareader.viewer.ArchiveEngine.isAnimatedBytes(bytes)) {
                 com.mangareader.viewer.CoverAnimRawCache.writeRaw(animKey, bytes)
                 animRaw = bytes
             }
             out.write(bytes)
         }
-        if (animRaw != null && Settings.coverAnimated.value) {
+        if (animRaw != null && coverAnimOn()) {
             return com.mangareader.viewer.CoverAnimRawCache.rawFile(animKey).absolutePath.toPath()
         }
         return path
@@ -166,7 +173,7 @@ object RemoteBrowseCoverLoader {
 
     private suspend fun davImageThumb(sourceId: Long, remote: String): Path? {
         val animKey = "webdav:$sourceId:$remote"
-        if (Settings.coverAnimated.value) {
+        if (coverAnimOn()) {
             com.mangareader.viewer.CoverAnimRawCache.readRawFile(animKey)
                 ?.let { return it.absolutePath.toPath() }
         }
@@ -182,13 +189,13 @@ object RemoteBrowseCoverLoader {
             val bos = java.io.ByteArrayOutputStream(512 * 1024)
             WebDavClient.downloadFile(source, password, remote, bos)
             val bytes = bos.toByteArray()
-            if (Settings.coverAnimated.value && com.mangareader.viewer.ArchiveEngine.isAnimatedBytes(bytes)) {
+            if (coverAnimOn() && com.mangareader.viewer.ArchiveEngine.isAnimatedBytes(bytes)) {
                 com.mangareader.viewer.CoverAnimRawCache.writeRaw(animKey, bytes)
                 animRaw = bytes
             }
             out.write(bytes)
         }
-        if (animRaw != null && Settings.coverAnimated.value) {
+        if (animRaw != null && coverAnimOn()) {
             return com.mangareader.viewer.CoverAnimRawCache.rawFile(animKey).absolutePath.toPath()
         }
         return path
@@ -332,8 +339,9 @@ fun BrowseCoverThumb(
     placeholderSize: Dp = 28.dp,
 ) {
     val key = cover?.cacheKey ?: "none"
-    // 动图开关参与 key：切换后立即按新模式重取（动图副档 / 静态缩略图）
-    val animOn by Settings.coverAnimated.valueFlow().collectAsState(initial = Settings.coverAnimated.value)
+    // 动图开关参与 key：切换后立即按新模式重取（动图副档 / 静态缩略图）。
+    // ★ 2026-09-19 封存：COVER_ANIM_ENABLED 硬闸（老用户 DataStore 残留 true 也不复活）
+    val animOn = coverAnimOn()
     var thumbPath by remember(key, animOn) { mutableStateOf<Path?>(null) }
     var failed by remember(key, animOn) { mutableStateOf(false) }
     LaunchedEffect(key, animOn) {
