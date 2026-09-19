@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -75,7 +76,7 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long, Int)
     val scope = rememberCoroutineScope()
     var source by remember { mutableStateOf<SmbSourceEntity?>(null) }
     var password by remember { mutableStateOf("") }
-    var dir by remember { mutableStateOf("") }
+    var dir by rememberSaveable { mutableStateOf("") }
     var entries by remember { mutableStateOf<List<BrowseEntryRemote>>(emptyList()) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }

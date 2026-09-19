@@ -17,6 +17,7 @@ import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material3.*
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -51,7 +52,7 @@ fun SmbServersScreen(onBack: () -> Unit, onOpenBook: (Long, Int) -> Unit = { _, 
     val sources by SmbRepository.sourcesFlow().collectAsState(initial = emptyList())
 
     var editing by remember { mutableStateOf<SmbSourceEntity?>(null) }
-    var browsingId by remember { mutableStateOf<Long?>(null) }
+    var browsingId by rememberSaveable { mutableStateOf<Long?>(null) }
     var showWizard by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf<SmbSourceEntity?>(null) }
     var busyId by remember { mutableStateOf<Long?>(null) }

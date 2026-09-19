@@ -20,6 +20,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -58,8 +59,8 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?, Int) -> Unit
     // 超分队列页（全屏页，不嵌在滚动 Column 里渲染）
     var showSrQueue by remember { mutableStateOf(false) }
     // ★ SMB/WebDAV 服务器管理入口（smb_embed_lv119 任务2.4/12.5）
-    var showSmbServers by remember { mutableStateOf(false) }
-    var showWebDavServers by remember { mutableStateOf(false) }
+    var showSmbServers by rememberSaveable { mutableStateOf(false) }
+    var showWebDavServers by rememberSaveable { mutableStateOf(false) }
     var showKomgaServers by remember { mutableStateOf(false) }
     var showOpdsServers by remember { mutableStateOf(false) }
 
