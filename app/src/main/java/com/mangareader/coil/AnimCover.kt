@@ -123,7 +123,12 @@ object CoverAnimGateDecoder : Decoder.Factory {
                     }
                 }
             }
-            if (drawable is AnimatedImageDrawable) CoverAnimLimiter.register(drawable)
+            if (drawable is AnimatedImageDrawable) {
+                // registerAnimationCallback 必须在带 Looper 的线程调用（解码在 Default 工作线程）
+                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    runCatching { CoverAnimLimiter.register(drawable) }
+                }
+            }
             return DecodeResult(drawable.asImage(), true)
         }
     }

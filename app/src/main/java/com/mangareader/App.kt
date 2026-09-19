@@ -56,6 +56,13 @@ class App : Application(), SingletonImageLoader.Factory {
             })
             .fetcherCoroutineContext(Dispatchers.IO.limitedParallelism(12))
             .decoderCoroutineContext(Dispatchers.IO.limitedParallelism(3))
+            .apply {
+                // ★ 封面解码排查（2026-09-19）：coil 默认吞错误，挂上 logger 才能看到
+                //   AnimatedCover/ImageDecoder 的真实异常
+                if (com.mangareader.BuildConfig.DEBUG) {
+                    logger(coil3.util.DebugLogger())
+                }
+            }
             .serviceLoaderEnabled(false)
             .components {
 
