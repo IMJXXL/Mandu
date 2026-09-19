@@ -75,10 +75,18 @@ fun ReaderItemGrid(
 
 @Composable
 private fun ReaderItemCard(item: ArchiveEngine.Item, engine: ArchiveEngine, tap: () -> Unit) {
+    val itemCtx = LocalContext.current
+    // ★ APNG 静态门：APNG 封面解首帧（apng4android 全分辨率逐帧解码会卡网格），GIF/AWebP 正常动
+    val coverModel = remember(item.auth, item.tree, item.doc, item.subPath) {
+        coil3.request.ImageRequest.Builder(itemCtx)
+            .data(item)
+            .decoderFactory(com.mangareader.coil.ApngFirstFrameDecoder)
+            .build()
+    }
     Column(Modifier.clip(RoundedCornerShape(12.dp)).clickable(onClick = tap).shadow(4.dp, RoundedCornerShape(12.dp))) {
         Box(Modifier.fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)).background(Color(0xFF2A2A2A)), contentAlignment = Alignment.Center) {
             coil3.compose.AsyncImage(
-                model = item,
+                model = coverModel,
                 contentDescription = item.name,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop,

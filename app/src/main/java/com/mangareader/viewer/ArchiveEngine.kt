@@ -1562,6 +1562,66 @@ class ArchiveEngine(private val ctx: Context) {
         }
     }
 
+    /**
+     * ★ 子项网格动图封面（对齐上游，2026-09-19）：子项首页是动图时返回原始字节，
+     *   Coil 侧由平台 AnimatedImageDecoder 按请求尺寸播放（ItemCoverFetcher 动图优先）。
+     *   仅覆盖本地条目（z: 归档 / SAF 目录首图）；远程子项封面仍走物化 JPEG（静图，不变）。
+     *   非动图一律返回 null → 调用方回退既有位图路径。
+     */
+    fun loadItemCoverAnimatedRaw(item: Item): Pair<ByteArray, String>? {
+        if (item.auth == "webdav" || item.auth == "smb") return null
+        return try {
+            if (item.subPath.isNotEmpty()) {
+                // z: 归档子项：复用 listPages + loadPageRaw 链路取首页原始字节
+                val raw = loadItemCoverRaw("z:${item.auth}|${item.tree}|${item.doc}|${item.subPath}")
+                if (raw != null && isAnimatedBytes(raw.first)) return raw
+                if (raw != null) return null
+            }
+            if (item.dir) {
+                // SAF 目录子项：首个直接子图片 / 子归档首页为动图时返回原始字节（不递归子目录）
+                val tree = makeTree(item.auth, item.tree)
+                val child = DocumentsContract.buildDocumentUriUsingTree(tree, item.doc)
+                ctx.contentResolver.query(child, null, null, null, null)?.use { c ->
+                    val ni = c.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+                    val ii = c.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+                    while (c.moveToNext()) {
+                        val n = c.getString(ni) ?: continue
+                        val id = c.getString(ii) ?: continue
+                        val raw: ByteArray? = when {
+                            isImg(n) -> {
+                                val uri = DocumentsContract.buildDocumentUriUsingTree(tree, id)
+                                try {
+                                    ctx.contentResolver.openInputStream(uri)?.use { s ->
+                                        val buf = ByteArray(64 * 1024)
+                                        val out = java.io.ByteArrayOutputStream()
+                                        var read: Int
+                                        while (s.read(buf).also { read = it } != -1) {
+                                            out.write(buf, 0, read)
+                                        }
+                                        out.toByteArray()
+                                    }
+                                } catch (_: Exception) {
+                                    null
+                                }
+                            }
+                            isComic(n) -> {
+                                val uri = DocumentsContract.buildDocumentUriUsingTree(tree, id)
+                                try { loadFromZip(uri, 0) } catch (_: Exception) { null }
+                            }
+                            else -> null
+                        }
+                        if (raw != null && isAnimatedBytes(raw)) {
+                            return Pair(raw, guessMimeFromBytes(raw))
+                        }
+                    }
+                }
+            }
+            null
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     fun loadCoverForItem(item: Item): Bitmap? {
         val coverKey = "item:${item.auth}|${item.tree}|${item.doc}|${item.subPath}"
         val cached = loadCoverFromDisk(coverKey)

@@ -45,13 +45,20 @@ class CoverFetcher(
         if (!coverPath.startsWith("cv:") && !coverPath.startsWith("z:")) throw IllegalArgumentException("Not a cover request: $coverPath")
 
         if (coverPath.startsWith("cv:") && !coverPath.startsWith("cv:smb:") && !coverPath.startsWith("cv:webdav:") && !coverPath.startsWith("cv:komga:") && !coverPath.startsWith("cv:opds:")) {
-            val thumbBytes = withContext(Dispatchers.IO) { engine.loadCoverThumbBytes(coverPath) }
-            if (thumbBytes != null) {
-                return SourceFetchResult(
-                    source = ImageSource(source = Buffer().write(thumbBytes), fileSystem = options.fileSystem),
-                    mimeType = "image/jpeg",
-                    dataSource = DataSource.DISK,
-                )
+            // ★ 动图封面：JPEG 缩略图把首帧固化成静图 —— 封面文件是 gif/webp 时跳过缩略图快路径，
+            //   走下方 getCoverSource 原始字节 → 平台动图解码器按请求尺寸播放（对齐上游）
+            val coverName = coverPath.substringAfterLast('|', coverPath).substringAfterLast('/')
+            val lower = coverName.lowercase()
+            val maybeAnimated = lower.endsWith(".gif") || lower.endsWith(".webp")
+            if (!maybeAnimated) {
+                val thumbBytes = withContext(Dispatchers.IO) { engine.loadCoverThumbBytes(coverPath) }
+                if (thumbBytes != null) {
+                    return SourceFetchResult(
+                        source = ImageSource(source = Buffer().write(thumbBytes), fileSystem = options.fileSystem),
+                        mimeType = "image/jpeg",
+                        dataSource = DataSource.DISK,
+                    )
+                }
             }
         }
 
@@ -208,6 +215,19 @@ class ItemCoverFetcher(
     private val options: Options,
 ) : Fetcher {
     override suspend fun fetch(): FetchResult {
+        // ★ 动图封面优先（对齐上游）：子项首页是动图 → 返回原始字节，
+        //   平台 AnimatedImageDecoder 按请求尺寸播放；非动图走既有位图路径不变
+        val animRaw = withContext(coverIoDispatcher) {
+            try { engine.loadItemCoverAnimatedRaw(item) } catch (e: Exception) { null }
+        }
+        if (animRaw != null) {
+            val (bytes, mime) = animRaw
+            return SourceFetchResult(
+                source = ImageSource(source = Buffer().write(bytes), fileSystem = options.fileSystem),
+                mimeType = mime,
+                dataSource = DataSource.MEMORY,
+            )
+        }
         val bitmap = withContext(coverIoDispatcher) {
             try { engine.loadCoverForItem(item) } catch (e: Exception) { null }
         } ?: throw RuntimeException("Item cover load failed: ${item.name}")
