@@ -216,6 +216,12 @@ object ZipAsDirListing {
         val children: List<RemoteChild>,
         /** Leaf basename → listing; caller prefixes with `zipName/`. */
         val grandPeeks: Map<String, List<RemoteChild>>,
+        /**
+         * False when the CD sampler recognized a **mixed** (non-gallery) zip: no peek
+         * data was collected. The zip still expands as a fake directory (forced
+         * [DirPresence.Navigable]) but is never promoted to a gallery.
+         */
+        val classified: Boolean = true,
     )
 
     /**
@@ -228,6 +234,8 @@ object ZipAsDirListing {
         val children: List<RemoteChild>,
         val peeks: Map<String, List<RemoteChild>>,
         val grandPeeks: Map<String, List<RemoteChild>>,
+        /** Mixed (non-gallery) zips expanded as plain dirs — no peek data. */
+        val mixedZipNames: Set<String> = emptySet(),
     )
 
     /** Flat images, or exactly one wrapper folder of images — open as a gallery, not a dir. */
@@ -259,6 +267,11 @@ object ZipAsDirListing {
     }
 
     fun zipRootListingFromCd(cd: ZipCentralDirectory, innerPrefix: String = ""): ZipRootListing {
+        // ★ 混合 zip（采样判定非画廊）不做任何 peek：省掉子目录级 CD 扫描，也避免把
+        //   素材包误 promote 成画廊（对齐上游 0919 zipRootListingFromCd）
+        if (!cd.gallery) {
+            return ZipRootListing(emptyList(), emptyMap(), classified = false)
+        }
         val peek = listChildren(cd, innerPrefix)
         val leaves = peek.filter { it.isDirectory && isPromotableLeafDirName(it.name) }
         val leavesToPeek = if (leaves.size in 1..SMB_PROMOTE_MAX_LEAVES) {
@@ -291,6 +304,7 @@ object ZipAsDirListing {
         }
         val peeks = LinkedHashMap<String, List<RemoteChild>>()
         val grandPeeks = LinkedHashMap<String, List<RemoteChild>>()
+        val mixed = LinkedHashSet<String>()
         val out = ArrayList<RemoteChild>(children.size)
         for (child in children) {
             if (child.isDirectory || !isZipArchiveFileName(child.name)) {
@@ -302,13 +316,19 @@ object ZipAsDirListing {
                 out += child
                 continue
             }
+            if (!listing.classified) {
+                // 混合 zip：保持假目录外观但零 peek（进 zip 后按普通文件夹树浏览）
+                mixed.add(child.name)
+                out += child.copy(isDirectory = true)
+                continue
+            }
             peeks[child.name] = listing.children
             for ((leaf, leafPeek) in listing.grandPeeks) {
                 grandPeeks["${child.name}/$leaf"] = leafPeek
             }
             out += child.copy(isDirectory = true)
         }
-        return ZipFakeFolderExpansion(out, peeks, grandPeeks)
+        return ZipFakeFolderExpansion(out, peeks, grandPeeks, mixed)
     }
 
     /**
@@ -330,7 +350,17 @@ object ZipAsDirListing {
         grands.putAll(grandPeeks)
         grands.putAll(expansion.grandPeeks)
         val tagged = expansion.children.withHiddenFlags(peeks)
-        return classifyRemoteListingWithPeeks(currentDirName, tagged, peeks, grands)
+        val classified = classifyRemoteListingWithPeeks(currentDirName, tagged, peeks, grands)
+        if (expansion.mixedZipNames.isEmpty()) return classified
+        // 混合 zip 无 peek 数据，分类器会给出 Empty/Pending——强制 Navigable 呈现为
+        // 可进入的普通文件夹（对齐上游 mixedZipNames 强制 Navigable）
+        return classified.map { entry ->
+            if (entry is BrowseEntryRemote.Directory && entry.name in expansion.mixedZipNames) {
+                entry.copy(presence = DirPresence.Navigable)
+            } else {
+                entry
+            }
+        }
     }
 
     fun folderGalleryForZip(
@@ -707,6 +737,20 @@ object ZipAsDirListing {
         cd: ZipCentralDirectory,
         archive: BrowseEntryRemote.ArchiveGallery,
     ): List<BrowseEntryRemote> {
+        // 混合 zip：单个可进入的普通 Directory 行（不 promote 成画廊）
+        if (!cd.gallery) {
+            return listOf(
+                BrowseEntryRemote.Directory(
+                    name = archive.name,
+                    relativeName = archive.fileName,
+                    hasVideo = false,
+                    hasGallery = false,
+                    presence = DirPresence.Navigable,
+                    lastModifiedMs = archive.lastModifiedMs,
+                    hidden = archive.hidden,
+                ),
+            )
+        }
         val listing = zipRootListingFromCd(cd)
         val fake = RemoteChild(
             name = archive.fileName,

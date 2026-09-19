@@ -12,6 +12,7 @@ import com.hippo.ehviewer.library.RemoteChild
 import com.hippo.ehviewer.library.RemoteDirectorySlimPlan
 import com.hippo.ehviewer.library.SMB_PROMOTE_MAX_LEAVES
 import com.hippo.ehviewer.library.ZipAsDirListing
+import com.hippo.ehviewer.library.ZipCdParse
 import com.hippo.ehviewer.library.ZipCentralDirectory
 import com.hippo.ehviewer.library.classifyRemoteListing
 import com.hippo.ehviewer.library.classifyRemoteListingWithPeeks
@@ -583,7 +584,9 @@ object WebDavGateway {
                                 knownSize = child.size,
                                 readahead = false,
                             ).use { src ->
-                                val cd = ZipCentralDirectory.open(src) ?: return@use
+                                // ★ 采样模式：画廊 zip 读完 CD（行为同旧），混合包 100 个
+                                //   文件后中止——不再为列目录下载整张中央目录（对齐上游）
+                                val cd = ZipCentralDirectory.open(src, ZipCdParse.Parent) ?: return@use
                                 out[child.name] = ZipAsDirListing.zipRootListingFromCd(cd)
                             }
                         }
