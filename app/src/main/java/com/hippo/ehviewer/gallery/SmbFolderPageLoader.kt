@@ -172,6 +172,12 @@ suspend inline fun <T> useSmbFolderPageLoader(
                     downloadJobs.cancelOutside(sourcePages)
                 }
 
+                override fun convertDestPath(index: Int): Path = SmbCache.cachePath(source.id, remoteDir, imageFileNames[index])
+
+                override fun releaseRamPage(index: Int) {
+                    ramPages.remove(index)
+                }
+
                 private fun addReadyWaiter(index: Int, onReady: () -> Unit) {
                     readyWaiters.getOrPut(index) { CopyOnWriteArrayList() }.add(onReady)
                 }
