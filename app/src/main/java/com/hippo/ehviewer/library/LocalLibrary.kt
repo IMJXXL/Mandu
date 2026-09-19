@@ -195,6 +195,7 @@ object LocalLibrary {
             if (root.accessMode == mode) return@withIOContext
             db.libraryRootDao().updateAccessMode(rootId, mode)
             BrowseSession.invalidateLocalListing()
+            MediaStoreIndexStamp.clear(rootId)
             // Drop in-memory stack if this root is open — paths may switch SAF ↔ MediaStore.
             if (BrowseSession.localStack.any { it.rootId == rootId }) {
                 BrowseSession.localStack = emptyList()
@@ -229,6 +230,7 @@ object LocalLibrary {
             db.libraryRootDao().delete(root)
             BrowseSession.invalidateLocalListing()
             NetworkFolderIndexCache.deleteLocal(root.id)
+            MediaStoreIndexStamp.clear(root.id)
         }
     }
 
@@ -268,8 +270,8 @@ object LocalLibrary {
                         // File / media+archive mode: cheap path checks only.
                         cleanupInaccessibleForRootLocked(root)
                     } else {
-                        // MediaStore mode: index walk is cheap and refreshes the set.
-                        scanRootLocked(root)
+                        // MediaStore mode: skip full scan if index unchanged (stamp check).
+                        scanRootLocked(root, skipIfUnchanged = true)
                     }
                 }
             } finally {
@@ -394,7 +396,7 @@ object LocalLibrary {
         }
     }
 
-    private suspend fun scanRootLocked(root: LibraryRootEntity) {
+    private suspend fun scanRootLocked(root: LibraryRootEntity, skipIfUnchanged: Boolean = false) {
         if (root.role != LIBRARY_ROOT_ROLE_LIBRARY) {
             db.localGalleryDao().deleteByRootId(root.id)
             return
@@ -423,6 +425,28 @@ object LocalLibrary {
             return
         }
         val previous = db.localGalleryDao().listByRootId(root.id)
+        val msRoot = when {
+            path.isMediaStorePath() -> path
+            else -> tryConvertSafPathToMediaStore(path)
+        }
+        val canMs = msRoot != null && MediaPermissions.hasMediaAccess()
+        val mediaRelative = msRoot?.mediaStoreRelativeDir().orEmpty()
+        if (skipIfUnchanged && previous.isNotEmpty() && canMs) {
+            val stored = MediaStoreIndexStamp.load(root.id)
+            val generation = MediaStoreFs.volumeGeneration()
+            if (stored != null && stored.generationUnchanged(generation)) {
+                logcat("LocalLibrary") { "Skip unchanged MediaStore root ${root.id} (generation)" }
+                return
+            }
+            if (stored != null) {
+                val stamp = MediaStoreFs.imageIndexStamp(mediaRelative)
+                if (MediaStoreIndexStamp.shouldSkip(stored, stamp, hasGalleries = true)) {
+                    MediaStoreIndexStamp.remember(root.id, stamp)
+                    logcat("LocalLibrary") { "Skip unchanged MediaStore root ${root.id} (fingerprint)" }
+                    return
+                }
+            }
+        }
         val galleries = LibraryScanner.scan(root.id, path, rootDisplayName = root.displayName)
         // Drop results if the root was removed while scanning (belt-and-suspenders with mutex).
         if (db.libraryRootDao().load(root.id) == null) {
@@ -431,10 +455,14 @@ object LocalLibrary {
         }
         val toWrite = preserveArchivePageCountsIfDisabled(previous, galleries)
         logcat("LocalLibrary") { "Scanned root ${root.id} (${root.displayName}): ${toWrite.size} galleries" }
-        runCatching {
+        val wrote = runCatching {
             db.localGalleryDao().replaceForRoot(root.id, toWrite)
         }.onFailure {
             logcat(it)
+        }.isSuccess
+        if (wrote && canMs) {
+            val stamp = MediaStoreFs.imageIndexStamp(mediaRelative)
+            MediaStoreIndexStamp.remember(root.id, stamp)
         }
     }
 

@@ -322,6 +322,10 @@ object Settings : DataStorePreferences(null) {
      * See [com.hippo.ehviewer.library.BrowseModePersist].
      */
     val persistBrowseModes = stringSetPref("persist_browse_modes", emptySet())
+
+    /** MediaStore fingerprint per library root for startup scan skip. See [MediaStoreIndexStamp]. */
+    val libraryMediaStoreStamps = stringSetPref("library_ms_stamps", emptySet())
+
     val showVoteStatus = boolPref("show_vote_status", false)
     val showComments = boolPref("show_gallery_comments", true)
     val commentThreshold = intPref("comment_threshold", -100)

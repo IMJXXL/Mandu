@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.provider.DocumentsContract
 import android.provider.MediaStore
 import androidx.core.content.ContextCompat
@@ -496,5 +497,58 @@ object MediaStoreFs {
         val fileChildren = files.values.toMutableList()
             .also { it.sortWith { a, b -> naturalCompare(a.name, b.name) } }
         return dirChildren + fileChildren
+    }
+
+    fun imageIndexStamp(relativeDir: String): MediaStoreIndexStamp {
+        val generation = volumeGeneration()
+        if (!MediaPermissions.hasImagePermission()) {
+            return MediaStoreIndexStamp(generation, 0, 0L, 0L)
+        }
+        val root = relativeDir.replace('\\', '/').trim('/')
+        val selection: String?
+        val selectionArgs: Array<String>?
+        if (root.isEmpty()) {
+            selection = null
+            selectionArgs = null
+        } else {
+            selection =
+                "${MediaStore.MediaColumns.RELATIVE_PATH} = ? OR " +
+                "${MediaStore.MediaColumns.RELATIVE_PATH} = ? OR " +
+                "${MediaStore.MediaColumns.RELATIVE_PATH} LIKE ?"
+            selectionArgs = arrayOf("$root/", root, "$root/%")
+        }
+        var count = 0
+        var maxDate = 0L
+        var idXor = 0L
+        runCatching {
+            appCtx.contentResolver.query(
+                MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL),
+                arrayOf(MediaStore.MediaColumns._ID, MediaStore.MediaColumns.DATE_MODIFIED),
+                selection,
+                selectionArgs,
+                null,
+            )?.use { c ->
+                val idIdx = c.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
+                val modIdx = c.getColumnIndexOrThrow(MediaStore.MediaColumns.DATE_MODIFIED)
+                while (c.moveToNext()) {
+                    count++
+                    idXor = idXor xor c.getLong(idIdx)
+                    if (!c.isNull(modIdx)) {
+                        val date = c.getLong(modIdx).coerceAtLeast(0L)
+                        if (date > maxDate) maxDate = date
+                    }
+                }
+            }
+        }
+        return MediaStoreIndexStamp(generation, count, maxDate, idXor)
+    }
+
+    fun volumeGeneration(): Long {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            return MediaStoreIndexStamp.GENERATION_UNKNOWN
+        }
+        return runCatching {
+            MediaStore.getGeneration(appCtx, MediaStore.VOLUME_EXTERNAL)
+        }.getOrDefault(MediaStoreIndexStamp.GENERATION_UNKNOWN)
     }
 }
