@@ -195,12 +195,14 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
         }
     }
 
-    // ★ §24 二代：条漫下"不播动图，但需检测一下数量让 Reader.kt 弹切翻页提示"
-    //   保留最小信号：每个被 bind 的页异步 peek 一次；累计 ≥3 动图时回调 onAnimDetected
-    //   不持有 Drawable、不 start，纯 peek 计数（内存轻量）
+    // ★ E4（对齐上游可见性启停机制）：条漫现在直接播放动图——apng4android 引擎与
+    //   翻页模式同源；可见=start、不可见=显式 stop（onViewAttached/Detached），邻居页
+    //   不再空转解码。注册表上限 6，超限停帧移除最旧（防爆内存）。
     private data class AnimFlag(val pageIdx: Int, val kind: AnimKind)
     @Volatile private var pageAnimFlags: List<AnimFlag> = emptyList()
     @Volatile private var animatedCount: Int = 0
+    private val webtoonAnimDrawables = java.util.concurrent.ConcurrentHashMap<Int, android.graphics.drawable.Drawable>()
+    private val animInflight = java.util.Collections.newSetFromMap(java.util.concurrent.ConcurrentHashMap<Int, Boolean>())
     /** §24 二代 hook：检测到 ≥3 张动图卷时回调 Reader.kt 弹"条漫下只能静态看，是否切翻页"对话框 */
     var onAnimDetected: ((animatedCount: Int) -> Unit)? = null
 
@@ -728,10 +730,13 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
         srEventJob?.cancel(); srEventJob = null
         // ★ v1.11 P0：清掉挂起的 settleWindow 与 pending 释放机制（view 销毁/切视图后不再执行）
         cancelPendingRelease()
-        // ★ §24 二代：释放信号状态（条漫下只检测不播，无 Drawable 需 stop；清计数防跨卷泄漏）
+        // ★ §24 二代：释放信号状态（E4 起条漫播放动图，Drawable 一并停帧清空）
         pageAnimFlags = emptyList()
         animatedCount = 0
         onAnimDetected = null
+        webtoonAnimDrawables.values.forEach { (it as? android.graphics.drawable.Animatable)?.stop() }
+        webtoonAnimDrawables.clear()
+        animInflight.clear()
 
         loadScope.coroutineContext.cancelChildren()
         inflightLoads.clear() // ★ 白屏工单任务3
@@ -879,8 +884,23 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
                                      else h.itemView.resources.displayMetrics.heightPixels
                 loadPageAsync(pos)
             }
-            // ★ §24 二代：每页异步 peek 一次（仅检测，不播）；≥3 张动图时触发 onAnimDetected 弹"切翻页"提示
+            // ★ §24 二代：每页异步 peek 一次；确认动图则拉起播放（E4）
             ensureAnimKindAsync(pos)
+            if (pageAnimFlags.firstOrNull { it.pageIdx == pos }?.kind?.let { it != AnimKind.NONE } == true) {
+                loadAnimAsync(pos)
+            }
+        }
+
+        /** 可见性启停：attach=可见 → start */
+        override fun onViewAttachedToWindow(h: PageVH) {
+            super.onViewAttachedToWindow(h)
+            (h.iv.drawable as? android.graphics.drawable.Animatable)?.start()
+        }
+
+        /** 可见性启停：detach=不可见 → 显式 stop（对齐上游 0919 修 ~200% CPU 空转的机制） */
+        override fun onViewDetachedFromWindow(h: PageVH) {
+            (h.iv.drawable as? android.graphics.drawable.Animatable)?.stop()
+            super.onViewDetachedFromWindow(h)
         }
 
         /** §24 二代：单页 peek 仅用于 let Reader.kt 知道本卷含动图，不在条漫内播，无 Drawable */
@@ -890,17 +910,106 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
             if (pageAnimFlags.any { it.pageIdx == pos }) return  // 已 peek 过
             loadScope.launch {
                 val kind = withContext(Dispatchers.IO) {
-                    try { e.peekAnimKindFast(treePath, meta) } catch (_: Exception) { AnimKind.NONE }
+                    try {
+                        val supply = remotePageSupply
+                        if (supply != null) {
+                            // 远端页：ArchiveEngine 守卫拦 smb:/webdav:，改用供给字节嗅探
+                            // （loadPageRaw 落 SmbCache 页缓存，位图加载本来就取过同一份）
+                            val raw = supply.loadPageRaw(pos) ?: return@withContext AnimKind.NONE
+                            e.peekAnimKindFromRaw(raw)
+                        } else {
+                            e.peekAnimKindFast(treePath, meta)
+                        }
+                    } catch (_: Exception) { AnimKind.NONE }
                 }
                 if (pageAnimFlags.any { it.pageIdx == pos }) return@launch  // 防 race
                 pageAnimFlags = pageAnimFlags + AnimFlag(pos, kind)
                 if (kind != AnimKind.NONE) {
                     animatedCount++
-                    if (animatedCount >= com.mangareader.ui.ReaderParams.ANIM_PROMPT_THRESHOLD) {
-                        onAnimDetected?.invoke(animatedCount)
-                    }
+                    loadAnimAsync(pos)  // ★ 立即拉起播放（原"≥3 张弹切翻页"提示随播放能力取消）
                 }
             }
+        }
+
+        /**
+         * E4：动图页 drawable 加载（单飞）。mmap 真实文件优先，否则原始字节；
+         * 完成后若该页仍被绑定则 setAnim + start，未绑定则停帧等 attach 再启。
+         */
+        private fun loadAnimAsync(pos: Int) {
+            if (animInflight.contains(pos) || webtoonAnimDrawables.containsKey(pos)) return
+            val kind = pageAnimFlags.firstOrNull { it.pageIdx == pos }?.kind ?: return
+            if (kind == AnimKind.NONE) return
+            if (!animInflight.add(pos)) return
+            loadScope.launch {
+                try {
+                    val meta = pageList.getOrNull(pos) ?: return@launch
+                    val drawable = withContext(Dispatchers.IO) {
+                        try {
+                            val supply = remotePageSupply
+                            val realFile = if (supply == null) engine?.getRealFileForPage(treePath, meta) else null
+                            if (realFile != null && realFile.exists() && realFile.length() > 0) {
+                                makeAnimDrawable(ByteArray(0), kind, realFile)
+                            } else {
+                                val raw = if (supply != null) {
+                                    runCatching { supply.loadPageRaw(pos) }.getOrNull()
+                                } else {
+                                    runCatching { engine?.loadPageRaw(meta, treePath) }.getOrNull()
+                                }
+                                raw?.let { makeAnimDrawable(it, kind) }
+                            }
+                        } catch (_: Exception) { null }
+                    }
+                    if (drawable == null) return@launch  // 构造失败：静图首帧兜底已在位
+                    synchronized(webtoonAnimDrawables) {
+                        webtoonAnimDrawables[pos] = drawable
+                        while (webtoonAnimDrawables.size > 6) {
+                            val eldest = webtoonAnimDrawables.entries.iterator()
+                            if (!eldest.hasNext()) break
+                            val e = eldest.next()
+                            (e.value as? android.graphics.drawable.Animatable)?.stop()
+                            eldest.remove()
+                        }
+                    }
+                    recycler.post {
+                        val h = recycler.findViewHolderForAdapterPosition(pos) as? PageVH
+                        if (h != null && h.isBound && h.boundPosition == pos) {
+                            h.setAnim(drawable)
+                        } else {
+                            (drawable as? android.graphics.drawable.Animatable)?.stop()
+                        }
+                    }
+                } finally {
+                    animInflight.remove(pos)
+                }
+            }
+        }
+
+        /** 与 PagerReaderView.makeAnimDrawable 同源：apng4android 直造，绕开 Coil 包装；mmap 优先。 */
+        private fun makeAnimDrawable(raw: ByteArray, kind: AnimKind, file: java.io.File? = null): android.graphics.drawable.Drawable? {
+            return try {
+                val buffer = if (file != null && file.exists() && file.length() > 0) {
+                    try {
+                        java.io.RandomAccessFile(file, "r").use { raf ->
+                            raf.channel.map(java.nio.channels.FileChannel.MapMode.READ_ONLY, 0, file.length())
+                        }
+                    } catch (_: Exception) { java.nio.ByteBuffer.wrap(raw) }
+                } else {
+                    java.nio.ByteBuffer.wrap(raw)
+                }
+                val loader = object : com.github.penfeizhou.animation.loader.ByteBufferLoader() {
+                    override fun getByteBuffer(): java.nio.ByteBuffer = buffer
+                }
+                val drawable = when (kind) {
+                    AnimKind.WEBP -> com.github.penfeizhou.animation.webp.WebPDrawable(loader)
+                    AnimKind.APNG -> com.github.penfeizhou.animation.apng.APNGDrawable(loader)
+                    AnimKind.GIF -> com.github.penfeizhou.animation.gif.GifDrawable(loader)
+                    AnimKind.NONE -> return null
+                }
+                // 主线程同步触发 header 解析拿 intrinsic 尺寸（adjustViewBounds 依赖）
+                try { drawable.intrinsicWidth } catch (_: Throwable) {}
+                try { drawable.intrinsicHeight } catch (_: Throwable) {}
+                drawable
+            } catch (_: Throwable) { null }
         }
         override fun onViewRecycled(h: PageVH) { h.clear() }
     }
@@ -927,8 +1036,20 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
             ssv.setImage(com.davemorrissey.labs.subscaleview.ImageSource.uri(itemView.context, android.net.Uri.fromFile(file)))
             hasImage = true
         }
+        fun setAnim(d: android.graphics.drawable.Drawable) {
+            iv.minimumHeight = 0
+            heldBitmap = null
+            ssiv?.visibility = android.view.View.GONE
+            iv.visibility = android.view.View.VISIBLE
+            iv.setImageDrawable(d)
+            hasImage = true
+            (d as? android.graphics.drawable.Animatable)?.start()
+        }
+
         fun clear() {
-            heldBitmap = null; hasImage = false; isBound = false; boundPosition = -1; iv.setImageBitmap(null)
+            heldBitmap = null; hasImage = false; isBound = false; boundPosition = -1
+            (iv.drawable as? android.graphics.drawable.Animatable)?.stop()
+            iv.setImageDrawable(null)
             try { ssiv?.resetScaleAndCenter() } catch (_: Exception) {}
             ssiv?.visibility = android.view.View.GONE
             iv.visibility = android.view.View.VISIBLE
