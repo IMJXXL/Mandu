@@ -80,7 +80,7 @@ private fun ReaderItemCard(item: ArchiveEngine.Item, engine: ArchiveEngine, tap:
     val coverModel = remember(item.auth, item.tree, item.doc, item.subPath) {
         coil3.request.ImageRequest.Builder(itemCtx)
             .data(item)
-            .decoderFactory(com.mangareader.coil.ApngFirstFrameDecoder)
+            .decoderFactory(com.mangareader.coil.CoverAnimGateDecoder)
             .build()
     }
     Column(Modifier.clip(RoundedCornerShape(12.dp)).clickable(onClick = tap).shadow(4.dp, RoundedCornerShape(12.dp))) {

@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.BrokenImage
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
@@ -302,8 +301,9 @@ fun BrowseCoverThumb(
                 contentScale = ContentScale.Crop,
             )
         } else {
+            // 取不到封面（未获取/失败）一律显示该行类型的占位图标——与书架一致，不显示破图
             Icon(
-                if (failed) Icons.Default.BrokenImage else placeholder,
+                placeholder,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                 modifier = Modifier.size(placeholderSize),
@@ -326,6 +326,7 @@ fun BrowseItemGridCell(
     onClick: () -> Unit,
     onLongClick: (() -> Unit)?,
     modifier: Modifier = Modifier,
+    placeholder: ImageVector = Icons.Default.PhotoLibrary,
 ) {
     Column(
         modifier
@@ -343,6 +344,7 @@ fun BrowseItemGridCell(
             BrowseCoverThumb(
                 modifier = Modifier.fillMaxSize(),
                 cover = cover,
+                placeholder = placeholder,
                 placeholderSize = 36.dp,
             )
             if (showCheckbox) {

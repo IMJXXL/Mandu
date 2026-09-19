@@ -562,10 +562,18 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -> U
                                 is BrowseEntryRemote.VideoFile -> null
                                 else -> e.name.substringAfterLast('.', "").uppercase()
                             }
+                            val gridPlaceholder = when (e) {
+                                is BrowseEntryRemote.Directory, is BrowseEntryRemote.FolderGallery -> Icons.Default.Folder
+                                is BrowseEntryRemote.ArchiveGallery ->
+                                    if (SmbUnsupportedFormatHandler.isUnsupported(e.fileName.substringAfterLast('.', ""))) Icons.Default.Download
+                                    else Icons.Default.InsertDriveFile
+                                else -> Icons.Default.InsertDriveFile
+                            }
                             com.mangareader.browse.BrowseItemGridCell(
                                 name = e.name,
                                 cover = source?.id?.let { sid -> BrowseCovers.smbCover(sid, dir, e) },
                                 subtitle = subtitle,
+                                placeholder = gridPlaceholder,
                                 isSelected = isSelected,
                                 showCheckbox = isMultiSelectMode && remotePath != null,
                                 onClick = {
@@ -820,10 +828,16 @@ private fun FileRow(
             Spacer(Modifier.width(8.dp))
         }
         if (cover != null) {
-            BrowseCoverThumb(modifier = Modifier.size(56.dp), cover = cover)
+            BrowseCoverThumb(modifier = Modifier.size(56.dp), cover = cover, placeholder = Icons.Default.InsertDriveFile)
             Spacer(Modifier.width(12.dp))
         } else {
-            Icon(Icons.Default.InsertDriveFile, null, tint = MaterialTheme.colorScheme.primary)
+            // 不支持格式（mobi/azw3 等）→ 书架同款"需下载"占位；其余普通文件图标
+            val unsupported = SmbUnsupportedFormatHandler.isUnsupported(ext)
+            Icon(
+                if (unsupported) Icons.Default.Download else Icons.Default.InsertDriveFile,
+                null,
+                tint = if (unsupported) MaterialTheme.colorScheme.primary.copy(alpha = 0.5f) else MaterialTheme.colorScheme.primary,
+            )
             Spacer(Modifier.width(12.dp))
         }
         Column(Modifier.weight(1f)) {
