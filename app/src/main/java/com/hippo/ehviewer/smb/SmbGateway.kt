@@ -5,6 +5,7 @@ import com.ehviewer.core.database.model.SmbSourceEntity
 import com.ehviewer.core.util.logcat
 import com.ehviewer.core.util.withIOContext
 import com.hierynomus.msdtyp.AccessMask
+import com.hierynomus.msfscc.fileinformation.FileIdBothDirectoryInformation
 import com.hierynomus.mserref.NtStatus
 import com.hierynomus.msfscc.FileAttributes
 import com.hierynomus.mssmb2.SMB2CreateDisposition
@@ -17,11 +18,13 @@ import com.hierynomus.smbj.auth.AuthenticationContext
 import com.hierynomus.smbj.connection.Connection
 import com.hierynomus.smbj.session.Session
 import com.hierynomus.smbj.share.DiskShare
+import com.hierynomus.smbj.share.Directory
 import com.hippo.ehviewer.Settings
 import com.hippo.ehviewer.library.BrowseEntryRemote
 import com.hippo.ehviewer.library.BrowseSession
 import com.hippo.ehviewer.library.DirPresence
 import com.hippo.ehviewer.library.FolderGalleryIndex
+import com.hippo.ehviewer.library.FolderSearch
 import com.hippo.ehviewer.library.NetworkFolderIndexCache
 import com.hippo.ehviewer.library.RemoteFileStat
 import com.hippo.ehviewer.library.RemoteChild
@@ -2588,9 +2591,12 @@ object SmbGateway {
      * SMB QUERY_DIRECTORY → [RemoteChild] with MS-FSCC attributes from
      * FileIdBothDirectoryInformation (size, lastWrite, HIDDEN, READONLY, DIRECTORY).
      */
-    private fun listChildren(share: DiskShare, path: String): List<RemoteChild> = share.list(path.ifEmpty { "" }).mapNotNull { info ->
+    private fun listChildren(share: DiskShare, path: String): List<RemoteChild> =
+        share.list(path.ifEmpty { "" }).mapNotNull { info -> remoteChildFromDirInfo(info) }
+
+    private fun remoteChildFromDirInfo(info: FileIdBothDirectoryInformation): RemoteChild? {
         val name = info.fileName
-        if (name == "." || name == "..") return@mapNotNull null
+        if (name == "." || name == "..") return null
         val attrs = info.fileAttributes
         val isDir = attrs and FileAttributes.FILE_ATTRIBUTE_DIRECTORY.value != 0L
         val hidden = attrs and FileAttributes.FILE_ATTRIBUTE_HIDDEN.value != 0L ||
@@ -2598,7 +2604,7 @@ object SmbGateway {
         val readOnly = attrs and FileAttributes.FILE_ATTRIBUTE_READONLY.value != 0L
         val size = if (isDir) 0L else info.endOfFile.coerceAtLeast(0L)
         val lastModifiedMs = runCatching { info.lastWriteTime.toEpochMillis() }.getOrDefault(0L).coerceAtLeast(0L)
-        RemoteChild(
+        return RemoteChild(
             name = name,
             isDirectory = isDir,
             path = name,
@@ -2607,6 +2613,200 @@ object SmbGateway {
             hidden = hidden,
             readOnly = readOnly,
         )
+    }
+
+    /**
+     * ★ E1 深搜（对齐上游 0919）：SMB2 QUERY_DIRECTORY 服务端搜索（FIND/SEARCH pattern）
+     *   + BFS 逐层走子目录，命中边搜边经 [onHits] 流式回调。用户取消时立即关闭目录
+     *   句柄中止服务器端 QUERY_DIRECTORY（queryDirectoryCancellable）。
+     *   zip-as-dir 打开时在 zip 内部按中央目录搜索，不下载数据。
+     */
+    suspend fun searchDirectory(
+        source: SmbSourceEntity,
+        password: String,
+        relativeDir: String,
+        query: String,
+        includeHidden: Boolean = false,
+        onHits: suspend (List<BrowseEntryRemote>) -> Unit = {},
+    ): List<BrowseEntryRemote> {
+        val q = query.trim()
+        if (q.isEmpty()) return emptyList()
+        if (Settings.browseZipAsDir.value) {
+            ZipAsDirListing.splitZipBrowsePath(relativeDir)?.let { (zipRel, inner) ->
+                return searchZipVirtualDirectory(source, password, zipRel, inner, q, includeHidden, onHits)
+            }
+        }
+        val pattern = FolderSearch.smbSearchPattern(q)
+        return withIOContext {
+            val zipAsDir = Settings.browseZipAsDir.value
+            val hits = java.util.Collections.synchronizedList(ArrayList<BrowseEntryRemote>())
+            val seen = HashSet<String>()
+            val queue = java.util.ArrayDeque<String>()
+            queue.add(relativeDir)
+            val parallelism = maxConcurrentOpsPerHost().coerceAtLeast(1)
+            val gate = Semaphore(parallelism)
+            var visited = 0
+            val job = coroutineContext[Job]
+            while (queue.isNotEmpty() &&
+                hits.size < FolderSearch.MAX_RESULTS &&
+                visited < FolderSearch.MAX_DIRS
+            ) {
+                job?.ensureActive()
+                val batch = ArrayList<String>()
+                while (queue.isNotEmpty() &&
+                    batch.size < parallelism &&
+                    visited + batch.size < FolderSearch.MAX_DIRS
+                ) {
+                    val dir = queue.removeFirst()
+                    if (seen.add(dir)) batch += dir
+                }
+                if (batch.isEmpty()) break
+                visited += batch.size
+                val nextDirs = java.util.concurrent.ConcurrentLinkedQueue<String>()
+                kotlinx.coroutines.coroutineScope {
+                    for (dir in batch) {
+                        launch {
+                            gate.withPermit {
+                                val matchAll = FolderSearch.isMatchAllPattern(pattern)
+                                val found = listSearchChildren(source, password, dir, pattern, job)
+                                for (child in found) {
+                                    if (hits.size >= FolderSearch.MAX_RESULTS) return@withPermit
+                                    if (!includeHidden && (child.hidden || isDotHiddenName(child.name))) continue
+                                    if (isProtectedSystemName(child.name)) continue
+                                    val childRel = if (dir.isEmpty()) child.name else FolderSearch.joinRelative(dir, child.name)
+                                    val rel = FolderSearch.relativeFromRoot(relativeDir, childRel)
+                                    val hit = FolderSearch.hitFromChild(rel, child, zipAsDir)
+                                    synchronized(hits) {
+                                        if (hits.size < FolderSearch.MAX_RESULTS) hits += hit
+                                    }
+                                }
+                                if (!matchAll) {
+                                    // 非 * 全匹配：用普通列出拿子目录继续 BFS
+                                    val dirs = listSearchChildren(source, password, dir, "*", job)
+                                    for (child in dirs) {
+                                        if (!child.isDirectory) continue
+                                        if (!includeHidden && (child.hidden || isDotHiddenName(child.name))) continue
+                                        if (isProtectedSystemName(child.name)) continue
+                                        nextDirs += if (dir.isEmpty()) child.name else FolderSearch.joinRelative(dir, child.name)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                onHits(ArrayList(hits))
+                if (hits.size >= FolderSearch.MAX_RESULTS) break
+                queue.addAll(nextDirs)
+            }
+            val sorted = hits.sortedWith { a, b -> naturalCompare(a.name, b.name) }
+            onHits(sorted)
+            sorted
+        }
+    }
+
+    private suspend fun searchZipVirtualDirectory(
+        source: SmbSourceEntity,
+        password: String,
+        zipRel: String,
+        inner: String,
+        q: String,
+        includeHidden: Boolean,
+        onHits: suspend (List<BrowseEntryRemote>) -> Unit,
+    ): List<BrowseEntryRemote> = withIOContext {
+        runCatching {
+            SmbArchiveByteSource(source, password, zipRel, pipeline = false, yieldable = true, readahead = false).use { src ->
+                val cd = ZipCentralDirectory.open(src, ZipCdParse.Enter) ?: return@use emptyList()
+                FolderSearch.searchZipCentralDirectory(cd, inner, q, includeHidden, onHits)
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    private suspend fun listSearchChildren(
+        source: SmbSourceEntity,
+        password: String,
+        relativeDir: String,
+        pattern: String,
+        job: Job?,
+    ): List<RemoteChild> = try {
+        if (isServerRootSource(source) && relativeDir.isBlank()) {
+            listShareRootEntries(source, password).mapNotNull { entry ->
+                val name = (entry as? BrowseEntryRemote.Directory)?.relativeName ?: entry.name
+                val keep = FolderSearch.isMatchAllPattern(pattern) || FolderSearch.globMatches(name, pattern)
+                if (keep) RemoteChild(name = name, isDirectory = true) else null
+            }
+        } else {
+            val loc = resolveLocation(source, relativeDir)
+            withShare(source, password, ShareOp.List, loc.share) { share ->
+                queryDirectoryCancellable(share, loc.pathInShare, pattern, job)
+            }
+        }
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
+    } catch (e: SMBApiException) {
+        if (job?.isCancelled == true) throw kotlinx.coroutines.CancellationException("SMB search cancelled", e)
+        if (isIgnorableListError(e) ||
+            e.status == NtStatus.STATUS_NO_SUCH_FILE ||
+            e.status == NtStatus.STATUS_NO_MORE_FILES
+        ) {
+            emptyList()
+        } else {
+            throw e
+        }
+    } catch (e: Throwable) {
+        if (job?.isCancelled == true) throw kotlinx.coroutines.CancellationException("SMB search cancelled", e)
+        logcat { "SmbGateway: search skip dir=$relativeDir ${e.message}" }
+        emptyList()
+    }
+
+    /**
+     * SMB2 QUERY_DIRECTORY with [pattern]（FIND/SEARCH）。[job] 取消时立即关闭目录
+     * 句柄，让服务器中止在途搜索而不是跑完整个列表。
+     */
+    private fun queryDirectoryCancellable(
+        share: DiskShare,
+        path: String,
+        pattern: String,
+        job: Job?,
+    ): List<RemoteChild> {
+        val active = AtomicReference<com.hierynomus.smbj.share.Directory?>(null)
+        val cancelClose = job?.closeFileOnCancelling(active)
+        try {
+            val directory = share.openDirectory(
+                path.ifEmpty { "" },
+                EnumSet.of(
+                    AccessMask.FILE_LIST_DIRECTORY,
+                    AccessMask.FILE_READ_ATTRIBUTES,
+                    AccessMask.FILE_READ_EA,
+                ),
+                null,
+                SMB2ShareAccess.ALL,
+                SMB2CreateDisposition.FILE_OPEN,
+                null,
+            )
+            armSmbFileForCancelClose(job, active, directory)
+            job?.ensureActive()
+            val infos = directory.list(FileIdBothDirectoryInformation::class.java, pattern)
+            return infos.mapNotNull { info -> remoteChildFromDirInfo(info) }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            if (job?.isCancelled == true) throw kotlinx.coroutines.CancellationException("SMB search cancelled", e)
+            if (e is SMBApiException &&
+                (
+                    isIgnorableListError(e) ||
+                        e.status == NtStatus.STATUS_NO_SUCH_FILE ||
+                        e.status == NtStatus.STATUS_NO_MORE_FILES ||
+                        e.status == NtStatus.STATUS_CANCELLED
+                    )
+            ) {
+                return emptyList()
+            }
+            throw e
+        } finally {
+            cancelClose?.dispose()
+            val opened = active.getAndSet(null)
+            if (opened != null) runCatching { opened.close() }
+        }
     }
 
     /**

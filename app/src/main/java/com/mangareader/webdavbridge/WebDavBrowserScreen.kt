@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.InsertDriveFile
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -62,10 +63,47 @@ fun WebDavBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -
     var longPressedName by remember { mutableStateOf("") }
     var longPressedRemote by remember { mutableStateOf<String?>(null) }
 
+    // ★ E1 深搜：提交式搜索，命中边搜边出；离开搜索态即清结果
+    var searchMode by remember { mutableStateOf(false) }
+    var searchSubmitted by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+    var searchHits by remember { mutableStateOf<List<BrowseEntryRemote>>(emptyList()) }
+    var searching by remember { mutableStateOf(false) }
+    var searchDir by remember { mutableStateOf("") }
+
+    fun exitSearch() {
+        searchMode = false
+        searchSubmitted = false
+        searchHits = emptyList()
+        searchQuery = ""
+    }
+
+    fun runSearch() {
+        val src = source ?: return
+        val q = searchQuery.trim()
+        if (q.isEmpty()) return
+        scope.launch {
+            searching = true
+            searchHits = emptyList()
+            searchDir = dir
+            searchSubmitted = true
+            try {
+                WebDavGateway.searchDirectory(src, password, dir, q) { partial -> searchHits = partial }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (_: Throwable) {
+            } finally {
+                searching = false
+            }
+        }
+    }
+
     BackHandler {
         if (isMultiSelectMode) {
             isMultiSelectMode = false
             selectedRemotes = emptySet()
+        } else if (searchMode) {
+            exitSearch()
         } else if (dir.isNotEmpty()) {
             dir = dir.substringBeforeLast('/', "")
         } else {
@@ -282,6 +320,9 @@ fun WebDavBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -
                     }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
                 },
                 actions = {
+                    IconButton(onClick = {
+                        if (searchMode) exitSearch() else searchMode = true
+                    }) { Icon(Icons.Default.Search, "搜索") }
                     if (isMultiSelectMode) {
                         IconButton(onClick = {
                             isMultiSelectMode = false
@@ -324,7 +365,96 @@ fun WebDavBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long) -
         },
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
-            when {
+            if (searchMode) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        placeholder = { Text("搜索当前目录及子目录", fontSize = 13.sp) },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(onClick = { runSearch() }, enabled = searchQuery.isNotBlank() && !searching) {
+                        Text("搜索")
+                    }
+                }
+            }
+            if (searchMode && searchSubmitted) {
+                if (searching && searchHits.isEmpty()) {
+                    Text(
+                        "正在搜索…",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                    )
+                }
+                Text(
+                    "「${searchQuery.trim()}」· ${searchHits.size} 个结果（上限 500）",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                )
+                LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
+                    items(searchHits) { h ->
+                        val hitExt = h.name.substringAfterLast('.', "").lowercase()
+                        Row(
+                            Modifier.fillMaxWidth()
+                                .combinedClickable(
+                                    onClick = {
+                                        when (h) {
+                                            is BrowseEntryRemote.Directory -> {
+                                                val target = listOf(searchDir, h.relativeName).filter { it.isNotEmpty() }.joinToString("/")
+                                                exitSearch()
+                                                dir = target
+                                            }
+                                            is BrowseEntryRemote.ArchiveGallery -> {
+                                                val remote = listOf(searchDir, h.parentRelativeName, h.fileName).filter { it.isNotEmpty() }.joinToString("/")
+                                                exitSearch()
+                                                addArchive(remote, h.name, hitExt)
+                                            }
+                                            is BrowseEntryRemote.FolderGallery -> {
+                                                val zipSeg = h.relativeName.substringBefore('/')
+                                                val target = listOf(searchDir, zipSeg).filter { it.isNotEmpty() }.joinToString("/")
+                                                exitSearch()
+                                                dir = target
+                                            }
+                                            else -> Unit
+                                        }
+                                    },
+                                )
+                                .padding(horizontal = 16.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                when (h) {
+                                    is BrowseEntryRemote.Directory -> Icons.Default.Folder
+                                    is BrowseEntryRemote.FolderGallery -> Icons.Default.Folder
+                                    else -> Icons.Default.InsertDriveFile
+                                },
+                                null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp),
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Column {
+                                Text(h.name, fontSize = 14.sp, maxLines = 1)
+                                val rel = when (h) {
+                                    is BrowseEntryRemote.Directory -> h.relativeName
+                                    is BrowseEntryRemote.ArchiveGallery -> h.parentRelativeName
+                                    is BrowseEntryRemote.FolderGallery -> h.relativeName
+                                    else -> ""
+                                }
+                                if (rel.isNotEmpty()) {
+                                    Text(rel, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                                }
+                            }
+                        }
+                    }
+                }
+            } else when {
                 error != null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(error!!, color = MaterialTheme.colorScheme.error)
