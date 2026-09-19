@@ -898,7 +898,7 @@ private fun BookCard(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, isS
                     if (b.source == "komga") android.util.Log.i("CoverFetch", "BookCard komga coverPath=${b.coverPath} title=${b.title}")
                     val coverRequest = remember(b.coverPath, decodePx) {
                         coil3.request.ImageRequest.Builder(ctx)
-                            .data(com.mangareader.viewer.CoverData(b.coverPath))
+                            .data(com.mangareader.viewer.CoverData(b.coverPath, dynOn = true))
                             .coverThumb(
                                 decodePx,
                                 memoryKey = "cover:${b.id}@${b.coverPath}",
@@ -1012,7 +1012,7 @@ private fun BookListRow(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, 
                     b.coverPath != null -> {
                         val coverRequest = remember(b.coverPath, decodePx) {
                             coil3.request.ImageRequest.Builder(ctx)
-                                .data(com.mangareader.viewer.CoverData(b.coverPath))
+                                .data(com.mangareader.viewer.CoverData(b.coverPath, dynOn = true))
                                 .coverThumb(decodePx, memoryKey = "cover:${b.id}@${b.coverPath}", diskKey = "${b.coverPath}")
                                 .decoderFactory(com.mangareader.coil.ApngFirstFrameDecoder)
                                 .build()

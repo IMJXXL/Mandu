@@ -45,21 +45,9 @@ class CoverFetcher(
         if (!coverPath.startsWith("cv:") && !coverPath.startsWith("z:")) throw IllegalArgumentException("Not a cover request: $coverPath")
 
         if (coverPath.startsWith("cv:") && !coverPath.startsWith("cv:smb:") && !coverPath.startsWith("cv:webdav:") && !coverPath.startsWith("cv:komga:") && !coverPath.startsWith("cv:opds:")) {
-            // ★ 动图封面：JPEG 缩略图把首帧固化成静图 —— 封面文件是 gif/webp 时跳过缩略图快路径，
-            //   走下方 getCoverSource 原始字节 → 平台动图解码器按请求尺寸播放（对齐上游）
-            val coverName = coverPath.substringAfterLast('|', coverPath).substringAfterLast('/')
-            val lower = coverName.lowercase()
-            val maybeAnimated = lower.endsWith(".gif") || lower.endsWith(".webp")
-            if (!maybeAnimated) {
-                val thumbBytes = withContext(Dispatchers.IO) { engine.loadCoverThumbBytes(coverPath) }
-                if (thumbBytes != null) {
-                    return SourceFetchResult(
-                        source = ImageSource(source = Buffer().write(thumbBytes), fileSystem = options.fileSystem),
-                        mimeType = "image/jpeg",
-                        dataSource = DataSource.DISK,
-                    )
-                }
-            }
+            // ★ 动图封面（2026-09-19）：本地封面一律先走原始字节路径（getCoverSource /
+            // loadCoverRaw，见下方）—— JPEG 缩略图会把动图首帧固化成静图，只留给
+            // 无原始字节路径的格式（pdf/mobi）兜底
         }
 
         if (coverPath.startsWith("cv:opds:")) {
@@ -180,6 +168,16 @@ class CoverFetcher(
             )
         }
         android.util.Log.w("CoverFetch", "raw null, fallback to Bitmap for $coverPath")
+
+        // ★ JPEG 缩略图兜底（pdf/mobi 等无原始字节路径的静态格式；动图路径已在上方返回）
+        val thumbBytes = withContext(Dispatchers.IO) { engine.loadCoverThumbBytes(coverPath) }
+        if (thumbBytes != null) {
+            return SourceFetchResult(
+                source = ImageSource(source = Buffer().write(thumbBytes), fileSystem = options.fileSystem),
+                mimeType = "image/jpeg",
+                dataSource = DataSource.DISK,
+            )
+        }
 
         // fallback：mobi/pdf 等无法返回原始字节的格式，用 Bitmap → PNG
         val bitmap: Bitmap? = withContext(coverIoDispatcher) {

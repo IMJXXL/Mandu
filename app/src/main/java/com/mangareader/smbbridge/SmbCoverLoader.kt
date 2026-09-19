@@ -5,6 +5,8 @@ import com.hippo.ehviewer.library.CoverEnsureResult
 import com.hippo.ehviewer.library.ReadAheadArchiveByteSource
 import com.hippo.ehviewer.library.ZipAsDirListing
 import com.hippo.ehviewer.library.isDocumentFileName
+import com.hippo.ehviewer.library.isTarArchiveFileName
+import com.hippo.ehviewer.library.isZipArchiveFileName
 import com.hippo.ehviewer.library.isSolidArchiveFileName
 import com.hippo.ehviewer.smb.SmbArchiveByteSource
 import com.hippo.ehviewer.smb.SmbCache
@@ -72,7 +74,7 @@ object SmbCoverLoader {
         val mutex = dedup.getOrPut(coverPath) { Mutex() }
         try {
             mutex.withLock {
-                loadCoverByArchiveCache(ref) ?: loadCoverByTransientSession(ref)
+                loadCoverByArchiveCache(ref, wantRaw) ?: loadCoverByTransientSession(ref, wantRaw)
             }
         } catch (e: CancellationException) {
             throw e
@@ -85,7 +87,7 @@ object SmbCoverLoader {
     /**
      * 归档/文档封面：[ArchiveCoverCache] 轻量路径。文件夹书返回 null（由 transient session 兜底）。
      */
-    private suspend fun loadCoverByArchiveCache(ref: SmbBookRef): Pair<ByteArray, String>? {
+    private suspend fun loadCoverByArchiveCache(ref: SmbBookRef, wantRaw: Boolean): Pair<ByteArray, String>? {
         if (ref.ext.isEmpty()) return null
         val source = SmbRepository.load(ref.serverId) ?: return null
         val password = try { SmbPasswordStore.get(source.id) } catch (_: Throwable) { "" }
@@ -95,6 +97,25 @@ object SmbCoverLoader {
         val remote = if (zipSplit != null && zipSplit.second.isNotEmpty()) zipSplit.first else remoteRaw
         val cacheKey = "smb:${source.id}:$remote"
         val name = remote.substringAfterLast('/').substringAfterLast('\\')
+
+        // ★ 动图首页分流（wantRaw=true）：副档动图 → 原始字节（Coil 平台解码按请求尺寸
+        //   播放）；探测确认静图 → 标记后走既有 JPEG 物化路径。每封面至多探测一次。
+        if (wantRaw && !com.mangareader.viewer.CoverAnimRawCache.isStatic(cacheKey)) {
+            com.mangareader.viewer.CoverAnimRawCache.readRaw(cacheKey)
+                ?.let { return Pair(it, com.mangareader.viewer.CoverAnimRawCache.mimeOf(it)) }
+            val probeable = isZipArchiveFileName(name) || isTarArchiveFileName(name) || isSolidArchiveFileName(name)
+            if (probeable) {
+                fetchFirstPageRaw(ref)?.let { raw ->
+                    if (com.mangareader.viewer.ArchiveEngine.isAnimatedBytes(raw)) {
+                        com.mangareader.viewer.CoverAnimRawCache.writeRaw(cacheKey, raw)
+                        return Pair(raw, com.mangareader.viewer.CoverAnimRawCache.mimeOf(raw))
+                    }
+                    com.mangareader.viewer.CoverAnimRawCache.markStatic(cacheKey)
+                }
+            } else {
+                com.mangareader.viewer.CoverAnimRawCache.markStatic(cacheKey)
+            }
+        }
 
         val diskHit = ArchiveCoverCache.tryDiskCover(cacheKey)
         if (diskHit != null) return readJpegBytes(diskHit)
@@ -133,8 +154,21 @@ object SmbCoverLoader {
      * 文件夹书封面（ext 为空）：临时会话列目录取首图。
      * 归档格式理论上不应走到这里（[loadCoverByArchiveCache] 已处理），但作为兜底保留。
      */
-    private suspend fun loadCoverByTransientSession(ref: SmbBookRef): Pair<ByteArray, String>? {
+    private suspend fun loadCoverByTransientSession(ref: SmbBookRef, wantRaw: Boolean): Pair<ByteArray, String>? {
         val remoteFile = ref.fullRel.substringBefore(':')
+        // ★ 动图首页分流（wantRaw=true，文件夹书）：同归档分支
+        val animKey = "smb:${ref.serverId}:$remoteFile"
+        if (wantRaw && !com.mangareader.viewer.CoverAnimRawCache.isStatic(animKey)) {
+            com.mangareader.viewer.CoverAnimRawCache.readRaw(animKey)
+                ?.let { return Pair(it, com.mangareader.viewer.CoverAnimRawCache.mimeOf(it)) }
+            fetchFirstPageRaw(ref)?.let { raw ->
+                if (com.mangareader.viewer.ArchiveEngine.isAnimatedBytes(raw)) {
+                    com.mangareader.viewer.CoverAnimRawCache.writeRaw(animKey, raw)
+                    return Pair(raw, com.mangareader.viewer.CoverAnimRawCache.mimeOf(raw))
+                }
+                com.mangareader.viewer.CoverAnimRawCache.markStatic(animKey)
+            }
+        }
         val cached = SmbCache.thumbCachePath(ref.serverId, remoteFile)
         if (SmbCache.isCachedOnDisk(cached)) {
             return cached.readBytesOrNull()?.let { Pair(it, mimeForExt(ref.ext)) }
@@ -148,6 +182,19 @@ object SmbCoverLoader {
             SmbCache.ensureBrowseThumb(ref.serverId, remoteFile) { out -> out.write(raw) }
         }
         return Pair(raw, mimeForExt(ref.ext))
+    }
+
+    /**
+     * 临时会话取第一页原始字节（动图探测共用）；失败返回 null 不标记，下次重试。
+     */
+    private suspend fun fetchFirstPageRaw(ref: SmbBookRef): ByteArray? = try {
+        SmbCache.withBrowseThumbFetchSlot {
+            SmbBookRouter.openTransient(ref) { _, adapter -> adapter.loadPageRaw(0) }
+        }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: Throwable) {
+        null
     }
 
     private fun readJpegBytes(path: Path): Pair<ByteArray, String>? {

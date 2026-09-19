@@ -6,6 +6,8 @@ import com.hippo.ehviewer.library.ReadAheadArchiveByteSource
 import com.hippo.ehviewer.library.ZipAsDirListing
 import com.hippo.ehviewer.library.isDocumentFileName
 import com.hippo.ehviewer.library.isSolidArchiveFileName
+import com.hippo.ehviewer.library.isTarArchiveFileName
+import com.hippo.ehviewer.library.isZipArchiveFileName
 import com.hippo.ehviewer.webdav.WebDavArchiveByteSource
 import com.hippo.ehviewer.webdav.WebDavCache
 import com.hippo.ehviewer.webdav.WebDavPasswordStore
@@ -71,7 +73,7 @@ object WebDavCoverLoader {
         val mutex = dedup.getOrPut(coverPath) { Mutex() }
         try {
             mutex.withLock {
-                loadCoverByArchiveCache(ref) ?: loadCoverByTransientSession(ref)
+                loadCoverByArchiveCache(ref, wantRaw) ?: loadCoverByTransientSession(ref, wantRaw)
             }
         } catch (e: CancellationException) {
             throw e
@@ -81,7 +83,7 @@ object WebDavCoverLoader {
         }
     }
 
-    private suspend fun loadCoverByArchiveCache(ref: WebDavBookRef): Pair<ByteArray, String>? {
+    private suspend fun loadCoverByArchiveCache(ref: WebDavBookRef, wantRaw: Boolean): Pair<ByteArray, String>? {
         if (ref.ext.isEmpty()) return null
         val source = WebDavRepository.load(ref.serverId) ?: return null
         val password = try { WebDavPasswordStore.get(source.id) } catch (_: Throwable) { "" }
@@ -91,6 +93,24 @@ object WebDavCoverLoader {
         val remote = if (zipSplit != null && zipSplit.second.isNotEmpty()) zipSplit.first else remoteRaw
         val cacheKey = "webdav:${source.id}:$remote"
         val name = remote.substringAfterLast('/').substringAfterLast('\\')
+
+        // ★ 动图首页分流（wantRaw=true）：动图 → 原始字节；静图 → 既有 JPEG 物化
+        if (wantRaw && !com.mangareader.viewer.CoverAnimRawCache.isStatic(cacheKey)) {
+            com.mangareader.viewer.CoverAnimRawCache.readRaw(cacheKey)
+                ?.let { return Pair(it, com.mangareader.viewer.CoverAnimRawCache.mimeOf(it)) }
+            val probeable = isZipArchiveFileName(name) || isTarArchiveFileName(name) || isSolidArchiveFileName(name)
+            if (probeable) {
+                fetchFirstPageRaw(ref)?.let { raw ->
+                    if (com.mangareader.viewer.ArchiveEngine.isAnimatedBytes(raw)) {
+                        com.mangareader.viewer.CoverAnimRawCache.writeRaw(cacheKey, raw)
+                        return Pair(raw, com.mangareader.viewer.CoverAnimRawCache.mimeOf(raw))
+                    }
+                    com.mangareader.viewer.CoverAnimRawCache.markStatic(cacheKey)
+                }
+            } else {
+                com.mangareader.viewer.CoverAnimRawCache.markStatic(cacheKey)
+            }
+        }
 
         val diskHit = ArchiveCoverCache.tryDiskCover(cacheKey)
         if (diskHit != null) return readJpegBytes(diskHit)
@@ -123,8 +143,21 @@ object WebDavCoverLoader {
         }
     }
 
-    private suspend fun loadCoverByTransientSession(ref: WebDavBookRef): Pair<ByteArray, String>? {
+    private suspend fun loadCoverByTransientSession(ref: WebDavBookRef, wantRaw: Boolean): Pair<ByteArray, String>? {
         val remoteFile = ref.remotePath.substringBefore(':')
+        // ★ 动图首页分流（wantRaw=true，文件夹书）：同归档分支
+        val animKey = "webdav:${ref.serverId}:$remoteFile"
+        if (wantRaw && !com.mangareader.viewer.CoverAnimRawCache.isStatic(animKey)) {
+            com.mangareader.viewer.CoverAnimRawCache.readRaw(animKey)
+                ?.let { return Pair(it, com.mangareader.viewer.CoverAnimRawCache.mimeOf(it)) }
+            fetchFirstPageRaw(ref)?.let { raw ->
+                if (com.mangareader.viewer.ArchiveEngine.isAnimatedBytes(raw)) {
+                    com.mangareader.viewer.CoverAnimRawCache.writeRaw(animKey, raw)
+                    return Pair(raw, com.mangareader.viewer.CoverAnimRawCache.mimeOf(raw))
+                }
+                com.mangareader.viewer.CoverAnimRawCache.markStatic(animKey)
+            }
+        }
         val cached = WebDavCache.thumbCachePath(ref.serverId, remoteFile)
         if (WebDavCache.isCachedOnDisk(cached)) {
             return cached.readBytesOrNull()?.let { Pair(it, mimeForExt(ref.ext)) }
@@ -138,6 +171,19 @@ object WebDavCoverLoader {
             WebDavCache.ensureBrowseThumb(ref.serverId, remoteFile) { out -> out.write(raw) }
         }
         return Pair(raw, mimeForExt(ref.ext))
+    }
+
+    /**
+     * 临时会话取第一页原始字节（动图探测共用）；失败返回 null 不标记，下次重试。
+     */
+    private suspend fun fetchFirstPageRaw(ref: WebDavBookRef): ByteArray? = try {
+        WebDavCache.withBrowseThumbFetchSlot {
+            WebDavBookRouter.openTransient(ref) { _, adapter -> adapter.loadPageRaw(0) }
+        }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: Throwable) {
+        null
     }
 
     private fun readJpegBytes(path: Path): Pair<ByteArray, String>? {
