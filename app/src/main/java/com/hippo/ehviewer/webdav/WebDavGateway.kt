@@ -629,7 +629,7 @@ object WebDavGateway {
                                 knownSize = child.size,
                                 readahead = false,
                             ).use { src ->
-                                val cd = ZipCentralDirectory.open(src, ZipCdParse.Parent) ?: return@use
+                                val cd = ZipCentralDirectory.open(src) ?: return@use
                                 out[child.name] = ZipAsDirListing.zipRootListingFromCd(cd)
                                 val added = ZipAsDirListing.parentListingInteriors(cd, child.name)
                                 interiors.putAll(added)
