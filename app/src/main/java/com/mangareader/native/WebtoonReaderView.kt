@@ -304,12 +304,12 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
         val f = lm.findFirstVisibleItemPosition()
         val l = lm.findLastVisibleItemPosition()
         if (f == RecyclerView.NO_POSITION) return
-        val cy = height / 2; var best = f; var bd = Int.MAX_VALUE
-        for (i in f..l) {
+        var best = RecyclerView.NO_POSITION
+        for (i in l downTo f) {
             val v = lm.findViewByPosition(i) ?: continue
-            val d = abs((v.top + v.bottom) / 2 - cy)
-            if (d < bd) { bd = d; best = i }
+            if (v.bottom <= height || v.top < 0) { best = i; break }
         }
+        if (best == RecyclerView.NO_POSITION) best = l
         if (best in pageList.indices && best != currentPage) {
             currentPage = best; onPageChanged?.invoke(currentPage)
             // ★ N1 条漫到底哨兵：滚到最后一页即章末（竖读无方向歧义）

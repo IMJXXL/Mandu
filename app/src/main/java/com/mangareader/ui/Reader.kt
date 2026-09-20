@@ -1173,6 +1173,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             try {
                 if (path.startsWith("smb:") || path.startsWith("webdav:")) {
                     val remoteItems = listRemoteFolderAsItems(path)
+                    android.util.Log.d("ReaderToc", "path=$path remote items=${remoteItems?.size}")
                     effectiveRootPath = navStack.lastOrNull() ?: path
                     if (remoteItems != null) {
                         items = remoteItems
@@ -1209,10 +1210,11 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                     } else emptyList()
                     Triple(newTocItems, r, pages)
                 }
+                android.util.Log.d("ReaderToc", "path=$path children=${result.second.size} pages=${result.third.size}")
                 val zCount = navStack.count { it.startsWith("z:") }
-                if (zCount <= 1 && result.first.isNotEmpty()) {
-                    tocItems = result.first
-                }
+                val tocUpdated = zCount <= 1 && result.first.isNotEmpty()
+                if (tocUpdated) tocItems = result.first
+                android.util.Log.d("ReaderToc", "zCount=$zCount tocUpdated=$tocUpdated size=${if (tocUpdated) result.first.size else tocItems.size} reason=${if (zCount > 1) "zCount>1" else if (result.first.isEmpty()) "childrenEmpty" else "ok"}")
                 val childItems = result.second
                 val pages = result.third
                 effectiveRootPath = navStack.lastOrNull() ?: path
@@ -1220,8 +1222,11 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                 if (items.isEmpty()) {
                     // ★ §23 统一走 enterReader 读 reading_progress 恢复 cur（pages 仅作空判，enterReader 内会复读 listPages）
                     val chapPath = effectiveRootPath
-                    if (pages.isNotEmpty()) enterReader(chapPath)
-                    else {
+                    if (pages.isNotEmpty()) {
+                        android.util.Log.d("ReaderToc", "children empty pages=${pages.size} -> enterReader")
+                        enterReader(chapPath)
+                    } else {
+                        android.util.Log.d("ReaderToc", "children empty pages=${pages.size} -> showFileMissingDialog")
                         // ★ ④ 修复：openFolder 进入子目录 child 列空且 listPages 失败 → 同样走兜底 dialog，
                         //   不进 viewing=true 死态（原代码会落"没有内容"分支无 UI 出口）
                         missingFilePath = chapPath
@@ -1608,6 +1613,11 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                     // ★ 214122 日志修复：直跳进章必须同时装配章节清单——否则 tocItems 为空，
                     //   "下一章/上一章"跌落到文件夹级切到隔壁书（AdjBook 实锤目标=downloads）
                     if (filePath.startsWith("d:")) {
+                        val toc = withContext(Dispatchers.IO) {
+                            try { engine.children(filePath) } catch (_: Exception) { emptyList() }
+                        }
+                        if (toc.isNotEmpty()) tocItems = toc
+                    } else if (filePath.startsWith("z:")) {
                         val toc = withContext(Dispatchers.IO) {
                             try { engine.children(filePath) } catch (_: Exception) { emptyList() }
                         }

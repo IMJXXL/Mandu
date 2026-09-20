@@ -531,7 +531,10 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
             val lr = lastReading
             if (!isMultiSelect && !globalHide && homeContinueOn && lr != null) {
                 Surface(
-                    onClick = { openBookThrottled(lr.bookId, lr.path) },
+                    onClick = {
+                        android.util.Log.d("HomeContinue", "bookId=${lr.bookId} path=${lr.path} updatedAt=${lr.updatedAt}")
+                        openBookThrottled(lr.bookId, lr.path)
+                    },
                     shape = RoundedCornerShape(20.dp),
                     color = MaterialTheme.colorScheme.primaryContainer,
                     contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
