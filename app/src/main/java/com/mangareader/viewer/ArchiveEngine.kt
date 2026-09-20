@@ -1085,12 +1085,21 @@ class ArchiveEngine(private val ctx: Context) {
             } else {
                 // 全尺寸解码（≤6M px），保持原始清晰度
                 BitmapFactory.decodeByteArray(data, 0, data.size)
+            }.also { bmp ->
+                if (bmp == null) {
+                    val magic = data.take(4).joinToString("") { "%02X".format(it) }
+                    e(TAG, "decodeBitmap NULL bytes=${data.size} bounds=${bounds.outWidth}x${bounds.outHeight} sample=$sample animated=$animated magic=$magic")
+                }
             }
         } catch (e: OutOfMemoryError) {
+            e(TAG, "decodeBitmap OOM bytes=${data.size} err=${e.message}")
             System.gc()
             try {
                 BitmapFactory.decodeByteArray(data, 0, data.size, BitmapFactory.Options().apply { inSampleSize = 2 })
-            } catch (_: Exception) { null }
+            } catch (e2: Throwable) {
+                e(TAG, "decodeBitmap OOM retry FAIL ${e2::class.java.simpleName}: ${e2.message}")
+                null
+            }
         } catch (e: Exception) {
             Log.e(TAG, "decode: ${e.message}")
             try { BitmapFactory.decodeByteArray(data, 0, data.size) } catch (_: Exception) { null }

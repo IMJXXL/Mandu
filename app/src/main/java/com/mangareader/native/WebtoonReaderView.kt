@@ -585,11 +585,13 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
             if (tileModeEnabled) {
                 val tileFile = obtainTileFile(idx)
                 if (tileFile != null) {
+                    ArchiveEngine.d("WebtoonRV", "tile OK idx=$idx file=${tileFile.length()}B")
                     tileFileCache[idx] = tileFile
                     recycler.post { adapter?.notifyItemChanged(idx, "ld") }
                     onResult?.invoke(null)
                     return@launch
                 }
+                ArchiveEngine.d("WebtoonRV", "tile MISS idx=$idx -> fallback decode")
             }
             val bmp = withContext(Dispatchers.IO) {
                 var result: Bitmap? = null
@@ -606,6 +608,9 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
                 result
             }
             var processed = processBitmap(bmp)
+            if (processed == null) {
+                ArchiveEngine.w("WebtoonRV", "loadPage FAIL idx=$idx bmpNull=${bmp == null} tile=$tileModeEnabled src=${meta.source}")
+            }
             if (processed != null) {
                 // 超分：命中缓存直接换成超分图；未命中先显示原图、后台异步超分
                 // （完成走订阅→injectUpscaledBitmap；另有 pollForResult 轮询兜底防事件丢失）
@@ -699,6 +704,8 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
                     val processed = processBitmap(bmp)
                     synchronized(bitmapCache) { bitmapCache.put(idx, processed ?: bmp) }
                     recycler.post { adapter?.notifyItemChanged(idx, "ld") }
+                } else {
+                    ArchiveEngine.w("WebtoonRV", "preload FAIL idx=$idx src=${pageList.getOrNull(idx)?.source}")
                 }
             }
         }
