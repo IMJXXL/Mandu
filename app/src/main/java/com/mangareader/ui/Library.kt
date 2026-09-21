@@ -114,7 +114,9 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
         )
     }
     var sortAsc by remember { mutableStateOf(prefs.getBoolean("library_sort_asc", false)) }
-    var filter by remember { mutableStateOf(FilterMode.ALL) }
+    var filter by remember {
+        mutableStateOf(try { FilterMode.valueOf(prefs.getString("library_filter", FilterMode.ALL.name)!!) } catch (_: Exception) { FilterMode.ALL })
+    }
 
     val configuration = LocalConfiguration.current
     val isTablet = configuration.smallestScreenWidthDp >= 600
@@ -604,6 +606,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                     val f = FilterMode.entries[i]
                     FilterChip(selected = filter == f && selectedShelfId == null, onClick = {
                         filter = f
+                        prefs.edit().putString("library_filter", f.name).apply()
                         selectedShelfId = null
                         selectedShelfName = ""
                     }, label = { Text(f.label, fontSize = 13.sp) })
@@ -618,6 +621,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                             selectedShelfId = shelf.id
                             selectedShelfName = shelf.name
                             filter = FilterMode.ALL
+                            prefs.edit().putString("library_filter", FilterMode.ALL.name).apply()
                         }
                     }, label = { Text(shelf.name, fontSize = 13.sp) },
                         leadingIcon = { Icon(Icons.Default.Book, null, Modifier.size(16.dp)) }
