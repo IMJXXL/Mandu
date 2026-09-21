@@ -1490,7 +1490,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         val curSubPath = extractSubPathFromNav()
         if (tocItems.size > 1) {
             val curIdx = tocItems.indexOfFirst { it.subPath == curSubPath }
-            val nextIdx = if (curIdx == -1) 1 else curIdx + 1
+            val nextIdx = if (curIdx == -1) 0 else curIdx + 1
             if (nextIdx < tocItems.size) {
                 switchTargetName = tocItems[nextIdx].name
                 switchTargetPath = tocItems[nextIdx].subPath

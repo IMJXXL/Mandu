@@ -345,7 +345,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     //   首版按 byteCount 计重——位图 recycle 后 byteCount 归 0，LruCache 内部计重失配，
     //   evictAll 时抛 "sizeOf() is reporting inconsistent results!" 闪退；常量计重永不失配。
     //   单页内存上限由 F3.2 解码闸（≤6M px ≈ 24MB）兜底，8 张最坏 ~192MB，远好于原来无上限。
-    private val bitmapCache = object : android.util.LruCache<Int, Bitmap>(8) {
+    private val bitmapCache = object : android.util.LruCache<Int, Bitmap>(12) {
         override fun sizeOf(key: Int, value: Bitmap): Int = 1
     }
 

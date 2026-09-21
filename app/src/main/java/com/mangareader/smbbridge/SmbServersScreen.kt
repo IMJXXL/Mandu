@@ -75,7 +75,7 @@ fun SmbServersScreen(onBack: () -> Unit, onOpenBook: (Long, Int) -> Unit = { _, 
     }
 
     if (showWizard) {
-        SmbAddWizardScreen(onBack = { showWizard = false }, onSaved = { showWizard = false }, initial = editing)
+        SmbAddWizardScreen(onBack = { showWizard = false; editing = null }, onSaved = { showWizard = false }, initial = editing)
         return
     }
 

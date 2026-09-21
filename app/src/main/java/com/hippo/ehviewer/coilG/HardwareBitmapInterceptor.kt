@@ -57,7 +57,7 @@ object HardwareBitmapInterceptor : Interceptor {
     }
 
     /**
-     * @return new HARDWARE bitmap (caller owns; original recycled), or null if no upgrade
+     * @return new HARDWARE bitmap (caller owns), or null if no upgrade
      */
     private fun tryUpgradeToHardware(bitmap: Bitmap, request: ImageRequest): Bitmap? {
         if (bitmap.config == Bitmap.Config.HARDWARE) return null

@@ -24,6 +24,11 @@ object OpdsConstants {
         "application/x-7z-compressed",
         "application/epub+zip",
         "application/pdf",
+        "application/x-mobipocket-ebook",
+        "application/x-mobi",
+        "application*azw3",
+        "application/x-kf8",
+        "application/x-kfx",
     )
 
     const val LARGE_FILE_WARN_BYTES = 200L * 1024 * 1024

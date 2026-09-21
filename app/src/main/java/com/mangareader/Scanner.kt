@@ -800,7 +800,8 @@ class Scanner(private val ctx: Context, private val dao: MangaDao) {
     private fun String.isComic() = lowercase().let {
         it.endsWith(".cbz") || it.endsWith(".zip") || it.endsWith(".pdf") || it.endsWith(".epub") ||
                 it.endsWith(".mobi") || it.endsWith(".azw") || it.endsWith(".azw3") ||
-                it.endsWith(".cbr") || it.endsWith(".rar") || it.endsWith(".cb7") || it.endsWith(".7z")
+                it.endsWith(".cbr") || it.endsWith(".rar") || it.endsWith(".cb7") || it.endsWith(".7z") ||
+                it.endsWith(".tar") || it.endsWith(".cbt")
     }
 
     /**

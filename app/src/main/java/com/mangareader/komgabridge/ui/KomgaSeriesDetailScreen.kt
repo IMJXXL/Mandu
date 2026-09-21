@@ -66,7 +66,7 @@ fun KomgaSeriesDetailScreen(
         try {
             val s = withContext(Dispatchers.IO) { apiClient.getSeriesDetail(seriesId) }
             series = s
-            val result = withContext(Dispatchers.IO) { apiClient.getSeriesBooks(seriesId, page = 0, size = 200) }
+            val result = withContext(Dispatchers.IO) { apiClient.getSeriesBooks(seriesId, page = 0, size = 5000) }
             books = result.content
             withContext(Dispatchers.IO) {
                 val dao = KomgaBridges.database.mangaDao()

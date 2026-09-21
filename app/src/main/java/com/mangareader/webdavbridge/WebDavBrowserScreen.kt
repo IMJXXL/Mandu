@@ -417,15 +417,17 @@ fun WebDavBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long, I
                     }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
                 },
                 actions = {
-                    IconButton(onClick = { Settings.browseListMode.value = !listMode }) {
-                        Icon(
-                            if (listMode) Icons.Default.GridView else Icons.Default.ViewList,
-                            if (listMode) "切换网格" else "切换列表",
-                        )
+                    if (!isMultiSelectMode) {
+                        IconButton(onClick = { Settings.browseListMode.value = !listMode }) {
+                            Icon(
+                                if (listMode) Icons.Default.GridView else Icons.Default.ViewList,
+                                if (listMode) "切换网格" else "切换列表",
+                            )
+                        }
+                        IconButton(onClick = {
+                            if (searchMode) exitSearch() else searchMode = true
+                        }) { Icon(Icons.Default.Search, "搜索") }
                     }
-                    IconButton(onClick = {
-                        if (searchMode) exitSearch() else searchMode = true
-                    }) { Icon(Icons.Default.Search, "搜索") }
                     if (isMultiSelectMode) {
                         IconButton(onClick = {
                             isMultiSelectMode = false
