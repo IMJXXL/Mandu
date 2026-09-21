@@ -29,6 +29,7 @@ object KomgaScanner {
             var totalInserted = 0
             var totalSkippedEpub = 0
             var totalBooks = 0
+            val apiBookPaths = HashSet<String>()
 
             for (lib in libraries) {
                 Log.i(TAG, "scanning library id=${lib.id} name=${lib.name}")
@@ -51,6 +52,7 @@ object KomgaScanner {
                                     continue
                                 }
                                 val filePath = KomgaPaths.bookPath(serverId, book.id)
+                                apiBookPaths.add(filePath)
                                 val existing = dao.getKomgaBookByPath(filePath)
                                 val coverPath = "cv:komga:${serverId}:${book.id}"
                                 if (existing == null) {
@@ -82,7 +84,16 @@ object KomgaScanner {
                 }
             }
 
-            Log.i(TAG, "done server=$serverId books=$totalBooks inserted=$totalInserted skippedEpub=$totalSkippedEpub")
+            val dbPaths = dao.getKomgaBookPathsForServer(serverId)
+            var removed = 0
+            for (dbPath in dbPaths) {
+                if (dbPath !in apiBookPaths) {
+                    dao.deleteBookByPath(dbPath)
+                    removed++
+                }
+            }
+
+            Log.i(TAG, "done server=$serverId books=$totalBooks inserted=$totalInserted skippedEpub=$totalSkippedEpub removed=$removed")
         } catch (t: Throwable) {
             Log.e(TAG, "scan failed server=$serverId", t)
         } finally {

@@ -303,6 +303,9 @@ interface MangaDao {
     @Query("SELECT * FROM manga_books WHERE source = 'komga' AND filePath = :filePath LIMIT 1")
     suspend fun getKomgaBookByPath(filePath: String): Book?
 
+    @Query("SELECT filePath FROM manga_books WHERE source = 'komga' AND filePath LIKE 'komga:' || :serverId || ':%'")
+    suspend fun getKomgaBookPathsForServer(serverId: String): List<String>
+
     /** ★ SMB 书源整源隐藏/显示（对齐本地文件夹的隐藏机制；含已下载到本地的书） */
     @Query("UPDATE manga_books SET isHidden = :hidden WHERE (source = 'smb' AND filePath LIKE 'smb:' || :serverId || ':%') OR (source = 'local' AND originalPath LIKE 'smb:' || :serverId || ':%')")
     suspend fun setSmbBooksHidden(serverId: Long, hidden: Boolean)
