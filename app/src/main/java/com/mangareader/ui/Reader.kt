@@ -1957,6 +1957,12 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                 } else ""
                 val hideAllTitlesPrefs = ctx.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE)
                 val hideAllTitles = hideAllTitlesPrefs.getBoolean("hide_all_titles", false)
+                val inBookContinueOn = prefs.getBoolean("inbook_continue_read", true)
+                val continueTarget = if (inBookContinueOn && !viewing && items.isNotEmpty()) {
+                    remember(items, navStack, progressForToc) {
+                        computeInBookContinueTarget(navStack.lastOrNull(), progressForToc)
+                    }
+                } else null
                 ReaderTopBar(
                     title = computeReaderTitle(book, navStack, viewing, hideAllTitles),
                     subtitle = pageSubtitle,
@@ -1985,7 +1991,25 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                                 book = b.copy(isHidden = false)
                             }
                         }
-                    }
+                    },
+                    onContinue = if (continueTarget != null) {
+                        {
+                            loading = true; viewing = false; pageList = emptyList(); errorMsg = null
+                            scope.launch {
+                                try {
+                                    val bookRoot = navStack.firstOrNull() ?: book?.filePath
+                                    if (bookRoot != null) {
+                                        val contCtx = buildContinueContext(bookRoot, continueTarget.path)
+                                        navStack = contCtx.navStack
+                                        if (contCtx.tocItems.isNotEmpty()) tocItems = contCtx.tocItems
+                                        enterReader(contCtx.navStack.last())
+                                    }
+                                } catch (e: Exception) { errorMsg = "加载失败: ${e.message}" }
+                                loading = false
+                            }
+                        }
+                    } else null,
+                    continueTargetName = if (continueTarget != null) continueDisplayName(continueTarget.path) else ""
                 )
             }
         },
@@ -2307,60 +2331,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                     }
                 }
                 items.isNotEmpty() -> {
-                    // ★ 书内多层「继续阅读」（2026-09-19）：目录网格层顶部显示入口，
-                    //   打开"当前层级及以下"最近阅读的那一卷（progressForToc 已含全书进度，
-                    //   按 navStack 路径的文档尾段做层级前缀匹配，兼容 smb:/d:/a:/z: 四种格式）。
-                    val inBookContinueOn = prefs.getBoolean("inbook_continue_read", true)
-                    val continueTarget = if (inBookContinueOn) {
-                        remember(items, navStack, progressForToc) {
-                            computeInBookContinueTarget(navStack.lastOrNull(), progressForToc)
-                        }
-                    } else {
-                        null
-                    }
-                    if (continueTarget == null) {
-                        ItemGrid(items, engine, bgColor, progressForToc, { openItem(it) }, Modifier.fillMaxSize().background(bgColor))
-                    } else {
-                        Column(Modifier.fillMaxSize().background(bgColor)) {
-                            Surface(color = bgColor.copy(alpha = 0.96f), modifier = Modifier.fillMaxWidth()) {
-                                Row(
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .clickable {
-                                            loading = true; viewing = false; pageList = emptyList(); errorMsg = null
-                                            scope.launch {
-                                                try {
-                                                    val bookRoot = navStack.firstOrNull() ?: book?.filePath
-                                                    if (bookRoot != null) {
-                                                        val ctx = buildContinueContext(bookRoot, continueTarget.path)
-                                                        navStack = ctx.navStack
-                                                        if (ctx.tocItems.isNotEmpty()) tocItems = ctx.tocItems
-                                                        enterReader(ctx.navStack.last())
-                                                    }
-                                                } catch (e: Exception) { errorMsg = "加载失败: ${e.message}" }
-                                                loading = false
-                                            }
-                                        }
-                                        .padding(horizontal = 16.dp, vertical = 10.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Icon(Icons.Default.PlayArrow, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp))
-                                    Spacer(Modifier.width(8.dp))
-                                    Column(Modifier.weight(1f)) {
-                                        Text("继续阅读", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.primary)
-                                        Text(
-                                            continueDisplayName(continueTarget.path),
-                                            fontSize = 11.sp,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                        )
-                                    }
-                                }
-                            }
-                            ItemGrid(items, engine, bgColor, progressForToc, { openItem(it) }, Modifier.fillMaxWidth().weight(1f).background(bgColor))
-                        }
-                    }
+                    ItemGrid(items, engine, bgColor, progressForToc, { openItem(it) }, Modifier.fillMaxSize().background(bgColor))
                 }
                 else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("没有内容") }
                 }

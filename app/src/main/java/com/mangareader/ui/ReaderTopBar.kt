@@ -7,11 +7,13 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.LibraryAdd
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -27,7 +29,9 @@ fun ReaderTopBar(
     onBack: () -> Unit,
     onFavoriteClick: () -> Unit,
     onRenameClick: () -> Unit,
-    onAddToShelfClick: () -> Unit
+    onAddToShelfClick: () -> Unit,
+    onContinue: (() -> Unit)? = null,
+    continueTargetName: String = ""
 ) {
     // 根据背景亮度决定文字颜色：亮底黑字，暗底白字
     val luminance = bgColor.red * 0.299f + bgColor.green * 0.587f + bgColor.blue * 0.114f
@@ -63,6 +67,23 @@ fun ReaderTopBar(
                         if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
                         null, tint = if (isFavorite) Color.Red else textColor
                     )
+                }
+            } else if (onContinue != null) {
+                TextButton(onClick = onContinue, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)) {
+                    Icon(Icons.Default.PlayArrow, "继续阅读", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("继续", fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
+                    if (continueTargetName.isNotEmpty()) {
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            continueTargetName,
+                            fontSize = 13.sp,
+                            color = textColorAlpha,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.widthIn(max = 180.dp)
+                        )
+                    }
                 }
             }
         },
