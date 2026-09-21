@@ -1354,6 +1354,55 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         return if (sep >= 0) inner.substring(sep + 2) else ""
     }
 
+    fun stripExt(name: String): String {
+        if (name.isEmpty() || name.startsWith(".")) return name
+        val dot = name.lastIndexOf('.')
+        return if (dot <= 0) name else name.substring(0, dot)
+    }
+
+    fun extractVolumeName(path: String): String? {
+        return try {
+            when {
+                path.startsWith("d:") || path.startsWith("a:") -> {
+                    val rest = path.removePrefix(if (path.startsWith("d:")) "d:" else "a:")
+                    val parts = rest.split("|", limit = 4)
+                    if (parts.size < 3) null
+                    else stripExt(parts[2].substringAfterLast('/'))
+                }
+                path.startsWith("z:") -> {
+                    val inner = path.removePrefix("z:")
+                    val sep = inner.indexOf("//")
+                    if (sep < 0) null
+                    else {
+                        var subPath = inner.substring(sep + 2)
+                        if (subPath.endsWith('/')) subPath = subPath.dropLast(1)
+                        stripExt(subPath.substringAfterLast('/'))
+                    }
+                }
+                path.startsWith("smb:") || path.startsWith("webdav:") -> {
+                    val rest = path.removePrefix(if (path.startsWith("smb:")) "smb:" else "webdav:")
+                    val relPath = rest.substringAfter(':').trimEnd('/')
+                    stripExt(relPath.substringAfterLast('/'))
+                }
+                else -> null
+            }
+        } catch (_: Exception) { null }
+    }
+
+    fun computeReaderTitle(
+        b: com.mangareader.data.Book?,
+        stack: List<String>,
+        isViewing: Boolean,
+        hideTitles: Boolean
+    ): String {
+        if (hideTitles) return ""
+        if (b == null) return ""
+        if (!isViewing) return b.title
+        val currentVolumePath = stack.lastOrNull() ?: b.filePath
+        if (currentVolumePath == b.filePath) return b.title
+        return extractVolumeName(currentVolumePath) ?: b.title
+    }
+
     data class ContinueContext(val navStack: List<String>, val tocItems: List<ArchiveEngine.Item>, val fellBack: Boolean)
 
     fun isParentUnderBookRoot(parentPath: String, bookFilePath: String): Boolean {
@@ -1909,7 +1958,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                 val hideAllTitlesPrefs = ctx.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE)
                 val hideAllTitles = hideAllTitlesPrefs.getBoolean("hide_all_titles", false)
                 ReaderTopBar(
-                    title = if (hideAllTitles) "" else (book?.title ?: ""),
+                    title = computeReaderTitle(book, navStack, viewing, hideAllTitles),
                     subtitle = pageSubtitle,
                     viewing = viewing,
                     bgColor = bgColor,
