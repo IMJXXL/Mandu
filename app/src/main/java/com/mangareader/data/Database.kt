@@ -808,10 +808,26 @@ interface MangaDao {
             for (h in histSnap) {
                 newIdByOldId[h.bookId]?.let { insertHistory(h.copy(id = 0, bookId = it)) }
             }
+            val insertedShelfKeys = HashSet<Pair<Long, Long>>()
             for (s in shelfSnap) {
-                newIdByOldId[s.bookId]?.let {
-                    insertBookshelfItem(BookshelfItem(bookshelfId = s.bookshelfId, bookId = it))
+                newIdByOldId[s.bookId]?.let { newBookId ->
+                    val key = newBookId to s.bookshelfId
+                    if (key !in insertedShelfKeys) {
+                        insertBookshelfItem(BookshelfItem(bookshelfId = s.bookshelfId, bookId = newBookId))
+                        insertedShelfKeys.add(key)
+                    }
                 }
+            }
+            val insertedTagKeys = HashSet<Pair<Long, Long>>()
+            for (t in tagSnap) {
+                newIdByOldId[t.bookId]?.let { newBookId ->
+                    val key = newBookId to t.tagId
+                    if (key !in insertedTagKeys) {
+                        insertTagLink(TagLink(tagId = t.tagId, bookId = newBookId))
+                        insertedTagKeys.add(key)
+                    }
+                }
+            }
             }
             for (t in tagSnap) {
                 newIdByOldId[t.bookId]?.let { insertTagLink(TagLink(tagId = t.tagId, bookId = it)) }
