@@ -78,6 +78,14 @@ class CoverFetcher(
         }
 
         if (coverPath.startsWith("cv:smb:") || coverPath.startsWith("cv:webdav:")) {
+            val thumbBytes = withContext(Dispatchers.IO) { engine.loadCoverThumbBytes(coverPath) }
+            if (thumbBytes != null) {
+                return SourceFetchResult(
+                    source = ImageSource(source = Buffer().write(thumbBytes), fileSystem = options.fileSystem),
+                    mimeType = "image/jpeg",
+                    dataSource = DataSource.DISK,
+                )
+            }
             val raw = withContext(Dispatchers.IO) {
                 try {
                     if (coverPath.startsWith("cv:smb:")) {
@@ -92,6 +100,9 @@ class CoverFetcher(
             } ?: throw RuntimeException("Remote cover load failed: $coverPath")
             val (bytes, mime) = raw
             android.util.Log.d("CoverFetch", "remote raw OK mime=$mime size=${bytes.size} path=$coverPath")
+            if (mime == "image/jpeg") {
+                withContext(Dispatchers.IO) { engine.saveCoverThumbBytes(coverPath, bytes) }
+            }
             return SourceFetchResult(
                 source = ImageSource(
                     source = Buffer().write(bytes),

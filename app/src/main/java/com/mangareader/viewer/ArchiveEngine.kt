@@ -313,6 +313,13 @@ class ArchiveEngine(private val ctx: Context) {
         return null
     }
 
+    fun saveCoverThumbBytes(cover: String, bytes: ByteArray) {
+        try {
+            val file = File(coverDir, "${md5(cover)}.thumb")
+            file.writeBytes(bytes)
+        } catch (_: Exception) {}
+    }
+
     private fun saveCoverToDisk(key: String, bmp: Bitmap) {
         try {
             evictOldCoverFiles()
