@@ -18,6 +18,7 @@ import com.hippo.ehviewer.library.RemoteRangeNotSupportedException
 import com.hippo.ehviewer.library.isDocumentFileName
 import com.hippo.ehviewer.library.isEpubFileName
 import com.hippo.ehviewer.library.isPdfFileName
+import com.hippo.ehviewer.library.isZipArchiveFileName
 import com.hippo.ehviewer.library.isImageFileName
 import com.hippo.ehviewer.library.isSolidArchiveFileName
 import com.hippo.ehviewer.library.isTarArchiveFileName
@@ -161,7 +162,8 @@ object WebDavBookRouter {
         val titleHint = remote.substringAfterLast('/').substringBefore(':').ifEmpty { source.displayName }
 
         // 含图片目录（文件夹书，spec 5.9 → WebDavFolderPageLoader）
-        if (ref.ext.isEmpty() && !remote.contains(':')) {
+        val remoteIsZip = isZipArchiveFileName(remote)
+        if (ref.ext.isEmpty() && !remote.contains(':') && !remoteIsZip) {
             val entries = WebDavGateway.listDirectory(source, password, remote)
             val imageNames = entries
                 .filter { it !is BrowseEntryRemote.Directory && it !is BrowseEntryRemote.FolderGallery }
