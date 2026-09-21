@@ -260,7 +260,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     var passwordInput by remember { mutableStateOf("") }
     var passwordDeferred by remember { mutableStateOf<kotlinx.coroutines.CompletableDeferred<String>?>(null) }
 
-    val archivePasswdProvider: com.hippo.ehviewer.gallery.PasswdProvider = { invalidator ->
+    val archivePasswdProvider: com.hippo.ehviewer.gallery.PasswdProvider = passwdProvider@ { invalidator ->
         while (true) {
             val deferred = kotlinx.coroutines.CompletableDeferred<String>()
             passwordDeferred = deferred
@@ -271,15 +271,12 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             if (pwd.isEmpty()) throw IllegalStateException("用户取消密码输入")
             if (invalidator(pwd)) {
                 showPasswordDialog = false
-                pwd
-            } else {
-                passwordError = true
-                passwordInput = ""
-                val deferred2 = kotlinx.coroutines.CompletableDeferred<String>()
-                passwordDeferred = deferred2
-                deferred2.await()
+                return@passwdProvider pwd
             }
+            passwordError = true
+            passwordInput = ""
         }
+        error("unreachable")
     }
 
     // ★ 远程供给挂接：视图随模式切换整体重建（key 五元组），这里响应式重挂到当前活跃视图

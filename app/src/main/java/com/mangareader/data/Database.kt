@@ -831,10 +831,7 @@ interface MangaDao {
                     }
                 }
             }
-            }
-            for (t in tagSnap) {
-                newIdByOldId[t.bookId]?.let { insertTagLink(TagLink(tagId = t.tagId, bookId = it)) }
-            }
+
             // ★ 书签重挂新 id：同 filePath 多旧行映射同一新书时，同页书签经唯一索引 IGNORE 吸收
             for (bm in bookmarkSnap) {
                 newIdByOldId[bm.bookId]?.let { insertBookmark(bm.copy(id = 0, bookId = it)) }
