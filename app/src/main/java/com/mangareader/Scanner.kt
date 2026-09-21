@@ -477,10 +477,17 @@ class Scanner(private val ctx: Context, private val dao: MangaDao) {
 
     /** Phase 2: 删旧入新 + 后台封面补齐。 */
     private suspend fun commitRescanResults(f: Folder, books: List<Book>): Int {
-        if (books.isEmpty()) return 0
         val uri = Uri.parse(f.treeUri)
         val docId = DocumentsContract.getTreeDocumentId(uri)
         val auth = uri.authority ?: ""
+        if (books.isEmpty()) {
+            val oldCount = dao.countBooksByFolder("a:$auth|$docId|%", "d:$auth|$docId%", "z:a:$auth|$docId|%")
+            if (oldCount > 0) {
+                dao.deleteBooksByFolderParams("a:$auth|$docId|%", "d:$auth|$docId%", "z:a:$auth|$docId|%")
+            }
+            dao.updateFolder(f.copy(lastScanAt = System.currentTimeMillis()))
+            return -oldCount
+        }
         val oldCount = dao.countBooksByFolder("a:$auth|$docId|%", "d:$auth|$docId%", "z:a:$auth|$docId|%")
         // ★ 封面新鲜度：源文件 mtime/size 与旧行不一致（文件被替换）→ 删旧封面，
         //   preloadCovers 的 file.exists() 跳过随即失效，封面自动重新生成。
