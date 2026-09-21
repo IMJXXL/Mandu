@@ -63,9 +63,11 @@ object KomgaBookRouter {
 
             OpenResult.Supported(adapter, bookId)
         } catch (e: KomgaException) {
+            client.close()
             Log.w(KomgaConstants.LOG_TAG, "openKomgaBook failed: ${e.message}")
             OpenResult.Failed(humanize(e))
         } catch (t: Throwable) {
+            client.close()
             Log.w(KomgaConstants.LOG_TAG, "openKomgaBook failed", t)
             OpenResult.Failed(humanize(t))
         }

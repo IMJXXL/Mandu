@@ -181,6 +181,10 @@ class KomgaApiClient(
         if (!resp.status.isSuccess()) throw mapError(resp.status.value)
     }
 
-    suspend fun searchSeries(search: String, libraryId: String? = null): PageableDto<SeriesDto> =
-        getSeries(libraryId = libraryId, search = search)
+    suspend fun searchSeries(search: String, libraryId: String? = null, page: Int = 0): PageableDto<SeriesDto> =
+        getSeries(libraryId = libraryId, search = search, page = page)
+
+    fun close() {
+        client.close()
+    }
 }

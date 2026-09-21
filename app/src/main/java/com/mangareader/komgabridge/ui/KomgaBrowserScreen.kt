@@ -130,7 +130,7 @@ fun KomgaBrowserScreen(serverId: String, onBack: () -> Unit, onOpenBook: (Long) 
                 seriesPage++
                 try {
                     val result = withContext(Dispatchers.IO) {
-                        if (searchQuery.isNotEmpty()) apiClient.searchSeries(searchQuery, selectedLibrary!!.id)
+                        if (searchQuery.isNotEmpty()) apiClient.searchSeries(searchQuery, selectedLibrary!!.id, page = seriesPage)
                         else apiClient.getSeries(libraryId = selectedLibrary!!.id, page = seriesPage)
                     }
                     seriesList.addAll(result.content)

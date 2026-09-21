@@ -65,5 +65,6 @@ class KomgaPageAdapter(
 
     override suspend fun close() {
         progressWriter?.flush()
+        apiClient.close()
     }
 }
