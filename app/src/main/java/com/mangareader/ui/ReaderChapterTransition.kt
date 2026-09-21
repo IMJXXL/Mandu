@@ -4,7 +4,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -37,10 +37,7 @@ fun ChapterTransitionOverlay(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.9f))
-                .clickable {
-                    if (isLast) onPreviousChapter() else onNextChapter()
-                },
+                .background(Color.Black.copy(alpha = 0.9f)),
             contentAlignment = Alignment.Center
         ) {
             Column(
@@ -60,15 +57,15 @@ fun ChapterTransitionOverlay(
                         fontSize = 14.sp
                     )
                 }
-                Text(
-                    text = if (isLast) "点击返回上一章" else "点击进入下一章",
-                    color = Color(0xFF7C8CF8),
-                    fontSize = 14.sp
-                )
-                CircularProgressIndicator(
-                    color = Color(0xFF7C8CF8),
-                    modifier = Modifier.size(24.dp)
-                )
+                TextButton(onClick = {
+                    if (isLast) onNextChapter() else onPreviousChapter()
+                }) {
+                    Text(
+                        text = if (isLast) "进入下一章" else "返回上一章",
+                        color = Color(0xFF7C8CF8),
+                        fontSize = 14.sp
+                    )
+                }
             }
         }
     }

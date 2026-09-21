@@ -233,7 +233,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     var zoomLevel by remember { mutableFloatStateOf(1f) }
     var showChapterTransition by remember { mutableStateOf(false) }
     var chapterTransitionIsLast by remember { mutableStateOf(false) }
-    var showSwitchConfirm by remember { mutableStateOf(false) }
+
     // ★ N1 防抖：无缝续读 3 秒内不重复触发（模式切换/重复章末回调的并发窗口）
     var lastSeamlessAt by remember { mutableStateOf(0L) }
     var switchTargetName by remember { mutableStateOf("") }
@@ -1510,78 +1510,8 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         return ContinueContext(buildNavStack(bookFilePath, parentPath, jumpPath), siblings, false)
     }
 
-    fun switchToNext() {
-        val curSubPath = extractSubPathFromNav()
-        if (tocItems.size > 1) {
-            val curIdx = tocItems.indexOfFirst { it.subPath == curSubPath }
-            val nextIdx = if (curIdx == -1) 0 else curIdx + 1
-            if (nextIdx < tocItems.size) {
-                switchTargetName = tocItems[nextIdx].name
-                switchTargetPath = tocItems[nextIdx].subPath
-                showSwitchConfirm = true
-            } else {
-                scope.launch {
-                    val nextBook = findAdjacentBook(1)
-                    if (nextBook != null) {
-                        switchTargetName = nextBook.title
-                        switchTargetPath = nextBook.filePath
-                        showSwitchConfirm = true
-                    } else {
-                        android.widget.Toast.makeText(ctx, "没有下一本了", android.widget.Toast.LENGTH_SHORT).show()
-                    }
-                }
-            }
-        } else {
-            scope.launch {
-                val nextBook = findAdjacentBook(1)
-                if (nextBook != null) {
-                    switchTargetName = nextBook.title
-                    switchTargetPath = nextBook.filePath
-                    showSwitchConfirm = true
-                } else {
-                    android.widget.Toast.makeText(ctx, "没有下一本了", android.widget.Toast.LENGTH_SHORT).show()
-                }
-            }
-        }
-    }
-
-    fun switchToPrevious() {
-        val curSubPath = extractSubPathFromNav()
-        if (tocItems.size > 1) {
-            val curIdx = tocItems.indexOfFirst { it.subPath == curSubPath }
-            val prevIdx = if (curIdx <= 0) -1 else curIdx - 1
-            if (prevIdx >= 0) {
-                switchTargetName = tocItems[prevIdx].name
-                switchTargetPath = tocItems[prevIdx].subPath
-                showSwitchConfirm = true
-            } else {
-                scope.launch {
-                    val prevBook = findAdjacentBook(-1)
-                    if (prevBook != null) {
-                        switchTargetName = prevBook.title
-                        switchTargetPath = prevBook.filePath
-                        showSwitchConfirm = true
-                    } else {
-                        android.widget.Toast.makeText(ctx, "没有上一本了", android.widget.Toast.LENGTH_SHORT).show()
-                    }
-                }
-            }
-        } else {
-            scope.launch {
-                val prevBook = findAdjacentBook(-1)
-                if (prevBook != null) {
-                    switchTargetName = prevBook.title
-                    switchTargetPath = prevBook.filePath
-                    showSwitchConfirm = true
-                } else {
-                    android.widget.Toast.makeText(ctx, "没有上一本了", android.widget.Toast.LENGTH_SHORT).show()
-                }
-            }
-        }
-    }
-
     fun confirmSwitch() {
-        showSwitchConfirm = false
+
         if (switchTargetPath.isEmpty()) return
         if (tocItems.size > 1 && tocItems.any { it.subPath == switchTargetPath }) {
             // 切章节：重置navStack到书根+新章节，不嵌套
@@ -1641,6 +1571,77 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             }
         }
     }
+
+    fun switchToNext() {
+        val curSubPath = extractSubPathFromNav()
+        if (tocItems.size > 1) {
+            val curIdx = tocItems.indexOfFirst { it.subPath == curSubPath }
+            val nextIdx = if (curIdx == -1) 0 else curIdx + 1
+            if (nextIdx < tocItems.size) {
+                switchTargetName = tocItems[nextIdx].name
+                switchTargetPath = tocItems[nextIdx].subPath
+                confirmSwitch()
+            } else {
+                scope.launch {
+                    val nextBook = findAdjacentBook(1)
+                    if (nextBook != null) {
+                        switchTargetName = nextBook.title
+                        switchTargetPath = nextBook.filePath
+                        confirmSwitch()
+                    } else {
+                        android.widget.Toast.makeText(ctx, "没有下一本了", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        } else {
+            scope.launch {
+                val nextBook = findAdjacentBook(1)
+                if (nextBook != null) {
+                    switchTargetName = nextBook.title
+                    switchTargetPath = nextBook.filePath
+                    confirmSwitch()
+                } else {
+                    android.widget.Toast.makeText(ctx, "没有下一本了", android.widget.Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    fun switchToPrevious() {
+        val curSubPath = extractSubPathFromNav()
+        if (tocItems.size > 1) {
+            val curIdx = tocItems.indexOfFirst { it.subPath == curSubPath }
+            val prevIdx = if (curIdx <= 0) -1 else curIdx - 1
+            if (prevIdx >= 0) {
+                switchTargetName = tocItems[prevIdx].name
+                switchTargetPath = tocItems[prevIdx].subPath
+                confirmSwitch()
+            } else {
+                scope.launch {
+                    val prevBook = findAdjacentBook(-1)
+                    if (prevBook != null) {
+                        switchTargetName = prevBook.title
+                        switchTargetPath = prevBook.filePath
+                        confirmSwitch()
+                    } else {
+                        android.widget.Toast.makeText(ctx, "没有上一本了", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        } else {
+            scope.launch {
+                val prevBook = findAdjacentBook(-1)
+                if (prevBook != null) {
+                    switchTargetName = prevBook.title
+                    switchTargetPath = prevBook.filePath
+                    confirmSwitch()
+                } else {
+                    android.widget.Toast.makeText(ctx, "没有上一本了", android.widget.Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
 
     fun goBack() {
         restoreUi()
@@ -2669,20 +2670,6 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         modifier = Modifier.fillMaxSize()
     )
 
-    // Switch confirmation dialog
-    if (showSwitchConfirm) {
-        AlertDialog(
-            onDismissRequest = { showSwitchConfirm = false },
-            title = { Text("切换确认") },
-            text = { Text("确认切换到：$switchTargetName ?") },
-            confirmButton = {
-                TextButton(onClick = { confirmSwitch() }) { Text("确认") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showSwitchConfirm = false }) { Text("取消") }
-            }
-        )
-    }
 
     if (showBookmarkNoteDialog) {
         val b = book
