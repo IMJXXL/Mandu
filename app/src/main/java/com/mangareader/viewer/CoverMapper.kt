@@ -82,7 +82,7 @@ class CoverFetcher(
             if (thumbBytes != null) {
                 return SourceFetchResult(
                     source = ImageSource(source = Buffer().write(thumbBytes), fileSystem = options.fileSystem),
-                    mimeType = "image/jpeg",
+                    mimeType = null,
                     dataSource = DataSource.DISK,
                 )
             }
@@ -100,9 +100,7 @@ class CoverFetcher(
             } ?: throw RuntimeException("Remote cover load failed: $coverPath")
             val (bytes, mime) = raw
             android.util.Log.d("CoverFetch", "remote raw OK mime=$mime size=${bytes.size} path=$coverPath")
-            if (mime == "image/jpeg") {
-                withContext(Dispatchers.IO) { engine.saveCoverThumbBytes(coverPath, bytes) }
-            }
+            withContext(Dispatchers.IO) { engine.saveCoverThumbBytes(coverPath, bytes) }
             return SourceFetchResult(
                 source = ImageSource(
                     source = Buffer().write(bytes),
