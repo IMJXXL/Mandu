@@ -1354,6 +1354,89 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         return if (sep >= 0) inner.substring(sep + 2) else ""
     }
 
+    data class ContinueContext(val navStack: List<String>, val tocItems: List<ArchiveEngine.Item>, val fellBack: Boolean)
+
+    fun isParentUnderBookRoot(parentPath: String, bookFilePath: String): Boolean {
+        return try {
+            if (parentPath.startsWith("a:") || parentPath.startsWith("d:")) {
+                val pp = engine.parsePathForMobi(parentPath) ?: return false
+                val bp = engine.parsePathForMobi(bookFilePath) ?: return false
+                if (pp.first != bp.first || pp.second != bp.second) return false
+                val bookDoc = bp.third
+                val parentDoc = pp.third
+                if (bookDoc.isEmpty()) return true
+                parentDoc == bookDoc || parentDoc.startsWith("$bookDoc/")
+            } else if (parentPath.startsWith("z:") && bookFilePath.startsWith("z:")) {
+                val pInner = parentPath.removePrefix("z:")
+                val bInner = bookFilePath.removePrefix("z:")
+                val pSep = pInner.indexOf("//")
+                val bSep = bInner.indexOf("//")
+                if (pSep < 0 || bSep < 0) return false
+                val pArchive = pInner.substring(0, pSep)
+                val bArchive = bInner.substring(0, bSep)
+                if (pArchive != bArchive) return false
+                val bSub = bInner.substring(bSep + 2).trimEnd('/')
+                val pSub = pInner.substring(pSep + 2).trimEnd('/')
+                if (bSub.isEmpty()) return true
+                pSub == bSub || pSub.startsWith("$bSub/")
+            } else false
+        } catch (_: Exception) { false }
+    }
+
+    fun buildNavStack(bookFilePath: String, parentPath: String, jumpPath: String): List<String> {
+        val midPaths = mutableListOf<String>()
+        if (parentPath.startsWith("a:") || parentPath.startsWith("d:")) {
+            val pp = engine.parsePathForMobi(parentPath) ?: return listOf(bookFilePath, jumpPath)
+            val bp = engine.parsePathForMobi(bookFilePath) ?: return listOf(bookFilePath, jumpPath)
+            val bookDoc = bp.third
+            val parentDoc = pp.third
+            val auth = pp.first
+            val tree = pp.second
+            if (parentDoc.length > bookDoc.length) {
+                val rel = if (bookDoc.isEmpty()) parentDoc else parentDoc.removePrefix("$bookDoc/")
+                val segments = rel.split('/').filter { it.isNotEmpty() }
+                var acc = bookDoc
+                for (seg in segments) {
+                    acc = if (acc.isEmpty()) seg else "$acc/$seg"
+                    midPaths.add("d:$auth|$tree|$acc")
+                }
+            }
+        } else if (parentPath.startsWith("z:")) {
+            val pInner = parentPath.removePrefix("z:")
+            val pSep = pInner.indexOf("//")
+            if (pSep >= 0) {
+                val archivePath = pInner.substring(0, pSep)
+                val pSub = pInner.substring(pSep + 2).trimEnd('/')
+                val bSub = if (bookFilePath.startsWith("z:")) {
+                    val bInner = bookFilePath.removePrefix("z:")
+                    val bSep = bInner.indexOf("//")
+                    if (bSep >= 0) bInner.substring(bSep + 2).trimEnd('/') else ""
+                } else ""
+                if (pSub.length > bSub.length) {
+                    val rel = if (bSub.isEmpty()) pSub else pSub.removePrefix("$bSub/")
+                    val segments = rel.split('/').filter { it.isNotEmpty() }
+                    var acc = ""
+                    for (seg in segments) {
+                        acc = if (acc.isEmpty()) seg else "$acc/$seg"
+                        midPaths.add("z:$archivePath//$acc/")
+                    }
+                }
+            }
+        }
+        return listOf(bookFilePath) + midPaths + listOf(jumpPath)
+    }
+
+    suspend fun buildContinueContext(bookFilePath: String, jumpPath: String): ContinueContext {
+        val parentPath = engine.resolveParentPath(jumpPath)
+        val fallbackNav = listOf(bookFilePath, jumpPath)
+        val fallbackToc = withContext(Dispatchers.IO) { try { engine.children(bookFilePath) } catch (_: Exception) { emptyList() } }
+        if (parentPath == null) return ContinueContext(fallbackNav, fallbackToc, true)
+        if (!isParentUnderBookRoot(parentPath, bookFilePath)) return ContinueContext(fallbackNav, fallbackToc, true)
+        val siblings = withContext(Dispatchers.IO) { try { engine.children(parentPath) } catch (_: Exception) { emptyList() } }
+        if (siblings.isEmpty()) return ContinueContext(fallbackNav, fallbackToc, true)
+        return ContinueContext(buildNavStack(bookFilePath, parentPath, jumpPath), siblings, false)
+    }
+
     fun switchToNext() {
         val curSubPath = extractSubPathFromNav()
         if (tocItems.size > 1) {
@@ -1608,21 +1691,9 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                 val filePath = b.filePath
 
                 if (!jumpPath.isNullOrEmpty()) {
-                    // ★ 继续阅读：直达上次阅读的实际章节（reading_progress.path），不经过目录
-                    navStack = listOf(filePath, jumpPath)
-                    // ★ 214122 日志修复：直跳进章必须同时装配章节清单——否则 tocItems 为空，
-                    //   "下一章/上一章"跌落到文件夹级切到隔壁书（AdjBook 实锤目标=downloads）
-                    if (filePath.startsWith("d:")) {
-                        val toc = withContext(Dispatchers.IO) {
-                            try { engine.children(filePath) } catch (_: Exception) { emptyList() }
-                        }
-                        if (toc.isNotEmpty()) tocItems = toc
-                    } else if (filePath.startsWith("z:")) {
-                        val toc = withContext(Dispatchers.IO) {
-                            try { engine.children(filePath) } catch (_: Exception) { emptyList() }
-                        }
-                        if (toc.isNotEmpty()) tocItems = toc
-                    }
+                    val ctx = buildContinueContext(filePath, jumpPath)
+                    navStack = ctx.navStack
+                    if (ctx.tocItems.isNotEmpty()) tocItems = ctx.tocItems
                     enterReader(jumpPath)
                 } else if (filePath.startsWith("d:")) {
                     navStack = listOf(filePath)
@@ -2207,10 +2278,17 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                                     Modifier
                                         .fillMaxWidth()
                                         .clickable {
-                                            navStack = navStack + continueTarget.path
                                             loading = true; viewing = false; pageList = emptyList(); errorMsg = null
                                             scope.launch {
-                                                try { enterReader(navStack.last()) } catch (e: Exception) { errorMsg = "加载失败: ${e.message}" }
+                                                try {
+                                                    val bookRoot = navStack.firstOrNull() ?: book?.filePath
+                                                    if (bookRoot != null) {
+                                                        val ctx = buildContinueContext(bookRoot, continueTarget.path)
+                                                        navStack = ctx.navStack
+                                                        if (ctx.tocItems.isNotEmpty()) tocItems = ctx.tocItems
+                                                        enterReader(ctx.navStack.last())
+                                                    }
+                                                } catch (e: Exception) { errorMsg = "加载失败: ${e.message}" }
                                                 loading = false
                                             }
                                         }

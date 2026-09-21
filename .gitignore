@@ -33,6 +33,9 @@ check_*.py
 analyze_comments.py
 crash_buf.txt
 tmp_logcat*.txt
+tmp_*.txt
+tmp_*.cbz
+tmp_*.py
 device_log*.txt
 smb_open_log.txt
 /splash_*.png

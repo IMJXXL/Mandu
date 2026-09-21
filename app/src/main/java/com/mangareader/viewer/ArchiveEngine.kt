@@ -2857,6 +2857,44 @@ class ArchiveEngine(private val ctx: Context) {
 
     private data class PathInfo(val tag: String, val auth: String, val tree: String, val doc: String, val ext: String)
 
+    private fun resolveParentForA(jumpPath: String): String? {
+        val p = parsePath(jumpPath) ?: return null
+        if (p.tag != "a") return null
+        val parentDoc = p.doc.substringBeforeLast('/', missingDelimiterValue = "")
+        return "d:${p.auth}|${p.tree}|${parentDoc}"
+    }
+
+    private fun resolveParentForD(jumpPath: String): String? {
+        val p = parsePath(jumpPath) ?: return null
+        if (p.tag != "d") return null
+        if (!p.doc.contains('/')) return null
+        val parentDoc = p.doc.substringBeforeLast('/')
+        return "d:${p.auth}|${p.tree}|${parentDoc}"
+    }
+
+    private fun resolveParentForZ(jumpPath: String): String? {
+        val inner = jumpPath.removePrefix("z:")
+        val sep = inner.indexOf("//")
+        if (sep < 0) return null
+        val archivePath = inner.substring(0, sep)
+        var subPath = inner.substring(sep + 2)
+        if (subPath.endsWith('/')) subPath = subPath.dropLast(1)
+        if (!subPath.contains('/')) return null
+        val parentSubPath = subPath.substringBeforeLast('/')
+        return "z:${archivePath}//${parentSubPath}/"
+    }
+
+    fun resolveParentPath(jumpPath: String): String? {
+        return try {
+            when {
+                jumpPath.startsWith("a:") -> resolveParentForA(jumpPath)
+                jumpPath.startsWith("d:") -> resolveParentForD(jumpPath)
+                jumpPath.startsWith("z:") -> resolveParentForZ(jumpPath)
+                else -> null
+            }
+        } catch (_: Exception) { null }
+    }
+
     fun parsePathForMobi(path: String): Triple<String, String, String>? {
         val p = parsePath(path) ?: return null
         return Triple(p.auth, p.tree, p.doc)
