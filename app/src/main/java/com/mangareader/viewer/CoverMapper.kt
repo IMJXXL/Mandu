@@ -98,7 +98,7 @@ class CoverFetcher(
                     fileSystem = options.fileSystem,
                 ),
                 mimeType = mime,
-                dataSource = DataSource.DISK,
+                dataSource = DataSource.NETWORK,
             )
         }
 
