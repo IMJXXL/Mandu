@@ -69,7 +69,11 @@ object SmbBookRouter {
         class Failed(val message: String) : OpenResult
     }
 
-    suspend fun openSmbBook(filePath: String, startPage: Int = 0): OpenResult = withContext(Dispatchers.IO) {
+    suspend fun openSmbBook(
+        filePath: String,
+        startPage: Int = 0,
+        passwdProvider: PasswdProvider? = null,
+    ): OpenResult = withContext(Dispatchers.IO) {
         val ref = SmbPaths.parseBookPath(filePath) ?: return@withContext OpenResult.Failed("无效的 SMB 路径")
         if (SmbUnsupportedFormatHandler.isUnsupported(ref.ext)) return@withContext OpenResult.Unsupported
         val source = SmbRepository.load(ref.serverId)
@@ -80,7 +84,7 @@ object SmbBookRouter {
         val sessionScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         sessionScope.launch {
             try {
-                dispatchLoaderSession(source, password, ref, startPage) { loader, byteSource ->
+                dispatchLoaderSession(source, password, ref, startPage, passwdProvider) { loader, byteSource ->
                     adapter.attach(loader, byteSource)
                     adapter.awaitClose()
                 }
@@ -152,6 +156,7 @@ object SmbBookRouter {
         password: String,
         ref: SmbBookRef,
         startPage: Int,
+        passwdProvider: PasswdProvider? = null,
         block: suspend (loader: PageLoader, byteSource: ArchiveByteSource?) -> T,
     ) {
         // gateway remote：fixed-share 源用去 share 段的 rel；server-root 源用完整路径（首段即 share）
@@ -192,7 +197,7 @@ object SmbBookRouter {
             preferSequential = !isDocumentFileName(remote),
             pipeline = !isDocumentFileName(remote),
         )
-        val passwdProvider: PasswdProvider = {
+        val effectivePasswdProvider: PasswdProvider = passwdProvider ?: {
             throw IllegalStateException("该归档需要密码（当前未配置归档密码）")
         }
         if (isDocumentFileName(remote)) {
@@ -227,7 +232,7 @@ object SmbBookRouter {
                     info = null,
                     startPage = startPage,
                     remoteSize = runCatching { byteSource.size }.getOrDefault(0L),
-                    passwdProvider = passwdProvider,
+                    passwdProvider = effectivePasswdProvider,
                 ) { loader -> block(loader, byteSource) }
             } catch (e: CancellationException) {
                 throw e
@@ -245,7 +250,7 @@ object SmbBookRouter {
                     local.path,
                     info = null,
                     startPage = startPage,
-                    passwdProvider = passwdProvider,
+                    passwdProvider = effectivePasswdProvider,
                 ) { loader -> block(loader, byteSource) }
             }
         } else if (isTarArchiveFileName(remote)) {
@@ -277,7 +282,7 @@ object SmbBookRouter {
                 titleHint = titleHint,
                 info = null,
                 startPage = startPage,
-                passwdProvider = passwdProvider,
+                passwdProvider = effectivePasswdProvider,
             ) { loader -> block(loader, byteSource) }
         }
     }

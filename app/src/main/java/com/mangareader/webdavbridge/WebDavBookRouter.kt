@@ -59,19 +59,26 @@ object WebDavBookRouter {
         class Failed(val message: String) : OpenResult
     }
 
-    suspend fun openWebDavBook(filePath: String, startPage: Int = 0): OpenResult = withContext(Dispatchers.IO) {
+    suspend fun openWebDavBook(
+        filePath: String,
+        startPage: Int = 0,
+        passwdProvider: PasswdProvider? = null,
+    ): OpenResult = withContext(Dispatchers.IO) {
         val ref = WebDavPaths.parseBookPath(filePath) ?: return@withContext OpenResult.Failed("无效的 WebDAV 路径")
         if (WebDavUnsupportedFormatHandler.isUnsupported(ref.ext)) return@withContext OpenResult.Unsupported
         val source = WebDavRepository.load(ref.serverId)
             ?: return@withContext OpenResult.Failed("WebDAV 服务器配置不存在（可能已被删除）")
         val password = try { WebDavPasswordStore.get(source.id) } catch (_: Throwable) { "" }
 
+        val effectivePasswdProvider: PasswdProvider = passwdProvider ?: {
+            throw IllegalStateException("该归档需要密码（当前未配置归档密码）")
+        }
         val adapter = WebDavPageAdapter()
         val sessionScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         sessionScope.launch {
             try {
                 try {
-                    dispatchLoaderSession(source, password, ref, startPage) { loader, byteSource ->
+                    dispatchLoaderSession(source, password, ref, startPage, effectivePasswdProvider) { loader, byteSource ->
                         adapter.attach(loader, byteSource)
                         adapter.awaitClose()
                     }
@@ -86,7 +93,7 @@ object WebDavBookRouter {
                         localPath.toPath(),
                         info = null,
                         startPage = startPage,
-                        passwdProvider = { throw IllegalStateException("该归档需要密码（当前未配置归档密码）") },
+                        passwdProvider = effectivePasswdProvider,
                     ) { loader ->
                         adapter.attach(loader, null)
                         adapter.awaitClose()
@@ -152,6 +159,7 @@ object WebDavBookRouter {
         password: String,
         ref: WebDavBookRef,
         startPage: Int,
+        passwdProvider: PasswdProvider? = null,
         block: suspend (loader: PageLoader, byteSource: ArchiveByteSource?) -> T,
     ) {
         val remoteRaw = ref.remotePath
@@ -186,7 +194,7 @@ object WebDavBookRouter {
             preferSequential = !isDocumentFileName(remote),
             pipeline = !isDocumentFileName(remote),
         )
-        val passwdProvider: PasswdProvider = {
+        val effectivePasswdProvider: PasswdProvider = passwdProvider ?: {
             throw IllegalStateException("该归档需要密码（当前未配置归档密码）")
         }
         if (isDocumentFileName(remote)) {
@@ -221,7 +229,7 @@ object WebDavBookRouter {
                     info = null,
                     startPage = startPage,
                     remoteSize = runCatching { byteSource.size }.getOrDefault(0L),
-                    passwdProvider = passwdProvider,
+                    passwdProvider = effectivePasswdProvider,
                 ) { loader -> block(loader, byteSource) }
             } catch (e: CancellationException) {
                 throw e
@@ -238,7 +246,7 @@ object WebDavBookRouter {
                     local.path,
                     info = null,
                     startPage = startPage,
-                    passwdProvider = passwdProvider,
+                    passwdProvider = effectivePasswdProvider,
                 ) { loader -> block(loader, byteSource) }
             }
         } else if (isTarArchiveFileName(remote)) {
@@ -269,7 +277,7 @@ object WebDavBookRouter {
                 titleHint = titleHint,
                 info = null,
                 startPage = startPage,
-                passwdProvider = passwdProvider,
+                passwdProvider = effectivePasswdProvider,
             ) { loader -> block(loader, byteSource) }
         }
     }

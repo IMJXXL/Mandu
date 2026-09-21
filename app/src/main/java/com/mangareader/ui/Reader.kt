@@ -255,6 +255,33 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     var showRedownloadDialog by remember { mutableStateOf(false) }
     var redownloadBook by remember { mutableStateOf<com.mangareader.data.Book?>(null) }
 
+    var showPasswordDialog by remember { mutableStateOf(false) }
+    var passwordError by remember { mutableStateOf(false) }
+    var passwordInput by remember { mutableStateOf("") }
+    var passwordDeferred by remember { mutableStateOf<kotlinx.coroutines.CompletableDeferred<String>?>(null) }
+
+    val archivePasswdProvider: com.hippo.ehviewer.gallery.PasswdProvider = { invalidator ->
+        while (true) {
+            val deferred = kotlinx.coroutines.CompletableDeferred<String>()
+            passwordDeferred = deferred
+            showPasswordDialog = true
+            passwordError = false
+            passwordInput = ""
+            val pwd = deferred.await()
+            if (pwd.isEmpty()) throw IllegalStateException("用户取消密码输入")
+            if (invalidator(pwd)) {
+                showPasswordDialog = false
+                pwd
+            } else {
+                passwordError = true
+                passwordInput = ""
+                val deferred2 = kotlinx.coroutines.CompletableDeferred<String>()
+                passwordDeferred = deferred2
+                deferred2.await()
+            }
+        }
+    }
+
     // ★ 远程供给挂接：视图随模式切换整体重建（key 五元组），这里响应式重挂到当前活跃视图
     LaunchedEffect(smbSession, activePagerRef, activeWebtoonRef) {
         val s = smbSession
@@ -537,7 +564,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             }
             val resumePage = if (targetPage >= 0) targetPage else (saved?.lastPage ?: 0)
             if (isSmb) {
-                when (val r = com.mangareader.smbbridge.SmbBookRouter.openSmbBook(path, resumePage)) {
+                when (val r = com.mangareader.smbbridge.SmbBookRouter.openSmbBook(path, resumePage, archivePasswdProvider)) {
                     is com.mangareader.smbbridge.SmbBookRouter.OpenResult.Supported ->
                         return attachRemoteSession(r.supply, saved, targetPage)
                     is com.mangareader.smbbridge.SmbBookRouter.OpenResult.Unsupported -> {
@@ -553,7 +580,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                     }
                 }
             } else {
-                when (val r = com.mangareader.webdavbridge.WebDavBookRouter.openWebDavBook(path, resumePage)) {
+                when (val r = com.mangareader.webdavbridge.WebDavBookRouter.openWebDavBook(path, resumePage, archivePasswdProvider)) {
                     is com.mangareader.webdavbridge.WebDavBookRouter.OpenResult.Supported ->
                         return attachRemoteSession(r.supply, saved, targetPage)
                     is com.mangareader.webdavbridge.WebDavBookRouter.OpenResult.Unsupported -> {
@@ -638,7 +665,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                         file = localPath.toPath(),
                         info = null,
                         startPage = resumePage,
-                        passwdProvider = { throw IllegalStateException("该归档需要密码") },
+                        passwdProvider = archivePasswdProvider,
                     ) { loader ->
                         adapter.attach(loader, null)
                         adapter.awaitClose()
@@ -2434,6 +2461,38 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                 }) { Text("恢复并重新打开") }
             },
             dismissButton = { TextButton(onClick = { showRedownloadDialog = false; redownloadBook = null }) { Text("取消") } },
+        )
+    }
+
+    if (showPasswordDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                passwordDeferred?.complete("")
+                showPasswordDialog = false
+            },
+            title = { Text(if (passwordError) "密码错误，请重新输入" else "请输入密码") },
+            text = {
+                androidx.compose.material3.OutlinedTextField(
+                    value = passwordInput,
+                    onValueChange = { passwordInput = it },
+                    singleLine = true,
+                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val pwd = passwordInput
+                    passwordInput = ""
+                    passwordDeferred?.complete(pwd)
+                }) { Text("确定") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    passwordInput = ""
+                    passwordDeferred?.complete("")
+                    showPasswordDialog = false
+                }) { Text("取消") }
+            },
         )
     }
 
