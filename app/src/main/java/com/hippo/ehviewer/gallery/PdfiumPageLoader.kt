@@ -41,6 +41,14 @@ internal val pdfiumDispatcher: CoroutineDispatcher by lazy {
     }.asCoroutineDispatcher()
 }
 
+@PublishedApi
+internal val pdfiumInteractiveDispatcher: CoroutineDispatcher by lazy {
+    val counter = AtomicInteger()
+    Executors.newFixedThreadPool(2) { r ->
+        Thread(r, "pdfium-interactive-" + counter.incrementAndGet())
+    }.asCoroutineDispatcher()
+}
+
 /**
  * Remote PDF reader via pdfium FPDF_LoadCustomDocument: range-reads the remote
  * file on demand (no full download), renders each page to a cached JPEG.
@@ -93,9 +101,10 @@ suspend inline fun <T> usePdfiumPageLoader(
             ctx.resources.displayMetrics.heightPixels,
         )
 
-        val pagePaths = ConcurrentHashMap<Int, Path>()
-        val renderJobs = ConcurrentHashMap<Int, Job>()
-        val hostScope = this
+                val pagePaths = ConcurrentHashMap<Int, Path>()
+                val renderJobs = ConcurrentHashMap<Int, Job>()
+                val interactivePending = AtomicInteger(-1)
+                val hostScope = this
 
         val loader = install(
             object : PageLoader(
@@ -133,12 +142,23 @@ suspend inline fun <T> usePdfiumPageLoader(
                 }
 
                 override fun prefetchPages(pages: List<Int>, bounds: IntRange) {
+                    val ip = interactivePending.get()
+                    if (ip >= 0 && pagePaths[ip] == null && renderJobs[ip]?.isActive == true) return
                     pages.firstOrNull { pagePaths[it] == null && !DocumentExtractCache.isPageCached(cacheKey, it, "jpg") }?.let {
                         ensureRender(it, interactive = false)
                     }
                 }
 
                 override fun onRequest(index: Int, force: Boolean, orgImg: Boolean) {
+                    interactivePending.set(index)
+                    val iter = renderJobs.entries.iterator()
+                    while (iter.hasNext()) {
+                        val (jobIndex, job) = iter.next()
+                        if (kotlin.math.abs(jobIndex - index) > 3) {
+                            job.cancel()
+                            iter.remove()
+                        }
+                    }
                     ensureRender(index, interactive = true) {
                         notifySourceReady(index, orgImg)
                     }
@@ -164,7 +184,8 @@ suspend inline fun <T> usePdfiumPageLoader(
                         return
                     }
                     renderJobs[index]?.cancel()
-                    renderJobs[index] = hostScope.launch(pdfiumDispatcher) {
+                    val dispatcher = if (interactive) pdfiumInteractiveDispatcher else pdfiumDispatcher
+                    renderJobs[index] = hostScope.launch(dispatcher) {
                         val renderStart = android.os.SystemClock.elapsedRealtime()
                         try {
                             val pageSize = NativeEngine.pdfGetPageSize(pdfKey, index)
@@ -195,6 +216,7 @@ suspend inline fun <T> usePdfiumPageLoader(
                                 "page=" + index + " done ms=" + (android.os.SystemClock.elapsedRealtime() - renderStart),
                             )
                             onReady()
+                            if (interactive) interactivePending.compareAndSet(index, -1)
                         } catch (e: CancellationException) {
                             android.util.Log.d("PdfRender", "page=" + index + " cancelled")
                             throw e

@@ -41,6 +41,8 @@
 # smbj（SMB 协议栈：bouncycastle/asn1 反射较重，整包保留）
 -keep class com.hierynomus.** { *; }
 -dontwarn com.hierynomus.**
+# mbassador（smbj 事件总线依赖：SMBEventBus 反射查找 SubscriptionContext 构造函数）
+-keep class net.engio.mbassy.** { *; }
 # ktor CIO engine（WebDAV；反射构造协程调度器）
 -keep class io.ktor.** { *; }
 -dontwarn io.ktor.**

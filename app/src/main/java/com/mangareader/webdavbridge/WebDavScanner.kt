@@ -50,12 +50,21 @@ object WebDavScanner {
             repairZipFolderBooks(dao, existing)
             val existingPaths = existing.map { it.filePath }.toHashSet()
             val toInsert = ctx.discovered.values.filter { it.filePath !in existingPaths }
-            if (toInsert.isEmpty()) return@withContext 0
-            val rows = dao.insertBooksWithStableId(toInsert)
+            val rows = if (toInsert.isNotEmpty()) dao.insertBooksWithStableId(toInsert) else emptyList()
+            // ★ 清理陈旧条目：服务器上已不存在且无阅读进度/本地下载/收藏的远程书
+            val newPaths = ctx.discovered.keys
+            val stale = existing.filter {
+                it.source == "webdav" && it.filePath !in newPaths &&
+                    it.originalPath == null && !it.isFavorite &&
+                    it.readPages == 0 && it.lastReadAt == null
+            }
+            for (book in stale) {
+                runCatching { dao.deleteBookByPath(book.filePath) }
+            }
             val inserted = rows.count { it != -1L }
             android.util.Log.i(
                 TAG,
-                "scan done: discovered=${ctx.discovered.size} inserted=$inserted skippedDirs=${ctx.skipped.get()}",
+                "scan done: discovered=${ctx.discovered.size} inserted=$inserted pruned=${stale.size} skippedDirs=${ctx.skipped.get()}",
             )
             onProgress?.invoke(ctx.discovered.size)
             inserted
@@ -73,6 +82,7 @@ object WebDavScanner {
             .getOrDefault(emptyList())
         for (entry in entries) {
             if (ctx.discovered.size >= MAX_BOOKS) return
+            if (entry.virtual) continue
             when (entry) {
                 is BrowseEntryRemote.Directory -> {
                     // ★ zip-as-dir：Directory 行可能是 zip/cbz 文件伪装的目录 —— 按真实身份

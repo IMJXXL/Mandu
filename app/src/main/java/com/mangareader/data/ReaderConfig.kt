@@ -25,7 +25,7 @@ data class ReaderConfig(
     /** 一行/列中超过阈值的像素占比达到此值才算"白边"，越小越容易判定为白边，越大越保守 */
     val trimWhiteRatio: Float = 0.90f,
     val imageMarginH: Int = 0,
-    val readBackground: ReadBackground = ReadBackground.DEFAULT,
+    val readBackground: ReadBackground = ReadBackground.WHITE,
     val isEinkMode: Boolean = false,
     val einkDecodeSize: Int = 1920,
     val einkUiHideDelay: Long = 6000L,
@@ -131,7 +131,7 @@ data class ReaderConfig(
                 trimThreshold = prefs.safeGetInt("${prefix}trimThreshold", 220),
                 trimWhiteRatio = prefs.safeGetFloat("${prefix}trimWhiteRatio", 0.90f),
                 imageMarginH = prefs.safeGetInt("${prefix}imageMarginH", 0),
-                readBackground = try { ReadBackground.valueOf(prefs.getString("${prefix}readBackground", "DEFAULT")!!) } catch (_: Exception) { ReadBackground.DEFAULT },
+                readBackground = try { ReadBackground.valueOf(prefs.getString("${prefix}readBackground", "WHITE")!!) } catch (_: Exception) { ReadBackground.WHITE },
                 isEinkMode = prefs.safeGetBoolean("${prefix}isEinkMode", false),
                 einkDecodeSize = prefs.safeGetInt("${prefix}einkDecodeSize", 1920),
                 einkUiHideDelay = prefs.safeGetLong("${prefix}einkUiHideDelay", 6000L),

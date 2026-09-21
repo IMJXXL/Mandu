@@ -1850,7 +1850,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     val bgColor = remember(configVersion) {
         // 读取全局背景色设置（无 bookId 前缀），默认白色
         val globalBgName = prefs.getString("readBackground", "WHITE") ?: "WHITE"
-        val globalBg = try { com.mangareader.data.ReaderConfig.ReadBackground.valueOf(globalBgName) } catch (_: Exception) { com.mangareader.data.ReaderConfig.ReadBackground.DEFAULT }
+        val globalBg = try { com.mangareader.data.ReaderConfig.ReadBackground.valueOf(globalBgName) } catch (_: Exception) { com.mangareader.data.ReaderConfig.ReadBackground.WHITE }
         when (globalBg) {
             com.mangareader.data.ReaderConfig.ReadBackground.WHITE -> Color(0xFFE8E8E8)
             com.mangareader.data.ReaderConfig.ReadBackground.GRAY -> Color(0xFF202125)

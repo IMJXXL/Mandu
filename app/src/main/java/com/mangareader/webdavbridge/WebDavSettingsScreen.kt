@@ -110,6 +110,26 @@ fun WebDavSettingsScreen(onBack: () -> Unit, onOpenDownloadQueue: () -> Unit = {
                 IntRow("阅读页缓存预算 (MB)", "流式页缓存的总容量上限", Settings.readCacheSize)
                 IntRow("预加载页数", "当前页之外预取的页数", Settings.preloadImage)
                 IntRow("下载线程数", "整档下载使用的并发连接数", Settings.multiThreadDownload)
+                val pdfFastMode by Settings.webDavPdfFastMode.collectAsState()
+                Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(
+                        Triple("标准模式", false, "均能解析，受限于网络速度"),
+                        Triple("快速模式", true, "仅部分能解析，但速度会快"),
+                    ).forEach { (label, value, desc) ->
+                        val isSelected = pdfFastMode == value
+                        Surface(
+                            modifier = Modifier.weight(1f).clickable { Settings.webDavPdfFastMode.value = value },
+                            shape = MaterialTheme.shapes.medium,
+                            color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                            tonalElevation = if (isSelected) 4.dp else 0.dp
+                        ) {
+                            Column(Modifier.padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(label, fontSize = 14.sp, color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface)
+                                Text(desc, fontSize = 11.sp, color = if (isSelected) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                }
             }
             }
 

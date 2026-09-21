@@ -385,7 +385,7 @@ object Settings : DataStorePreferences(null) {
      * page). Decode from RAM; leftover files from earlier sessions may still be read.
      * Local folders already skip a page cache.
      */
-    val disableReaderNetworkCache = boolPref("disable_reader_network_cache", true)
+    val disableReaderNetworkCache = boolPref("disable_reader_network_cache", false)
 
     /** Decoded images to keep ahead independently of [preloadImage]. */
     val readerDecodeAhead = intPref("pref_reader_decode_ahead", 3)
@@ -492,6 +492,8 @@ object Settings : DataStorePreferences(null) {
      * WebDAV parallel page / Range GET fan-out (Advanced). Default: 4.
      */
     val webDavDownloadSlots = intPref("webdav_download_slots", 4)
+
+    val webDavPdfFastMode = boolPref("webdav_pdf_fast_mode", false)
 
     /**
      * Slim FGS for external HTTP / streamdoc.

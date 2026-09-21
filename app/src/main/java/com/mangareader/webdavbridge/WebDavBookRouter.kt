@@ -1,6 +1,7 @@
 package com.mangareader.webdavbridge
 
 import com.hippo.ehviewer.gallery.useArchivePageLoader
+import com.hippo.ehviewer.Settings
 import com.hippo.ehviewer.gallery.useDocumentExtractPageLoader
 import com.hippo.ehviewer.gallery.usePdfiumPageLoader
 import com.hippo.ehviewer.gallery.PageLoader
@@ -187,7 +188,7 @@ object WebDavBookRouter {
             throw IllegalStateException("该归档需要密码（当前未配置归档密码）")
         }
         if (isDocumentFileName(remote)) {
-            if (isPdfFileName(remote)) {
+            if (isPdfFileName(remote) && !Settings.webDavPdfFastMode.value) {
                 usePdfiumPageLoader(
                     source = byteSource,
                     cacheKey = cacheKey,
@@ -197,7 +198,7 @@ object WebDavBookRouter {
                     remoteSize = runCatching { byteSource.size }.getOrDefault(0L),
                 ) { loader -> block(loader, byteSource) }
             } else {
-                val documentFormat = if (isEpubFileName(remote)) "epub" else "pdf"
+                val documentFormat = if (isPdfFileName(remote)) "pdf" else if (isEpubFileName(remote)) "epub" else "pdf"
                 useDocumentExtractPageLoader(
                     source = byteSource,
                     cacheKey = cacheKey,
