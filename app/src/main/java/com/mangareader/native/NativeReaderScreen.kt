@@ -229,6 +229,7 @@ fun NativeReaderScreen(
                 h.adopted = true
                 delegate.adoptBitmaps(h.bitmaps)
             } else {
+                engine.removeBitmapsByValue(h.bitmaps.values)
                 h.recycleIfUnadopted()
             }
         }

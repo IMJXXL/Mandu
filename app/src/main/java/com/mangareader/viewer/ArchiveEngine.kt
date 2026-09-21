@@ -208,11 +208,12 @@ class ArchiveEngine(private val ctx: Context) {
     // ★ B3 修复：位图缓存由"按张数限容"改为 android.util.LruCache 按 byteCount 计重。
     //   旧 LinkedHashMap(60/100 张) 在 4K 大图场景可达数 GB（60×33MB）OOM；
     //   LruCache 内部自带同步，sizeOf 返回 byteCount，上限取保守字节值。
+
     private val bitmapCache = object : android.util.LruCache<String, Bitmap>(96 * 1024 * 1024) {
-        override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
+        override fun sizeOf(key: String, value: Bitmap): Int = if (value.isRecycled) 0 else value.byteCount
     }
     private val sharedBitmapCache = object : android.util.LruCache<String, Bitmap>(64 * 1024 * 1024) {
-        override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
+        override fun sizeOf(key: String, value: Bitmap): Int = if (value.isRecycled) 0 else value.byteCount
     }
     private val epubSpineCache = object : LinkedHashMap<String, List<Int>>(10, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<Int>>?): Boolean = size > 10
@@ -248,6 +249,20 @@ class ArchiveEngine(private val ctx: Context) {
     }
 
     private fun cachePut(key: String, bmp: Bitmap) { bitmapCache.put(key, bmp) }
+
+    fun removeBitmapsByValue(bitmaps: Collection<Bitmap>) {
+        if (bitmaps.isEmpty()) return
+        val idSet = bitmaps.map { System.identityHashCode(it) }.toHashSet()
+        var n1 = 0
+        bitmapCache.snapshot().forEach { (k, v) ->
+            if (System.identityHashCode(v) in idSet) { bitmapCache.remove(k); n1++ }
+        }
+        var n2 = 0
+        sharedBitmapCache.snapshot().forEach { (k, v) ->
+            if (System.identityHashCode(v) in idSet) { sharedBitmapCache.remove(k); n2++ }
+        }
+        if (n1 + n2 > 0) Log.w(TAG, "removeBitmapsByValue: engineCache=$n1 sharedCache=$n2 total=${bitmaps.size}")
+    }
 
     fun getCachedBitmap(key: String): Bitmap? {
         val bmp = sharedBitmapCache.get(key) ?: return null
