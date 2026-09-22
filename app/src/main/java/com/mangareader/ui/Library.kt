@@ -886,11 +886,16 @@ private fun BookCard(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, isS
                             .decoderFactory(com.mangareader.coil.CoverAnimGateDecoder)
                             .build()
                     }
-                    coil3.compose.AsyncImage(
+                    coil3.compose.SubcomposeAsyncImage(
                         model = coverRequest,
                         contentDescription = null,
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop,
+                        error = {
+                            if (fileExt in setOf("zip", "cbz", "rar", "cbr", "7z", "cb7")) {
+                                Icon(Icons.Filled.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f), modifier = Modifier.size(36.dp))
+                            }
+                        },
                     )
                 }
             }
@@ -996,7 +1001,11 @@ private fun BookListRow(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, 
                                 .decoderFactory(com.mangareader.coil.CoverAnimGateDecoder)
                                 .build()
                         }
-                        coil3.compose.AsyncImage(model = coverRequest, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                        coil3.compose.SubcomposeAsyncImage(model = coverRequest, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop, error = {
+                            if (fileExt in setOf("zip", "cbz", "rar", "cbr", "7z", "cb7")) {
+                                Icon(Icons.Filled.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f), modifier = Modifier.size(24.dp))
+                            }
+                        })
                     }
                 }
                 if (progress > 0f) Text(text = "${(progress * 100).toInt()}%", fontSize = 9.sp, color = Color.White.copy(alpha = 0.9f), modifier = Modifier.align(Alignment.BottomStart).padding(4.dp))

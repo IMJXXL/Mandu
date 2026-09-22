@@ -20,6 +20,7 @@ import com.hippo.ehviewer.library.isPdfFileName
 import com.hippo.ehviewer.library.isSolidArchiveFileName
 import com.hippo.ehviewer.library.isTarArchiveFileName
 import com.hippo.ehviewer.library.isZipArchiveFileName
+import com.hippo.ehviewer.library.naturalCompare
 import com.hippo.ehviewer.library.ZipAsDirListing
 import com.hippo.ehviewer.smb.SmbArchiveByteSource
 import com.hippo.ehviewer.smb.SmbGateway
@@ -262,17 +263,23 @@ object SmbBookRouter {
                 startPage = startPage,
             ) { loader -> block(loader, byteSource) }
         } else if (isImageFileName(remote)) {
-            // 独立图片文件（非归档成员）→ 按单图文件夹书加载
-            android.util.Log.i(TAG, "standalone image: remote=$remote")
             runCatching { byteSource.close() }
             val parentDir = remote.substringBeforeLast('/', "")
             val fileName = remote.substringAfterLast('/')
+            val allImageNames = runCatching {
+                val dirEntries = SmbGateway.listDirectory(source, password, parentDir)
+                dirEntries.filterIsInstance<BrowseEntryRemote.RegularFile>()
+                    .map { it.name }
+                    .filter { isImageFileName(it) }
+                    .sortedWith { a, b -> naturalCompare(a, b) }
+            }.getOrDefault(listOf(fileName))
+            val imageIndex = allImageNames.indexOf(fileName).coerceAtLeast(0)
             useSmbFolderPageLoader(
                 source = source,
                 remoteDir = parentDir,
-                imageFileNames = listOf(fileName),
+                imageFileNames = allImageNames,
                 info = null,
-                startPage = startPage,
+                startPage = imageIndex,
             ) { loader -> block(loader, null) }
         } else {
             android.util.Log.i("SmbBookRouter", "stream archive path: remote=$remote ext=${ref.ext} size=${runCatching { byteSource.size }.getOrDefault(-1L)}")
