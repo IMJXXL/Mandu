@@ -886,14 +886,20 @@ private fun BookCard(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, isS
                             .decoderFactory(com.mangareader.coil.CoverAnimGateDecoder)
                             .build()
                     }
+                    val isArchiveExt = fileExt in setOf("zip", "cbz", "rar", "cbr", "7z", "cb7")
                     coil3.compose.SubcomposeAsyncImage(
                         model = coverRequest,
                         contentDescription = null,
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop,
+                        loading = {
+                            if (isArchiveExt) {
+                                Icon(Icons.Filled.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f), modifier = Modifier.size(28.dp))
+                            }
+                        },
                         error = {
-                            if (fileExt in setOf("zip", "cbz", "rar", "cbr", "7z", "cb7")) {
-                                Icon(Icons.Filled.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f), modifier = Modifier.size(36.dp))
+                            if (isArchiveExt) {
+                                Icon(Icons.Filled.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f), modifier = Modifier.size(28.dp))
                             }
                         },
                     )
@@ -1001,9 +1007,14 @@ private fun BookListRow(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, 
                                 .decoderFactory(com.mangareader.coil.CoverAnimGateDecoder)
                                 .build()
                         }
-                        coil3.compose.SubcomposeAsyncImage(model = coverRequest, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop, error = {
-                            if (fileExt in setOf("zip", "cbz", "rar", "cbr", "7z", "cb7")) {
-                                Icon(Icons.Filled.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f), modifier = Modifier.size(24.dp))
+                        val isArchiveExt = fileExt in setOf("zip", "cbz", "rar", "cbr", "7z", "cb7")
+                        coil3.compose.SubcomposeAsyncImage(model = coverRequest, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop, loading = {
+                            if (isArchiveExt) {
+                                Icon(Icons.Filled.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f), modifier = Modifier.size(20.dp))
+                            }
+                        }, error = {
+                            if (isArchiveExt) {
+                                Icon(Icons.Filled.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f), modifier = Modifier.size(20.dp))
                             }
                         })
                     }
