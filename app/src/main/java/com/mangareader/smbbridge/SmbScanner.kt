@@ -90,7 +90,7 @@ object SmbScanner {
 
     private suspend fun walk(ctx: ScanCtx, relDir: String, depth: Int, onProgress: ((Int) -> Unit)?) {
         if (depth > MAX_DEPTH) return
-        val entries = runCatching { SmbGateway.listDirectory(ctx.source, ctx.password, relDir) }
+        val entries = runCatching { SmbGateway.listDirectory(ctx.source, ctx.password, relDir, useCache = false) }
             .onFailure { ctx.skipped.incrementAndGet() }
             .getOrDefault(emptyList())
         for (entry in entries) {
@@ -158,7 +158,7 @@ object SmbScanner {
 
     private suspend fun findFirstCoverRemote(ctx: ScanCtx, relDir: String, depth: Int): String? {
         if (depth > MAX_DEPTH) return null
-        val entries = runCatching { SmbGateway.listDirectory(ctx.source, ctx.password, relDir) }
+        val entries = runCatching { SmbGateway.listDirectory(ctx.source, ctx.password, relDir, useCache = false) }
             .getOrDefault(emptyList())
         for (entry in entries) {
             when (entry) {
