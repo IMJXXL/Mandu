@@ -738,18 +738,19 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             when (it) {
                 is com.hippo.ehviewer.library.BrowseEntryRemote.ArchiveGallery -> true
                 is com.hippo.ehviewer.library.BrowseEntryRemote.Directory -> realChild(it.relativeName)
-                is com.hippo.ehviewer.library.BrowseEntryRemote.FolderGallery -> realChild(it.relativeName)
+                is com.hippo.ehviewer.library.BrowseEntryRemote.RegularFile -> true
+                is com.hippo.ehviewer.library.BrowseEntryRemote.VideoFile -> !it.virtual
                 else -> false
             }
         }
         if (subEntries.isEmpty()) return null
         return subEntries.map { entry ->
-            val isDir = entry is com.hippo.ehviewer.library.BrowseEntryRemote.Directory ||
-                         entry is com.hippo.ehviewer.library.BrowseEntryRemote.FolderGallery
+            val isDir = entry is com.hippo.ehviewer.library.BrowseEntryRemote.Directory
             val childName = when (entry) {
                 is com.hippo.ehviewer.library.BrowseEntryRemote.Directory -> entry.relativeName
-                is com.hippo.ehviewer.library.BrowseEntryRemote.FolderGallery -> entry.relativeName
                 is com.hippo.ehviewer.library.BrowseEntryRemote.ArchiveGallery -> entry.fileName
+                is com.hippo.ehviewer.library.BrowseEntryRemote.RegularFile -> entry.fileName
+                is com.hippo.ehviewer.library.BrowseEntryRemote.VideoFile -> entry.fileName
                 else -> entry.name
             }
             val childPath = if (parentPath.endsWith("/")) "$parentPath$childName" else "$parentPath/$childName"

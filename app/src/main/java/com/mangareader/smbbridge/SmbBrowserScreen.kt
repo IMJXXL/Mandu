@@ -191,11 +191,13 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long, Int)
     //   （迅雷下载 3 变 6 实锤）。Folder 模式隐藏合成画廊行、保留目录/散图/档案/视频，
     //   散图行可点击直达阅读器（openFolderImage）。
     val visibleEntries = remember(entries) {
-        entries.filterRemoteByContentMode(
+        val filtered = entries.filterRemoteByContentMode(
             BrowseContentMode.Folder,
             showHiddenFiles = true,
             showVirtualGalleries = true,
         )
+
+        filtered
     }
 
     fun joinRel(child: String): String = if (dir.isEmpty()) child else "$dir/$child"
