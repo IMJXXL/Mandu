@@ -2075,7 +2075,7 @@ Java_com_hippo_ehviewer_jni_ArchiveKt_extractToByteBuffer(JNIEnv *env, jclass th
     if (entry->addr) {
         memcpy(out, entry->addr, (size_t) size);
         result = (*env)->NewDirectByteBuffer(env, out, size);
-    } else if (use_stream_io && use_zip_cd_index) {
+    } else if (use_stream_io && use_zip_cd_index && !need_encrypt) {
         if (zip_stream_extract_entry(entry, out, (size_t) size) == 0) {
             result = (*env)->NewDirectByteBuffer(env, out, size);
         } else {
