@@ -159,27 +159,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?, Int) -> Unit
             Spacer(Modifier.height(12.dp))
             }
             item {
-                var exportingDiag by remember { mutableStateOf(false) }
-                Button(
-                    enabled = !exportingDiag,
-                    onClick = {
-                        exportingDiag = true
-                        Thread {
-                            val result = try {
-                                com.mangareader.sr.DiagLogExporter.export(ctx)
-                            } catch (t: Throwable) {
-                                "导出异常: ${t.message}"
-                            }
-                            android.os.Handler(android.os.Looper.getMainLooper()).post {
-                                exportingDiag = false
-                                android.widget.Toast.makeText(ctx, result, android.widget.Toast.LENGTH_LONG).show()
-                            }
-                        }.start()
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                ) { Text(if (exportingDiag) "正在导出全部日志…" else "导出全部日志（临时）") }
-            }
-            item {
+
 
             Spacer(Modifier.height(8.dp))
             Card(Modifier.fillMaxWidth().clickable { showFolderManage = true }) {
