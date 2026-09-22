@@ -44,6 +44,8 @@ data class Book(
     val sourceMtimeMs: Long = 0,
     /** 源物理文件 length */
     val sourceSizeBytes: Long = 0,
+    val seriesId: String? = null,
+    val seriesName: String? = null,
 )
 
 @Entity(tableName = "imported_folders")
@@ -305,6 +307,24 @@ interface MangaDao {
 
     @Query("SELECT filePath FROM manga_books WHERE source = 'komga' AND filePath LIKE 'komga:' || :serverId || ':%'")
     suspend fun getKomgaBookPathsForServer(serverId: String): List<String>
+
+    @Query("UPDATE manga_books SET seriesId = :seriesId, seriesName = :seriesName WHERE id = :id")
+    suspend fun updateKomgaSeriesInfo(id: Long, seriesId: String, seriesName: String)
+
+    @Query("SELECT * FROM manga_books WHERE source = 'komga' AND seriesId = :seriesId AND filePath LIKE 'komga:' || :serverId || ':%' AND isHidden = 0 ORDER BY title ASC")
+    suspend fun getKomgaSeriesVisibleBooks(serverId: String, seriesId: String): List<Book>
+
+    @Query("UPDATE manga_books SET isHidden = :hidden WHERE source = 'komga' AND filePath LIKE 'komga:' || :serverId || ':%'")
+    suspend fun setKomgaBooksHidden(serverId: String, hidden: Boolean)
+
+    @Query("SELECT COUNT(*) FROM manga_books WHERE source = 'komga' AND filePath LIKE 'komga:' || :serverId || ':%' AND isHidden = 1")
+    suspend fun countKomgaHiddenBooks(serverId: String): Int
+
+    @Query("UPDATE manga_books SET isHidden = :hidden WHERE source = 'opds' AND filePath LIKE 'opds:' || :serverId || ':%'")
+    suspend fun setOpdsBooksHidden(serverId: String, hidden: Boolean)
+
+    @Query("SELECT COUNT(*) FROM manga_books WHERE source = 'opds' AND filePath LIKE 'opds:' || :serverId || ':%' AND isHidden = 1")
+    suspend fun countOpdsHiddenBooks(serverId: String): Int
 
     /** ★ SMB 书源整源隐藏/显示（对齐本地文件夹的隐藏机制；含已下载到本地的书） */
     @Query("UPDATE manga_books SET isHidden = :hidden WHERE (source = 'smb' AND filePath LIKE 'smb:' || :serverId || ':%') OR (source = 'local' AND originalPath LIKE 'smb:' || :serverId || ':%')")
@@ -1197,7 +1217,7 @@ data class KomgaProgressSyncQueueEntity(
 
 @Database(
     entities = [Book::class, Folder::class, ReadingHistory::class, Bookshelf::class, BookshelfItem::class, Tag::class, TagLink::class, ReadingProgress::class, Bookmark::class, com.ehviewer.core.database.model.SmbSourceEntity::class, com.ehviewer.core.database.model.LibraryRootEntity::class, com.ehviewer.core.database.model.LocalGalleryEntity::class, com.ehviewer.core.database.model.WebDavSourceEntity::class, DownloadTaskEntity::class, KomgaSeriesCacheEntity::class, KomgaBookMemoEntity::class, KomgaProgressSyncQueueEntity::class],
-    version = 18,
+    version = 19,
     exportSchema = false
 )
 abstract class MangaDatabase : com.ehviewer.core.database.LocalLibraryDatabase() {
@@ -1456,13 +1476,20 @@ abstract class MangaDatabase : com.ehviewer.core.database.LocalLibraryDatabase()
             }
         }
 
+        private val MIGRATION_18_19 = object : androidx.room.migration.Migration(18, 19) {
+            override fun migrate(database: androidx.sqlite.db.SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE manga_books ADD COLUMN seriesId TEXT")
+                database.execSQL("ALTER TABLE manga_books ADD COLUMN seriesName TEXT")
+            }
+        }
+
         fun getDatabase(context: Context): MangaDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
                     context.applicationContext,
                     MangaDatabase::class.java,
                     "manga_reader_db"
-                ).addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18)
+                ).addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19)
                 .fallbackToDestructiveMigrationOnDowngrade()
                 .build()
                 INSTANCE = instance

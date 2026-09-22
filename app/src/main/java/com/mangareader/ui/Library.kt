@@ -80,9 +80,83 @@ enum class SortMode(val label: String) { LAST("最近阅读"), NAME("名称"), D
 enum class FilterMode(val label: String) { ALL("全部"), READING("阅读中"), UNREAD("未读"), FINISHED("已读完"), FAV("收藏") }
 enum class LayoutMode(val cols: Int, val label: String) { GRID2(2, "2列"), GRID3(3, "3列"), GRID4(4, "4列"), GRID5(5, "5列"), LIST(1, "列表") }
 
+sealed interface ShelfItem {
+    data class Single(val book: Book) : ShelfItem
+    data class Series(
+        val serverId: String,
+        val seriesId: String,
+        val title: String,
+        val coverPath: String?,
+        val volumeCount: Int,
+        val books: List<Book>,
+    ) : ShelfItem
+}
+
+private fun komgaServerIdFromPath(filePath: String): String? {
+    if (!filePath.startsWith("komga:")) return null
+    val parts = filePath.split(":")
+    return if (parts.size >= 3) parts[1] else null
+}
+
+private fun aggregateKomgaSeries(books: List<Book>): List<ShelfItem> {
+    val seriesBuckets = LinkedHashMap<Pair<String, String>, MutableList<Book>>()
+    val singles = mutableListOf<ShelfItem>()
+    for (b in books) {
+        val sid = b.seriesId
+        val serverId = if (sid != null) komgaServerIdFromPath(b.filePath) else null
+        if (sid != null && serverId != null) {
+            seriesBuckets.getOrPut(serverId to sid) { mutableListOf() }.add(b)
+        } else {
+            singles.add(ShelfItem.Single(b))
+        }
+    }
+    val result = mutableListOf<ShelfItem>()
+    result.addAll(singles)
+    for ((key, volumes) in seriesBuckets) {
+        if (volumes.size >= 2) {
+            val (serverId, seriesId) = key
+            val seriesName = volumes.firstOrNull { !it.seriesName.isNullOrEmpty() }?.seriesName
+                ?: volumes.first().title
+            val coverPath = volumes.firstOrNull { !it.coverPath.isNullOrEmpty() }?.coverPath
+            result.add(ShelfItem.Series(serverId, seriesId, seriesName, coverPath, volumes.size, volumes))
+        } else {
+            volumes.forEach { result.add(ShelfItem.Single(it)) }
+        }
+    }
+    return result
+}
+
+private fun sortShelfItems(items: List<ShelfItem>, sort: SortMode): List<ShelfItem> {
+    return when (sort) {
+        SortMode.LAST -> items.sortedByDescending { item ->
+            when (item) {
+                is ShelfItem.Single -> item.book.lastReadAt ?: 0L
+                is ShelfItem.Series -> item.books.maxOfOrNull { it.lastReadAt ?: 0L } ?: 0L
+            }
+        }
+        SortMode.DATE -> items.sortedByDescending { item ->
+            when (item) {
+                is ShelfItem.Single -> item.book.addedAt
+                is ShelfItem.Series -> item.books.minOfOrNull { it.addedAt } ?: 0L
+            }
+        }
+        SortMode.NAME -> items.sortedWith(Comparator { a, b ->
+            val an = when (a) { is ShelfItem.Single -> a.book.title; is ShelfItem.Series -> a.title }
+            val bn = when (b) { is ShelfItem.Single -> b.book.title; is ShelfItem.Series -> b.title }
+            naturalCompare(an, bn)
+        })
+        SortMode.PROGRESS -> items.sortedByDescending { item ->
+            when (item) {
+                is ShelfItem.Single -> if (item.book.totalPages > 0) item.book.readPages.toFloat() / item.book.totalPages else 0f
+                is ShelfItem.Series -> item.books.maxOfOrNull { if (it.totalPages > 0) it.readPages.toFloat() / it.totalPages else 0f } ?: 0f
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettings: () -> Unit = {}, onOpenHistory: () -> Unit = {}) {
+fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettings: () -> Unit = {}, onOpenHistory: () -> Unit = {}, onOpenKomgaSeries: (String, String) -> Unit = { _, _ -> }) {
     val ctx = LocalContext.current
     val app = ctx.applicationContext as App
     val dao = app.db.mangaDao()
@@ -107,6 +181,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
     val prefs = remember { ctx.getSharedPreferences("manga_reader", Context.MODE_PRIVATE) }
 
     var books by remember { mutableStateOf<List<Book>?>(null) }
+    var shelfItems by remember { mutableStateOf<List<ShelfItem>?>(null) }
     var bookshelves by remember { mutableStateOf(listOf<Bookshelf>()) }
     var sort by remember {
         mutableStateOf(
@@ -243,12 +318,20 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
             }
         }
         flow.distinctUntilChanged().collect {
-            val ordered = withContext(Dispatchers.IO) {
-                if (sort == SortMode.NAME) {
-                    it.sortedWith(Comparator { a, b -> naturalCompare(a.title, b.title) })
-                } else it
+            val canAggregate = debouncedQuery.isEmpty() && selectedShelfId == null && filter == FilterMode.ALL
+            if (canAggregate) {
+                val aggregated = withContext(Dispatchers.IO) { sortShelfItems(aggregateKomgaSeries(it), sort) }
+                books = it
+                shelfItems = if (sortAsc) aggregated.reversed() else aggregated
+            } else {
+                val ordered = withContext(Dispatchers.IO) {
+                    if (sort == SortMode.NAME) {
+                        it.sortedWith(Comparator { a, b -> naturalCompare(a.title, b.title) })
+                    } else it
+                }
+                books = if (sortAsc) ordered.reversed() else ordered
+                shelfItems = null
             }
-            books = if (sortAsc) ordered.reversed() else ordered
         }
     }
 
@@ -632,9 +715,9 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                 Text("书架: $selectedShelfName", fontSize = 13.sp, color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp))
             }
-            if (books == null) {
+            if (books == null && shelfItems == null) {
                 Box(Modifier.fillMaxSize())
-            } else if (books?.isEmpty() == true) {
+            } else if ((shelfItems ?: books!!.map { ShelfItem.Single(it) }).isEmpty()) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Icon(Icons.Default.MenuBook, null, Modifier.size(72.dp), tint = MaterialTheme.colorScheme.outline)
@@ -648,36 +731,53 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                 val thumbDecodePx = com.hippo.ehviewer.coil.CoverThumb.gridDecodePx(
                     LocalConfiguration.current.screenWidthDp, effectiveCols, 12.dp, 8.dp,
                 )
+                val renderItems = shelfItems ?: books!!.map { ShelfItem.Single(it) }
                 if (layoutMode == 3) {
                     androidx.compose.foundation.lazy.LazyColumn(
                         contentPadding = PaddingValues(12.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        items(books.orEmpty(), key = { it.id }, contentType = { "book" }) { b ->
-                            val onToggleSelect = remember(b.id, isMultiSelect) { { selectedBooks = if (b.id in selectedBooks) selectedBooks - b.id else selectedBooks + b.id } }
-                            val onTap = remember(b.id, isMultiSelect) { { if (isMultiSelect) { selectedBooks = if (b.id in selectedBooks) selectedBooks - b.id else selectedBooks + b.id } else openBookThrottled(b.id, null) } }
-                            val onLongClick = remember(b.id) { { showBookInfo = b } }
-                            val onDelete = remember(b.id) { { deleteTarget = b } }
-                            BookListRow(b, engine, isMultiSelect, b.id in selectedBooks, thumbDecodePx, hideAllBadges,
-                                onToggleSelect = onToggleSelect,
-                                onTap = onTap,
-                                onLongClick = onLongClick,
-                                onDelete = onDelete)
+                        items(renderItems, key = { when (it) { is ShelfItem.Single -> "b:${it.book.id}"; is ShelfItem.Series -> "s:${it.serverId}:${it.seriesId}" } }, contentType = { when (it) { is ShelfItem.Single -> "book"; is ShelfItem.Series -> "series" } }) { item ->
+                            when (item) {
+                                is ShelfItem.Single -> {
+                                    val b = item.book
+                                    val onToggleSelect = remember(b.id, isMultiSelect) { { selectedBooks = if (b.id in selectedBooks) selectedBooks - b.id else selectedBooks + b.id } }
+                                    val onTap = remember(b.id, isMultiSelect) { { if (isMultiSelect) { selectedBooks = if (b.id in selectedBooks) selectedBooks - b.id else selectedBooks + b.id } else openBookThrottled(b.id, null) } }
+                                    val onLongClick = remember(b.id) { { showBookInfo = b } }
+                                    val onDelete = remember(b.id) { { deleteTarget = b } }
+                                    BookListRow(b, engine, isMultiSelect, b.id in selectedBooks, thumbDecodePx, hideAllBadges,
+                                        onToggleSelect = onToggleSelect,
+                                        onTap = onTap,
+                                        onLongClick = onLongClick,
+                                        onDelete = onDelete)
+                                }
+                                is ShelfItem.Series -> {
+                                    SeriesListRow(item, engine, thumbDecodePx, hideAllBadges, onTap = { onOpenKomgaSeries(item.serverId, item.seriesId) })
+                                }
+                            }
                         }
                     }
                 } else {
                     LazyVerticalGrid(columns = gridCols, contentPadding = PaddingValues(12.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        items(books.orEmpty(), key = { it.id }, contentType = { "book" }) { b ->
-                            val onToggleSelect = remember(b.id, isMultiSelect) { { selectedBooks = if (b.id in selectedBooks) selectedBooks - b.id else selectedBooks + b.id } }
-                            val onTap = remember(b.id, isMultiSelect) { { if (isMultiSelect) { selectedBooks = if (b.id in selectedBooks) selectedBooks - b.id else selectedBooks + b.id } else openBookThrottled(b.id, null) } }
-                            val onLongClick = remember(b.id) { { showBookInfo = b } }
-                            val onDelete = remember(b.id) { { deleteTarget = b } }
-                            BookCard(b, engine, isMultiSelect, b.id in selectedBooks, thumbDecodePx, layoutMode, hideAllBadges,
-                                onToggleSelect = onToggleSelect,
-                                onTap = onTap,
-                                onLongClick = onLongClick,
-                                onDelete = onDelete)
+                        items(renderItems, key = { when (it) { is ShelfItem.Single -> "b:${it.book.id}"; is ShelfItem.Series -> "s:${it.serverId}:${it.seriesId}" } }, contentType = { when (it) { is ShelfItem.Single -> "book"; is ShelfItem.Series -> "series" } }) { item ->
+                            when (item) {
+                                is ShelfItem.Single -> {
+                                    val b = item.book
+                                    val onToggleSelect = remember(b.id, isMultiSelect) { { selectedBooks = if (b.id in selectedBooks) selectedBooks - b.id else selectedBooks + b.id } }
+                                    val onTap = remember(b.id, isMultiSelect) { { if (isMultiSelect) { selectedBooks = if (b.id in selectedBooks) selectedBooks - b.id else selectedBooks + b.id } else openBookThrottled(b.id, null) } }
+                                    val onLongClick = remember(b.id) { { showBookInfo = b } }
+                                    val onDelete = remember(b.id) { { deleteTarget = b } }
+                                    BookCard(b, engine, isMultiSelect, b.id in selectedBooks, thumbDecodePx, layoutMode, hideAllBadges,
+                                        onToggleSelect = onToggleSelect,
+                                        onTap = onTap,
+                                        onLongClick = onLongClick,
+                                        onDelete = onDelete)
+                                }
+                                is ShelfItem.Series -> {
+                                    SeriesCard(item, engine, thumbDecodePx, layoutMode, hideAllBadges, onTap = { onOpenKomgaSeries(item.serverId, item.seriesId) })
+                                }
+                            }
                         }
                     }
                 }
@@ -1054,6 +1154,166 @@ private fun BookListRow(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, 
                     Text(text = "${(progress * 100).toInt()}%", fontSize = 10.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
                 }
                 b.lastReadAt?.takeIf { it > 0 }?.let {
+                    Text(
+                        text = java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.getDefault()).format(java.util.Date(it)),
+                        fontSize = 10.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun SeriesCard(series: ShelfItem.Series, engine: ArchiveEngine, decodePx: Int, layoutMode: Int, hideAllBadges: Boolean, onTap: () -> Unit) {
+    val ctx = LocalContext.current
+    val coverPath = series.coverPath
+    val maxProgress = series.books.maxOfOrNull { if (it.totalPages > 0) it.readPages.toFloat() / it.totalPages else 0f } ?: 0f
+    val anyReading = series.books.any { it.readPages > 0 || (it.lastReadAt != null && it.lastReadAt > 0) }
+    val allFinished = series.books.isNotEmpty() && series.books.all { it.totalPages > 0 && it.readPages >= it.totalPages }
+    val status = when {
+        allFinished -> "已读完" to Color(0xFF81C784)
+        anyReading -> "阅读中" to Color(0xFFFFB74D)
+        else -> "未读" to Color(0xFFE57373)
+    }
+
+    Surface(
+        modifier = Modifier.clickable(onClick = onTap),
+        shape = RoundedCornerShape(8.dp),
+        color = Color.Transparent,
+    ) {
+        Column {
+            val coverRatio = 0.72f
+            Box(Modifier.fillMaxWidth().aspectRatio(coverRatio).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
+                if (coverPath != null) {
+                    val coverRequest = remember(coverPath, decodePx) {
+                        coil3.request.ImageRequest.Builder(ctx)
+                            .data(com.mangareader.viewer.CoverData(coverPath, dynOn = false))
+                            .coverThumb(
+                                decodePx,
+                                memoryKey = "cover:series:${series.serverId}:${series.seriesId}@$coverPath",
+                                diskKey = "$coverPath",
+                            )
+                            .decoderFactory(com.mangareader.coil.CoverAnimGateDecoder)
+                            .build()
+                    }
+                    coil3.compose.SubcomposeAsyncImage(
+                        model = coverRequest,
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop,
+                    )
+                }
+                if (layoutMode == 0) {
+                    Box(Modifier.fillMaxWidth().align(Alignment.BottomCenter).background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xAA000000))))) {
+                        Text(text = series.title, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Color.White, modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 4.dp))
+                    }
+                } else {
+                    Box(Modifier.fillMaxWidth().height(36.dp).align(Alignment.BottomCenter).background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.5f)))))
+                }
+                if (!hideAllBadges) {
+                    Surface(Modifier.align(Alignment.TopEnd).padding(4.dp), RoundedCornerShape(6.dp), color = status.second.copy(alpha = 0.9f)) {
+                        Text(text = status.first, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp), fontSize = 10.sp, color = Color.White)
+                    }
+                }
+                if (!hideAllBadges) {
+                    Surface(
+                        Modifier.align(Alignment.TopStart).padding(4.dp),
+                        RoundedCornerShape(6.dp),
+                        color = Color(0xCC5CB85C),
+                    ) {
+                        Text(
+                            text = "Komga",
+                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                            fontSize = 9.sp,
+                            color = Color.White,
+                        )
+                    }
+                }
+                Surface(Modifier.align(Alignment.BottomEnd).padding(6.dp), RoundedCornerShape(4.dp), color = Color(0xCC000000)) {
+                    Text(text = "${series.volumeCount}卷", modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp), fontSize = 10.sp, color = Color.White, fontWeight = FontWeight.Medium)
+                }
+                if (maxProgress > 0f) Text(text = "${(maxProgress * 100).toInt()}%", fontSize = 10.sp, color = Color.White.copy(alpha = 0.9f), modifier = Modifier.align(Alignment.BottomStart).padding(6.dp))
+            }
+            if (layoutMode == 1) {
+                Box(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp)) {
+                    Text(text = series.title, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurface)
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun SeriesListRow(series: ShelfItem.Series, engine: ArchiveEngine, decodePx: Int, hideAllBadges: Boolean, onTap: () -> Unit) {
+    val ctx = LocalContext.current
+    val coverPath = series.coverPath
+    val maxProgress = series.books.maxOfOrNull { if (it.totalPages > 0) it.readPages.toFloat() / it.totalPages else 0f } ?: 0f
+    val anyReading = series.books.any { it.readPages > 0 || (it.lastReadAt != null && it.lastReadAt > 0) }
+    val allFinished = series.books.isNotEmpty() && series.books.all { it.totalPages > 0 && it.readPages >= it.totalPages }
+    val statusText = when {
+        allFinished -> "已读完"
+        anyReading -> "阅读中"
+        else -> "未读"
+    }
+    val statusColor = when {
+        allFinished -> Color(0xFF81C784)
+        anyReading -> Color(0xFFFFB74D)
+        else -> Color(0xFFE57373)
+    }
+
+    Surface(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onTap),
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.background,
+    ) {
+        Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(width = 56.dp, height = 78.dp).clip(RoundedCornerShape(6.dp)).background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
+                if (coverPath != null) {
+                    val coverRequest = remember(coverPath, decodePx) {
+                        coil3.request.ImageRequest.Builder(ctx)
+                            .data(com.mangareader.viewer.CoverData(coverPath, dynOn = false))
+                            .coverThumb(decodePx, memoryKey = "cover:series:${series.serverId}:${series.seriesId}@$coverPath", diskKey = "$coverPath")
+                            .decoderFactory(com.mangareader.coil.CoverAnimGateDecoder)
+                            .build()
+                    }
+                    coil3.compose.SubcomposeAsyncImage(model = coverRequest, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                }
+                if (maxProgress > 0f) Text(text = "${(maxProgress * 100).toInt()}%", fontSize = 9.sp, color = Color.White.copy(alpha = 0.9f), modifier = Modifier.align(Alignment.BottomStart).padding(4.dp))
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(text = series.title, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Medium)
+                Spacer(Modifier.height(4.dp))
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (!hideAllBadges) {
+                        Surface(shape = RoundedCornerShape(4.dp), color = statusColor.copy(alpha = 0.9f)) {
+                            Text(text = statusText, modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp), fontSize = 10.sp, color = Color.White)
+                        }
+                    }
+                    Text(text = "KOMGA", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Surface(shape = RoundedCornerShape(4.dp), color = MaterialTheme.colorScheme.primaryContainer) {
+                        Text(text = "${series.volumeCount}卷", modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp), fontSize = 10.sp, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                    }
+                }
+                if (maxProgress > 0f) {
+                    Spacer(Modifier.height(6.dp))
+                    LinearProgressIndicator(
+                        progress = { maxProgress },
+                        modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
+                        trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                    )
+                }
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(horizontalAlignment = Alignment.End) {
+                if (maxProgress > 0f) {
+                    Text(text = "${(maxProgress * 100).toInt()}%", fontSize = 10.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
+                }
+                series.books.maxOfOrNull { it.lastReadAt ?: 0L }?.takeIf { it > 0 }?.let {
                     Text(
                         text = java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.getDefault()).format(java.util.Date(it)),
                         fontSize = 10.sp,

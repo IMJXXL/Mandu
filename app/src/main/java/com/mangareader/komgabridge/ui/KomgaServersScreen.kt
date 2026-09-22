@@ -42,6 +42,7 @@ fun KomgaServersScreen(onBack: () -> Unit, onOpenBook: (Long) -> Unit = {}) {
     var editing by remember { mutableStateOf<KomgaConnection?>(null) }
     var deleting by remember { mutableStateOf<KomgaConnection?>(null) }
     var browsingId by remember { mutableStateOf<String?>(null) }
+    var busyId by remember { mutableStateOf<String?>(null) }
 
     browsingId?.let { sid ->
         KomgaBrowserScreen(serverId = sid, onBack = { browsingId = null }, onOpenBook = onOpenBook)
@@ -106,28 +107,80 @@ fun KomgaServersScreen(onBack: () -> Unit, onOpenBook: (Long) -> Unit = {}) {
             LazyColumn(Modifier.fillMaxSize().padding(padding)) {
                 items(connections) { conn ->
                     val isActive = store.connection()?.id == conn.id
-                    Card(
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 6.dp)
-                            .clickable {
-                                scope.launch { withContext(Dispatchers.IO) { store.setActiveConnection(conn.id) } }
-                                browsingId = conn.id
+                    val busy = busyId == conn.id
+                    val hiddenCount = remember(conn.id) { mutableStateOf(0) }
+                    LaunchedEffect(conn.id, connections.size) {
+                        try {
+                            hiddenCount.value = withContext(Dispatchers.IO) {
+                                com.mangareader.komgabridge.KomgaBridges.database.mangaDao().countKomgaHiddenBooks(conn.id)
                             }
-                    ) {
-                        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Dns, null, modifier = Modifier.size(24.dp))
-                            Spacer(Modifier.width(12.dp))
-                            Column(Modifier.weight(1f)) {
-                                Text(conn.name.ifEmpty { conn.baseUrl.substringAfter("://") }, fontSize = 16.sp, fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal)
-                                Text(conn.baseUrl, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Text(if (conn.authType.name == "API_KEY") "API Key" else "Basic Auth", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        } catch (_: Throwable) {
+                            hiddenCount.value = 0
+                        }
+                    }
+                    val isHidden = hiddenCount.value > 0
+                    Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)) {
+                        Column(Modifier.padding(16.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Dns, null, modifier = Modifier.size(24.dp), tint = MaterialTheme.colorScheme.primary)
+                                Spacer(Modifier.width(12.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text(conn.name.ifEmpty { conn.baseUrl.substringAfter("://") }, fontSize = 16.sp, fontWeight = if (isActive) FontWeight.Bold else FontWeight.Medium)
+                                    Text(conn.baseUrl, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text(if (conn.authType.name == "API_KEY") "API Key" else "Basic Auth", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                IconButton(onClick = { editing = conn }) {
+                                    Icon(Icons.Default.Edit, "edit", Modifier.size(18.dp))
+                                }
+                                IconButton(onClick = { deleting = conn }) {
+                                    Icon(Icons.Default.Delete, "delete", Modifier.size(18.dp))
+                                }
                             }
-                            IconButton(onClick = { editing = conn }) {
-                                Icon(Icons.Default.Edit, "edit", Modifier.size(18.dp))
+                            Spacer(Modifier.height(10.dp))
+                            @OptIn(ExperimentalLayoutApi::class)
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                TextButton(
+                                    enabled = !busy,
+                                    onClick = {
+                                        scope.launch {
+                                            busyId = conn.id
+                                            try {
+                                                val result = withContext(Dispatchers.IO) {
+                                                    com.mangareader.komgabridge.KomgaScanner.scanKomgaServer(conn.id)
+                                                }
+                                                val msg = if (result.inserted == 0) "扫描完成，书架无变化" else "扫描成功：新增 ${result.inserted} 本，封面后台加载中"
+                                                Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show()
+                                                hiddenCount.value = withContext(Dispatchers.IO) {
+                                                    com.mangareader.komgabridge.KomgaBridges.database.mangaDao().countKomgaHiddenBooks(conn.id)
+                                                }
+                                            } catch (t: Throwable) {
+                                                Toast.makeText(ctx, t.message ?: "扫描失败", Toast.LENGTH_LONG).show()
+                                            } finally {
+                                                busyId = null
+                                            }
+                                        }
+                                    },
+                                ) { Text(if (busy) "扫描中…" else "扫描") }
+                                TextButton(
+                                    enabled = !busy,
+                                    onClick = {
+                                        scope.launch { withContext(Dispatchers.IO) { store.setActiveConnection(conn.id) } }
+                                        browsingId = conn.id
+                                    },
+                                ) { Text("浏览") }
                             }
-                            IconButton(onClick = { deleting = conn }) {
-                                Icon(Icons.Default.Delete, "delete", Modifier.size(18.dp))
+                            Spacer(Modifier.height(4.dp))
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                Text(if (isHidden) "已隐藏" else "已显示", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Switch(
+                                    checked = !isHidden,
+                                    onCheckedChange = { show ->
+                                        scope.launch(Dispatchers.IO) {
+                                            com.mangareader.komgabridge.KomgaBridges.database.mangaDao().setKomgaBooksHidden(conn.id, !show)
+                                            hiddenCount.value = com.mangareader.komgabridge.KomgaBridges.database.mangaDao().countKomgaHiddenBooks(conn.id)
+                                        }
+                                    },
+                                )
                             }
                         }
                     }

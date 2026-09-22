@@ -58,6 +58,14 @@ class CoverFetcher(
         }
 
         if (coverPath.startsWith("cv:opds:")) {
+            val thumbBytes = withContext(Dispatchers.IO) { engine.loadCoverThumbBytes(coverPath) }
+            if (thumbBytes != null) {
+                return SourceFetchResult(
+                    source = ImageSource(source = Buffer().write(thumbBytes), fileSystem = options.fileSystem),
+                    mimeType = "image/jpeg",
+                    dataSource = DataSource.DISK,
+                )
+            }
             val raw = withContext(Dispatchers.IO) {
                 try {
                     com.mangareader.opdsbridge.cover.OpdsCoverLoader.loadCoverRawOpds(coverPath)
@@ -67,6 +75,7 @@ class CoverFetcher(
                 }
             } ?: throw RuntimeException("OPDS cover load failed: $coverPath")
             val (bytes, mime) = raw
+            withContext(Dispatchers.IO) { engine.saveCoverThumbBytes(coverPath, bytes) }
             return SourceFetchResult(
                 source = ImageSource(
                     source = Buffer().write(bytes),
@@ -113,6 +122,14 @@ class CoverFetcher(
 
         if (coverPath.startsWith("cv:komga:")) {
             android.util.Log.d("CoverFetch", "komga cover request: $coverPath")
+            val thumbBytes = withContext(Dispatchers.IO) { engine.loadCoverThumbBytes(coverPath) }
+            if (thumbBytes != null) {
+                return SourceFetchResult(
+                    source = ImageSource(source = Buffer().write(thumbBytes), fileSystem = options.fileSystem),
+                    mimeType = "image/jpeg",
+                    dataSource = DataSource.DISK,
+                )
+            }
             val raw = withContext(Dispatchers.IO) {
                 try {
                     val body = coverPath.removePrefix("cv:komga:")
@@ -143,6 +160,7 @@ class CoverFetcher(
                 }
             } ?: throw RuntimeException("Komga cover load failed: $coverPath")
             val (bytes, mime) = raw
+            withContext(Dispatchers.IO) { engine.saveCoverThumbBytes(coverPath, bytes) }
             return SourceFetchResult(
                 source = ImageSource(
                     source = Buffer().write(bytes),

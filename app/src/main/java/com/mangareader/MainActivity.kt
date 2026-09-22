@@ -35,6 +35,7 @@ import com.mangareader.ui.Reader
 import com.mangareader.ui.SettingsScreen
 import com.mangareader.ui.Theme
 import com.mangareader.ui.AppTheme
+import com.mangareader.komgabridge.ui.KomgaSeriesVolumesScreen
 
 class MainActivity : ComponentActivity() {
     override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
@@ -114,7 +115,25 @@ class MainActivity : ComponentActivity() {
                                 (this@MainActivity).recreate()
                             },
                             { nav.navigate("settings") },
-                            { nav.navigate("history") }
+                            { nav.navigate("history") },
+                            { serverId, seriesId ->
+                                nav.navigate("komgaSeriesVolumes/${android.net.Uri.encode(serverId)}/${android.net.Uri.encode(seriesId)}")
+                            }
+                        )
+                    }
+                    composable("komgaSeriesVolumes/{serverId}/{seriesId}", listOf(
+                        navArgument("serverId") { type = NavType.StringType },
+                        navArgument("seriesId") { type = NavType.StringType },
+                    )) { entry ->
+                        val sid = entry.arguments?.getString("serverId") ?: return@composable
+                        val seriesId = entry.arguments?.getString("seriesId") ?: return@composable
+                        KomgaSeriesVolumesScreen(
+                            serverId = sid,
+                            seriesId = seriesId,
+                            onBack = { nav.popBackStack() },
+                            onOpenBook = { bookId ->
+                                nav.navigate("reader/$bookId", navOptions { launchSingleTop = true })
+                            },
                         )
                     }
                     composable("history") {

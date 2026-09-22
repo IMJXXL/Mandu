@@ -12,6 +12,9 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
@@ -31,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ehviewer.core.database.model.WebDavSourceEntity
@@ -481,6 +485,11 @@ fun WebDavBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long, I
                         placeholder = { Text("搜索当前目录及子目录", fontSize = 13.sp) },
                         singleLine = true,
                         modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                        leadingIcon = { Icon(Icons.Default.Search, null) },
+                        trailingIcon = { if (searchQuery.isNotEmpty()) { IconButton(onClick = { searchQuery = "" }) { Icon(Icons.Default.Close, null) } } },
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                        keyboardActions = KeyboardActions(onSearch = { if (!searching) runSearch() }),
                     )
                     TextButton(onClick = { runSearch() }, enabled = searchQuery.isNotBlank() && !searching) {
                         Text("搜索")

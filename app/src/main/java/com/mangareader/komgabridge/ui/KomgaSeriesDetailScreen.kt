@@ -19,13 +19,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mangareader.komgabridge.KomgaBridges
+import com.mangareader.komgabridge.KomgaScanner
 import com.mangareader.komgabridge.api.KomgaApiClient
 import com.mangareader.komgabridge.api.KomgaHttpClient
 import com.mangareader.komgabridge.api.model.BookDto
 import com.mangareader.komgabridge.api.model.SeriesDto
 import com.mangareader.komgabridge.data.KomgaConnectionStore
 import com.mangareader.komgabridge.reader.KomgaPaths
-import com.mangareader.data.Book
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -66,6 +66,7 @@ fun KomgaSeriesDetailScreen(
         try {
             val s = withContext(Dispatchers.IO) { apiClient.getSeriesDetail(seriesId) }
             series = s
+            val seriesName = s.metadata.title.ifEmpty { s.name }
             val result = withContext(Dispatchers.IO) { apiClient.getSeriesBooks(seriesId, page = 0, size = 5000) }
             books = result.content
             withContext(Dispatchers.IO) {
@@ -77,22 +78,8 @@ fun KomgaSeriesDetailScreen(
                         skippedEpub++
                         continue
                     }
-                    val filePath = KomgaPaths.bookPath(serverId, book.id)
-                    val existing = dao.getKomgaBookByPath(filePath)
-                    val coverPath = "cv:komga:${serverId}:${book.id}"
-                    if (existing == null) {
-                        val title = book.metadata.title.ifEmpty { book.name }
-                        val newId = dao.insertBookWithStableId(Book(
-                            title = title,
-                            filePath = filePath,
-                            source = "komga",
-                            totalPages = book.media.pagesCount,
-                            coverPath = coverPath,
-                        ))
-                        android.util.Log.i("KomgaShelf", "insert id=$newId title=$title path=$filePath cover=$coverPath")
-                        if (newId > 0) inserted++
-                    } else if (existing.coverPath != coverPath) {
-                        dao.updateBookCoverPath(existing.id, coverPath)
+                    if (KomgaScanner.putKomgaBookWithSeries(dao, serverId, book, seriesId, seriesName)) {
+                        inserted++
                     }
                 }
                 android.util.Log.i("KomgaShelf", "done total=${result.content.size} inserted=$inserted skippedEpub=$skippedEpub server=$serverId")
@@ -161,14 +148,9 @@ fun KomgaSeriesDetailScreen(
                                     val existing = dao.getKomgaBookByPath(filePath)
                                     if (existing != null) existing.id
                                     else {
-                                        val title = book.metadata.title.ifEmpty { book.name }
-                                        dao.insertBookWithStableId(Book(
-                                            title = title,
-                                            filePath = filePath,
-                                            source = "komga",
-                                            totalPages = book.media.pagesCount,
-                                            coverPath = "cv:komga:${serverId}:${book.id}",
-                                        ))
+                                        val seriesName2 = series?.metadata?.title?.ifEmpty { series?.name } ?: ""
+                                        KomgaScanner.putKomgaBookWithSeries(dao, serverId, book, seriesId, seriesName2)
+                                        dao.getKomgaBookByPath(filePath)?.id ?: 0L
                                     }
                                 }
                                 onOpenBook(bookId)
