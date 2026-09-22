@@ -520,6 +520,28 @@ fun WebDavBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long, I
                             h is BrowseEntryRemote.VideoFile -> Icons.Default.Movie
                             else -> Icons.Default.Download
                         }
+                        val hitSid = source?.id
+                        var hitCover by remember(h, hitSid) { mutableStateOf(hitSid?.let { davHitCover(it, searchDir, h) }) }
+                        LaunchedEffect(h, hitSid) {
+                            if (hitCover != null || hitSid == null || source == null) return@LaunchedEffect
+                            val src = source!!
+                            val dirRel = when (h) {
+                                is BrowseEntryRemote.Directory -> joinSearchPath(searchDir, h.relativeName)
+                                is BrowseEntryRemote.FolderGallery -> {
+                                    val rel = h.relativeName.replace('\\', '/')
+                                    if (ZipAsDirListing.zipFileRootName(rel) != null) null
+                                    else joinSearchPath(searchDir, rel)
+                                }
+                                else -> null
+                            }
+                            if (dirRel != null) {
+                                val names = runCatching { WebDavGateway.listChildFileNames(src, password, dirRel) }.getOrDefault(emptyList())
+                                val coverName = names.firstOrNull { isImageFileName(it) }
+                                if (coverName != null) {
+                                    hitCover = BrowseCover.DavImage(hitSid, joinSearchPath(dirRel, coverName))
+                                }
+                            }
+                        }
                         Row(
                             Modifier.fillMaxWidth()
                                 .combinedClickable(
@@ -562,7 +584,7 @@ fun WebDavBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long, I
                         ) {
                             BrowseCoverThumb(
                                 modifier = Modifier.size(56.dp),
-                                cover = source?.id?.let { sid -> davHitCover(sid, searchDir, h) },
+                                cover = hitCover,
                                 placeholder = hitPlaceholder,
                             )
                             Spacer(Modifier.width(12.dp))
@@ -861,10 +883,12 @@ fun WebDavBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long, I
     }
 }
 
+private fun joinSearchPath(parent: String, child: String): String =
+    if (parent.isEmpty()) child.trim('/') else "${parent.trim('/')}/${child.trim('/')}"
+
 /** 深搜命中行的封面（命中路径相对 [searchDir]）：目录取封面名、档案取归档首页、图片取自身。 */
 private fun davHitCover(sourceId: Long, searchDir: String, h: BrowseEntryRemote): BrowseCover? {
-    fun join(parent: String, child: String): String =
-        if (parent.isEmpty()) child.trim('/') else "${parent.trim('/')}/${child.trim('/')}"
+    fun join(parent: String, child: String): String = joinSearchPath(parent, child)
     return when (h) {
         is BrowseEntryRemote.Directory ->
             h.coverFileName?.takeIf { isImageFileName(it) }

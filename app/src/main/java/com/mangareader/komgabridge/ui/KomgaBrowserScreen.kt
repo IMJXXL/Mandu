@@ -34,6 +34,7 @@ import com.mangareader.komgabridge.api.model.PageableDto
 import com.mangareader.komgabridge.api.model.SeriesDto
 import com.mangareader.komgabridge.data.KomgaConnectionStore
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -100,19 +101,24 @@ fun KomgaBrowserScreen(serverId: String, onBack: () -> Unit, onOpenBook: (Long) 
                 loading = false
             }
         } else {
+            if (searchQuery.isNotEmpty()) delay(300)
             seriesList.clear()
             seriesPage = 0
             loading = true
             error = null
             try {
                 val result = withContext(Dispatchers.IO) {
-                    if (searchQuery.isNotEmpty()) apiClient.searchSeries(searchQuery, selectedLibrary!!.id)
-                    else apiClient.getSeries(libraryId = selectedLibrary!!.id, page = 0)
+                    if (searchQuery.isNotEmpty()) {
+                        android.util.Log.d("KomgaSearch", "query='$searchQuery' lib=${selectedLibrary!!.id}")
+                        apiClient.searchSeries(searchQuery, selectedLibrary!!.id)
+                    } else apiClient.getSeries(libraryId = selectedLibrary!!.id, page = 0)
                 }
+                android.util.Log.d("KomgaSearch", "results=${result.content.size} totalPages=${result.totalPages}")
                 seriesList.addAll(result.content)
                 seriesTotalPages = result.totalPages
             } catch (t: Throwable) {
-                error = t.message ?: "failed"
+                android.util.Log.w("KomgaSearch", "err: ${t.javaClass.simpleName}: ${t.message}")
+                error = t.message ?: "-failed"
             } finally {
                 loading = false
             }
@@ -248,6 +254,7 @@ fun KomgaBrowserScreen(serverId: String, onBack: () -> Unit, onOpenBook: (Long) 
                 onSeriesClick = { selectedSeries = it },
                 listState = listState,
                 apiClient = apiClient,
+                contentPadding = padding,
             )
         }
     }
@@ -261,6 +268,7 @@ private fun SeriesListView(
     onSeriesClick: (SeriesDto) -> Unit,
     listState: androidx.compose.foundation.lazy.LazyListState,
     apiClient: KomgaApiClient,
+    contentPadding: androidx.compose.foundation.layout.PaddingValues = androidx.compose.foundation.layout.PaddingValues(0.dp),
 ) {
     if (seriesList.isEmpty() && !loading) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -268,7 +276,7 @@ private fun SeriesListView(
         }
         return
     }
-    LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
+    LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), contentPadding = contentPadding) {
         items(seriesList) { series ->
             Card(
                 Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp).clickable { onSeriesClick(series) },
@@ -305,6 +313,7 @@ fun KomgaSeriesCover(
     seriesId: String,
     modifier: Modifier = Modifier,
 ) {
+    val ctx = LocalContext.current
     var bitmap by remember(seriesId) { mutableStateOf<android.graphics.Bitmap?>(null) }
     var loading by remember(seriesId) { mutableStateOf(true) }
 
@@ -312,7 +321,16 @@ fun KomgaSeriesCover(
         loading = true
         try {
             val bytes = withContext(Dispatchers.IO) {
-                apiClient.downloadBytes(apiClient.seriesThumbnailUrl(seriesId))
+                val cacheDir = java.io.File(ctx.cacheDir, "komga_series_covers")
+                cacheDir.mkdirs()
+                val cacheFile = java.io.File(cacheDir, "$seriesId.jpg")
+                if (cacheFile.exists()) {
+                    cacheFile.readBytes()
+                } else {
+                    val downloaded = apiClient.downloadBytes(apiClient.seriesThumbnailUrl(seriesId))
+                    try { cacheFile.writeBytes(downloaded) } catch (_: Throwable) {}
+                    downloaded
+                }
             }
             bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
         } catch (_: Throwable) {

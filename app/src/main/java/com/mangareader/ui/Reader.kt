@@ -47,6 +47,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -2783,13 +2784,12 @@ private fun computeInBookContinueTarget(currentPath: String?, rows: List<com.man
 @Composable
 private fun ItemGrid(items: List<ArchiveEngine.Item>, engine: ArchiveEngine, bgColor: Color, progress: List<ReadingProgress>, tap: (ArchiveEngine.Item) -> Unit, mod: Modifier) {
     val ctx = LocalContext.current
-    val prefs = remember { ctx.getSharedPreferences("manga_reader", Context.MODE_PRIVATE) }
+    val configuration = LocalConfiguration.current
     var sortAsc by remember { mutableStateOf(true) }
-    var cols by remember { mutableIntStateOf(prefs.getInt("item_grid_cols", 3)) }
-    LaunchedEffect(Unit) {
-        val saved = prefs.getInt("item_grid_cols", 3)
-        if (saved != cols) cols = saved
-    }
+    val portraitCols by com.hippo.ehviewer.Settings.thumbColumnsPortrait.valueFlow().collectAsState(initial = com.hippo.ehviewer.Settings.thumbColumnsPortrait.value)
+    val landscapeCols by com.hippo.ehviewer.Settings.thumbColumnsLandscape.valueFlow().collectAsState(initial = com.hippo.ehviewer.Settings.thumbColumnsLandscape.value)
+    val resolvedCols = LayoutColumnsResolver.currentValue(configuration.orientation, portraitCols, landscapeCols)
+    val gridCols = LayoutColumnsResolver.toGridCols(resolvedCols)
     val sorted = remember(items, sortAsc) {
         val base = items.sortedWith(compareByDescending<ArchiveEngine.Item> { it.dir }.thenComparing({ it.name }, NaturalComparator))
         if (sortAsc) base else base.reversed()
@@ -2797,20 +2797,13 @@ private fun ItemGrid(items: List<ArchiveEngine.Item>, engine: ArchiveEngine, bgC
     Column(mod) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Text("${sorted.size} 项", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                TextButton(onClick = { sortAsc = !sortAsc }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
-                    Icon(Icons.Default.Sort, null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text(if (sortAsc) "正序" else "倒序", fontSize = 12.sp)
-                }
-                TextButton(onClick = { cols = when(cols) { 2 -> 3; 3 -> 4; else -> 2 }; prefs.edit().putInt("item_grid_cols", cols).apply() }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
-                    Icon(Icons.Default.GridView, null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("${cols}列", fontSize = 12.sp)
-                }
+            TextButton(onClick = { sortAsc = !sortAsc }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
+                Icon(Icons.Default.Sort, null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(4.dp))
+                Text(if (sortAsc) "正序" else "倒序", fontSize = 12.sp)
             }
         }
-        LazyVerticalGrid(columns = GridCells.Fixed(cols), contentPadding = PaddingValues(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.weight(1f)) {
+        LazyVerticalGrid(columns = gridCols, contentPadding = PaddingValues(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.weight(1f)) {
             itemsIndexed(sorted, key = { i, e -> "${e.auth}|${e.doc}_$i" }) { _, e -> ItemCard(e, engine, bgColor, progress, { tap(e) }) }
         }
     }
