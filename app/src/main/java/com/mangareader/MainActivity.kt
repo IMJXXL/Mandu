@@ -17,6 +17,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -35,6 +36,7 @@ import com.mangareader.ui.Reader
 import com.mangareader.ui.SettingsScreen
 import com.mangareader.ui.Theme
 import com.mangareader.ui.AppTheme
+import kotlinx.coroutines.launch
 import com.mangareader.komgabridge.ui.KomgaSeriesVolumesScreen
 
 class MainActivity : ComponentActivity() {
@@ -228,6 +230,42 @@ class MainActivity : ComponentActivity() {
                             ) { Text(if (countdown > 0) "阅 ($countdown)" else "阅") }
                         }
                     )
+                }
+                var pendingUpdate by remember { mutableStateOf<com.mangareader.updatecheck.UpdateInfo?>(null) }
+                LaunchedEffect(Unit) {
+                    kotlinx.coroutines.delay(3000)
+                    pendingUpdate = com.mangareader.updatecheck.UpdateState.pendingUpdate
+                }
+                pendingUpdate?.let { info ->
+                    androidx.compose.ui.window.Dialog(onDismissRequest = { pendingUpdate = null }) {
+                        androidx.compose.material3.Surface(
+                            modifier = Modifier.fillMaxWidth().widthIn(max = 400.dp),
+                            shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+                            color = MaterialTheme.colorScheme.surface
+                        ) {
+                            Column(Modifier.padding(20.dp)) {
+                                Text("发现新版本", style = MaterialTheme.typography.titleLarge, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                                Spacer(Modifier.height(8.dp))
+                                Text(info.version, fontSize = 18.sp)
+                                Spacer(Modifier.height(8.dp))
+                                Text(info.changelog, fontSize = 13.sp, modifier = Modifier.heightIn(max = 200.dp).verticalScroll(rememberScrollState()))
+                                Spacer(Modifier.height(16.dp))
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                                    TextButton(onClick = { pendingUpdate = null }) { Text("稍后再说") }
+                                    Spacer(Modifier.width(8.dp))
+                                    val ctx = LocalContext.current
+                                    val scope = rememberCoroutineScope()
+                                    Button(onClick = {
+                                        pendingUpdate = null
+                                        scope.launch {
+                                            val file = com.mangareader.updatecheck.ApkDownloader.download(info.downloadUrl, ctx, info.version, info.apkSize) {}
+                                            if (file != null) com.mangareader.updatecheck.ApkInstaller.install(ctx, file)
+                                        }
+                                    }) { Text("立即更新") }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }

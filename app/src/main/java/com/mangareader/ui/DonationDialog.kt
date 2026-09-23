@@ -118,6 +118,8 @@ fun DonationDialog(onDismiss: () -> Unit) {
                     }
                 )
                 Spacer(Modifier.height(16.dp))
+                com.mangareader.updatecheck.UpdateCheckPanel(onDismiss = onDismiss)
+                Spacer(Modifier.height(16.dp))
                 TextButton(onClick = onDismiss) { Text("关闭") }
             }
         }

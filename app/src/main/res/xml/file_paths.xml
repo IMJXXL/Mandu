@@ -2,4 +2,6 @@
 <paths>
     <external-files-path name="crash_logs" path="crash_logs/" />
     <external-files-path name="files_root" path="." />
+    <cache-path name="update_apk" path="update_apk/" />
+    <external-path name="download_mandu" path="Download/漫读/" />
 </paths>

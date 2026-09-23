@@ -110,6 +110,7 @@ class App : Application(), SingletonImageLoader.Factory {
             com.mangareader.opdsbridge.OpdsBridges.init(this@App, db)
             kotlinx.coroutines.delay(2000L)
             try { com.mangareader.data.BookDeduper.runOnce(this@App, db.mangaDao()) } catch (_: Throwable) {}
+            try { com.mangareader.updatecheck.UpdateAutoTrigger.maybeCheck(this@App) } catch (_: Throwable) {}
         }
     }
 
