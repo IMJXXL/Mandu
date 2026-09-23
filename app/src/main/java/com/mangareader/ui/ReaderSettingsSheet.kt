@@ -253,6 +253,9 @@ private fun ReadingModeTab(config: ReaderConfig, mode: Mode, onConfigChange: (Re
 
         CheckboxItem("自动放大横向图片（平板上建议关闭，关闭时宽图完整显示）", config.landscapeZoom) { onConfigChange(config.copy(landscapeZoom = it)) }
         CheckboxItem("翻页动画（点击翻页过渡）", config.isFlipAnimation) { onConfigChange(config.copy(isFlipAnimation = it)) }
+        if (config.isFlipAnimation) {
+            CheckboxItem("仿真翻页效果（开启后翻页为页面卷曲效果）", config.isPageCurlAnimation) { onConfigChange(config.copy(isPageCurlAnimation = it)) }
+        }
         Text("以下功能设置后，需重新进入漫画生效", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f), fontSize = 11.sp, modifier = Modifier.padding(start = 4.dp, bottom = 4.dp))
         CheckboxItem("漫画完整显示（开启后单页模式下，画面不会越界屏幕）", config.fitScreen) { onConfigChange(config.copy(fitScreen = it)) }
         CheckboxItem("拆分双页", config.doublePageSplit) { onConfigChange(config.copy(doublePageSplit = it)) }

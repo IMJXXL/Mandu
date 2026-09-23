@@ -132,6 +132,9 @@ dependencies {
     // SubsamplingScaleImageView for efficient large image rendering
     implementation("com.github.tachiyomiorg:subsampling-scale-image-view:66e0db195d")
 
+    // PageCurl - simulation page curl effect (Apache 2.0, compatible with GPL v3)
+    implementation("io.github.oleksandrbalan:pagecurl:1.5.1")
+
     // Room
     implementation("androidx.room:room-runtime:2.7.0")
     implementation("androidx.room:room-ktx:2.7.0")

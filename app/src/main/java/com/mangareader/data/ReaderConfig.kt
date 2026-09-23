@@ -16,6 +16,7 @@ data class ReaderConfig(
     val scrollMode: ScrollMode = ScrollMode.HORIZONTAL_LEFT,
     val clickFlipType: ClickFlipType = ClickFlipType.LEFT_RIGHT,
     val isFlipAnimation: Boolean = true,
+    val isPageCurlAnimation: Boolean = false,
     val isShowPageNum: Boolean = true,
     val isKeepScreenOn: Boolean = true,
     val isTrimWhiteBorder: Boolean = false,
@@ -76,6 +77,7 @@ data class ReaderConfig(
             putString("${prefix}scrollMode", scrollMode.name)
             putString("${prefix}clickFlipType", clickFlipType.name)
             putBoolean("isFlipAnimation", isFlipAnimation)
+            putBoolean("isPageCurlAnimation", isPageCurlAnimation)
             putBoolean("isShowPageNum", isShowPageNum)
             putBoolean("isKeepScreenOn", isKeepScreenOn)
             putBoolean("${prefix}isTrimWhiteBorder", isTrimWhiteBorder)
@@ -126,6 +128,7 @@ data class ReaderConfig(
                 scrollMode = try { ScrollMode.valueOf(prefs.getString("${prefix}scrollMode", "HORIZONTAL_LEFT")!!) } catch (_: Exception) { ScrollMode.HORIZONTAL_LEFT },
                 clickFlipType = try { ClickFlipType.valueOf(prefs.getString("${prefix}clickFlipType", "LEFT_RIGHT")!!) } catch (_: Exception) { ClickFlipType.LEFT_RIGHT },
                 isFlipAnimation = prefs.safeGetBoolean("isFlipAnimation", true),
+                isPageCurlAnimation = prefs.safeGetBoolean("isPageCurlAnimation", false),
                 isShowPageNum = prefs.safeGetBoolean("isShowPageNum", true),
                 isKeepScreenOn = prefs.safeGetBoolean("isKeepScreenOn", true),
                 isTrimWhiteBorder = prefs.safeGetBoolean("${prefix}isTrimWhiteBorder", false),

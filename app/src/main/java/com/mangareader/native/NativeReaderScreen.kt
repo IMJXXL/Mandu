@@ -138,6 +138,8 @@ fun NativeReaderScreen(
     tileModeEnabled: Boolean = false,
     /** ★ §34.3：VERT_PAGER 模式——竖向翻页走 PagerReaderView（不是 webtoon 连续滚动） */
     verticalPager: Boolean = false,
+    flipAnimationEnabled: Boolean = true,
+    pageCurlAnimationEnabled: Boolean = false,
     /** ★ SMB/WebDAV 页面供给（design.md 2.2.2）：非 null 时阅读页面走远程会话。
      *   以参数形式在 setup() 之前注入 delegate，消除"setup 早于供给挂接"的竞态窗口。 */
     remoteSupply: com.mangareader.native.RemotePageSupply? = null,
@@ -156,9 +158,20 @@ fun NativeReaderScreen(
 
     val webtoonView = remember { WebtoonReaderView(ctx).apply { layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT) } }
     val pagerView = remember { PagerReaderView(ctx).apply { layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT) } }
+    val curlReaderView = remember { com.mangareader.native.curl.CurlReaderView(ctx).apply { layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT) } }
+
+    val useCurl = com.mangareader.native.curl.isCurlEnabled(
+        flipAnimationEnabled = flipAnimationEnabled,
+        pageCurlAnimationEnabled = pageCurlAnimationEnabled,
+        isVertical = isVertical,
+        verticalPager = verticalPager,
+        doublePageMode = pageLayout != 0,
+        tileModeEnabled = tileModeEnabled,
+    )
 
     fun activeDelegate(isVerticalNow: Boolean): ReaderViewDelegate =
         if (isVerticalNow) webtoonView
+        else if (useCurl) curlReaderView
         else pagerView
 
     // Track last released delegate to avoid double release
@@ -172,6 +185,7 @@ fun NativeReaderScreen(
         // 三视图的 trimMemory 一并接线（修复"trimMemory 全项目无调用方"）
         ReaderTrimRegistry.register(webtoonView)
         ReaderTrimRegistry.register(pagerView)
+        ReaderTrimRegistry.register(curlReaderView)
 
         onDispose {
             // Compose 逆序 dispose：keyed effect 先 dispose（drain 完成）→ 本 Unit effect 最后兜底
@@ -180,7 +194,7 @@ fun NativeReaderScreen(
         }
     }
 
-    DisposableEffect(treePath, isVertical, isRtl, verticalPager, remoteSupply) {
+    DisposableEffect(treePath, isVertical, isRtl, verticalPager, remoteSupply, flipAnimationEnabled, pageCurlAnimationEnabled, pageLayout, tileModeEnabled) {
         if (firstComposition) {
             savedPage = startPage
             firstComposition = false
@@ -222,6 +236,14 @@ fun NativeReaderScreen(
             delegate.trimWhiteBorder = trimWhiteBorder
             delegate.trimThreshold = trimThreshold
             delegate.trimWhiteRatio = trimWhiteRatio
+        }
+        if (delegate is com.mangareader.native.curl.CurlReaderView) {
+            delegate.pageBgColor = pageBgColor
+            delegate.remotePageSupply = remoteSupply
+            delegate.landscapeZoom = landscapeZoom
+            delegate.fitScreen = fitScreen
+            delegate.setTrimWhiteBorder(trimWhiteBorder, trimThreshold, trimWhiteRatio)
+            delegate.setPanNavigation(panNavigation)
         }
         // ★ P0-2：切换交接——本次 setup 后立即从总线接管旧实例移交的位图（跨实例），首帧绑定直接命中缓存
         android.util.Log.w("NES", "setup delegate=${System.identityHashCode(delegate)} v=$isVertical vp=$verticalPager tree=$treePath")
@@ -283,20 +305,22 @@ fun NativeReaderScreen(
             val container = FrameLayout(ctx).apply { layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT) }
             container.addView(webtoonView)
             container.addView(pagerView)
+            container.addView(curlReaderView)
             fun syncVis() {
                 webtoonView.visibility = if (isVertical) View.VISIBLE else View.GONE
-                pagerView.visibility = if (!isVertical) View.VISIBLE else View.GONE
+                pagerView.visibility = if (!isVertical && !useCurl) View.VISIBLE else View.GONE
+                curlReaderView.visibility = if (!isVertical && useCurl) View.VISIBLE else View.GONE
             }
             syncVis()
             containerRef = container
             onViewReady(webtoonView, pagerView)
-            // ★ v1.13 C-2：容器就绪回调（截图用；draw(container) 只画 VISIBLE 子树，GONE 自动排除）
             onContainerReady(container)
             container
         },
         update = { container ->
             container.getChildAt(0).visibility = if (isVertical) View.VISIBLE else View.GONE
-            container.getChildAt(1).visibility = if (!isVertical) View.VISIBLE else View.GONE
+            container.getChildAt(1).visibility = if (!isVertical && !useCurl) View.VISIBLE else View.GONE
+            container.getChildAt(2).visibility = if (!isVertical && useCurl) View.VISIBLE else View.GONE
         },
         modifier = modifier
     )

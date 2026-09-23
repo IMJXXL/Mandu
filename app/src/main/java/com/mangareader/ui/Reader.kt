@@ -105,7 +105,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     // 监听 SharedPreferences 外部修改，自动触发 config 重读
     DisposableEffect(bookId) {
         val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-            if (key?.startsWith("book_${bookId}_") == true || key in setOf("scrollMode", "readBackground", "autoFlipInterval", "tileModeEnabled", "downsampleTier", "isEinkMode", "isTrimWhiteBorder", "trimThreshold", "trimWhiteRatio", "imageMarginH", "isFlipAnimation", "landscapeZoom", "fitScreen", "panNavigation", "doublePageSplit", "doublePageReverse", "pageLayout", "useSSIV", "forceFullDecode", "tallSplitEnabled", "isFlipFlashEnabled", "flipFlashDuration", "flipFlashInterval", "flipFlashColor", "einkDecodeSize", "einkUiHideDelay", "pdfQuality", "isGrayscale", "isInvertColors", "centerGapType", "doublePageShift", "seamlessNextVolume")) {
+            if (key?.startsWith("book_${bookId}_") == true || key in setOf("scrollMode", "readBackground", "autoFlipInterval", "tileModeEnabled", "downsampleTier", "isEinkMode", "isTrimWhiteBorder", "trimThreshold", "trimWhiteRatio", "imageMarginH", "isFlipAnimation", "isPageCurlAnimation", "landscapeZoom", "fitScreen", "panNavigation", "doublePageSplit", "doublePageReverse", "pageLayout", "useSSIV", "forceFullDecode", "tallSplitEnabled", "isFlipFlashEnabled", "flipFlashDuration", "flipFlashInterval", "flipFlashColor", "einkDecodeSize", "einkUiHideDelay", "pdfQuality", "isGrayscale", "isInvertColors", "centerGapType", "doublePageShift", "seamlessNextVolume")) {
                 configVersion++
             }
         }
@@ -2139,7 +2139,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                                 }
                             } catch (_: Throwable) {}
                         }
-                        key(navStack.lastOrNull(), vertical, isRtl, verticalPagerEffective) {
+                        key(navStack.lastOrNull(), vertical, isRtl, verticalPagerEffective, config.isFlipAnimation, config.isPageCurlAnimation, config.pageLayout, config.tileModeEnabled) {
                         // ★ N1 无缝续读：读到卷末静默进入同书下一卷（默认关；失败回退现状过渡页）。
                         //   返回 true = 已接管本次章末（不再弹过渡页）；false = 按现状走。
                         val trySeamlessNextVolume = handler@{
@@ -2204,6 +2204,8 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                             doublePageSplit = config.doublePageSplit,
                             tileModeEnabled = config.tileModeEnabled,
                             verticalPager = verticalPagerEffective,
+                            flipAnimationEnabled = config.isFlipAnimation,
+                            pageCurlAnimationEnabled = config.isPageCurlAnimation,
 
                             remoteSupply = smbSession,
                             modifier = Modifier.fillMaxSize(),
