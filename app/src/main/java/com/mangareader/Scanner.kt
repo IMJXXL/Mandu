@@ -271,21 +271,29 @@ class Scanner(private val ctx: Context, private val dao: MangaDao) {
         return try {
             com.mangareader.native.NativeEngine.decodeRaw(data, 1024, 1024)
                 ?: run {
-                    // ★ C4 修复：显式两遍解码。旧写法在 apply{inJustDecodeBounds=true} 的同一 Options 上
-                    //   立即 let 读 outWidth——decodeByteArray 尚未执行，outWidth=0 → inSampleSize 恒 1，
-                    //   大封面全尺寸解码（正是 catch(OOM) 高发根因）
                     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                     BitmapFactory.decodeByteArray(data, 0, data.size, bounds)
                     var s = 1
                     while (bounds.outWidth / s > 1024 || bounds.outHeight / s > 1024) s *= 2
                     BitmapFactory.decodeByteArray(data, 0, data.size, BitmapFactory.Options().apply { inSampleSize = s })
                 }
+                ?: decodeWithTachiDecoder(data)
         } catch (e: OutOfMemoryError) {
             System.gc()
             try {
                 BitmapFactory.decodeByteArray(data, 0, data.size, BitmapFactory.Options().apply { inSampleSize = 4 })
             } catch (_: Exception) { null }
         } catch (_: Exception) { null }
+    }
+
+    private fun decodeWithTachiDecoder(data: ByteArray): android.graphics.Bitmap? {
+        return try {
+            val stream = java.io.ByteArrayInputStream(data)
+            val decoder = tachiyomi.decoder.ImageDecoder.newInstance(stream) ?: return null
+            val bmp = decoder.decode()
+            decoder.recycle()
+            bmp
+        } catch (_: Throwable) { null }
     }
 
     private fun md5(input: String): String {

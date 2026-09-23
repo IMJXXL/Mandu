@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.ImageDecoder
 import android.os.Build
+import tachiyomi.decoder.ImageDecoder as TachiImageDecoder
 import okio.buffer
 import okio.source
 import android.graphics.pdf.PdfRenderer
@@ -1135,8 +1136,31 @@ class ArchiveEngine(private val ctx: Context) {
         return try {
             val source = ImageDecoder.createSource(data)
             ImageDecoder.decodeBitmap(source)
-        } catch (e: Exception) {
-            e(TAG, "ImageDecoder fallback FAIL bytes=${data.size} err=${e.message}")
+        } catch (e: Throwable) {
+            e(TAG, "ImageDecoder fallback FAIL bytes=${data.size} err=${e::class.java.simpleName}: ${e.message}")
+            decodeWithLibAvif(data)
+        }
+    }
+
+    private fun decodeWithLibAvif(data: ByteArray): Bitmap? {
+        if (data.size < 12) return null
+        val isAvif = data[4] == 'f'.code.toByte() && data[5] == 't'.code.toByte() &&
+            data[6] == 'y'.code.toByte() && data[7] == 'p'.code.toByte() &&
+            (data[8] == 'a'.code.toByte() && data[9] == 'v'.code.toByte())
+        if (!isAvif) return null
+        return try {
+            val stream = java.io.ByteArrayInputStream(data)
+            val decoder = TachiImageDecoder.newInstance(stream) ?: run {
+                e(TAG, "decodeWithLibAvif: newInstance returned null bytes=${data.size}")
+                return null
+            }
+            val bmp = decoder.decode()
+            decoder.recycle()
+            if (bmp != null) android.util.Log.i(TAG, "decodeWithLibAvif OK bytes=${data.size} ${bmp.width}x${bmp.height}")
+            else e(TAG, "decodeWithLibAvif: decode returned null bytes=${data.size}")
+            bmp
+        } catch (e: Throwable) {
+            e(TAG, "decodeWithLibAvif FAIL bytes=${data.size} err=${e::class.java.simpleName}: ${e.message}")
             null
         }
     }
@@ -1152,6 +1176,7 @@ class ArchiveEngine(private val ctx: Context) {
                     while (opts.outWidth / s > maxCoverSize || opts.outHeight / s > maxCoverSize) s *= 2
                     BitmapFactory.Options().apply { inSampleSize = s }
                 })
+                ?: decodeWithImageDecoder(data) ?: decodeWithLibAvif(data)
         } catch (e: OutOfMemoryError) {
             System.gc()
             try {
