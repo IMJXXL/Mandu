@@ -174,6 +174,7 @@ dependencies {
 
     // SMB - smbj (SMB protocol library, same version as reference project)
     implementation("com.hierynomus:smbj:0.14.0")
+    implementation("com.hierynomus:asn-one:0.6.0")
 
     // kotlinx-serialization (NetworkFolderIndexCache JSON persistence)
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")

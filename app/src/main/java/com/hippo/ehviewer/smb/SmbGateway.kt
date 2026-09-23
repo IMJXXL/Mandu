@@ -1451,6 +1451,130 @@ object SmbGateway {
         return AuthenticationContext(user, password.toCharArray(), source.domain)
     }
 
+    private fun buildSmb2NoSignConfig(role: TransportRole = TransportRole.Browse): SmbConfig {
+        val builder = SmbConfig.builder()
+            .withNegotiatedBufferSize()
+            .withTimeout(SMB_IO_TIMEOUT_SEC, TimeUnit.SECONDS)
+            .withSoTimeout(SMB_IO_TIMEOUT_SEC, TimeUnit.SECONDS)
+            .withSocketFactory(KeepAliveSocketFactory)
+            .withSecurityProvider(SmbCrypto.provider)
+            .withSigningEnabled(false)
+            .withSigningRequired(false)
+            .withEncryptData(false)
+            .withDialects(SMB2Dialect.SMB_2_0_2, SMB2Dialect.SMB_2_1)
+        if (Settings.smbAsyncTransport.value) {
+            builder.withTransportLayerFactory(
+                when (role) {
+                    TransportRole.Browse -> SmbAsyncTransport.factory
+                    TransportRole.List -> SmbAsyncTransport.listFactory
+                    TransportRole.Video -> SmbAsyncTransport.videoFactory
+                },
+            )
+        }
+        return builder.build()
+    }
+
+    private fun buildSmb2NtlmV1Config(role: TransportRole = TransportRole.Browse): SmbConfig {
+        val builder = SmbConfig.builder()
+            .withNegotiatedBufferSize()
+            .withTimeout(SMB_IO_TIMEOUT_SEC, TimeUnit.SECONDS)
+            .withSoTimeout(SMB_IO_TIMEOUT_SEC, TimeUnit.SECONDS)
+            .withSocketFactory(KeepAliveSocketFactory)
+            .withSecurityProvider(SmbCrypto.provider)
+            .withSigningEnabled(false)
+            .withSigningRequired(false)
+            .withEncryptData(false)
+            .withDialects(SMB2Dialect.SMB_2_0_2, SMB2Dialect.SMB_2_1)
+            .withAuthenticators(NtlmV1Authenticator.Factory())
+        if (Settings.smbAsyncTransport.value) {
+            builder.withTransportLayerFactory(
+                when (role) {
+                    TransportRole.Browse -> SmbAsyncTransport.factory
+                    TransportRole.List -> SmbAsyncTransport.listFactory
+                    TransportRole.Video -> SmbAsyncTransport.videoFactory
+                },
+            )
+        }
+        return builder.build()
+    }
+
+    private fun isAuthRejection(e: Throwable): Boolean {
+        if (e !is SMBApiException) return false
+        val name = e.status.name
+        return name.contains("LOGON_FAILURE") ||
+               name.contains("INVALID_PARAMETER") ||
+               name.contains("ACCESS_DENIED")
+    }
+
+    private class AuthSession(
+        val client: SMBClient,
+        val connection: Connection,
+        val session: Session,
+    )
+
+    private fun connectAndAuth(
+        source: SmbSourceEntity,
+        password: String,
+        host: String,
+        config: SmbConfig,
+        connecting: java.util.concurrent.atomic.AtomicReference<SMBClient?>? = null,
+        role: TransportRole = TransportRole.Browse,
+    ): AuthSession {
+        if (source.username.isNotBlank()) {
+            val client = SMBClient(config)
+            connecting?.set(client)
+            val conn = client.connect(host, source.port)
+            try {
+                val sess = conn.authenticate(auth(source, password))
+                return AuthSession(client, conn, sess)
+            } catch (e: Throwable) {
+                runCatching { conn.close(true) }
+                runCatching { client.close() }
+                throw e
+            }
+        }
+
+        try {
+            val client = SMBClient(config)
+            connecting?.set(client)
+            val conn = client.connect(host, source.port)
+            try {
+                val sess = conn.authenticate(AuthenticationContext("Guest", password.toCharArray(), source.domain))
+                return AuthSession(client, conn, sess)
+            } catch (e: Throwable) {
+                runCatching { conn.close(true) }
+                runCatching { client.close() }
+                throw e
+            }
+        } catch (e: Throwable) {
+            if (!isAuthRejection(e)) throw e
+            logcat { "SmbGateway: Guest NTLMv2 failed, trying anonymous: ${e.message}" }
+        }
+
+        try {
+            val client = SMBClient(buildSmb2NoSignConfig(role))
+            connecting?.set(client)
+            val conn = client.connect(host, source.port)
+            try {
+                val sess = conn.authenticate(AuthenticationContext.anonymous())
+                return AuthSession(client, conn, sess)
+            } catch (e: Throwable) {
+                runCatching { conn.close(true) }
+                runCatching { client.close() }
+                throw e
+            }
+        } catch (e: Throwable) {
+            if (!isAuthRejection(e)) throw e
+            logcat { "SmbGateway: anonymous failed, trying NTLMv1: ${e.message}" }
+        }
+
+        val client = SMBClient(buildSmb2NtlmV1Config(role))
+        connecting?.set(client)
+        val conn = client.connect(host, source.port)
+        val sess = conn.authenticate(AuthenticationContext.guest())
+        return AuthSession(client, conn, sess)
+    }
+
     /**
      * TCP host used for connect / pool / circuit keys.
      *
@@ -1544,19 +1668,17 @@ object SmbGateway {
         val host = endpointHost(source)
         ensureHostNotCoolingDown(host, source.port)
         trackSource(source)
-        // Dedicated 64 KiB-transact client — see [smbConfigForShareEnum].
-        val smbClient = SMBClient(smbConfigForShareEnum())
-        // Socket.connect 不可取消：hop/退出时取消 Job 需从另一线程关 client 立即解阻塞
-        // （对齐上游 0919 shareEnum）
-        val connecting = java.util.concurrent.atomic.AtomicReference<SMBClient?>(smbClient)
+        val connecting = java.util.concurrent.atomic.AtomicReference<SMBClient?>(null)
         val cancelClose = coroutineContext[Job]?.closeFileOnCancelling(connecting)
         val t0 = System.nanoTime()
         fun elapsedMs() = (System.nanoTime() - t0) / 1_000_000L
+        var smbClient: SMBClient? = null
         try {
-            // Skip session.logoff after IPC$ enum — LOGOFF can wait full transactTimeout.
-            val connection = smbClient.connect(host, source.port)
+            val as_ = connectAndAuth(source, password, host, smbConfigForShareEnum(), connecting)
+            smbClient = as_.client
+            val connection = as_.connection
             try {
-                val session = connection.authenticate(auth(source, password))
+                val session = as_.session
                 val names = listDiskShareNamesOnSession(session)
                 clearHostCircuit(host, source.port)
                 setHostConnected(hostKey(host, source.port), true)
@@ -1573,7 +1695,7 @@ object SmbGateway {
             }
             throw e
         } finally {
-            runCatching { smbClient.close() }
+            runCatching { smbClient?.close() }
         }
     }
 
@@ -1801,15 +1923,16 @@ object SmbGateway {
             val host = endpointHost(source)
             ensureHostNotCoolingDown(host, source.port)
             val fixed = fixedShare(source)
-            // Empty share uses share-enum config (64 KiB transact); fixed share uses browse config.
-            val smbClient = SMBClient(if (fixed.isEmpty()) smbConfigForShareEnum() else smbConfig())
-            // 取消立即关 client（对齐上游 0919 listRoots）
-            val connecting = java.util.concurrent.atomic.AtomicReference<SMBClient?>(smbClient)
+            val baseConfig = if (fixed.isEmpty()) smbConfigForShareEnum() else smbConfig()
+            val connecting = java.util.concurrent.atomic.AtomicReference<SMBClient?>(null)
             val cancelClose = coroutineContext[Job]?.closeFileOnCancelling(connecting)
+            var smbClient: SMBClient? = null
             try {
-                val connection = smbClient.connect(host, source.port)
+                val as_ = connectAndAuth(source, password, host, baseConfig, connecting)
+                smbClient = as_.client
+                val connection = as_.connection
                 try {
-                    val session = connection.authenticate(auth(source, password))
+                    val session = as_.session
                     if (fixed.isNotEmpty()) {
                         (session.connectShare(fixed) as DiskShare).use { share ->
                             val path = joinPath(source.pathPrefix, "")
@@ -1823,7 +1946,7 @@ object SmbGateway {
                     runCatching { connection.close(true) }
                 }
             } finally {
-                runCatching { smbClient.close() }
+                runCatching { smbClient?.close() }
             }
             clearHostCircuit(host, source.port)
             Unit
@@ -3292,13 +3415,14 @@ object SmbGateway {
         videoPlayEpoch: Int?,
         block: (file: com.hierynomus.smbj.share.File, size: Long) -> T,
     ): T {
-        val smbClient = SMBClient(smbConfig(TransportRole.Video))
-        val connection = smbClient.connect(host, source.port)
+        val as_ = connectAndAuth(source, password, host, smbConfig(TransportRole.Video), null, TransportRole.Video)
+        val smbClient = as_.client
+        val connection = as_.connection
+        val session = as_.session
         stickyConnections.add(connection)
         val videoSticky = videoPlayEpoch?.let { VideoSticky(it, connection) }
         videoSticky?.let { videoStickies.add(it) }
         try {
-            val session = connection.authenticate(auth(source, password))
             logNegotiated("sticky", host, source.port, connection, session)
             val share = session.connectShare(shareName) as DiskShare
             val created = ReusableSticky(
@@ -3672,44 +3796,37 @@ object SmbGateway {
         return lock.withLock {
             ensureHostNotCoolingDown(host, source.port)
             coroutineContext.ensureActive()
-            // Dedicated SMBClient per session so smbj's host Connection cache
-            // cannot poison other pool slots / shares on half-open TCP.
-            val smbClient = SMBClient(smbConfig(forList = reservedForList))
-            // Socket.connect is not a cancellation point. Hop / source.close()
-            // cancel this Job while we still hold growLock + a hostOpSlot;
-            // close the client from another thread so connect unblocks now
-            // instead of after SMB_IO_TIMEOUT_SEC.
-            val connecting = AtomicReference(smbClient)
+            val role = if (reservedForList) TransportRole.List else TransportRole.Browse
+            val connecting = AtomicReference<SMBClient?>(null)
             val cancelClose = coroutineContext[Job]?.closeFileOnCancelling(connecting)
             val prevTag = TrafficStats.getThreadStatsTag()
             TrafficStats.setThreadStatsTag(KeepAliveSocketFactory.SMB_TRAFFIC_TAG)
             try {
-                val connection = smbClient.connect(host, source.port)
+                val as_ = connectAndAuth(source, password, host, smbConfig(role), connecting, role)
                 try {
-                    val session = connection.authenticate(auth(source, password))
                     connecting.set(null)
                     logNegotiated(
                         if (reservedForList) "list" else "browse",
                         host,
                         source.port,
-                        connection,
-                        session,
+                        as_.connection,
+                        as_.session,
                     )
                     PooledSession(
                         credKey = ck,
-                        client = smbClient,
-                        connection = connection,
-                        session = session,
+                        client = as_.client,
+                        connection = as_.connection,
+                        session = as_.session,
                         reservedForList = reservedForList,
                     ).also {
                         setHostConnected(key, true)
                     }
                 } catch (e: Throwable) {
-                    runCatching { connection.close() }
+                    runCatching { as_.connection.close(true) }
+                    runCatching { as_.client.close() }
                     throw e
                 }
             } catch (e: Throwable) {
-                runCatching { smbClient.close() }
                 coroutineContext.ensureActive()
                 throw e
             } finally {
