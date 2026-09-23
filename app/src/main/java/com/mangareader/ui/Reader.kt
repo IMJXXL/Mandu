@@ -233,8 +233,6 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     var scrollX by remember { mutableIntStateOf(0) }
     var scrollY by remember { mutableIntStateOf(0) }
     var zoomLevel by remember { mutableFloatStateOf(1f) }
-    var showChapterTransition by remember { mutableStateOf(false) }
-    var chapterTransitionIsLast by remember { mutableStateOf(false) }
 
     // ★ N1 防抖：无缝续读 3 秒内不重复触发（模式切换/重复章末回调的并发窗口）
     var lastSeamlessAt by remember { mutableStateOf(0L) }
@@ -2161,10 +2159,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                                     try { engine.children(target.subPath).isEmpty() } catch (_: Exception) { false }
                                 }
                                 if (!enterable) {
-                                    // 目标卷为空/嵌套目录 → 回退现状过渡页（此处必然处于"向后读"末端，
-                                    // 过渡页要按"末页端"渲染：RTL 也是进入下一章，不是返回上一章）
-                                    chapterTransitionIsLast = true
-                                    showChapterTransition = true
+
                                     return@launch
                                 }
                                 // 作用域写回：beginSession 会把实时超分作用域重置为关闭，无缝跨卷要保留
@@ -2180,9 +2175,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                             val forwardEnd = isLast
                             if (forwardEnd && trySeamlessNextVolume()) {
                                 // 静默切换已启动
-                            } else if (config.chapterTransition && tocItems.size > 1) {
-                                chapterTransitionIsLast = forwardEnd
-                                showChapterTransition = true
+
                             }
                         }
                         com.mangareader.native.NativeReaderScreen(
@@ -2664,21 +2657,6 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             onItemOpen = { openItem(it) }
         )
     }
-
-    // Chapter transition overlay
-    ChapterTransitionOverlay(
-        visible = showChapterTransition,
-        isLast = chapterTransitionIsLast,
-        onNextChapter = {
-            showChapterTransition = false
-            switchToNext()
-        },
-        onPreviousChapter = {
-            showChapterTransition = false
-            switchToPrevious()
-        },
-        modifier = Modifier.fillMaxSize()
-    )
 
 
     if (showBookmarkNoteDialog) {

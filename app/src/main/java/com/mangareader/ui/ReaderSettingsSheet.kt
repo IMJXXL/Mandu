@@ -293,7 +293,7 @@ private fun GeneralTab(config: ReaderConfig, onConfigChange: (ReaderConfig) -> U
     CheckboxItem("显示页码", config.isShowPageNum) { onConfigChange(config.copy(isShowPageNum = it)) }
     CheckboxItem("沉浸式模式（重进生效）", config.isImmersiveMode) { onConfigChange(config.copy(isImmersiveMode = it)) }
     CheckboxItem("保持屏幕常亮", config.isKeepScreenOn) { onConfigChange(config.copy(isKeepScreenOn = it)) }
-    CheckboxItem("始终显示章节间的过渡页面", config.chapterTransition) { onConfigChange(config.copy(chapterTransition = it)) }
+
     // ★ N1：无缝续读（默认关；仅同本分卷；开启时读到卷末静默进入下一卷，无过渡页无确认弹窗）
     CheckboxItem("无缝续读下一卷（读到卷末自动进入同书下一卷）", config.seamlessNextVolume) { onConfigChange(config.copy(seamlessNextVolume = it)) }
     CheckboxItem("翻页时闪烁（开启后可降低墨水屏残影）", config.isFlipFlashEnabled) { onConfigChange(config.copy(isFlipFlashEnabled = it)) }
