@@ -213,7 +213,7 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
                     Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text("按需解码", fontSize = 16.sp)
-                            Text("旨在解决超长图降采样问题，开启后按可见区域局部解码，内存占用更低；超分、白边裁剪、旋转适配失效", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("开启后按可见区域局部解码，内存占用更低，适用于超长图片类漫画（PDF 条漫模糊请用条漫分割）；超分、白边裁剪、旋转适配失效", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         Switch(checked = config.tileModeEnabled, onCheckedChange = { config = config.copy(tileModeEnabled = it); config.save(ctx) })
                     }
@@ -228,7 +228,7 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
 
                     val tierDisabled = config.tileModeEnabled || config.isEinkMode
                     Text("降采样档位", fontSize = 16.sp, modifier = Modifier.padding(top = 8.dp))
-                    Text("大图自动降采样以减少内存占用", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("大图自动降采样以减少内存占用，对 PDF 不生效", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(8.dp))
                     Row(Modifier.fillMaxWidth().alpha(if (tierDisabled) 0.4f else 1f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         listOf("标准" to com.mangareader.data.ReaderConfig.DownsampleTier.STANDARD, "高清" to com.mangareader.data.ReaderConfig.DownsampleTier.HD, "超清" to com.mangareader.data.ReaderConfig.DownsampleTier.ULTRA_HD, "原图" to com.mangareader.data.ReaderConfig.DownsampleTier.ORIGINAL).forEach { (label, tier) ->
