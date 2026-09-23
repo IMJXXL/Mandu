@@ -460,9 +460,9 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                             scrollX = sx, scrollY = sy, zoomLevel = zs
                         )
                         withContext(Dispatchers.IO) {
-                    dao.saveReaderProgressBatch(b.id, curSnap + 1, now, chPathSnap, curSnap, done, history, effectiveSize)
+                            dao.saveReaderProgressBatch(b.id, curSnap + 1, now, chPathSnap, curSnap, done, history, effectiveSize)
                         }
-                syncBookStatusFromProgress(b, now, effectiveSize)
+                        syncBookStatusFromProgress(b, now, effectiveSize)
                     } catch (_: Exception) {}
                 }
             }
@@ -952,7 +952,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         val willMarkRead = !healed && progress != null && !progress.completed && expandedSize > 1 && progress.lastPage >= expandedSize - 1
         if (willMarkRead) {
             val now = System.currentTimeMillis()
-            try { withContext(Dispatchers.IO) { dao.upsertProgress(b.id, path, progress.lastPage, true, now, pages.size) } } catch (_: Exception) {}
+            try { withContext(Dispatchers.IO) { dao.upsertProgress(b.id, path, progress.lastPage, true, now, expandedSize) } } catch (_: Exception) {}
         }
         // ★ 已读完卷再次进入跳第 1 页（progress.completed==true 或本次正补写完成位 willMarkRead → lastPage=0）
         val lastPage = if (progress?.completed == true || willMarkRead) 0 else (progress?.lastPage ?: 0)

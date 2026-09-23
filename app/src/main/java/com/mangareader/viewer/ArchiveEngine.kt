@@ -2847,45 +2847,45 @@ class ArchiveEngine(private val ctx: Context) {
             val prev = inflightSegments.putIfAbsent(segKey, future)
             if (prev != null) { try { return prev.get() } catch (_: Exception) {} }
             try {
-            val docKey = uri.toString()
-            if (!com.mangareader.native.NativeEngine.pdfIsOpen(docKey)) {
-                val pfd = ctx.contentResolver.openFileDescriptor(uri, "r")
-                if (pfd != null) {
-                    try {
-                        val fd = pfd.detachFd()
+                val docKey = uri.toString()
+                if (!com.mangareader.native.NativeEngine.pdfIsOpen(docKey)) {
+                    val pfd = ctx.contentResolver.openFileDescriptor(uri, "r")
+                    if (pfd != null) {
                         try {
-                            com.mangareader.native.NativeEngine.pdfOpen(docKey, fd)
-                        } catch (e: Exception) {
-                            Log.e(TAG, "loadPdfPageSegment pdfOpen failed: ${e.message}", e)
-                        }
-                    } finally { try { pfd.close() } catch (_: Exception) {} }
+                            val fd = pfd.detachFd()
+                            try {
+                                com.mangareader.native.NativeEngine.pdfOpen(docKey, fd)
+                            } catch (e: Exception) {
+                                Log.e(TAG, "loadPdfPageSegment pdfOpen failed: ${e.message}", e)
+                            }
+                        } finally { try { pfd.close() } catch (_: Exception) {} }
+                    }
                 }
-            }
-            val pageSize = com.mangareader.native.NativeEngine.pdfGetPageSize(docKey, pageIndex)
-            val pageWidth = pageSize?.get(0)?.toFloat() ?: 100f
-            val pageHeight = pageSize?.get(1)?.toFloat() ?: 100f
-            val screenMax = maxOf(ctx.resources.displayMetrics.widthPixels, ctx.resources.displayMetrics.heightPixels)
-            val screenWidth = ctx.resources.displayMetrics.widthPixels
-            val splitH = com.mangareader.engine.pdf.PdfTallSplitCalculator.splitHeightPdf(screenMax, screenWidth, pageWidth)
-            val rect = com.mangareader.engine.pdf.PdfTallSplitCalculator.segmentRect(pageWidth, pageHeight, splitH, segmentIndex)
-            val segW = screenWidth.coerceAtLeast(1)
-            val segH = (segW.toFloat() * rect.height() / pageWidth).toInt().coerceAtLeast(1)
-            val bmp = try {
-                loadPdfPageSegmentViaRenderer(uri, pageIndex, rect, pageWidth, pageHeight, segW, segH)
-            } catch (oom: OutOfMemoryError) {
-                Log.w(TAG, "loadPdfPageSegment OOM seg=$segmentIndex, fallback whole page")
+                val pageSize = com.mangareader.native.NativeEngine.pdfGetPageSize(docKey, pageIndex)
+                val pageWidth = pageSize?.get(0)?.toFloat() ?: 100f
+                val pageHeight = pageSize?.get(1)?.toFloat() ?: 100f
+                val screenMax = maxOf(ctx.resources.displayMetrics.widthPixels, ctx.resources.displayMetrics.heightPixels)
+                val screenWidth = ctx.resources.displayMetrics.widthPixels
+                val splitH = com.mangareader.engine.pdf.PdfTallSplitCalculator.splitHeightPdf(screenMax, screenWidth, pageWidth)
+                val rect = com.mangareader.engine.pdf.PdfTallSplitCalculator.segmentRect(pageWidth, pageHeight, splitH, segmentIndex)
+                val segW = screenWidth.coerceAtLeast(1)
+                val segH = (segW.toFloat() * rect.height() / pageWidth).toInt().coerceAtLeast(1)
+                val bmp = try {
+                    loadPdfPageSegmentViaRenderer(uri, pageIndex, rect, pageWidth, pageHeight, segW, segH)
+                } catch (oom: OutOfMemoryError) {
+                    Log.w(TAG, "loadPdfPageSegment OOM seg=$segmentIndex, fallback whole page")
+                    return loadPdfPage(uri, pageIndex)
+                }
+                if (bmp != null) {
+                    Log.d(TAG, "loadPdfPageSegment idx=$pageIndex seg=$segmentIndex cache=miss ${segW}x${segH} rect=[${rect.left},${rect.top},${rect.right},${rect.bottom}] pageWH=${pageWidth}x${pageHeight} splitH=$splitH")
+                    putCachedBitmap(segKey, bmp)
+                    future.complete(bmp)
+                    return bmp
+                }
+                Log.w(TAG, "loadPdfPageSegment render null seg=$segmentIndex, fallback whole page")
+                future.complete(null)
                 return loadPdfPage(uri, pageIndex)
-            }
-            if (bmp != null) {
-                Log.d(TAG, "loadPdfPageSegment idx=$pageIndex seg=$segmentIndex cache=miss ${segW}x${segH} rect=[${rect.left},${rect.top},${rect.right},${rect.bottom}] pageWH=${pageWidth}x${pageHeight} splitH=$splitH")
-                putCachedBitmap(segKey, bmp)
-                future.complete(bmp)
-                return bmp
-            }
-            Log.w(TAG, "loadPdfPageSegment render null seg=$segmentIndex, fallback whole page")
-            future.complete(null)
-            return loadPdfPage(uri, pageIndex)
-            } finally { inflightSegments.remove(segKey, future) }
+            } finally { if (!future.isDone) future.complete(null); inflightSegments.remove(segKey, future) }
         } catch (e: Exception) {
             Log.e(TAG, "loadPdfPageSegment: ${e.message}", e)
             return null
