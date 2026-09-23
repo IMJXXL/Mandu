@@ -238,6 +238,7 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
         }
 
     override var onPageChanged: ((Int) -> Unit)? = null
+    override var onPageCountChanged: ((Int) -> Unit)? = null
     override var onToggleUi: (() -> Unit)? = null
     /** ★ N1 章末回调：条漫只有"向后读"，滚到最后一页即触发 true（语义对齐 PagerReaderView.onChapterEnd） */
     var onChapterEnd: ((Boolean) -> Unit)? = null
@@ -319,7 +320,13 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
 
     override fun setup(engine: ArchiveEngine, treePath: String, pages: List<ArchiveEngine.PageMeta>, startPage: Int, vertical: Boolean, clickFlip: Int, rtl: Boolean, verticalPager: Boolean) {
         val changed = this.pageList.size != pages.size || this.treePath != treePath
-        this.engine = engine; this.treePath = treePath; this.pageList = pages; this.currentPage = startPage
+        this.engine = engine; this.treePath = treePath
+        val screenMax = maxOf(context.resources.displayMetrics.widthPixels, context.resources.displayMetrics.heightPixels)
+        val screenWidth = context.resources.displayMetrics.widthPixels
+        val cfg = com.mangareader.data.ReaderConfig.load(context)
+        this.pageList = com.mangareader.engine.pdf.VirtualPageExpander.expand(pages, cfg.tallSplitEnabled, true, screenMax, screenWidth, engine, treePath)
+        this.currentPage = startPage
+        onPageCountChanged?.invoke(this.pageList.size)
         remotePageSupply?.onPageCountGrow?.add { newCount ->
             if (newCount > pageList.size) {
                 val oldSize = pageList.size
@@ -603,7 +610,11 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
                     // ★ SMB/WebDAV 页面供给抽象：远程会话优先，null 时不回退 engine（路径已被守卫拦截）
                     val supply = remotePageSupply
                     result = if (supply != null) supply.loadBitmap(idx)
-                    else engine?.loadPage(pageList[idx], treePath)
+                    else {
+                        val m = pageList[idx]
+                        if (m.source == "pdf" && m.segmentIndex > 0) engine?.loadPdfPageSegment(m, treePath, m.segmentIndex)
+                        else engine?.loadPage(m, treePath)
+                    }
                 }
                 result
             }
@@ -695,7 +706,11 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
                             // ★ SMB/WebDAV 页面供给抽象：远程会话优先，null 时不回退 engine
                             val supply = remotePageSupply
                             result = if (supply != null) supply.loadBitmap(idx)
-                            else engine?.loadPage(pageList[idx], treePath)
+                            else {
+                                val m = pageList[idx]
+                                if (m.source == "pdf" && m.segmentIndex > 0) engine?.loadPdfPageSegment(m, treePath, m.segmentIndex)
+                                else engine?.loadPage(m, treePath)
+                            }
                         }
                     } catch (_: Exception) {}
                     result

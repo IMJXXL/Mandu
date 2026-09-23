@@ -185,7 +185,7 @@ class ArchiveEngine(private val ctx: Context) {
         (dpi * 1.5f).toInt().coerceIn(480, 2048)
     }
 
-    data class PageMeta(val index: Int, val source: String, val ext: String, val localIdx: Int = 0, val splitSide: Int = 0, val name: String = "")
+    data class PageMeta(val index: Int, val source: String, val ext: String, val localIdx: Int = 0, val splitSide: Int = 0, val name: String = "", val segmentIndex: Int = 0, val segmentTotal: Int = 0, val originalPageIdx: Int = 0)
 
     /**
      * ★ SMB/WebDAV 路径守卫（smb_embed_lv119 任务4.4/14.5）：远程路径严禁进入 ArchiveEngine，
@@ -218,6 +218,12 @@ class ArchiveEngine(private val ctx: Context) {
     private val sharedBitmapCache = object : android.util.LruCache<String, Bitmap>(64 * 1024 * 1024) {
         override fun sizeOf(key: String, value: Bitmap): Int = if (value.isRecycled) 0 else value.byteCount
     }
+    private val renderSlotLocks = arrayOf(Any(), Any())
+    private val renderSlotRenderer = arrayOfNulls<android.graphics.pdf.PdfRenderer>(2)
+    private val renderSlotPfd = arrayOfNulls<android.os.ParcelFileDescriptor>(2)
+    private val renderSlotUri = arrayOfNulls<Uri>(2)
+    private val renderSlotCounter = java.util.concurrent.atomic.AtomicInteger()
+    private val inflightSegments = java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.CompletableFuture<Bitmap?>>()
     private val epubSpineCache = object : LinkedHashMap<String, List<Int>>(10, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<Int>>?): Boolean = size > 10
     }
@@ -287,6 +293,15 @@ class ArchiveEngine(private val ctx: Context) {
     }
 
     fun clearCache() {
+        for (slot in renderSlotLocks.indices) {
+            synchronized(renderSlotLocks[slot]) {
+                try { renderSlotRenderer[slot]?.close() } catch (_: Exception) {}
+                try { renderSlotPfd[slot]?.close() } catch (_: Exception) {}
+                renderSlotRenderer[slot] = null
+                renderSlotPfd[slot] = null
+                renderSlotUri[slot] = null
+            }
+        }
         bitmapCache.evictAll()
         synchronized(coverCache) {
             coverCache.clear()
@@ -2816,6 +2831,95 @@ class ArchiveEngine(private val ctx: Context) {
             Log.e(TAG, "loadPdfPage: ${e.message}", e)
         }
         return null
+    }
+
+    fun loadPdfPageSegment(meta: PageMeta, treeStr: String, segmentIndex: Int): Bitmap? {
+        try {
+            val p = parsePath(treeStr) ?: return null
+            val tree = makeTree(p.auth, p.tree)
+            val uri = DocumentsContract.buildDocumentUriUsingTree(tree, meta.ext)
+            val pageIndex = meta.localIdx
+            val sharedKey = "pdf:$uri|$pageIndex"
+            val segKey = com.mangareader.engine.pdf.PdfSegmentRenderer.segmentCacheKey(sharedKey, pageIndex, segmentIndex)
+            getCachedBitmap(segKey)?.let { return it }
+            inflightSegments[segKey]?.let { f -> try { return f.get() } catch (_: Exception) {} }
+            val future = java.util.concurrent.CompletableFuture<Bitmap?>()
+            val prev = inflightSegments.putIfAbsent(segKey, future)
+            if (prev != null) { try { return prev.get() } catch (_: Exception) {} }
+            try {
+            val docKey = uri.toString()
+            if (!com.mangareader.native.NativeEngine.pdfIsOpen(docKey)) {
+                val pfd = ctx.contentResolver.openFileDescriptor(uri, "r")
+                if (pfd != null) {
+                    try {
+                        val fd = pfd.detachFd()
+                        try {
+                            com.mangareader.native.NativeEngine.pdfOpen(docKey, fd)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "loadPdfPageSegment pdfOpen failed: ${e.message}", e)
+                        }
+                    } finally { try { pfd.close() } catch (_: Exception) {} }
+                }
+            }
+            val pageSize = com.mangareader.native.NativeEngine.pdfGetPageSize(docKey, pageIndex)
+            val pageWidth = pageSize?.get(0)?.toFloat() ?: 100f
+            val pageHeight = pageSize?.get(1)?.toFloat() ?: 100f
+            val screenMax = maxOf(ctx.resources.displayMetrics.widthPixels, ctx.resources.displayMetrics.heightPixels)
+            val screenWidth = ctx.resources.displayMetrics.widthPixels
+            val splitH = com.mangareader.engine.pdf.PdfTallSplitCalculator.splitHeightPdf(screenMax, screenWidth, pageWidth)
+            val rect = com.mangareader.engine.pdf.PdfTallSplitCalculator.segmentRect(pageWidth, pageHeight, splitH, segmentIndex)
+            val segW = screenWidth.coerceAtLeast(1)
+            val segH = (segW.toFloat() * rect.height() / pageWidth).toInt().coerceAtLeast(1)
+            val bmp = try {
+                loadPdfPageSegmentViaRenderer(uri, pageIndex, rect, pageWidth, pageHeight, segW, segH)
+            } catch (oom: OutOfMemoryError) {
+                Log.w(TAG, "loadPdfPageSegment OOM seg=$segmentIndex, fallback whole page")
+                return loadPdfPage(uri, pageIndex)
+            }
+            if (bmp != null) {
+                Log.d(TAG, "loadPdfPageSegment idx=$pageIndex seg=$segmentIndex cache=miss ${segW}x${segH} rect=[${rect.left},${rect.top},${rect.right},${rect.bottom}] pageWH=${pageWidth}x${pageHeight} splitH=$splitH")
+                putCachedBitmap(segKey, bmp)
+                future.complete(bmp)
+                return bmp
+            }
+            Log.w(TAG, "loadPdfPageSegment render null seg=$segmentIndex, fallback whole page")
+            future.complete(null)
+            return loadPdfPage(uri, pageIndex)
+            } finally { inflightSegments.remove(segKey, future) }
+        } catch (e: Exception) {
+            Log.e(TAG, "loadPdfPageSegment: ${e.message}", e)
+            return null
+        }
+    }
+
+    private fun loadPdfPageSegmentViaRenderer(uri: Uri, pageIndex: Int, rect: android.graphics.RectF, pageWidth: Float, pageHeight: Float, segW: Int, segH: Int): Bitmap? {
+        val slot = (renderSlotCounter.getAndIncrement() and 0x7fffffff) % renderSlotLocks.size
+        synchronized(renderSlotLocks[slot]) {
+            val r = getSlotRenderer(slot, uri) ?: return null
+            if (pageIndex >= r.pageCount) return null
+            val pg = r.openPage(pageIndex)
+            try {
+                val bmp = Bitmap.createBitmap(segW, segH, Bitmap.Config.ARGB_8888)
+                bmp.eraseColor(android.graphics.Color.WHITE)
+                val scaleX = segW.toFloat() / pageWidth
+                val scaleY = segH.toFloat() / rect.height()
+                val matrix = android.graphics.Matrix()
+                matrix.setScale(scaleX, scaleY)
+                matrix.postTranslate(0f, -rect.top * scaleY)
+                pg.render(bmp, null, matrix, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                return bmp
+            } finally { pg.close() }
+        }
+    }
+
+    private fun getSlotRenderer(slot: Int, uri: Uri): android.graphics.pdf.PdfRenderer? {
+        if (renderSlotUri[slot] == uri && renderSlotRenderer[slot] != null) return renderSlotRenderer[slot]
+        try { renderSlotRenderer[slot]?.close() } catch (_: Exception) {}
+        try { renderSlotPfd[slot]?.close() } catch (_: Exception) {}
+        renderSlotPfd[slot] = ctx.contentResolver.openFileDescriptor(uri, "r") ?: return null
+        renderSlotRenderer[slot] = android.graphics.pdf.PdfRenderer(renderSlotPfd[slot]!!)
+        renderSlotUri[slot] = uri
+        return renderSlotRenderer[slot]
     }
 
     private fun loadPdfPageFallback(uri: Uri, pageIndex: Int, w: Int, h: Int): Bitmap? {

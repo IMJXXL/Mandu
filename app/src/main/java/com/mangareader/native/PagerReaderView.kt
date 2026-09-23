@@ -379,6 +379,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     private val zoomBgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(160, 0, 0, 0) }
 
     override var onPageChanged: ((Int) -> Unit)? = null
+    override var onPageCountChanged: ((Int) -> Unit)? = null
     override var onToggleUi: (() -> Unit)? = null
     var onChapterEnd: ((Boolean) -> Unit)? = null  // true=last page, false=first page
     var onPageLongPress: ((Int) -> Unit)? = null  // long press on page

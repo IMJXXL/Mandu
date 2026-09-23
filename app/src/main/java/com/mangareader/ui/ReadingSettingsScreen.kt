@@ -218,6 +218,14 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
                         Switch(checked = config.tileModeEnabled, onCheckedChange = { config = config.copy(tileModeEnabled = it); config.save(ctx) })
                     }
 
+                    Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("条漫分割", fontSize = 16.sp)
+                            Text("开启后对超长条漫进行切割分段渲染，显示更清晰；该模式下 PDF 加载性能有所下降", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(checked = config.tallSplitEnabled, onCheckedChange = { config = config.copy(tallSplitEnabled = it); config.save(ctx) })
+                    }
+
                     val tierDisabled = config.tileModeEnabled || config.isEinkMode
                     Text("降采样档位", fontSize = 16.sp, modifier = Modifier.padding(top = 8.dp))
                     Text("大图自动降采样以减少内存占用", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)

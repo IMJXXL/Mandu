@@ -27,6 +27,7 @@ interface ReaderViewDelegate {
     fun release()
     fun trimMemory(level: Int)
     var onPageChanged: ((Int) -> Unit)?
+    var onPageCountChanged: ((Int) -> Unit)?
     var onToggleUi: (() -> Unit)?
     /** ★ v1.13：当前页是否已渲染出内容（无感切换遮罩的就绪信号；mihon 式"数据就绪才可见"） */
     fun isCurrentPageReady(): Boolean
@@ -142,6 +143,7 @@ fun NativeReaderScreen(
     remoteSupply: com.mangareader.native.RemotePageSupply? = null,
     modifier: Modifier = Modifier,
     onPageChanged: (Int) -> Unit = {},
+    onPageCountChanged: (Int) -> Unit = {},
     onToggleUi: () -> Unit = {},
     onViewReady: (webtoonView: View, pagerView: View) -> Unit = { _, _ -> },
     /** ★ v1.13 C-2：把内容容器暴露给上层做切换前同步截图（无感模式切换遮罩的数据源） */
@@ -191,6 +193,7 @@ fun NativeReaderScreen(
         }
         lastReleasedDelegate = delegate
         delegate.onPageChanged = { page -> savedPage = page; onPageChanged(page) }
+        delegate.onPageCountChanged = { count -> onPageCountChanged(count) }
         delegate.onToggleUi = onToggleUi
         // 先设置颜色再setup，确保adapter创建时用正确颜色
         if (delegate is PagerReaderView) delegate.pageBgColor = pageBgColor

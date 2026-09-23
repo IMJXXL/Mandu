@@ -105,7 +105,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     // 监听 SharedPreferences 外部修改，自动触发 config 重读
     DisposableEffect(bookId) {
         val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-            if (key?.startsWith("book_${bookId}_") == true || key in setOf("scrollMode", "readBackground", "autoFlipInterval", "tileModeEnabled", "downsampleTier", "isEinkMode", "isTrimWhiteBorder", "trimThreshold", "trimWhiteRatio", "imageMarginH", "isFlipAnimation", "landscapeZoom", "fitScreen", "panNavigation", "doublePageSplit", "doublePageReverse", "pageLayout", "useSSIV", "forceFullDecode", "isFlipFlashEnabled", "flipFlashDuration", "flipFlashInterval", "flipFlashColor", "einkDecodeSize", "einkUiHideDelay", "pdfQuality", "isGrayscale", "isInvertColors", "centerGapType", "doublePageShift", "seamlessNextVolume")) {
+            if (key?.startsWith("book_${bookId}_") == true || key in setOf("scrollMode", "readBackground", "autoFlipInterval", "tileModeEnabled", "downsampleTier", "isEinkMode", "isTrimWhiteBorder", "trimThreshold", "trimWhiteRatio", "imageMarginH", "isFlipAnimation", "landscapeZoom", "fitScreen", "panNavigation", "doublePageSplit", "doublePageReverse", "pageLayout", "useSSIV", "forceFullDecode", "tallSplitEnabled", "isFlipFlashEnabled", "flipFlashDuration", "flipFlashInterval", "flipFlashColor", "einkDecodeSize", "einkUiHideDelay", "pdfQuality", "isGrayscale", "isInvertColors", "centerGapType", "doublePageShift", "seamlessNextVolume")) {
                 configVersion++
             }
         }
@@ -122,6 +122,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     var book by remember { mutableStateOf<Book?>(null) }
     var pageList by remember { mutableStateOf(listOf<ArchiveEngine.PageMeta>()) }
     var cur by remember { mutableIntStateOf(0) }
+    var expandedPageCount by remember { mutableIntStateOf(0) }
     // ★ v1.11 全局默认阅读模式：原先三处重复的 mode 加载逻辑统一收敛到此函数。
     //   优先级（用户拍板：全局最低，只作"新书第一次进入"的初始状态）：
     //     ① read_mode_$bookId（书内手动切换过，最高）
@@ -448,9 +449,9 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                 val curSnap = cur
                 val chPathSnap = navStack.lastOrNull() ?: b.filePath
                 val now = System.currentTimeMillis()
-                // ★ v1.11：与 save() 同款多页守卫（单页列表不构成"读完"）
-                val done = pageListSnap.size > 1 && curSnap >= pageListSnap.size - 1
-                android.util.Log.d("ReaderProgress", "onDispose-save bookId=${b.id} chPath=$chPathSnap cur=$curSnap size=${pageListSnap.size} done=$done")
+                val effectiveSize = if (expandedPageCount > 0) expandedPageCount else pageListSnap.size
+                val done = effectiveSize > 1 && curSnap >= effectiveSize - 1
+                android.util.Log.d("ReaderProgress", "onDispose-save bookId=${b.id} chPath=$chPathSnap cur=$curSnap size=$effectiveSize done=$done")
                 val sx = scrollX; val sy = scrollY; val zs = zoomLevel
                 app.appScope.launch {
                     try {
@@ -459,9 +460,9 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                             scrollX = sx, scrollY = sy, zoomLevel = zs
                         )
                         withContext(Dispatchers.IO) {
-                            dao.saveReaderProgressBatch(b.id, curSnap + 1, now, chPathSnap, curSnap, done, history, pageListSnap.size)
+                    dao.saveReaderProgressBatch(b.id, curSnap + 1, now, chPathSnap, curSnap, done, history, effectiveSize)
                         }
-                        syncBookStatusFromProgress(b, now, pageListSnap.size)
+                syncBookStatusFromProgress(b, now, effectiveSize)
                     } catch (_: Exception) {}
                 }
             }
@@ -486,10 +487,9 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         val curSnap = cur
         val chPathSnap = navStack.lastOrNull() ?: b.filePath
         val now = System.currentTimeMillis()
-        // ★ v1.11 修复：done 加多页守卫。原 `cur >= size-1` 在 pageList.size==1 时一进即 true → completed=1
-        //   单向锁死后每开必跳第 1 页（实机 book=39 实锤）。单页/空列表不构成"读完"。
-        val done = pageListSnap.size > 1 && curSnap >= pageListSnap.size - 1
-        android.util.Log.d("ReaderProgress", "save bookId=${b.id} chPath=$chPathSnap cur=$curSnap size=${pageListSnap.size} done=$done")
+        val effectiveSize = if (expandedPageCount > 0) expandedPageCount else pageListSnap.size
+        val done = effectiveSize > 1 && curSnap >= effectiveSize - 1
+        android.util.Log.d("ReaderProgress", "save bookId=${b.id} chPath=$chPathSnap cur=$curSnap size=$effectiveSize done=$done")
 
         saveJob?.cancel()
         saveJob = app.appScope.launch {
@@ -511,10 +511,11 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     var goJob by remember { mutableStateOf<Job?>(null) }
     fun go(d: Int) {
         if (displayPages.isEmpty()) return
-        val n = (cur + d).coerceIn(0, displayPages.size - 1)
+        val pageCount = if (expandedPageCount > 0) expandedPageCount else displayPages.size
+        val n = (cur + d).coerceIn(0, pageCount - 1)
         if (n == cur) return
         if (n != cur) { cur = n; save() }
-        if (cur >= displayPages.size - 1 && viewing && displayPages.size > 1 && !showComplete && !hasShownCompleteThisSession) {
+        if (cur >= pageCount - 1 && viewing && pageCount > 1 && !showComplete && !hasShownCompleteThisSession) {
             showComplete = true; hasShownCompleteThisSession = true
         }
     }
@@ -898,7 +899,35 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             loading = false
             return emptyList()
         }
-        pageList = pages
+        if (config.autoWebtoon && pages.size >= 2 && mode != Mode.VERT && mode != Mode.VERT_PAGER && mode != Mode.WEBTOON_GAP) {
+            val userSetMode = prefs.getInt("read_mode_$bookId", -1)
+            if (userSetMode < 0) {
+                val treeStr = path
+                var totalRatio = 0f
+                var count = 0
+                for (i in 0 until minOf(3, pages.size)) {
+                    try {
+                        val sz = withContext(Dispatchers.IO) { engine.loadPageSize(pages[i], treeStr) }
+                        if (sz != null && sz.size >= 2 && sz[0] > 0 && sz[1] > 0) {
+                            totalRatio += sz[0].toFloat() / sz[1].toFloat()
+                            count++
+                        }
+                    } catch (_: Exception) {}
+                }
+                if (count > 0 && totalRatio / count < 0.55f) {
+                    mode = Mode.VERT
+                }
+            }
+        }
+        val expandedPages = if (config.tallSplitEnabled && path.endsWith("|pdf") &&
+            (mode == Mode.VERT || mode == Mode.WEBTOON_GAP)) {
+            val sm = maxOf(ctx.resources.displayMetrics.widthPixels, ctx.resources.displayMetrics.heightPixels)
+            val sw = ctx.resources.displayMetrics.widthPixels
+            try { com.mangareader.engine.pdf.VirtualPageExpander.expand(pages, true, true, sm, sw, engine, path) }
+            catch (_: Exception) { pages }
+        } else pages
+        pageList = expandedPages
+        val expandedSize = expandedPages.size
         val progress = withContext(Dispatchers.IO) { dao.getProgress(b.id, path) }
         android.util.Log.d("ReaderProgress", "enterReader bookId=${b.id} path=$path pages=${pages.size} progress=${progress?.let { "lastPage=${it.lastPage} completed=${it.completed} updatedAt=${it.updatedAt}" } ?: "null"}")
         // ★ v1.11 脏数据自愈：completed=1 且 lastPage==0 且多页卷 → 必为历史污染
@@ -920,7 +949,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         //   修复后：willMarkRead=true 时也跳第 1 页，与 progress.completed==true 一致。
         //   下次回卷进 enterReader 重读 progress（DB 已 true）走第 1 个分支，自愈。
         // ★ v1.11：willMarkRead 加 pages.size > 1 守卫（单页列表不构成"读到过末页"，与 save() 的 done 守卫对齐）
-        val willMarkRead = !healed && progress != null && !progress.completed && pages.size > 1 && progress.lastPage >= pages.size - 1
+        val willMarkRead = !healed && progress != null && !progress.completed && expandedSize > 1 && progress.lastPage >= expandedSize - 1
         if (willMarkRead) {
             val now = System.currentTimeMillis()
             try { withContext(Dispatchers.IO) { dao.upsertProgress(b.id, path, progress.lastPage, true, now, pages.size) } } catch (_: Exception) {}
@@ -928,7 +957,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         // ★ 已读完卷再次进入跳第 1 页（progress.completed==true 或本次正补写完成位 willMarkRead → lastPage=0）
         val lastPage = if (progress?.completed == true || willMarkRead) 0 else (progress?.lastPage ?: 0)
         // 书签直跳优先级最高：targetPage 显式覆盖
-        cur = (if (targetPage >= 0) targetPage else lastPage).coerceIn(0, (pages.size - 1).coerceAtLeast(0))
+        cur = (if (targetPage >= 0) targetPage else lastPage).coerceIn(0, (expandedSize - 1).coerceAtLeast(0))
 
         // ★ v1.13 用户需求：卷级封面后台生成（阅读历史显示各卷自己的封面而非书架总封面）
         //   写 covers/md5(卷path).thumb；HistoryScreen CoverThumb 双键查找时命中
@@ -957,31 +986,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         //   ★ 审查修正：（1）用 enterReader 内已声明的 pages 而非闭包外的 displayPages，避免空集合跳过判定；
         //                 （2）照搬原 mode != VERT && != VERT_PAGER && != WEBTOON_GAP 短路守卫，
         //                     避免切下一卷时打掉用户上一卷手动设的模式。
-        if (config.autoWebtoon && pages.size >= 3 && mode != Mode.VERT && mode != Mode.VERT_PAGER && mode != Mode.WEBTOON_GAP) {
-            val userSetMode = prefs.getInt("read_mode_$bookId", -1)
-            if (userSetMode < 0) {
-                val treeStr = path
-                var totalRatio = 0f
-                var count = 0
-                // ★ P2 优化：loadPageSize 只读尺寸不解帧。
-                //   原版 for-i 串行 loadPage 全解码 3 页 ~300ms；
-                //   本版串行 loadPageSize ~0-5ms/页（inJustDecodeBounds 扫头部 + pdfGetPageSize metadata）总 ~15ms 内。
-                //   ★ 不用 async 并发：loadPageSize 已是毫秒级，3 页并发收益 <15ms 不值增加内存峰值；
-                //     原 async 方案是为对冲 loadPage 的全解码耗时，P2 解决根源后不需要。
-                for (i in 0 until minOf(3, pages.size)) {
-                    try {
-                        val sz = withContext(Dispatchers.IO) { engine.loadPageSize(pages[i], treeStr) }
-                        if (sz != null && sz.size >= 2 && sz[0] > 0 && sz[1] > 0) {
-                            totalRatio += sz[0].toFloat() / sz[1].toFloat()
-                            count++
-                        }
-                    } catch (_: Exception) {}
-                }
-                if (count > 0 && totalRatio / count < 0.55f) {
-                    mode = Mode.VERT
-                }
-            }
-        }
+
         viewing = true
 
         return pages
@@ -1977,10 +1982,11 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     Scaffold(
         topBar = {
             if (ui || !viewing) {
-                val pageSubtitle = if (viewing && displayPages.isNotEmpty() && cur in displayPages.indices) {
-                    val p = displayPages[cur]
+                val pageSubtitle = if (viewing && displayPages.isNotEmpty() && cur >= 0) {
+                    val totalCount = if (expandedPageCount > 0) expandedPageCount else displayPages.size
+                    val p = if (cur < displayPages.size) displayPages[cur] else displayPages.last()
                     val name = p.name.ifEmpty { p.ext.substringAfterLast("/").substringBeforeLast(".") }
-                    "${cur + 1}/${displayPages.size}  $name"
+                    "${cur + 1}/$totalCount  $name"
                 } else ""
                 val hideAllTitlesPrefs = ctx.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE)
                 val hideAllTitles = hideAllTitlesPrefs.getBoolean("hide_all_titles", false)
@@ -2064,7 +2070,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                     ChapterNavigator(
                         isVertical = false,
                         currentPage = cur,
-                        totalPages = displayPages.size,
+                        totalPages = if (expandedPageCount > 0) expandedPageCount else displayPages.size,
                         onPageChange = { newCur ->
                             // ★ P0-B6：Slider 直通不设限（用户要求：任何时候都不能限制进度条操作）。
                             //   误触防护由两处承担：① ChapterNavigator 内部改为松手才提交（拖动过程不触发本回调）
@@ -2103,7 +2109,8 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                         Box(Modifier.fillMaxSize())
                     }
                     viewing && displayPages.isNotEmpty() -> {
-                    val safeCur = cur.coerceIn(0, (displayPages.size - 1).coerceAtLeast(0))
+                    val pageCount = if (expandedPageCount > 0) expandedPageCount else displayPages.size
+                    val safeCur = cur.coerceIn(0, (pageCount - 1).coerceAtLeast(0))
                     if (safeCur != cur) cur = safeCur
                     // ★ §34.3：isVertical 仅条漫（VERT/WEBTOON_GAP）走 webtoonView；
                     //   VERT_PAGER 不属于 isVertical，走 pagerView（传 verticalPager=true）。
@@ -2228,6 +2235,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                                 }
                             },
                             onToggleUi = ::toggleUi,
+                            onPageCountChanged = { count -> expandedPageCount = count },
 
                             onViewReady = { w, p ->
                                 webtoonViewRef = w; pagerViewRef = p

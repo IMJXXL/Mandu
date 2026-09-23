@@ -714,6 +714,53 @@ Java_com_mangareader_native_NativeEngine_nativePdfRenderPageBitmap(JNIEnv* env, 
     return bitmap;
 }
 
+JNIEXPORT jobject JNICALL
+Java_com_mangareader_native_NativeEngine_nativePdfRenderPageRegion(JNIEnv* env, jobject thiz, jstring key, jint pageIndex, jfloat clipX0, jfloat clipY0, jfloat clipX1, jfloat clipY1, jfloat pageWidth, jfloat pageHeight, jint width, jint height, jint dpi) {
+    if (key == nullptr) return nullptr;
+    const char* cKey = env->GetStringUTFChars(key, nullptr);
+    int stride = 0;
+    FPDF_BITMAP fpdfBitmap = (FPDF_BITMAP)PdfiumWrapper::instance().renderPageRegion(std::string(cKey), pageIndex, clipX0, clipY0, clipX1, clipY1, pageWidth, pageHeight, width, height, dpi, &stride);
+    env->ReleaseStringUTFChars(key, cKey);
+    if (!fpdfBitmap) return nullptr;
+
+    unsigned char* src = (unsigned char*)PdfiumWrapper::instance().getBitmapBuffer(fpdfBitmap);
+    if (!src) { PdfiumWrapper::instance().destroyBitmap(fpdfBitmap); return nullptr; }
+
+    jclass bitmapClass = env->FindClass("android/graphics/Bitmap");
+    jmethodID createBitmap = env->GetStaticMethodID(bitmapClass, "createBitmap", "(IILandroid/graphics/Bitmap$Config;)Landroid/graphics/Bitmap;");
+    jclass configClass = env->FindClass("android/graphics/Bitmap$Config");
+    jfieldID argb8888Field = env->GetStaticFieldID(configClass, "ARGB_8888", "Landroid/graphics/Bitmap$Config;");
+    jobject config = env->GetStaticObjectField(configClass, argb8888Field);
+    jobject bitmap = env->CallStaticObjectMethod(bitmapClass, createBitmap, width, height, config);
+    if (bitmap == nullptr) { PdfiumWrapper::instance().destroyBitmap(fpdfBitmap); return nullptr; }
+
+    void* bmpPixels = nullptr;
+    AndroidBitmapInfo bmpInfo;
+    AndroidBitmap_getInfo(env, bitmap, &bmpInfo);
+    if (AndroidBitmap_lockPixels(env, bitmap, &bmpPixels) == ANDROID_BITMAP_RESULT_SUCCESS && bmpPixels) {
+        jint* dst = (jint*)bmpPixels;
+        for (int y = 0; y < height; y++) {
+            int srcRowStart = (height - 1 - y) * stride;
+            int dstRowStart = y * width;
+            for (int x = 0; x < width; x++) {
+                int srcOffset = srcRowStart + x * 4;
+                jint r = src[srcOffset] & 0xFF;
+                jint g = src[srcOffset + 1] & 0xFF;
+                jint b = src[srcOffset + 2] & 0xFF;
+                jint a = src[srcOffset + 3] & 0xFF;
+                dst[dstRowStart + x] = (a << 24) | (r << 16) | (g << 8) | b;
+            }
+        }
+        AndroidBitmap_unlockPixels(env, bitmap);
+    }
+
+    PdfiumWrapper::instance().destroyBitmap(fpdfBitmap);
+    env->DeleteLocalRef(bitmapClass);
+    env->DeleteLocalRef(configClass);
+    env->DeleteLocalRef(config);
+    return bitmap;
+}
+
 JNIEXPORT void JNICALL
 Java_com_mangareader_native_NativeEngine_nativePdfCloseAll(JNIEnv* env, jobject thiz) {
     PdfiumWrapper::instance().closeAll();

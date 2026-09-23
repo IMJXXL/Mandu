@@ -55,7 +55,8 @@ data class ReaderConfig(
     val seamlessNextVolume: Boolean = false,
     val forceFullDecode: Boolean = false,
     val tileModeEnabled: Boolean = false,
-    val downsampleTier: DownsampleTier = DownsampleTier.STANDARD
+    val downsampleTier: DownsampleTier = DownsampleTier.STANDARD,
+    val tallSplitEnabled: Boolean = false
 ) {
     enum class ScrollMode { VERTICAL, HORIZONTAL_LEFT, HORIZONTAL_RIGHT }
     @Deprecated("Dead code - navigation uses Int field navigationMode instead") enum class ClickFlipType { NO, LEFT_RIGHT, DIAGONAL_LB_RT, DIAGONAL_LT_RB }
@@ -112,6 +113,7 @@ data class ReaderConfig(
             putBoolean("forceFullDecode", forceFullDecode)
             putBoolean("tileModeEnabled", tileModeEnabled)
             putString("downsampleTier", downsampleTier.name)
+            putBoolean("tallSplitEnabled", tallSplitEnabled)
             apply()
         }
     }
@@ -160,6 +162,7 @@ data class ReaderConfig(
                 seamlessNextVolume = prefs.safeGetBoolean("seamlessNextVolume", false),
                 forceFullDecode = prefs.safeGetBoolean("forceFullDecode", false),
                 tileModeEnabled = prefs.safeGetBoolean("tileModeEnabled", false),
+                tallSplitEnabled = prefs.safeGetBoolean("tallSplitEnabled", false),
                 downsampleTier = if (prefs.contains("downsampleTier")) {
                     try { DownsampleTier.valueOf(prefs.getString("downsampleTier", "STANDARD")!!) } catch (_: Exception) { DownsampleTier.STANDARD }
                 } else if (prefs.safeGetBoolean("forceFullDecode", false)) DownsampleTier.ORIGINAL else DownsampleTier.STANDARD

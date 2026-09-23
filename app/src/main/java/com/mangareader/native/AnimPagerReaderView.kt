@@ -84,6 +84,7 @@ class AnimPagerReaderView(context: Context) : FrameLayout(context), ReaderViewDe
     }
 
     override var onPageChanged: ((Int) -> Unit)? = null
+    override var onPageCountChanged: ((Int) -> Unit)? = null
     override var onToggleUi: (() -> Unit)? = null
     /** ★ N1 章末回调：true=末页 / false=首页，语义与 PagerReaderView.onChapterEnd 一致（动图卷无缝续读用） */
     var onChapterEnd: ((Boolean) -> Unit)? = null

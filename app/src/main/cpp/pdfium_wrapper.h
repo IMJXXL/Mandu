@@ -48,6 +48,10 @@ typedef void (*FPDFBitmap_Destroy)(FPDF_BITMAP bitmap);
 typedef unsigned char* (*FPDFBitmap_GetBuffer)(FPDF_BITMAP bitmap);
 typedef int (*FPDFBitmap_GetStride)(FPDF_BITMAP bitmap);
 
+typedef struct FS_MATRIX_ { float a, b, c, d, e, f; } FS_MATRIX;
+typedef struct FS_RECTF_ { float left, top, right, bottom; } FS_RECTF;
+typedef void (*FPDF_RenderPageBitmapWithMatrix)(FPDF_BITMAP bitmap, FPDF_PAGE page, const FS_MATRIX* matrix, const FS_RECTF* clipping, int flags);
+
 // pdfium constants
 #define FPDF_PRINTING 0x02
 #define FPDF_REVERSE_Y 0x20
@@ -69,6 +73,7 @@ public:
     void closePage(const std::string& key);
     bool getPageSize(const std::string& key, int pageIndex, double* outWidth, double* outHeight);
     void* renderPage(const std::string& key, int pageIndex, int width, int height, int dpi, bool isArgb, int* outStride);
+    void* renderPageRegion(const std::string& key, int pageIndex, float clipX0, float clipY0, float clipX1, float clipY1, float pageWidth, float pageHeight, int width, int height, int dpi, int* outStride);
     unsigned char* getBitmapBuffer(FPDF_BITMAP bitmap);
     void destroyBitmap(FPDF_BITMAP bitmap);
     void closeAll();
@@ -111,6 +116,7 @@ private:
     FPDFBitmap_Destroy fn_BitmapDestroy = nullptr;
     FPDFBitmap_GetBuffer fn_BitmapGetBuffer = nullptr;
     FPDFBitmap_GetStride fn_BitmapGetStride = nullptr;
+    FPDF_RenderPageBitmapWithMatrix fn_RenderPageBitmapWithMatrix = nullptr;
 };
 
 #endif // PDFIUM_WRAPPER_H

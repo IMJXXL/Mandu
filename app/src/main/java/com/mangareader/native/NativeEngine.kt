@@ -129,6 +129,7 @@ object NativeEngine {
     fun pdfUnlockDoc(key: String, pwd: String): Boolean = nativePdfUnlockDoc(key, pwd)
     fun pdfRenderPage(key: String, pageIndex: Int, width: Int, height: Int, dpi: Int, isArgb: Boolean): ByteArray? = nativePdfRenderPage(key, pageIndex, width, height, dpi, isArgb)
     fun pdfRenderPageBitmap(key: String, pageIndex: Int, width: Int, height: Int, dpi: Int): Bitmap? = nativePdfRenderPageBitmap(key, pageIndex, width, height, dpi)
+    fun pdfRenderPageRegion(key: String, pageIndex: Int, clipX0: Float, clipY0: Float, clipX1: Float, clipY1: Float, pageWidth: Float, pageHeight: Float, width: Int, height: Int, dpi: Int): Bitmap? = nativePdfRenderPageRegion(key, pageIndex, clipX0, clipY0, clipX1, clipY1, pageWidth, pageHeight, width, height, dpi)
     fun pdfCloseAll() = nativePdfCloseAll()
 
     fun interface PdfRangeReader {
@@ -148,6 +149,7 @@ object NativeEngine {
     private external fun nativePdfUnlockDoc(key: String, pwd: String): Boolean
     private external fun nativePdfRenderPage(key: String, pageIndex: Int, width: Int, height: Int, dpi: Int, isArgb: Boolean): ByteArray?
     private external fun nativePdfRenderPageBitmap(key: String, pageIndex: Int, width: Int, height: Int, dpi: Int): Bitmap?
+    private external fun nativePdfRenderPageRegion(key: String, pageIndex: Int, clipX0: Float, clipY0: Float, clipX1: Float, clipY1: Float, pageWidth: Float, pageHeight: Float, width: Int, height: Int, dpi: Int): Bitmap?
     private external fun nativePdfCloseAll()
 
     // libzip operations (for EPUB/ZIP with garbled filenames)

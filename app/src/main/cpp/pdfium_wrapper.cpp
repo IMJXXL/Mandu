@@ -27,6 +27,7 @@ bool PdfiumWrapper::load() {
     BIND(fn_BitmapCreate, "FPDFBitmap_Create"); BIND(fn_BitmapFillRect, "FPDFBitmap_FillRect");
     BIND(fn_RenderPageBitmap, "FPDF_RenderPageBitmap"); BIND(fn_BitmapDestroy, "FPDFBitmap_Destroy");
     BIND(fn_BitmapGetBuffer, "FPDFBitmap_GetBuffer"); BIND(fn_BitmapGetStride, "FPDFBitmap_GetStride");
+    BIND(fn_RenderPageBitmapWithMatrix, "FPDF_RenderPageBitmapWithMatrix");
     #undef BIND
     if (!fn_InitLibrary || !fn_LoadMemDocument || !fn_RenderPageBitmap || !fn_LoadCustomDocument) {
         return false;
@@ -279,6 +280,54 @@ void* PdfiumWrapper::renderPage(const std::string& key, int pageIndex, int width
         return nullptr;
     }
 
+    if (outStride) *outStride = stride;
+    return (void*)bitmap;
+}
+
+void* PdfiumWrapper::renderPageRegion(const std::string& key, int pageIndex,
+    float clipX0, float clipY0, float clipX1, float clipY1,
+    float pageWidth, float pageHeight, int width, int height, int dpi, int* outStride) {
+    std::lock_guard<std::mutex> lock(mutex);
+    auto it = handles.find(key);
+    if (it == handles.end() || !it->second.doc) return nullptr;
+    if (!load() || !fn_RenderPageBitmapWithMatrix) return nullptr;
+    if (width <= 0 || height <= 0 || pageWidth <= 0 || pageHeight <= 0) return nullptr;
+
+    if (it->second.currentPage && it->second.currentPageIdx != pageIndex) {
+        fn_ClosePage(it->second.currentPage);
+        it->second.currentPage = nullptr;
+        it->second.currentPageIdx = -1;
+    }
+    if (!it->second.currentPage) {
+        it->second.currentPage = fn_LoadPage(it->second.doc, pageIndex);
+        it->second.currentPageIdx = pageIndex;
+    }
+    if (!it->second.currentPage) return nullptr;
+
+    float clipH = clipY1 - clipY0;
+    if (clipH <= 0) return nullptr;
+    float scaleX = (float)width / pageWidth;
+    float scaleY = (float)height / clipH;
+    FS_MATRIX matrix;
+    matrix.a = scaleX; matrix.b = 0; matrix.c = 0;
+    matrix.d = -scaleY; matrix.e = 0;
+    matrix.f = (pageHeight - clipY0) * scaleY;
+    FS_RECTF clipping;
+    clipping.left = 0; clipping.top = 0;
+    clipping.right = (float)width; clipping.bottom = (float)height;
+
+    FPDF_BITMAP bitmap = fn_BitmapCreate(width, height, 1);
+    if (!bitmap) return nullptr;
+    fn_BitmapFillRect(bitmap, 0, 0, width, height, 0xFFFFFFFF);
+    fn_RenderPageBitmapWithMatrix(bitmap, it->second.currentPage, &matrix, &clipping, FPDF_PRINTING);
+
+    unsigned char* buffer = fn_BitmapGetBuffer(bitmap);
+    int stride = fn_BitmapGetStride(bitmap);
+    size_t bufSize = (size_t)stride * (size_t)height;
+    if (stride <= 0 || bufSize == 0) {
+        fn_BitmapDestroy(bitmap);
+        return nullptr;
+    }
     if (outStride) *outStride = stride;
     return (void*)bitmap;
 }
