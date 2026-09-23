@@ -1667,7 +1667,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             try { back() } catch (_: Exception) {}
         }
     }
-    BackHandler { goBack() }
+    BackHandler(enabled = !showSettings && !showSrPanel) { goBack() }
 
     // ★ 3+5 改动5：重写 markAsReadNow —— 改 suspend → 普通 fun，与 save() 对称改造：
     //   appScope 脱钩（不受 Reader dispose 影响）+ 主线程预快照 + 整块 try/catch。
@@ -2569,6 +2569,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
 
 
     if (showSrPanel) {
+        BackHandler { showSrPanel = false }
         com.mangareader.ui.SrPanel(
             bookId = book?.id ?: -1L,
             bookTitle = book?.title ?: "",
@@ -2585,6 +2586,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     }
 
     if (showSettings) {
+        BackHandler { showSettings = false }
         com.mangareader.ui.ReaderSettingsSheet(
             config = config,
             mode = mode,
