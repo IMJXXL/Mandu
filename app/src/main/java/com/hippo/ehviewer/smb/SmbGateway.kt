@@ -1571,8 +1571,14 @@ object SmbGateway {
         val client = SMBClient(buildSmb2NtlmV1Config(role))
         connecting?.set(client)
         val conn = client.connect(host, source.port)
-        val sess = conn.authenticate(AuthenticationContext.guest())
-        return AuthSession(client, conn, sess)
+        try {
+            val sess = conn.authenticate(AuthenticationContext("Guest", password.toCharArray(), source.domain))
+            return AuthSession(client, conn, sess)
+        } catch (e: Throwable) {
+            runCatching { conn.close(true) }
+            runCatching { client.close() }
+            throw e
+        }
     }
 
     /**
