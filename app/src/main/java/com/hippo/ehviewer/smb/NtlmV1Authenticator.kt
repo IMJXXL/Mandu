@@ -91,9 +91,7 @@ class NtlmV1Authenticator : Authenticator {
             NtlmNegotiateFlag.NTLMSSP_NEGOTIATE_UNICODE,
             NtlmNegotiateFlag.NTLMSSP_REQUEST_TARGET,
         )
-        if (!context.isAnonymous) {
-            negotiateFlags.add(NtlmNegotiateFlag.NTLMSSP_NEGOTIATE_KEY_EXCH)
-        }
+
         val ntlmNegotiate = NtlmNegotiate(
             negotiateFlags, context.domain,
             config?.workstationName, config?.windowsVersion, config?.isOmitVersion ?: false
@@ -125,7 +123,7 @@ class NtlmV1Authenticator : Authenticator {
             lmResponse, ntResponse,
             context.username, context.domain,
             config?.workstationName, null,
-            serverChallenge.negotiateFlags, config?.windowsVersion
+            negotiateFlags, config?.windowsVersion
         )
         response.negToken = negTokenTarg(msg)
         response.negotiateFlags = negotiateFlags
