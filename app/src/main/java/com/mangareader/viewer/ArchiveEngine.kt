@@ -3,6 +3,8 @@ package com.mangareader.viewer
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.ImageDecoder
+import android.os.Build
 import okio.buffer
 import okio.source
 import android.graphics.pdf.PdfRenderer
@@ -1105,14 +1107,14 @@ class ArchiveEngine(private val ctx: Context) {
                     BitmapFactory.Options().apply { inSampleSize = sample },
                 )
             } else {
-                // 全尺寸解码（≤6M px），保持原始清晰度
                 BitmapFactory.decodeByteArray(data, 0, data.size)
             }.also { bmp ->
                 if (bmp == null) {
                     val magic = data.take(4).joinToString("") { "%02X".format(it) }
                     e(TAG, "decodeBitmap NULL bytes=${data.size} bounds=${bounds.outWidth}x${bounds.outHeight} sample=$sample animated=$animated magic=$magic")
                 }
-            }
+            } ?: decodeWithImageDecoder(data)
+
         } catch (e: OutOfMemoryError) {
             e(TAG, "decodeBitmap OOM bytes=${data.size} err=${e.message}")
             System.gc()
@@ -1124,7 +1126,18 @@ class ArchiveEngine(private val ctx: Context) {
             }
         } catch (e: Exception) {
             Log.e(TAG, "decode: ${e.message}")
-            try { BitmapFactory.decodeByteArray(data, 0, data.size) } catch (_: Exception) { null }
+            try { BitmapFactory.decodeByteArray(data, 0, data.size) } catch (_: Exception) { null } ?: decodeWithImageDecoder(data)
+        }
+    }
+
+    private fun decodeWithImageDecoder(data: ByteArray): Bitmap? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return null
+        return try {
+            val source = ImageDecoder.createSource(data)
+            ImageDecoder.decodeBitmap(source)
+        } catch (e: Exception) {
+            e(TAG, "ImageDecoder fallback FAIL bytes=${data.size} err=${e.message}")
+            null
         }
     }
 
