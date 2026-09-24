@@ -366,7 +366,7 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
                         remove("bookmark_note_enabled")
                         remove("home_continue_read")
                         remove("inbook_continue_read")
-                        prefs.all.keys.filter { it.startsWith("book_") }.forEach { remove(it) }
+                        prefs.all.keys.filter { it.startsWith("book_") || it.startsWith("read_mode_") || it.startsWith("orientation_") }.forEach { remove(it) }
                         apply()
                     }
                     config = com.mangareader.data.ReaderConfig()
