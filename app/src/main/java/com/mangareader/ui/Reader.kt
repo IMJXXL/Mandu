@@ -238,6 +238,11 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     var lastSeamlessAt by remember { mutableStateOf(0L) }
     var switchTargetName by remember { mutableStateOf("") }
     var switchTargetPath by remember { mutableStateOf("") }
+    var isSwitching by remember { mutableStateOf(false) }
+
+    LaunchedEffect(viewing) {
+        if (viewing) isSwitching = false
+    }
 
     val displayPages = remember(pageList) { pageList }
 
@@ -1518,6 +1523,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     fun confirmSwitch() {
 
         if (switchTargetPath.isEmpty()) return
+        isSwitching = true
         if (tocItems.size > 1 && tocItems.any { it.subPath == switchTargetPath }) {
             // 切章节：重置navStack到书根+新章节，不嵌套
             // ★ F2.2：d: 书的书根取 navStack 首位（d: 栈首即书根；原来 fallback 到 switchTargetPath
@@ -1578,6 +1584,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     }
 
     fun switchToNext() {
+        if (isSwitching) return
         val curSubPath = extractSubPathFromNav()
         if (tocItems.size > 1) {
             val curIdx = tocItems.indexOfFirst { it.subPath == curSubPath }
@@ -1613,6 +1620,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     }
 
     fun switchToPrevious() {
+        if (isSwitching) return
         val curSubPath = extractSubPathFromNav()
         if (tocItems.size > 1) {
             val curIdx = tocItems.indexOfFirst { it.subPath == curSubPath }
