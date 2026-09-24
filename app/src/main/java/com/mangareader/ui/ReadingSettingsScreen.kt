@@ -34,6 +34,8 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
             it.copy(readBackground = com.mangareader.data.ReaderConfig.ReadBackground.WHITE)
         } else it
     }) }
+    var resetTrigger by remember { mutableStateOf(0) }
+    var showResetDialog by remember { mutableStateOf(false) }
 
 
     Scaffold(
@@ -80,7 +82,7 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
                         }
                     }
 
-                    var defaultReadModeOrdinal by remember { mutableStateOf(prefs.getInt("default_read_mode", -1)) }
+                    var defaultReadModeOrdinal by remember(resetTrigger) { mutableStateOf(prefs.getInt("default_read_mode", -1)) }
                     var showDefaultModeDialog by remember { mutableStateOf(false) }
                     val defaultModeLabel =
                         if (defaultReadModeOrdinal in Mode.entries.indices) Mode.entries[defaultReadModeOrdinal].label
@@ -131,7 +133,7 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
                     }
 
                     // ★ 继续阅读显隐开关（2026-09-19）：首页全局继续阅读 + 书内多层继续阅读
-                    var homeContinue by remember { mutableStateOf(prefs.getBoolean("home_continue_read", true)) }
+                    var homeContinue by remember(resetTrigger) { mutableStateOf(prefs.getBoolean("home_continue_read", true)) }
                     Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text("首页「继续阅读」", fontSize = 16.sp)
@@ -139,7 +141,7 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
                         }
                         Switch(checked = homeContinue, onCheckedChange = { homeContinue = it; prefs.edit().putBoolean("home_continue_read", it).apply() })
                     }
-                    var inBookContinue by remember { mutableStateOf(prefs.getBoolean("inbook_continue_read", true)) }
+                    var inBookContinue by remember(resetTrigger) { mutableStateOf(prefs.getBoolean("inbook_continue_read", true)) }
                     Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text("书内「继续阅读」", fontSize = 16.sp)
@@ -152,8 +154,8 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
 
             item {
                 SectionCard("翻页与操作") {
-                    var volKeys by remember { mutableStateOf(prefs.getBoolean("reader_volume_keys", false)) }
-                    var volInvert by remember { mutableStateOf(prefs.getBoolean("reader_volume_keys_inverted", false)) }
+                    var volKeys by remember(resetTrigger) { mutableStateOf(prefs.getBoolean("reader_volume_keys", false)) }
+                    var volInvert by remember(resetTrigger) { mutableStateOf(prefs.getBoolean("reader_volume_keys_inverted", false)) }
                     Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text("音量键翻页", fontSize = 16.sp)
@@ -175,7 +177,7 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
                         }
                     }
 
-                    var longPressSave by remember { mutableStateOf(prefs.getBoolean("long_press_save", false)) }
+                    var longPressSave by remember(resetTrigger) { mutableStateOf(prefs.getBoolean("long_press_save", false)) }
                     Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text("长按保存图片", fontSize = 16.sp)
@@ -184,7 +186,7 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
                         Switch(checked = longPressSave, onCheckedChange = { longPressSave = it; prefs.edit().putBoolean("long_press_save", it).apply() })
                     }
 
-                    var bookmarkNote by remember { mutableStateOf(prefs.getBoolean("bookmark_note_enabled", false)) }
+                    var bookmarkNote by remember(resetTrigger) { mutableStateOf(prefs.getBoolean("bookmark_note_enabled", false)) }
                     Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text("书签备注", fontSize = 16.sp)
@@ -335,6 +337,44 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
                 }
             }
 
+            item {
+                Spacer(Modifier.height(16.dp))
+                TextButton(
+                    onClick = { showResetDialog = true },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("恢复默认设置", fontSize = 15.sp, color = MaterialTheme.colorScheme.error)
+                }
+            }
+
         }
+    }
+
+    if (showResetDialog) {
+        AlertDialog(
+            onDismissRequest = { showResetDialog = false },
+            title = { Text("恢复默认设置") },
+            text = { Text("将清除所有阅读设置（含单本自定义），恢复到刚安装时的状态。阅读进度不受影响。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    com.mangareader.data.ReaderConfig().save(ctx)
+                    prefs.edit().apply {
+                        remove("default_read_mode")
+                        remove("reader_volume_keys")
+                        remove("reader_volume_keys_inverted")
+                        remove("long_press_save")
+                        remove("bookmark_note_enabled")
+                        remove("home_continue_read")
+                        remove("inbook_continue_read")
+                        prefs.all.keys.filter { it.startsWith("book_") }.forEach { remove(it) }
+                        apply()
+                    }
+                    config = com.mangareader.data.ReaderConfig()
+                    resetTrigger++
+                    showResetDialog = false
+                }) { Text("确定") }
+            },
+            dismissButton = { TextButton(onClick = { showResetDialog = false }) { Text("取消") } }
+        )
     }
 }
