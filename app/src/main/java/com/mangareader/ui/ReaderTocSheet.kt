@@ -14,8 +14,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.DeleteOutline
-import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -25,10 +23,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil3.compose.AsyncImage
+import coil3.request.ImageRequest
 import com.mangareader.data.Bookmark
 import com.mangareader.data.ReadingProgress
 import com.mangareader.viewer.ArchiveEngine
@@ -210,6 +212,12 @@ fun ReaderTocSheet(
         val base = displayItems.sortedWith(compareByDescending<ArchiveEngine.Item> { it.dir }.thenComparing({ it.name }, NaturalComparator))
         if (tocSortAsc) base else base.reversed()
     }
+    val ctx = LocalContext.current
+    val configuration = LocalConfiguration.current
+    val portraitCols by com.hippo.ehviewer.Settings.thumbColumnsPortrait.valueFlow().collectAsState(initial = com.hippo.ehviewer.Settings.thumbColumnsPortrait.value)
+    val landscapeCols by com.hippo.ehviewer.Settings.thumbColumnsLandscape.valueFlow().collectAsState(initial = com.hippo.ehviewer.Settings.thumbColumnsLandscape.value)
+    val resolvedCols = LayoutColumnsResolver.currentValue(configuration.orientation, portraitCols, landscapeCols)
+    val gridCols = LayoutColumnsResolver.toGridCols(resolvedCols)
     val thumbCache = remember { LruCache<Int, Bitmap>(20) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(
@@ -282,7 +290,7 @@ fun ReaderTocSheet(
                     }
                     Spacer(Modifier.height(8.dp))
                     LazyVerticalGrid(
-                        columns = GridCells.Fixed(3),
+                        columns = gridCols,
                         modifier = Modifier.weight(1f),
                         contentPadding = PaddingValues(8.dp),
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -293,9 +301,14 @@ fun ReaderTocSheet(
                             val cur = currentNavStack.lastOrNull() ?: ""
                             val isCurrent = viewing && item.subPath.isNotEmpty() && (cur.endsWith(item.subPath) && (cur.length == item.subPath.length || cur[cur.length - item.subPath.length - 1] == '/' || cur[cur.length - item.subPath.length - 1] == '\\'))
                             val status = remember(progress, item.name) { statusForItem(item, progress) }
+                            val coverModel = remember(item.auth, item.tree, item.doc, item.subPath) {
+                                ImageRequest.Builder(ctx)
+                                    .data(item)
+                                    .decoderFactory(com.mangareader.coil.CoverAnimGateDecoder)
+                                    .build()
+                            }
                             Column(
                                 Modifier.clip(RoundedCornerShape(8.dp))
-                                    .background(if (isCurrent) MaterialTheme.colorScheme.primary.copy(alpha = 0.3f) else MaterialTheme.colorScheme.surfaceVariant)
                                     .clickable {
                                         if (item.dir && item.subPath.isNotEmpty()) {
                                             val currentPath = currentNavStack.firstOrNull() ?: ""
@@ -315,13 +328,27 @@ fun ReaderTocSheet(
                                             onItemOpen(item)
                                         }
                                         onDismiss()
-                                    }
-                                    .padding(8.dp),
+                                    },
                                 horizontalAlignment = Alignment.CenterHorizontally
                             ) {
-                                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopEnd) {
+                                Box(
+                                    Modifier.fillMaxWidth().aspectRatio(0.72f)
+                                        .clip(RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
+                                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    AsyncImage(
+                                        model = coverModel,
+                                        contentDescription = item.name,
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.Crop,
+                                    )
+                                    if (isCurrent) {
+                                        Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)))
+                                    }
                                     if (status != TocItemStatus.UNREAD) {
                                         Surface(
+                                            Modifier.align(Alignment.TopEnd).padding(2.dp),
                                             shape = RoundedCornerShape(6.dp),
                                             color = status.color.copy(alpha = 0.95f)
                                         ) {
@@ -335,14 +362,7 @@ fun ReaderTocSheet(
                                         }
                                     }
                                 }
-                                Icon(
-                                    if (item.dir) Icons.Default.Folder else Icons.Default.InsertDriveFile,
-                                    contentDescription = if (item.dir) "文件夹" else "文件",
-                                    tint = if (item.dir) Color(0xFFFFB74D) else MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(32.dp)
-                                )
-                                Spacer(Modifier.height(4.dp))
-                                Text(item.name, color = MaterialTheme.colorScheme.onSurface, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                Text(item.name, Modifier.padding(4.dp), color = MaterialTheme.colorScheme.onSurface, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                             }
                         }
                     }
@@ -353,7 +373,7 @@ fun ReaderTocSheet(
                 // ─── 浏览页签 ───
                 if (pageCount > 0 && thumbLoader != null) {
                     LazyVerticalGrid(
-                        columns = GridCells.Fixed(3),
+                        columns = gridCols,
                         modifier = Modifier.weight(1f),
                         contentPadding = PaddingValues(8.dp),
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
