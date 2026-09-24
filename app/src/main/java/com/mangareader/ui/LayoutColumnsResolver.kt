@@ -11,6 +11,6 @@ object LayoutColumnsResolver {
     }
 
     fun toGridCols(value: Int, minWidth: Dp = 96.dp): GridCells {
-        return if (value in 1..8) GridCells.Fixed(value) else GridCells.Adaptive(minWidth)
+        return if (value in 1..20) GridCells.Fixed(value) else GridCells.Adaptive(minWidth)
     }
 }

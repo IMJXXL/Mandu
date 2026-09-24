@@ -29,3 +29,6 @@ project(":apng").projectDir = file("app/lib/apng4android/apng")
 project(":awebp").projectDir = file("app/lib/apng4android/awebp")
 project(":gif").projectDir = file("app/lib/apng4android/gif")
 
+include(":pagecurl")
+project(":pagecurl").projectDir = file("app/lib/pagecurl")
+

@@ -133,7 +133,8 @@ dependencies {
     implementation("com.github.tachiyomiorg:subsampling-scale-image-view:66e0db195d")
 
     // PageCurl - simulation page curl effect (Apache 2.0, compatible with GPL v3)
-    implementation("io.github.oleksandrbalan:pagecurl:1.5.1")
+    // Local fork with PR #39: spread leaf turns + real back-face content
+    implementation(project(":pagecurl"))
 
     // Room
     implementation("androidx.room:room-runtime:2.7.0")

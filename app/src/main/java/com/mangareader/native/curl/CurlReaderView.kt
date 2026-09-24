@@ -46,6 +46,7 @@ class CurlReaderView(context: Context) : FrameLayout(context), ReaderViewDelegat
     override var onPageChanged: ((Int) -> Unit)? = null
     override var onPageCountChanged: ((Int) -> Unit)? = null
     override var onToggleUi: (() -> Unit)? = null
+    var onChapterEnd: ((Boolean) -> Unit)? = null
 
     private val gestureDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
         override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
@@ -125,6 +126,8 @@ class CurlReaderView(context: Context) : FrameLayout(context), ReaderViewDelegat
                     loader.preloadAround(newPage, pageList.size) { idx ->
                         reloadTrigger.intValue++
                     }
+                    if (newPage == pageList.size - 1) onChapterEnd?.invoke(true)
+                    if (newPage == 0) onChapterEnd?.invoke(false)
                     onPageChanged?.invoke(newPage)
                 },
 

@@ -1,0 +1,78 @@
+package eu.wewox.pagecurl.page
+
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
+import androidx.compose.ui.input.pointer.pointerInput
+import eu.wewox.pagecurl.ExperimentalPageCurlApi
+import eu.wewox.pagecurl.config.PageCurlConfig
+import eu.wewox.pagecurl.config.PageCurlConfig.DragInteraction.PointerBehavior
+import eu.wewox.pagecurl.utils.multiply
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
+
+@ExperimentalPageCurlApi
+internal fun Modifier.dragGesture(
+    dragInteraction: PageCurlConfig.GestureDragInteraction,
+    state: PageCurlState.InternalState,
+    enabledForward: Boolean,
+    enabledBackward: Boolean,
+    scope: CoroutineScope,
+    onChange: (Int) -> Unit
+): Modifier = this.composed {
+    val isEnabledForward = rememberUpdatedState(enabledForward)
+    val isEnabledBackward = rememberUpdatedState(enabledBackward)
+
+    pointerInput(state) {
+        val forwardTargetRect by lazy { dragInteraction.forward.target.multiply(size) }
+        val backwardTargetRect by lazy { dragInteraction.backward.target.multiply(size) }
+
+        val maxWidthPx = state.constraints.maxWidth.toFloat()
+        val forwardConfig = DragConfig(
+            edge = state.forward,
+            start = state.rightEdge,
+            // Kamigura fork: settle at the configured turn end (the spine for leaf turns).
+            end = state.forwardEndEdge,
+            isEnabled = { isEnabledForward.value },
+            isDragSucceed = { start, end -> end.x < start.x },
+            onChange = { onChange(+1) },
+            creaseRangeX = if (state.leafTurn) state.forwardEndEdge.top.x..maxWidthPx else null
+        )
+        val backwardConfig = DragConfig(
+            edge = state.backward,
+            start = state.leftEdge,
+            end = state.backwardEndEdge,
+            isEnabled = { isEnabledBackward.value },
+            isDragSucceed = { start, end -> end.x > start.x },
+            onChange = { onChange(-1) },
+            mirrorInputX = state.leafTurn,
+            creaseRangeX = if (state.leafTurn) 0f..state.backwardEndEdge.top.x else null
+        )
+
+        detectCurlGestures(
+            scope = scope,
+            newEdgeCreator = when (dragInteraction.pointerBehavior) {
+                PointerBehavior.Default -> NewEdgeCreator.Default()
+                PointerBehavior.PageEdge -> NewEdgeCreator.PageEdge()
+            },
+            getConfig = { start, end ->
+                val config = if (forwardTargetRect.contains(start) && end.x < start.x) {
+                    forwardConfig
+                } else if (backwardTargetRect.contains(start) && end.x > start.x) {
+                    backwardConfig
+                } else {
+                    null
+                }
+
+                if (config != null) {
+                    scope.launch {
+                        state.animateJob?.cancel()
+                        state.reset()
+                    }
+                }
+
+                config
+            },
+        )
+    }
+}

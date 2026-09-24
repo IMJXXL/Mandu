@@ -5,8 +5,6 @@ fun isCurlEnabled(
     pageCurlAnimationEnabled: Boolean,
     isVertical: Boolean,
     verticalPager: Boolean,
-    doublePageMode: Boolean,
-    doublePageReverse: Boolean,
     doublePageSplit: Boolean,
     tileModeEnabled: Boolean,
 ): Boolean =
@@ -14,7 +12,5 @@ fun isCurlEnabled(
         pageCurlAnimationEnabled &&
         !isVertical &&
         !verticalPager &&
-        !doublePageMode &&
-        !doublePageReverse &&
         !doublePageSplit &&
         !tileModeEnabled

@@ -108,6 +108,7 @@ fun CurlReaderContent(
     val leftHalf = Rect(0f, 0f, 0.5f, 1f)
 
     val dragInteraction = PageCurlConfig.StartEndDragInteraction(
+        pointerBehavior = PageCurlConfig.DragInteraction.PointerBehavior.PageEdge,
         forward = PageCurlConfig.StartEndDragInteraction.Config(start = rightHalf, end = leftHalf),
         backward = PageCurlConfig.StartEndDragInteraction.Config(start = leftHalf, end = rightHalf),
     )

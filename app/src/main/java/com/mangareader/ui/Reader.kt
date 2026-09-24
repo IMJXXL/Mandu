@@ -2238,6 +2238,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                                 }
                             },
                             onToggleUi = ::toggleUi,
+                            onChapterEnd = handleChapterEnd,
                             onPageCountChanged = { count -> expandedPageCount = count },
 
                             onViewReady = { w, p ->
