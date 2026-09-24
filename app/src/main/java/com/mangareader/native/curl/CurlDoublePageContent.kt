@@ -1,5 +1,6 @@
 package com.mangareader.native.curl
 
+import android.graphics.Bitmap
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -117,38 +118,16 @@ fun CurlDoublePageContent(
 
             val targetSpread = if (forward) current + 1 else current - 1
             if (targetSpread < 0 || targetSpread >= totalSpreads) {
-                Box(Modifier.fillMaxSize().background(Color(pageBgColor)))
+                SpreadImage(null, null, doublePageReverse, pageBgColor)
             } else {
                 val tLeftIdx = SpreadMapping.leftPage(targetSpread, totalPages, shift)
                 val tRightIdx = SpreadMapping.rightPage(targetSpread, totalPages, shift)
-                val tLeftBmp = cache.get(tLeftIdx)
-                val tRightBmp = if (tRightIdx >= 0) cache.get(tRightIdx) else null
-
-                if (tLeftBmp != null && !tLeftBmp.isRecycled) {
-                    val merged = remember(tLeftBmp, tRightBmp) {
-                        try {
-                            if (tRightBmp != null && !tRightBmp.isRecycled) {
-                                if (doublePageReverse) {
-                                    SpreadMapping.mergeBitmaps(tRightBmp, tLeftBmp, 0, pageBgColor)
-                                } else {
-                                    SpreadMapping.mergeBitmaps(tLeftBmp, tRightBmp, 0, pageBgColor)
-                                }
-                            } else {
-                                tLeftBmp
-                            }
-                        } catch (_: OutOfMemoryError) {
-                            tLeftBmp
-                        }
-                    }
-                    Image(
-                        bitmap = merged.asImageBitmap(),
-                        contentDescription = null,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Fit,
-                    )
-                } else {
-                    Box(Modifier.fillMaxSize().background(Color(pageBgColor)))
-                }
+                SpreadImage(
+                    cache.get(tLeftIdx),
+                    if (tRightIdx >= 0) cache.get(tRightIdx) else null,
+                    doublePageReverse,
+                    pageBgColor,
+                )
             }
         },
     ) { spreadIdx ->
@@ -157,33 +136,52 @@ fun CurlDoublePageContent(
 
         val leftIdx = SpreadMapping.leftPage(spreadIdx, totalPages, shift)
         val rightIdx = SpreadMapping.rightPage(spreadIdx, totalPages, shift)
-        val leftBmp = cache.get(leftIdx)
-        val rightBmp = if (rightIdx >= 0) cache.get(rightIdx) else null
+        SpreadImage(
+            cache.get(leftIdx),
+            if (rightIdx >= 0) cache.get(rightIdx) else null,
+            doublePageReverse,
+            pageBgColor,
+        )
+    }
+}
 
+@Composable
+private fun SpreadImage(
+    leftBmp: Bitmap?,
+    rightBmp: Bitmap?,
+    doublePageReverse: Boolean,
+    pageBgColor: Int,
+) {
+    val emptyBmp = remember { Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888).asImageBitmap() }
+
+    val merged = remember(leftBmp, rightBmp) {
         if (leftBmp != null && !leftBmp.isRecycled) {
-            val merged = remember(leftBmp, rightBmp) {
-                try {
-                    if (rightBmp != null && !rightBmp.isRecycled) {
-                        if (doublePageReverse) {
-                            SpreadMapping.mergeBitmaps(rightBmp, leftBmp, 0, pageBgColor)
-                        } else {
-                            SpreadMapping.mergeBitmaps(leftBmp, rightBmp, 0, pageBgColor)
-                        }
+            try {
+                if (rightBmp != null && !rightBmp.isRecycled) {
+                    if (doublePageReverse) {
+                        SpreadMapping.mergeBitmaps(rightBmp, leftBmp, 0, pageBgColor)
                     } else {
-                        leftBmp
+                        SpreadMapping.mergeBitmaps(leftBmp, rightBmp, 0, pageBgColor)
                     }
-                } catch (_: OutOfMemoryError) {
+                } else {
                     leftBmp
                 }
+            } catch (_: OutOfMemoryError) {
+                leftBmp
             }
-            Image(
-                bitmap = merged.asImageBitmap(),
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Fit,
-            )
         } else {
-            Box(Modifier.fillMaxSize().background(Color(pageBgColor)))
+            null
         }
     }
+
+    val imgBmp = remember(merged) {
+        if (merged != null && !merged.isRecycled) merged.asImageBitmap() else null
+    }
+
+    Image(
+        bitmap = imgBmp ?: emptyBmp,
+        contentDescription = null,
+        modifier = Modifier.fillMaxSize().background(Color(pageBgColor)),
+        contentScale = ContentScale.Fit,
+    )
 }
