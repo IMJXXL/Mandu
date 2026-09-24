@@ -6,6 +6,8 @@ fun isCurlEnabled(
     isVertical: Boolean,
     verticalPager: Boolean,
     doublePageMode: Boolean,
+    doublePageReverse: Boolean,
+    doublePageSplit: Boolean,
     tileModeEnabled: Boolean,
 ): Boolean =
     flipAnimationEnabled &&
@@ -13,4 +15,6 @@ fun isCurlEnabled(
         !isVertical &&
         !verticalPager &&
         !doublePageMode &&
+        !doublePageReverse &&
+        !doublePageSplit &&
         !tileModeEnabled

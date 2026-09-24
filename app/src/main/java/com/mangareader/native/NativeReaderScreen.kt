@@ -166,6 +166,8 @@ fun NativeReaderScreen(
         isVertical = isVertical,
         verticalPager = verticalPager,
         doublePageMode = pageLayout != 0,
+        doublePageReverse = doublePageReverse,
+        doublePageSplit = doublePageSplit,
         tileModeEnabled = tileModeEnabled,
     )
 
