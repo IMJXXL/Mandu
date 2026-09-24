@@ -14,6 +14,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -23,13 +25,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil3.compose.AsyncImage
-import coil3.request.ImageRequest
 import com.mangareader.data.Bookmark
 import com.mangareader.data.ReadingProgress
 import com.mangareader.viewer.ArchiveEngine
@@ -205,13 +204,12 @@ fun ReaderTocSheet(
     thumbLoader: (suspend (Int) -> Bitmap?)? = null,
 ) {
     var tocSortAsc by remember { mutableStateOf(true) }
-    var tocTab by remember { mutableIntStateOf(0) }
+    var tocTab by remember { mutableIntStateOf(if (displayItems.size > 1) 0 else 1) }
     val dateFormat = remember { java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.getDefault()) }
     val sortedDisplayItems = remember(displayItems, tocSortAsc) {
         val base = displayItems.sortedWith(compareByDescending<ArchiveEngine.Item> { it.dir }.thenComparing({ it.name }, NaturalComparator))
         if (tocSortAsc) base else base.reversed()
     }
-    val ctx = LocalContext.current
     val thumbCache = remember { LruCache<Int, Bitmap>(20) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(
@@ -221,22 +219,25 @@ fun ReaderTocSheet(
         sheetMaxWidth = 520.dp
     ) {
         Column(Modifier.fillMaxWidth().height(400.dp).padding(16.dp)) {
-            // ★ 书签 Tab：章节 / 书签 双页签（章节列表原样保留在页签 0）
+            // ★ 三 Tab：目录 / 浏览 / 书签
             TabRow(
                 selectedTabIndex = tocTab,
                 containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                 contentColor = MaterialTheme.colorScheme.primary,
             ) {
                 Tab(selected = tocTab == 0, onClick = { tocTab = 0 }) {
-                    Text("章节", modifier = Modifier.padding(vertical = 10.dp), fontSize = 14.sp)
+                    Text("目录", modifier = Modifier.padding(vertical = 10.dp), fontSize = 14.sp)
                 }
                 Tab(selected = tocTab == 1, onClick = { tocTab = 1 }) {
+                    Text("浏览", modifier = Modifier.padding(vertical = 10.dp), fontSize = 14.sp)
+                }
+                Tab(selected = tocTab == 2, onClick = { tocTab = 2 }) {
                     Text("书签 (${bookmarks.size})", modifier = Modifier.padding(vertical = 10.dp), fontSize = 14.sp)
                 }
             }
             Spacer(Modifier.height(8.dp))
 
-            if (tocTab == 1) {
+            if (tocTab == 2) {
                 // ─── 书签页签 ───
                 if (bookmarks.isEmpty()) {
                     Text("暂无书签（阅读中点底部「书签」按钮添加当前页）", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
@@ -268,141 +269,136 @@ fun ReaderTocSheet(
                         }
                     }
                 }
-            } else if (sortedDisplayItems.size > 1) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Text("目录 (${sortedDisplayItems.size}章)", color = MaterialTheme.colorScheme.onSurface, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                    TextButton(onClick = { tocSortAsc = !tocSortAsc }) {
-                        Icon(Icons.Default.Sort, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurface)
-                        Spacer(Modifier.width(4.dp))
-                        Text(if (tocSortAsc) "正序" else "倒序", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface)
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(3),
-                    modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    items(sortedDisplayItems.size) { idx ->
-                        val item = sortedDisplayItems[idx]
-                        val cur = currentNavStack.lastOrNull() ?: ""
-                        val isCurrent = viewing && item.subPath.isNotEmpty() && (cur.endsWith(item.subPath) && (cur.length == item.subPath.length || cur[cur.length - item.subPath.length - 1] == '/' || cur[cur.length - item.subPath.length - 1] == '\\'))
-                        val status = remember(progress, item.name) { statusForItem(item, progress) }
-                        val coverModel = remember(item.auth, item.tree, item.doc, item.subPath) {
-                            ImageRequest.Builder(ctx)
-                                .data(item)
-                                .decoderFactory(com.mangareader.coil.CoverAnimGateDecoder)
-                                .build()
+            } else if (tocTab == 0) {
+                // ─── 目录页签 ───
+                if (sortedDisplayItems.size > 1) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Text("目录 (${sortedDisplayItems.size}章)", color = MaterialTheme.colorScheme.onSurface, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                        TextButton(onClick = { tocSortAsc = !tocSortAsc }) {
+                            Icon(Icons.Default.Sort, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurface)
+                            Spacer(Modifier.width(4.dp))
+                            Text(if (tocSortAsc) "正序" else "倒序", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface)
                         }
-                        Column(
-                            Modifier.clip(RoundedCornerShape(8.dp))
-                                .clickable {
-                                    if (item.dir && item.subPath.isNotEmpty()) {
-                                        val currentPath = currentNavStack.firstOrNull() ?: ""
-                                        if (currentPath.startsWith("z:")) {
-                                            val inner = currentPath.removePrefix("z:")
-                                            val sepIdx = inner.indexOf("//")
-                                            if (sepIdx >= 0) {
-                                                var archivePath = inner.substring(0, sepIdx)
-                                                if (!archivePath.startsWith("a:")) archivePath = "a:$archivePath"
-                                                val chapterPath = "z:${archivePath}//${item.subPath}"
-                                                onChapterNavigate(chapterPath)
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(3),
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        items(sortedDisplayItems.size) { idx ->
+                            val item = sortedDisplayItems[idx]
+                            val cur = currentNavStack.lastOrNull() ?: ""
+                            val isCurrent = viewing && item.subPath.isNotEmpty() && (cur.endsWith(item.subPath) && (cur.length == item.subPath.length || cur[cur.length - item.subPath.length - 1] == '/' || cur[cur.length - item.subPath.length - 1] == '\\'))
+                            val status = remember(progress, item.name) { statusForItem(item, progress) }
+                            Column(
+                                Modifier.clip(RoundedCornerShape(8.dp))
+                                    .background(if (isCurrent) MaterialTheme.colorScheme.primary.copy(alpha = 0.3f) else MaterialTheme.colorScheme.surfaceVariant)
+                                    .clickable {
+                                        if (item.dir && item.subPath.isNotEmpty()) {
+                                            val currentPath = currentNavStack.firstOrNull() ?: ""
+                                            if (currentPath.startsWith("z:")) {
+                                                val inner = currentPath.removePrefix("z:")
+                                                val sepIdx = inner.indexOf("//")
+                                                if (sepIdx >= 0) {
+                                                    var archivePath = inner.substring(0, sepIdx)
+                                                    if (!archivePath.startsWith("a:")) archivePath = "a:$archivePath"
+                                                    val chapterPath = "z:${archivePath}//${item.subPath}"
+                                                    onChapterNavigate(chapterPath)
+                                                }
+                                            } else if (currentPath.startsWith("d:")) {
+                                                onChapterNavigate("d:${item.auth}|${item.tree}|${item.doc}")
                                             }
-                                        } else if (currentPath.startsWith("d:")) {
-                                            onChapterNavigate("d:${item.auth}|${item.tree}|${item.doc}")
+                                        } else if (!item.dir) {
+                                            onItemOpen(item)
                                         }
-                                    } else if (!item.dir) {
-                                        onItemOpen(item)
+                                        onDismiss()
                                     }
-                                    onDismiss()
-                                },
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Box(
-                                Modifier.fillMaxWidth().aspectRatio(0.72f)
-                                    .clip(RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
-                                    .background(MaterialTheme.colorScheme.surfaceVariant),
-                                contentAlignment = Alignment.Center
+                                    .padding(8.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
                             ) {
-                                AsyncImage(
-                                    model = coverModel,
-                                    contentDescription = item.name,
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentScale = ContentScale.Crop,
+                                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopEnd) {
+                                    if (status != TocItemStatus.UNREAD) {
+                                        Surface(
+                                            shape = RoundedCornerShape(6.dp),
+                                            color = status.color.copy(alpha = 0.95f)
+                                        ) {
+                                            Text(
+                                                text = status.label,
+                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                                                fontSize = 8.sp,
+                                                color = Color.White,
+                                                maxLines = 1
+                                            )
+                                        }
+                                    }
+                                }
+                                Icon(
+                                    if (item.dir) Icons.Default.Folder else Icons.Default.InsertDriveFile,
+                                    contentDescription = if (item.dir) "文件夹" else "文件",
+                                    tint = if (item.dir) Color(0xFFFFB74D) else MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(32.dp)
                                 )
-                                if (isCurrent) {
-                                    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)))
-                                }
-                                if (status != TocItemStatus.UNREAD) {
-                                    Surface(
-                                        Modifier.align(Alignment.TopEnd).padding(2.dp),
-                                        shape = RoundedCornerShape(6.dp),
-                                        color = status.color.copy(alpha = 0.95f)
-                                    ) {
-                                        Text(
-                                            text = status.label,
-                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
-                                            fontSize = 8.sp,
-                                            color = Color.White,
-                                            maxLines = 1
-                                        )
-                                    }
-                                }
+                                Spacer(Modifier.height(4.dp))
+                                Text(item.name, color = MaterialTheme.colorScheme.onSurface, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                             }
-                            Text(item.name, Modifier.padding(4.dp), color = MaterialTheme.colorScheme.onSurface, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        }
-
-                    }
-                }
-            } else if (pageCount > 0 && thumbLoader != null) {
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(3),
-                    modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    items(pageCount) { idx ->
-                        var bitmap by remember(idx) { mutableStateOf<Bitmap?>(null) }
-                        LaunchedEffect(idx) {
-                            thumbCache.get(idx)?.let { bitmap = it; return@LaunchedEffect }
-                            val bmp = withContext(Dispatchers.IO) { thumbLoader?.invoke(idx) }
-                            if (bmp != null) thumbCache.put(idx, bmp)
-                            bitmap = bmp
-                        }
-                        Column(
-                            Modifier.clip(RoundedCornerShape(8.dp))
-                                .clickable { onPageClick(idx); onDismiss() },
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Box(
-                                Modifier.fillMaxWidth().aspectRatio(0.72f)
-                                    .clip(RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
-                                    .background(MaterialTheme.colorScheme.surfaceVariant),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                if (bitmap != null) {
-                                    Image(
-                                        bitmap = bitmap!!.asImageBitmap(),
-                                        contentDescription = "第${idx + 1}页",
-                                        modifier = Modifier.fillMaxSize(),
-                                        contentScale = ContentScale.Crop,
-                                    )
-                                } else {
-                                    Text("${idx + 1}", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                                if (idx == currentPage) {
-                                    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)))
-                                }
-                            }
-                            Text("${idx + 1}", Modifier.padding(2.dp), fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
+                } else {
+                    Text("无目录（单本漫画）", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
                 }
             } else {
-                Text("无目录（单本漫画）", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
+                // ─── 浏览页签 ───
+                if (pageCount > 0 && thumbLoader != null) {
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(3),
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        items(pageCount) { idx ->
+                            var bitmap by remember(idx) { mutableStateOf<Bitmap?>(null) }
+                            LaunchedEffect(idx) {
+                                thumbCache.get(idx)?.let { bitmap = it; return@LaunchedEffect }
+                                val bmp = withContext(Dispatchers.IO) { thumbLoader?.invoke(idx) }
+                                if (bmp != null) thumbCache.put(idx, bmp)
+                                bitmap = bmp
+                            }
+                            Column(
+                                Modifier.clip(RoundedCornerShape(8.dp))
+                                    .clickable { onPageClick(idx); onDismiss() },
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Box(
+                                    Modifier.fillMaxWidth().aspectRatio(0.72f)
+                                        .clip(RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
+                                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (bitmap != null) {
+                                        Image(
+                                            bitmap = bitmap!!.asImageBitmap(),
+                                            contentDescription = "第${idx + 1}页",
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentScale = ContentScale.Crop,
+                                        )
+                                    } else {
+                                        Text("${idx + 1}", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                    if (idx == currentPage) {
+                                        Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)))
+                                    }
+                                }
+                                Text("${idx + 1}", Modifier.padding(2.dp), fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                } else {
+                    Text("暂无可浏览页面", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
+                }
             }
         }
     }
