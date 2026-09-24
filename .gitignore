@@ -47,3 +47,8 @@ mr_debug.db
 mr.db
 nul
 screen_theme.png
+logcat_*.txt
+screenshot*.png
+seg_*.png
+test*.png
+pdf_*.png
