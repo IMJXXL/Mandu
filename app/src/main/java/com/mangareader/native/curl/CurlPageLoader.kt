@@ -88,6 +88,13 @@ class CurlPageLoader(
                         inflightLoads.remove(idx)
                         return@launch
                     }
+                    try {
+                        val kind = withContext(Dispatchers.IO) { engine?.peekAnimKindFast(treePath, meta) } ?: com.mangareader.viewer.AnimKind.NONE
+                        if (kind != com.mangareader.viewer.AnimKind.NONE) {
+                            val raw = withContext(Dispatchers.IO) { engine?.loadPageRaw(meta, treePath) }
+                            if (raw != null) cache.putAnim(idx, CurlAnimData(raw, kind))
+                        }
+                    } catch (_: Exception) {}
                     if (trimWhiteBorder && bmp.width > 10 && bmp.height > 10) {
                         try {
                             val trim = com.mangareader.viewer.ImageTrimmer.trimWhiteBorders(
@@ -109,6 +116,12 @@ class CurlPageLoader(
                         inflightLoads.remove(idx)
                         return@launch
                     }
+                    try {
+                        val kind = detectAnimKindFromBytes(raw)
+                        if (kind != com.mangareader.viewer.AnimKind.NONE) {
+                            cache.putAnim(idx, CurlAnimData(raw, kind))
+                        }
+                    } catch (_: Exception) {}
                     val loader = coil3.SingletonImageLoader.get(context)
                     val result = withContext(Dispatchers.IO) {
                         loader.execute(coil3.request.ImageRequest.Builder(context).data(raw).build())

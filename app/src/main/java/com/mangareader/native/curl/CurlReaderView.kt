@@ -102,6 +102,7 @@ class CurlReaderView(context: Context) : FrameLayout(context), ReaderViewDelegat
                     }
                     onPageChanged?.invoke(newPage)
                 },
+                onToggleUi = { onToggleUi?.invoke() },
             )
         }
     }
