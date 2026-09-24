@@ -378,8 +378,8 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?, Int) -> Unit
                     Icon(Icons.Default.AutoFixHigh, null, modifier = Modifier.size(24.dp))
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
-                        Text("超分队列", fontSize = 16.sp)
-                        Text("批量离线超分进度、已完成产物与缓存管理", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("增强队列", fontSize = 16.sp)
+                        Text("批量离线增强进度、已完成产物与缓存管理", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Icon(Icons.Default.ChevronRight, null)
                 }

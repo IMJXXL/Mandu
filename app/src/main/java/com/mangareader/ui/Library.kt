@@ -580,13 +580,13 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                             (ctx as? android.app.Activity)?.runOnUiThread {
                                 android.widget.Toast.makeText(
                                     ctx,
-                                    if (n > 0) "已加入批量超分队列（$n 章），通知栏可看进度\n（安卓13+ 需先允许通知权限）" else "所选书籍已在队列中",
+                                    if (n > 0) "已加入批量增强队列（$n 章），通知栏可看进度\n（安卓13+ 需先允许通知权限）" else "所选书籍已在队列中",
                                     android.widget.Toast.LENGTH_LONG,
                                 ).show()
                             }
                         }
                         isMultiSelect = false; selectedBooks = emptySet()
-                    }) { Icon(Icons.Default.AutoFixHigh, "批量超分") }
+                    }) { Icon(Icons.Default.AutoFixHigh, "批量增强") }
                     IconButton(onClick = { selectedBooks = if (selectedBooks.isEmpty()) books.orEmpty().map { it.id }.toSet() else emptySet() }) {
                         Icon(Icons.Default.SelectAll, if (selectedBooks.isEmpty()) "全选" else "取消全选")
                     }

@@ -111,8 +111,8 @@ private fun SrPanelContent(
     val vulkanOk = !SrCore.isVulkanMissing() || !model.requiresVulkan
     val usable = engineAvailable && vulkanOk
     val blockReason = when {
-        !engineAvailable -> "超分组件加载失败，功能不可用"
-        !vulkanOk -> "此设备不支持 Vulkan 图形加速，超分不可用"
+        !engineAvailable -> "画质增强组件加载失败，功能不可用"
+        !vulkanOk -> "此设备不支持 Vulkan 图形加速，画质增强不可用"
         else -> null
     }
 
@@ -136,7 +136,7 @@ private fun SrPanelContent(
                     RoundedCornerShape(2.dp),
                 ),
         )
-        Text("超分 / 画质优化", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+        Text("画质增强", fontSize = 18.sp, fontWeight = FontWeight.Bold)
 
         // native 崩溃保护提示（上次被超分核心带走时显示）
         if (SrCore.hadNativeCrash || SrCore.manager.forceCpu) {
@@ -146,7 +146,7 @@ private fun SrPanelContent(
             ) {
                 Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        "上次超分在此设备上崩溃过，已自动切换 CPU 安全模式（慢一点但稳定）",
+                        "上次画质增强在此设备上崩溃过，已自动切换 CPU 安全模式（慢一点但稳定）",
                         Modifier.weight(1f),
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onErrorContainer,
@@ -201,7 +201,7 @@ private fun SrPanelContent(
         }
         Text(
             "作用域关闭时下面功能都不会生效，但都能提前设置好（“重算本页”同样需要先选作用域）；" +
-                "已批量离线超分过的内容无需开关，阅读时自动用超分图。",
+                "已批量离线增强过的内容无需开关，阅读时自动用增强图。",
             fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
@@ -210,7 +210,7 @@ private fun SrPanelContent(
         // ── 超分放大 ──
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.weight(1f)) {
-                Text("启用超分放大", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                Text("启用画质增强", fontSize = 14.sp, fontWeight = FontWeight.Medium)
                 Text("AI 放大图片变清晰；关闭时仍可单跑黑白优化（原尺寸、毫秒级）", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Switch(
@@ -290,7 +290,7 @@ private fun SrPanelContent(
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.weight(1f)) {
                 Text("黑白漫画优化（可单独开启）", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                Text("灰阶量化+网点密度校正；彩色页自动跳过；不开超分放大也能用", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("灰阶量化+网点密度校正；彩色页自动跳过；不开画质增强也能用", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Switch(
                 checked = bwOn,
@@ -363,17 +363,17 @@ private fun SrPanelContent(
                         (ctx as? android.app.Activity)?.runOnUiThread {
                             android.widget.Toast.makeText(
                                 ctx,
-                                if (n > 0) "已加入批量超分队列（$n 章）" else "本书已在队列中",
+                                if (n > 0) "已加入批量增强队列（$n 章）" else "本书已在队列中",
                                 android.widget.Toast.LENGTH_SHORT,
                             ).show()
                         }
                     }
                 },
                 modifier = Modifier.fillMaxWidth(),
-            ) { Text("批量超分本书（离线慢慢算，之后永久生效）") }
+            ) { Text("批量增强本书（离线慢慢算，之后永久生效）") }
         }
         TextButton(onClick = onOpenQueue, modifier = Modifier.fillMaxWidth()) {
-            Text("查看超分队列与缓存管理")
+            Text("查看增强队列与缓存管理")
         }
 
 
@@ -426,7 +426,7 @@ private fun SrPanelContent(
             )
         }
         Text(
-            "实时看图时临时算的超分图缓存，超上限自动清最旧（16–4096 MB，默认 100）；批量产物不受此限",
+            "实时看图时临时算的增强图缓存，超上限自动清最旧（16–4096 MB，默认 100）；批量产物不受此限",
             fontSize = 11.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

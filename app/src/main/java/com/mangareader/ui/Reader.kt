@@ -2063,7 +2063,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                             if (pageBookmarked) "已书签" else "书签",
                             isActive = pageBookmarked
                         ) { toggleBookmark() })
-                        add(BottomBarAction(Icons.Default.AutoFixHigh, "超分") { showSrPanel = true })
+                        add(BottomBarAction(Icons.Default.AutoFixHigh, "画质增强") { showSrPanel = true })
                         // 超分作用域已开启 或 离线批量产物存在 → 出现"对比"按钮
                         if (com.mangareader.sr.SrUiState.scope.intValue > 0 || com.mangareader.sr.SrPipeline.sessionHasBatch) {
                             add(BottomBarAction(Icons.Default.CompareArrows, if (com.mangareader.sr.SrUiState.compareActive.value) "退出对比" else "对比") {

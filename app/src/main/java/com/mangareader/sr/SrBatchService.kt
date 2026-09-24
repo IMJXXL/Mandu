@@ -72,7 +72,7 @@ class SrBatchService : Service() {
         }
         if (intent?.action == ACTION_TOGGLE_PAUSE) {
             togglePaused()
-            notifyProgress(if (paused) "已暂停（点通知可继续）" else "继续超分…", 0, 0)
+            notifyProgress(if (paused) "已暂停（点通知可继续）" else "继续增强…", 0, 0)
             SrCore.emitBatchPaused(paused)
             return START_STICKY
         }
@@ -83,7 +83,7 @@ class SrBatchService : Service() {
         }
 
         if (isRunning) return START_STICKY
-        startForegroundSafe(buildProgressNotification("准备批量超分…", 0, 0))
+        startForegroundSafe(buildProgressNotification("准备批量增强…", 0, 0))
         isRunning = true
 
         serviceScope.launch {
@@ -124,7 +124,7 @@ class SrBatchService : Service() {
                 continue
             }
 
-            notifyProgress("正在超分：${item.bookTitle}", item.processedPages, item.totalPages)
+            notifyProgress("正在增强：${item.bookTitle}", item.processedPages, item.totalPages)
 
             val pages = try {
                 engine.listPages(item.path)
@@ -247,12 +247,12 @@ class SrBatchService : Service() {
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (nm.getNotificationChannel(CH_PROGRESS) == null) {
             nm.createNotificationChannel(
-                NotificationChannel(CH_PROGRESS, "超分批量处理", NotificationManager.IMPORTANCE_LOW),
+                NotificationChannel(CH_PROGRESS, "画质增强批量处理", NotificationManager.IMPORTANCE_LOW),
             )
         }
         if (nm.getNotificationChannel(CH_DONE) == null) {
             nm.createNotificationChannel(
-                NotificationChannel(CH_DONE, "超分完成", NotificationManager.IMPORTANCE_DEFAULT),
+                NotificationChannel(CH_DONE, "增强完成", NotificationManager.IMPORTANCE_DEFAULT),
             )
         }
     }
@@ -269,7 +269,7 @@ class SrBatchService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         return Notification.Builder(this, CH_PROGRESS)
-            .setContentTitle(if (paused) "批量超分（已暂停）" else "批量超分进行中")
+            .setContentTitle(if (paused) "批量增强（已暂停）" else "批量增强进行中")
             .setContentText(text)
             .setSmallIcon(android.R.drawable.ic_menu_upload)
             .setProgress(max, progress, max == 0)
@@ -293,8 +293,8 @@ class SrBatchService : Service() {
             nm.notify(
                 NOTI_DONE,
                 Notification.Builder(this, CH_DONE)
-                    .setContentTitle("批量超分完成")
-                    .setContentText("所有排队章节已处理完毕，阅读时将直接使用超分图")
+                    .setContentTitle("批量增强完成")
+                    .setContentText("所有排队章节已处理完毕，阅读时将直接使用增强图")
                     .setSmallIcon(android.R.drawable.ic_menu_upload)
                     .setAutoCancel(true)
                     .build(),

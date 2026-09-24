@@ -120,7 +120,7 @@ fun SrQueueScreen(onBack: () -> Unit, onOpenBook: ((Long, String) -> Unit)? = nu
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("超分队列") },
+                title = { Text("增强队列") },
                 navigationIcon = {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
                 },
@@ -161,7 +161,7 @@ fun SrQueueScreen(onBack: () -> Unit, onOpenBook: ((Long, String) -> Unit)? = nu
                                 }, contentPadding = PaddingValues(horizontal = 8.dp)) { Text("清空", fontSize = 12.sp) }
                             }
                             Text(realtimeText, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text("阅读时临时算的超分图，自动限额、自动清最旧，清了无影响", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("阅读时临时算的增强图，自动限额、自动清最旧，清了无影响", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
 
                         HorizontalDivider()
@@ -182,7 +182,7 @@ fun SrQueueScreen(onBack: () -> Unit, onOpenBook: ((Long, String) -> Unit)? = nu
                                 }
                             }
                             Text(batchText, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text("批量超分的离线成品，永久保留，打开书直接高清；清了要重新跑批量", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("批量增强的离线成品，永久保留，打开书直接高清；清了要重新跑批量", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }
@@ -194,7 +194,7 @@ fun SrQueueScreen(onBack: () -> Unit, onOpenBook: ((Long, String) -> Unit)? = nu
             }
             if (queue.isEmpty()) {
                 item {
-                    Text("队列为空。在书架长按选中多本书，或在阅读器超分面板里点“批量超分本书”。",
+                    Text("队列为空。在书架长按选中多本书，或在阅读器画质增强面板里点“批量增强本书”。",
                         fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }

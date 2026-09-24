@@ -215,7 +215,7 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
                     Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text("按需解码", fontSize = 16.sp)
-                            Text("开启后按可见区域局部解码，内存占用更低，适用于超长图片类漫画（PDF 条漫模糊请用条漫分割）；超分、白边裁剪、旋转适配失效", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("开启后按可见区域局部解码，内存占用更低，适用于超长图片类漫画（PDF 条漫模糊请用条漫分割）；画质增强、白边裁剪、旋转适配失效", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         Switch(checked = config.tileModeEnabled, onCheckedChange = { config = config.copy(tileModeEnabled = it); config.save(ctx) })
                     }

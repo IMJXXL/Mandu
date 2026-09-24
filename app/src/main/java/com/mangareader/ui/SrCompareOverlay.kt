@@ -134,7 +134,7 @@ fun SrCompareOverlay(pageIndex: Int, tick: Int, onClose: () -> Unit, bgColor: In
                 shape = MaterialTheme.shapes.extraSmall,
                 modifier = Modifier.align(Alignment.TopEnd).padding(12.dp),
             ) {
-                val tag = if (SrCore.settings.upscaleEnabled) "超分" else "优化后"
+                val tag = if (SrCore.settings.upscaleEnabled) "增强" else "优化后"
                 Text(tag, color = Color.White, fontSize = 12.sp,
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp))
             }
@@ -146,7 +146,7 @@ fun SrCompareOverlay(pageIndex: Int, tick: Int, onClose: () -> Unit, bgColor: In
                 modifier = Modifier.align(Alignment.Center).padding(24.dp),
             ) {
                 Text(
-                    if (SrCore.settings.upscaleEnabled) "本页还没有可对比的超分图（翻一页让它先算，或等几秒）"
+                    if (SrCore.settings.upscaleEnabled) "本页还没有可对比的增强图（翻一页让它先算，或等几秒）"
                     else "本页还没有可对比的黑白优化图（翻一页让它先算，或等几秒）",
                     color = Color.White,
                     fontSize = 13.sp,

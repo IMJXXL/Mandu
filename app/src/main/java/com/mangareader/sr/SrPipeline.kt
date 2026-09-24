@@ -393,7 +393,7 @@ object SrPipeline {
         val cached = getCached(p)
         if (cached != null && !cached.isRecycled) {
             SrCore.emitReady(sessionChapterId, p, cached)
-            return "本页已有超分结果，已刷新显示"
+            return "本页已有增强结果，已刷新显示"
         }
         inFlight.remove("$sessionChapterId:$p")
         val orig = synchronized(originals) { originals["$sessionChapterId:$p"] }
