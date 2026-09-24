@@ -20,6 +20,8 @@ import kotlinx.coroutines.cancel
 class CurlReaderView(context: Context) : FrameLayout(context), ReaderViewDelegate {
 
     private val reloadTrigger = mutableIntStateOf(0)
+    private val tapForwardTrigger = mutableIntStateOf(0)
+    private val tapBackwardTrigger = mutableIntStateOf(0)
     private val composeView = ComposeView(context).apply {
         layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
     }
@@ -49,8 +51,10 @@ class CurlReaderView(context: Context) : FrameLayout(context), ReaderViewDelegat
         override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
             if (width == 0 || height == 0) return false
             val fx = e.x / width
-            if (fx in 0.33f..0.67f) {
-                onToggleUi?.invoke()
+            when {
+                fx in 0.33f..0.67f -> onToggleUi?.invoke()
+                (if (isRtl) fx < 0.33f else fx > 0.67f) -> tapForwardTrigger.intValue++
+                else -> tapBackwardTrigger.intValue++
             }
             return true
         }
@@ -112,6 +116,8 @@ class CurlReaderView(context: Context) : FrameLayout(context), ReaderViewDelegat
                 landscapeZoom = landscapeZoom,
                 fitScreen = fitScreen,
                 reloadTrigger = reloadTrigger,
+                tapForwardTrigger = tapForwardTrigger,
+                tapBackwardTrigger = tapBackwardTrigger,
                 onPageChanged = { newPage ->
                     currentPage = newPage
                     loader.setCurrentPage(newPage)
@@ -121,7 +127,7 @@ class CurlReaderView(context: Context) : FrameLayout(context), ReaderViewDelegat
                     }
                     onPageChanged?.invoke(newPage)
                 },
-                onToggleUi = { onToggleUi?.invoke() },
+
             )
         }
     }

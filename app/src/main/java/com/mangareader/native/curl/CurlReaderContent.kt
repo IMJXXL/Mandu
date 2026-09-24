@@ -8,9 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableIntState
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
@@ -90,11 +88,12 @@ fun CurlReaderContent(
     landscapeZoom: Boolean,
     fitScreen: Boolean,
     reloadTrigger: MutableIntState,
+    tapForwardTrigger: MutableIntState,
+    tapBackwardTrigger: MutableIntState,
     onPageChanged: (Int) -> Unit,
-    onToggleUi: () -> Unit,
 ) {
     val state = rememberPageCurlState(initialCurrent = currentPage)
-    val currentOnToggleUi by rememberUpdatedState(onToggleUi)
+
 
     LaunchedEffect(currentPage) {
         if (state.current != currentPage) {
@@ -128,18 +127,12 @@ fun CurlReaderContent(
             shadowOffset = DpOffset((-5).dp, 0.dp),
             dragForwardEnabled = true,
             dragBackwardEnabled = true,
-            tapForwardEnabled = true,
-            tapBackwardEnabled = true,
-            tapCustomEnabled = true,
+            tapForwardEnabled = false,
+            tapBackwardEnabled = false,
+            tapCustomEnabled = false,
             dragInteraction = dragInteraction,
             tapInteraction = tapInteraction,
-            onCustomTap = { size, offset ->
-                val fx = offset.x / size.width
-                if (fx in 0.33f..0.67f) {
-                    currentOnToggleUi()
-                    true
-                } else false
-            },
+            onCustomTap = { _, _ -> false },
         )
     }
 
@@ -147,6 +140,14 @@ fun CurlReaderContent(
         if (state.current != currentPage) {
             onPageChanged(state.current)
         }
+    }
+
+    LaunchedEffect(tapForwardTrigger.intValue) {
+        if (tapForwardTrigger.intValue > 0) state.next()
+    }
+
+    LaunchedEffect(tapBackwardTrigger.intValue) {
+        if (tapBackwardTrigger.intValue > 0) state.prev()
     }
 
     val curlModifier = if (isRtl) {
