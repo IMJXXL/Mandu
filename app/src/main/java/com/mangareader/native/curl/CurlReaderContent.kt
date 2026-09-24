@@ -1,7 +1,6 @@
 package com.mangareader.native.curl
 
 import android.graphics.Bitmap
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -10,16 +9,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableIntState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
@@ -30,14 +26,12 @@ import eu.wewox.pagecurl.ExperimentalPageCurlApi
 import eu.wewox.pagecurl.config.PageCurlConfig
 import eu.wewox.pagecurl.page.PageCurl
 import eu.wewox.pagecurl.page.rememberPageCurlState
-import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalPageCurlApi::class)
 @Composable
 fun CurlPageContent(
     idx: Int,
     bmp: Bitmap?,
-    animData: CurlAnimData?,
     isCurrentPage: Boolean,
     isRtl: Boolean,
     pageBgColor: Int,
@@ -52,36 +46,7 @@ fun CurlPageContent(
         return
     }
 
-    if (animData != null) {
-        val drawable = remember(animData) {
-            makeCurlAnimDrawable(animData.raw, animData.kind)?.also { d ->
-                d.callback = object : android.graphics.drawable.Drawable.Callback {
-                    override fun invalidateDrawable(dr: android.graphics.drawable.Drawable) {}
-                    override fun scheduleDrawable(d: android.graphics.drawable.Drawable, w: Runnable, t: Long) {}
-                    override fun unscheduleDrawable(d: android.graphics.drawable.Drawable, w: Runnable) {}
-                }
-            }
-        }
-        var tick by remember { mutableIntStateOf(0) }
-
-        LaunchedEffect(drawable) {
-            (drawable as? android.graphics.drawable.Animatable)?.start()
-            while (drawable != null) {
-                delay(16)
-                tick++
-            }
-        }
-
-        @Suppress("UNUSED_EXPRESSION")
-        tick
-
-        Canvas(modifier = baseModifier) {
-            drawable?.let {
-                it.setBounds(0, 0, size.width.toInt(), size.height.toInt())
-                it.draw(drawContext.canvas.nativeCanvas)
-            }
-        }
-    } else if (isCurrentPage) {
+    if (isCurrentPage) {
         AndroidView(
             factory = { ctx ->
                 PagerSSIV(ctx).apply {
@@ -199,7 +164,7 @@ fun CurlReaderContent(
         CurlPageContent(
             idx = idx,
             bmp = cache.get(idx),
-            animData = cache.getAnim(idx),
+
             isCurrentPage = idx == state.current,
             isRtl = isRtl,
             pageBgColor = pageBgColor,

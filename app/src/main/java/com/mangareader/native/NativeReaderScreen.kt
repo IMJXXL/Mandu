@@ -169,9 +169,32 @@ fun NativeReaderScreen(
         tileModeEnabled = tileModeEnabled,
     )
 
+    var curlDisabledByAnim by remember { mutableStateOf(false) }
+
+    LaunchedEffect(treePath, useCurl) {
+        if (useCurl && remoteSupply == null) {
+            val checkRange = (maxOf(0, startPage - 2)..minOf(pages.size - 1, startPage + 2))
+            var found = false
+            for (i in checkRange) {
+                try {
+                    val kind = engine.peekAnimKindFast(treePath, pages[i])
+                    if (kind != com.mangareader.viewer.AnimKind.NONE) {
+                        found = true
+                        break
+                    }
+                } catch (_: Exception) {}
+            }
+            curlDisabledByAnim = found
+        } else {
+            curlDisabledByAnim = false
+        }
+    }
+
+    val effectiveUseCurl = useCurl && !curlDisabledByAnim
+
     fun activeDelegate(isVerticalNow: Boolean): ReaderViewDelegate =
         if (isVerticalNow) webtoonView
-        else if (useCurl) curlReaderView
+        else if (effectiveUseCurl) curlReaderView
         else pagerView
 
     // Track last released delegate to avoid double release
@@ -308,8 +331,8 @@ fun NativeReaderScreen(
             container.addView(curlReaderView)
             fun syncVis() {
                 webtoonView.visibility = if (isVertical) View.VISIBLE else View.GONE
-                pagerView.visibility = if (!isVertical && !useCurl) View.VISIBLE else View.GONE
-                curlReaderView.visibility = if (!isVertical && useCurl) View.VISIBLE else View.GONE
+                pagerView.visibility = if (!isVertical && !effectiveUseCurl) View.VISIBLE else View.GONE
+                curlReaderView.visibility = if (!isVertical && effectiveUseCurl) View.VISIBLE else View.GONE
             }
             syncVis()
             containerRef = container
@@ -319,8 +342,8 @@ fun NativeReaderScreen(
         },
         update = { container ->
             container.getChildAt(0).visibility = if (isVertical) View.VISIBLE else View.GONE
-            container.getChildAt(1).visibility = if (!isVertical && !useCurl) View.VISIBLE else View.GONE
-            container.getChildAt(2).visibility = if (!isVertical && useCurl) View.VISIBLE else View.GONE
+            container.getChildAt(1).visibility = if (!isVertical && !effectiveUseCurl) View.VISIBLE else View.GONE
+            container.getChildAt(2).visibility = if (!isVertical && effectiveUseCurl) View.VISIBLE else View.GONE
         },
         modifier = modifier
     )
