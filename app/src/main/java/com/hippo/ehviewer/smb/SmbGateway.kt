@@ -171,10 +171,10 @@ object SmbGateway {
      */
     private const val MAX_SAFE_HOST_OPS = (POOL_CAPACITY + LIST_RESERVED_SESSIONS) * OPS_PER_SESSION_MAX
 
-    private const val KEEPALIVE_INTERVAL_MS = 40_000L
+    private const val KEEPALIVE_INTERVAL_MS = 20_000L
 
     /** Skip probe if the session ran a successful op recently. */
-    private const val KEEPALIVE_IDLE_BEFORE_PING_MS = 35_000L
+    private const val KEEPALIVE_IDLE_BEFORE_PING_MS = 15_000L
 
     /**
      * Extra gallery TCPs (above [MIN_WARM_DATA_SESSIONS]) unused this long are closed
@@ -186,8 +186,8 @@ object SmbGateway {
     private const val ACQUIRE_WAIT_MS = 12_000L
 
 
-    /** Long enough for large comic page transfers on a busy LAN. */
-    private const val SMB_IO_TIMEOUT_SEC = 120L
+    /** Socket-level SO timeout; 30s is enough for LAN comic transfers and fails fast on dead NAS. */
+    private const val SMB_IO_TIMEOUT_SEC = 30L
 
     /** Outer await for a process-scoped list job (shallow+deep). */
     private const val LIST_AWAIT_TIMEOUT_MS = 180_000L

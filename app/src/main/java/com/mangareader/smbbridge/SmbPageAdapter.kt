@@ -64,7 +64,7 @@ class SmbPageAdapter(
         scope.launch {
             runCatching {
                 val loader = loaderReady.await()
-                loader.navigate(ReaderNavigation(index, index..index, NavigationKind.Settled))
+                navigateTimeout(loader, index)
             }
         }
     }
@@ -116,21 +116,32 @@ class SmbPageAdapter(
     }
 
     override suspend fun loadPageRaw(index: Int): ByteArray? = withContext(Dispatchers.IO) {
-        try {
-            val loader = loaderReady.await()
-            driveAndAwaitExtract(loader, index)
-            // ★ 只有焦点页驱动 loader navigate（非焦点页零干预，靠 navigate(焦点页) 的预取窗口覆盖）
-            if (focusIndex == -1 || focusIndex == index) {
-                runCatching { loader.navigate(ReaderNavigation(index, index..index, NavigationKind.Settled)) }
+        for (attempt in 0..1) {
+            try {
+                val loader = loaderReady.await()
+                val extracted = driveAndAwaitExtract(loader, index)
+                if (extracted && (focusIndex == -1 || focusIndex == index)) {
+                    navigateTimeout(loader, index)
+                }
+                checkPageCountGrow(loader)
+                val bytes = readPageBytes(loader, index)
+                if (bytes != null) return@withContext bytes
+                if (attempt == 0) {
+                    android.util.Log.w(TAG, "loadPageRaw($index) attempt 1 null, retrying…")
+                    delay(500)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (t: Throwable) {
+                if (attempt == 0) {
+                    android.util.Log.w(TAG, "loadPageRaw($index) attempt 1 failed: ${t.message}, retrying…")
+                    delay(500)
+                } else {
+                    android.util.Log.w(TAG, "loadPageRaw($index) retry exhausted: ${t.message}")
+                }
             }
-            checkPageCountGrow(loader)
-            readPageBytes(loader, index)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (t: Throwable) {
-            android.util.Log.w(TAG, "loadPageRaw($index) failed: ${t.message}")
-            null
         }
+        null
     }
 
 
@@ -172,31 +183,50 @@ class SmbPageAdapter(
      *  ★ 2026-09-09 v3 调度：非焦点页不让位、不驱动 navigate——纯等待 loader 对焦点页
      *  navigate 的预取窗口把它带上（对齐参考项目 interactive slot + prefetch slot 分离，
      *  预取与焦点页并行下载，只有焦点页才允许重定向 loader 需求）。 */
-    private suspend fun driveAndAwaitExtract(loader: PageLoader, index: Int) {
+    private suspend fun driveAndAwaitExtract(loader: PageLoader, index: Int): Boolean {
         val deadline = System.currentTimeMillis() + PAGE_WAIT_TIMEOUT_MS
         var lastNavigate = 0L
         while (System.currentTimeMillis() < deadline) {
-            if (isPageAvailable(loader, index)) return
+            val probeStart = System.currentTimeMillis()
+            if (isPageAvailable(loader, index)) return true
+            if (System.currentTimeMillis() - probeStart > PROBE_TIMEOUT_MS * 4 / 5) break
             val now = System.currentTimeMillis()
             if (now - lastNavigate > 1500) {
                 lastNavigate = now
                 if (focusIndex == -1 || focusIndex == index) {
-                    runCatching { loader.navigate(ReaderNavigation(index, index..index, NavigationKind.Settled)) }
+                    navigateTimeout(loader, index)
                 }
             }
             delay(80)
         }
         android.util.Log.w(TAG, "page $index extract timeout (${loader.javaClass.simpleName})")
+        return false
     }
 
-    private fun isPageAvailable(loader: PageLoader, index: Int): Boolean = try {
-        loader.openSource(index).close()
-        true
-    } catch (_: Exception) {
-        false
+    private fun navigateTimeout(loader: PageLoader, index: Int, timeoutMs: Long = PROBE_TIMEOUT_MS) {
+        val t = Thread({
+            runCatching { loader.navigate(ReaderNavigation(index, index..index, NavigationKind.Settled)) }
+        }, "smb-nav").apply { isDaemon = true; start() }
+        t.join(timeoutMs)
     }
 
-    private fun readPageBytes(loader: PageLoader, index: Int): ByteArray? = try {
+    private fun isPageAvailable(loader: PageLoader, index: Int, timeoutMs: Long = PROBE_TIMEOUT_MS): Boolean {
+        var result = false
+        val t = Thread({
+            try { loader.openSource(index).close(); result = true } catch (_: Exception) {}
+        }, "smb-probe").apply { isDaemon = true; start() }
+        t.join(timeoutMs)
+        return result
+    }
+
+    private fun readPageBytes(loader: PageLoader, index: Int, timeoutMs: Long = READ_TIMEOUT_MS): ByteArray? {
+        var result: ByteArray? = null
+        val t = Thread({ result = readPageBytesInternal(loader, index) }, "smb-read").apply { isDaemon = true; start() }
+        t.join(timeoutMs)
+        return result
+    }
+
+    private fun readPageBytesInternal(loader: PageLoader, index: Int): ByteArray? = try {
         val src = loader.openSource(index)
         try {
             when (src) {
@@ -214,7 +244,9 @@ class SmbPageAdapter(
 
     companion object {
         private const val TAG = "SmbPageAdapter"
-        private const val PAGE_WAIT_TIMEOUT_MS = 30_000L
+        private const val PAGE_WAIT_TIMEOUT_MS = 7_000L
         private const val PAGE_SIZE_STABILIZE_TIMEOUT_MS = 8_000L
+        private const val PROBE_TIMEOUT_MS = 5_000L
+        private const val READ_TIMEOUT_MS = 10_000L
     }
 }
