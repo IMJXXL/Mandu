@@ -217,7 +217,7 @@ fun NativeReaderScreen(
         }
     }
 
-    DisposableEffect(treePath, isVertical, isRtl, verticalPager, remoteSupply, flipAnimationEnabled, pageCurlAnimationEnabled, pageLayout, tileModeEnabled) {
+    DisposableEffect(treePath, isVertical, isRtl, verticalPager, remoteSupply, flipAnimationEnabled, pageCurlAnimationEnabled, pageLayout, tileModeEnabled, effectiveUseCurl) {
         if (firstComposition) {
             savedPage = startPage
             firstComposition = false
