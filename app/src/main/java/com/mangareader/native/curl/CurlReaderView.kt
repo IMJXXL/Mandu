@@ -2,6 +2,8 @@ package com.mangareader.native.curl
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.view.GestureDetector
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
@@ -43,10 +45,27 @@ class CurlReaderView(context: Context) : FrameLayout(context), ReaderViewDelegat
     override var onPageCountChanged: ((Int) -> Unit)? = null
     override var onToggleUi: (() -> Unit)? = null
 
+    private val gestureDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
+        override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
+            if (width == 0 || height == 0) return false
+            val fx = e.x / width
+            if (fx in 0.33f..0.67f) {
+                onToggleUi?.invoke()
+            }
+            return true
+        }
+    })
+
     init {
         addView(composeView)
         isFocusable = true
         isFocusableInTouchMode = true
+    }
+
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        super.dispatchTouchEvent(ev)
+        gestureDetector.onTouchEvent(ev)
+        return true
     }
 
 
