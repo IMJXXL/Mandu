@@ -199,8 +199,10 @@ fun ReaderTocSheet(
         val base = displayItems.sortedWith(compareByDescending<ArchiveEngine.Item> { it.dir }.thenComparing({ it.name }, NaturalComparator))
         if (tocSortAsc) base else base.reversed()
     }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(
         onDismissRequest = onDismiss,
+        sheetState = sheetState,
         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         sheetMaxWidth = 520.dp
     ) {
@@ -225,7 +227,7 @@ fun ReaderTocSheet(
                 if (bookmarks.isEmpty()) {
                     Text("暂无书签（阅读中点底部「书签」按钮添加当前页）", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
                 } else {
-                    LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         items(bookmarks.size) { i ->
                             val bm = bookmarks[i]
                             Row(
@@ -264,6 +266,7 @@ fun ReaderTocSheet(
                 Spacer(Modifier.height(8.dp))
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(3),
+                    modifier = Modifier.weight(1f),
                     contentPadding = PaddingValues(8.dp),
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
