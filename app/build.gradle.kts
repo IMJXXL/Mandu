@@ -130,7 +130,9 @@ dependencies {
     // RecyclerView (transitive but explicit for clarity)
     implementation("androidx.recyclerview:recyclerview:1.3.2")
     // SubsamplingScaleImageView for efficient large image rendering
-    implementation("com.github.tachiyomiorg:subsampling-scale-image-view:66e0db195d")
+    implementation("com.github.tachiyomiorg:subsampling-scale-image-view:66e0db195d") {
+        exclude(group = "com.github.tachiyomiorg", module = "image-decoder")
+    }
 
     // PageCurl - simulation page curl effect (Apache 2.0, compatible with GPL v3)
     // Local fork with PR #39: spread leaf turns + real back-face content
