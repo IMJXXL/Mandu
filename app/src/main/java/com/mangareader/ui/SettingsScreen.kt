@@ -506,6 +506,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?, Int) -> Unit
                                 LicenseLink("libmobi", "https://github.com/niceSaber/libmobi")
                                 LicenseLink("libzip", "https://github.com/niceSaber/libzip")
                                 LicenseLink("APNG4Android (penfeizhou)", "https://github.com/penfeizhou/APNG4Android")
+                                LicenseLink("PageCurl (oleksandrbalan)", "https://github.com/oleksandrbalan/pagecurl")
                                 LicenseLink("LocalViewer (GPL v3)", "https://github.com/zmz125000/LocalViewer")
                                 LicenseLink("TachiyomiSY", "https://github.com/NightstarTeam/TachiyomiSY")
                                 LicenseLink("Mihon", "https://github.com/mihonapp/mihon")
