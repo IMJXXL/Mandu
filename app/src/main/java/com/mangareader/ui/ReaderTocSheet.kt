@@ -1,5 +1,9 @@
 package com.mangareader.ui
 
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.util.LruCache
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -10,24 +14,28 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.DeleteOutline
-import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.Sort
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil3.compose.AsyncImage
+import coil3.request.ImageRequest
 import com.mangareader.data.Bookmark
 import com.mangareader.data.ReadingProgress
 import com.mangareader.viewer.ArchiveEngine
 import com.mangareader.viewer.NaturalComparator
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * §36 目录子项阅读状态徽章。
@@ -191,6 +199,10 @@ fun ReaderTocSheet(
     bookmarks: List<Bookmark> = emptyList(),
     onPageBookmarkClick: (Bookmark) -> Unit = {},
     onPageBookmarkDelete: (Bookmark) -> Unit = {},
+    pageCount: Int = 0,
+    currentPage: Int = 0,
+    onPageClick: (Int) -> Unit = {},
+    thumbLoader: (suspend (Int) -> Bitmap?)? = null,
 ) {
     var tocSortAsc by remember { mutableStateOf(true) }
     var tocTab by remember { mutableIntStateOf(0) }
@@ -199,6 +211,8 @@ fun ReaderTocSheet(
         val base = displayItems.sortedWith(compareByDescending<ArchiveEngine.Item> { it.dir }.thenComparing({ it.name }, NaturalComparator))
         if (tocSortAsc) base else base.reversed()
     }
+    val ctx = LocalContext.current
+    val thumbCache = remember { LruCache<Int, Bitmap>(20) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -276,9 +290,14 @@ fun ReaderTocSheet(
                         val cur = currentNavStack.lastOrNull() ?: ""
                         val isCurrent = viewing && item.subPath.isNotEmpty() && (cur.endsWith(item.subPath) && (cur.length == item.subPath.length || cur[cur.length - item.subPath.length - 1] == '/' || cur[cur.length - item.subPath.length - 1] == '\\'))
                         val status = remember(progress, item.name) { statusForItem(item, progress) }
+                        val coverModel = remember(item.auth, item.tree, item.doc, item.subPath) {
+                            ImageRequest.Builder(ctx)
+                                .data(item)
+                                .decoderFactory(com.mangareader.coil.CoverAnimGateDecoder)
+                                .build()
+                        }
                         Column(
                             Modifier.clip(RoundedCornerShape(8.dp))
-                                .background(if (isCurrent) MaterialTheme.colorScheme.primary.copy(alpha = 0.3f) else MaterialTheme.colorScheme.surfaceVariant)
                                 .clickable {
                                     if (item.dir && item.subPath.isNotEmpty()) {
                                         val currentPath = currentNavStack.firstOrNull() ?: ""
@@ -292,26 +311,33 @@ fun ReaderTocSheet(
                                                 onChapterNavigate(chapterPath)
                                             }
                                         } else if (currentPath.startsWith("d:")) {
-                                            // ★ F2.2：d: 书目录点击 → 章节身份路径直达（原来 subPath 恒空导致两分支都不中、静默关闭）
                                             onChapterNavigate("d:${item.auth}|${item.tree}|${item.doc}")
                                         }
                                     } else if (!item.dir) {
                                         onItemOpen(item)
                                     }
                                     onDismiss()
-                                }
-                                .padding(8.dp),
+                                },
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopEnd) {
-                                // ★ §36 状态徽章——Surface + 小字，对齐 Library.BookCard 顶部右上角徽章风格。
-                                //   未读不画徽章（§36 设计）——避免目录里多为未读文件时一片红色噪音；
-                                //   阅读中/已读完才高亮。
-                                //   ★ §37(17) 子项 grid（Reader.kt ItemCard）反过来全画——满屏 grid
-                                //   用户是"全局视野"决策点，未读也要能看出来（用户原话）；目录是"少而精"场景，
-                                //   保留 §36 不画未读语义，二者并存是 1.003 turn 6 稳定态设计。
+                            Box(
+                                Modifier.fillMaxWidth().aspectRatio(0.72f)
+                                    .clip(RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                AsyncImage(
+                                    model = coverModel,
+                                    contentDescription = item.name,
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop,
+                                )
+                                if (isCurrent) {
+                                    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)))
+                                }
                                 if (status != TocItemStatus.UNREAD) {
                                     Surface(
+                                        Modifier.align(Alignment.TopEnd).padding(2.dp),
                                         shape = RoundedCornerShape(6.dp),
                                         color = status.color.copy(alpha = 0.95f)
                                     ) {
@@ -325,14 +351,53 @@ fun ReaderTocSheet(
                                     }
                                 }
                             }
-                            Icon(
-                                if (item.dir) Icons.Default.Folder else Icons.Default.InsertDriveFile,
-                                contentDescription = if (item.dir) "文件夹" else "文件",
-                                tint = if (item.dir) Color(0xFFFFB74D) else MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(32.dp)
-                            )
-                            Spacer(Modifier.height(4.dp))
-                            Text(item.name, color = MaterialTheme.colorScheme.onSurface, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            Text(item.name, Modifier.padding(4.dp), color = MaterialTheme.colorScheme.onSurface, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        }
+
+                    }
+                }
+            } else if (pageCount > 0 && thumbLoader != null) {
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(3),
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    items(pageCount) { idx ->
+                        var bitmap by remember(idx) { mutableStateOf<Bitmap?>(null) }
+                        LaunchedEffect(idx) {
+                            thumbCache.get(idx)?.let { bitmap = it; return@LaunchedEffect }
+                            val bmp = withContext(Dispatchers.IO) { thumbLoader?.invoke(idx) }
+                            if (bmp != null) thumbCache.put(idx, bmp)
+                            bitmap = bmp
+                        }
+                        Column(
+                            Modifier.clip(RoundedCornerShape(8.dp))
+                                .clickable { onPageClick(idx); onDismiss() },
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Box(
+                                Modifier.fillMaxWidth().aspectRatio(0.72f)
+                                    .clip(RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (bitmap != null) {
+                                    Image(
+                                        bitmap = bitmap!!.asImageBitmap(),
+                                        contentDescription = "第${idx + 1}页",
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.Crop,
+                                    )
+                                } else {
+                                    Text("${idx + 1}", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                if (idx == currentPage) {
+                                    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)))
+                                }
+                            }
+                            Text("${idx + 1}", Modifier.padding(2.dp), fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }
@@ -341,4 +406,9 @@ fun ReaderTocSheet(
             }
         }
     }
+}
+internal fun decodeThumbBytes(bytes: ByteArray): Bitmap? {
+    val opts = BitmapFactory.Options()
+    opts.inSampleSize = 4
+    return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)
 }

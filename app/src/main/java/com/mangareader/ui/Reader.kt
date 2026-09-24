@@ -2666,7 +2666,20 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                     }
                 }
             },
-            onItemOpen = { openItem(it) }
+            onItemOpen = { openItem(it) },
+            pageCount = if (expandedPageCount > 0) expandedPageCount else displayPages.size,
+            currentPage = cur,
+            onPageClick = { idx -> showToc = false; cur = idx },
+            thumbLoader = if (smbSession != null) {
+                { idx -> smbSession?.loadPageRaw(idx)?.let { decodeThumbBytes(it) } }
+            } else if (book?.filePath?.startsWith("smb:") != true && book?.filePath?.startsWith("webdav:") != true && book?.filePath?.startsWith("komga:") != true && book?.filePath?.startsWith("opds:") != true) {
+                val treeStr = navStack.lastOrNull() ?: book?.filePath ?: ""
+                { idx ->
+                    if (idx < pageList.size) {
+                        engine.loadPageRaw(pageList[idx], treeStr)?.let { decodeThumbBytes(it) }
+                    } else null
+                }
+            } else null,
         )
     }
 
