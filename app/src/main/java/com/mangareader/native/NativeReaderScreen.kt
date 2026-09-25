@@ -140,6 +140,8 @@ fun NativeReaderScreen(
     verticalPager: Boolean = false,
     flipAnimationEnabled: Boolean = true,
     pageCurlAnimationEnabled: Boolean = false,
+    /** 双页 curl「仅画面区域」模式：翻页动画范围缩到画面矩形，留边不参与 */
+    curlContentAreaOnly: Boolean = false,
     /** ★ SMB/WebDAV 页面供给（design.md 2.2.2）：非 null 时阅读页面走远程会话。
      *   以参数形式在 setup() 之前注入 delegate，消除"setup 早于供给挂接"的竞态窗口。 */
     remoteSupply: com.mangareader.native.RemotePageSupply? = null,
@@ -222,7 +224,7 @@ fun NativeReaderScreen(
         }
     }
 
-    DisposableEffect(treePath, isVertical, isRtl, verticalPager, remoteSupply, flipAnimationEnabled, pageCurlAnimationEnabled, pageLayout, tileModeEnabled, effectiveUseCurl, doublePageReverse, doublePageSplit) {
+    DisposableEffect(treePath, isVertical, isRtl, verticalPager, remoteSupply, flipAnimationEnabled, pageCurlAnimationEnabled, curlContentAreaOnly, pageLayout, tileModeEnabled, effectiveUseCurl, doublePageReverse, doublePageSplit) {
         if (firstComposition) {
             savedPage = startPage
             firstComposition = false
@@ -279,6 +281,7 @@ fun NativeReaderScreen(
             delegate.remotePageSupply = remoteSupply
             delegate.landscapeZoom = landscapeZoom
             delegate.fitScreen = fitScreen
+            delegate.curlContentAreaOnly = curlContentAreaOnly
             delegate.setTrimWhiteBorder(trimWhiteBorder, trimThreshold, trimWhiteRatio)
             delegate.setPanNavigation(panNavigation)
             delegate.setDoublePageModeAndShift(pageLayout == 1 || pageLayout == 2, pageLayout == 2)

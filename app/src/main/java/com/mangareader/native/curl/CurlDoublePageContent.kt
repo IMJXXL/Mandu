@@ -4,7 +4,9 @@ import android.graphics.Bitmap
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableIntState
@@ -16,6 +18,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import eu.wewox.pagecurl.ExperimentalPageCurlApi
@@ -36,6 +39,7 @@ fun CurlDoublePageContent(
     cache: CurlBitmapCache,
     landscapeZoom: Boolean,
     fitScreen: Boolean,
+    curlContentAreaOnly: Boolean,
     reloadTrigger: MutableIntState,
     tapForwardTrigger: MutableIntState,
     tapBackwardTrigger: MutableIntState,
@@ -102,53 +106,96 @@ fun CurlDoublePageContent(
         if (tapBackwardTrigger.intValue > 0) state.prev()
     }
 
-    val curlModifier = if (isRtl) {
-        Modifier.fillMaxSize().graphicsLayer { scaleX = -1f }
-    } else {
-        Modifier.fillMaxSize()
-    }
+    BoxWithConstraints(modifier = Modifier.fillMaxSize().background(Color(pageBgColor))) {
+        // 「仅画面区域」模式：翻页动画范围缩到当前 spread 的显示矩形（与 SpreadImage 同一
+        // 缩放语义），留边由外层背景铺满、不参与翻页，PageEdge 拖拽也随之变成"画面边缘"。
+        // 矩形取当前 spread 已解码位图尺寸，未就绪时回退整屏；state.current 只在 turn 落地
+        // 后整型提交，约束变化都发生在静止态，不会打断翻页中的折叠几何。
+        var insetL = 0.dp
+        var insetT = 0.dp
+        var insetR = 0.dp
+        var insetB = 0.dp
+        if (curlContentAreaOnly) {
+            val curLeft = SpreadMapping.leftPage(state.current, totalPages, shift)
+            val curRight = SpreadMapping.rightPage(state.current, totalPages, shift)
+            val curL = cache.get(curLeft)
+            val curR = if (curRight >= 0) cache.get(curRight) else null
+            if (curL != null && !curL.isRecycled) {
+                val iw = (curL.width + (curR?.width ?: 0)).toFloat()
+                val ih = maxOf(curL.height, curR?.height ?: curL.height).toFloat()
+                val cw = constraints.maxWidth.toFloat()
+                val ch = constraints.maxHeight.toFloat()
+                if (iw > 0f && ih > 0f && cw > 0f && ch > 0f) {
+                    val scale = when {
+                        fitScreen -> minOf(cw / iw, ch / ih)
+                        landscapeZoom && iw > ih -> ch / ih
+                        else -> cw / iw
+                    }
+                    val dispW = (iw * scale).coerceAtMost(cw)
+                    val dispH = (ih * scale).coerceAtMost(ch)
+                    if (dispW < cw || dispH < ch) {
+                        with(LocalDensity.current) {
+                            insetL = ((cw - dispW) / 2f).toDp()
+                            insetR = insetL
+                            insetT = ((ch - dispH) / 2f).toDp()
+                            insetB = insetT
+                        }
+                    }
+                }
+            }
+        }
 
-    PageCurl(
-        count = totalSpreads,
-        modifier = curlModifier,
-        state = state,
-        config = config,
-        backContent = { current, forward ->
+        val areaModifier = Modifier.fillMaxSize().padding(
+            start = insetL, top = insetT, end = insetR, bottom = insetB,
+        )
+        val curlModifier = if (isRtl) {
+            areaModifier.graphicsLayer { scaleX = -1f }
+        } else {
+            areaModifier
+        }
+
+        PageCurl(
+            count = totalSpreads,
+            modifier = curlModifier,
+            state = state,
+            config = config,
+            backContent = { current, forward ->
+                @Suppress("UNUSED_EXPRESSION")
+                reloadTrigger.intValue
+
+                val targetSpread = if (forward) current + 1 else current - 1
+                if (targetSpread < 0 || targetSpread >= totalSpreads) {
+                    SpreadImage(null, null, doublePageReverse, pageBgColor, isRtl, landscapeZoom, fitScreen)
+                } else {
+                    val tLeftIdx = SpreadMapping.leftPage(targetSpread, totalPages, shift)
+                    val tRightIdx = SpreadMapping.rightPage(targetSpread, totalPages, shift)
+                    SpreadImage(
+                        cache.get(tLeftIdx),
+                        if (tRightIdx >= 0) cache.get(tRightIdx) else null,
+                        doublePageReverse,
+                        pageBgColor,
+                        isRtl,
+                        landscapeZoom,
+                        fitScreen,
+                    )
+                }
+            },
+        ) { spreadIdx ->
             @Suppress("UNUSED_EXPRESSION")
             reloadTrigger.intValue
 
-            val targetSpread = if (forward) current + 1 else current - 1
-            if (targetSpread < 0 || targetSpread >= totalSpreads) {
-                SpreadImage(null, null, doublePageReverse, pageBgColor, isRtl, landscapeZoom, fitScreen)
-            } else {
-                val tLeftIdx = SpreadMapping.leftPage(targetSpread, totalPages, shift)
-                val tRightIdx = SpreadMapping.rightPage(targetSpread, totalPages, shift)
-                SpreadImage(
-                    cache.get(tLeftIdx),
-                    if (tRightIdx >= 0) cache.get(tRightIdx) else null,
-                    doublePageReverse,
-                    pageBgColor,
-                    isRtl,
-                    landscapeZoom,
-                    fitScreen,
-                )
-            }
-        },
-    ) { spreadIdx ->
-        @Suppress("UNUSED_EXPRESSION")
-        reloadTrigger.intValue
-
-        val leftIdx = SpreadMapping.leftPage(spreadIdx, totalPages, shift)
-        val rightIdx = SpreadMapping.rightPage(spreadIdx, totalPages, shift)
-        SpreadImage(
-            cache.get(leftIdx),
-            if (rightIdx >= 0) cache.get(rightIdx) else null,
-            doublePageReverse,
-            pageBgColor,
-            isRtl,
-            landscapeZoom,
-            fitScreen,
-        )
+            val leftIdx = SpreadMapping.leftPage(spreadIdx, totalPages, shift)
+            val rightIdx = SpreadMapping.rightPage(spreadIdx, totalPages, shift)
+            SpreadImage(
+                cache.get(leftIdx),
+                if (rightIdx >= 0) cache.get(rightIdx) else null,
+                doublePageReverse,
+                pageBgColor,
+                isRtl,
+                landscapeZoom,
+                fitScreen,
+            )
+        }
     }
 }
 

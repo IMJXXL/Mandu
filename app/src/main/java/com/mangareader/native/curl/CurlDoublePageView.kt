@@ -39,6 +39,7 @@ class CurlDoublePageView(context: Context) : FrameLayout(context), ReaderViewDel
     var pageBgColor: Int = android.graphics.Color.parseColor("#FFFFFF")
     var landscapeZoom: Boolean = false
     var fitScreen: Boolean = false
+    var curlContentAreaOnly: Boolean = false
     var remotePageSupply: RemotePageSupply? = null
     var onChapterEnd: ((Boolean) -> Unit)? = null
 
@@ -141,6 +142,7 @@ class CurlDoublePageView(context: Context) : FrameLayout(context), ReaderViewDel
                 cache = cache,
                 landscapeZoom = landscapeZoom,
                 fitScreen = fitScreen,
+                curlContentAreaOnly = curlContentAreaOnly,
                 reloadTrigger = reloadTrigger,
                 tapForwardTrigger = tapForwardTrigger,
                 tapBackwardTrigger = tapBackwardTrigger,

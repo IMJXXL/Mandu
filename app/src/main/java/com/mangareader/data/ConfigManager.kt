@@ -14,6 +14,7 @@ class ConfigManager(private val context: Context) {
             put("scrollMode", config.scrollMode.name)
             put("clickFlipType", config.clickFlipType.name)
             put("isFlipAnimation", config.isFlipAnimation)
+            put("isCurlContentAreaOnly", config.isCurlContentAreaOnly)
             put("isShowPageNum", config.isShowPageNum)
             put("isKeepScreenOn", config.isKeepScreenOn)
             put("isTrimWhiteBorder", config.isTrimWhiteBorder)
@@ -58,6 +59,7 @@ class ConfigManager(private val context: Context) {
                 scrollMode = try { ReaderConfig.ScrollMode.valueOf(json.getString("scrollMode")) } catch (_: Exception) { ReaderConfig.ScrollMode.HORIZONTAL_LEFT },
                 clickFlipType = try { ReaderConfig.ClickFlipType.valueOf(json.getString("clickFlipType")) } catch (_: Exception) { ReaderConfig.ClickFlipType.LEFT_RIGHT },
                 isFlipAnimation = json.optBoolean("isFlipAnimation", true),
+                isCurlContentAreaOnly = json.optBoolean("isCurlContentAreaOnly", false),
                 isShowPageNum = json.optBoolean("isShowPageNum", true),
                 isKeepScreenOn = json.optBoolean("isKeepScreenOn", true),
                 isTrimWhiteBorder = json.optBoolean("isTrimWhiteBorder", false),

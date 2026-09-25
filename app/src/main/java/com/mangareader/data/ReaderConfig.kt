@@ -17,6 +17,8 @@ data class ReaderConfig(
     val clickFlipType: ClickFlipType = ClickFlipType.LEFT_RIGHT,
     val isFlipAnimation: Boolean = true,
     val isPageCurlAnimation: Boolean = false,
+    /** 双页仿真翻页「仅画面区域」模式：翻页动画只发生在画面矩形内，留边不参与（默认关=整页翻） */
+    val isCurlContentAreaOnly: Boolean = false,
     val isShowPageNum: Boolean = true,
     val isKeepScreenOn: Boolean = true,
     val isTrimWhiteBorder: Boolean = false,
@@ -78,6 +80,7 @@ data class ReaderConfig(
             putString("${prefix}clickFlipType", clickFlipType.name)
             putBoolean("isFlipAnimation", isFlipAnimation)
             putBoolean("isPageCurlAnimation", isPageCurlAnimation)
+            putBoolean("isCurlContentAreaOnly", isCurlContentAreaOnly)
             putBoolean("isShowPageNum", isShowPageNum)
             putBoolean("isKeepScreenOn", isKeepScreenOn)
             putBoolean("${prefix}isTrimWhiteBorder", isTrimWhiteBorder)
@@ -129,6 +132,7 @@ data class ReaderConfig(
                 clickFlipType = try { ClickFlipType.valueOf(prefs.getString("${prefix}clickFlipType", "LEFT_RIGHT")!!) } catch (_: Exception) { ClickFlipType.LEFT_RIGHT },
                 isFlipAnimation = prefs.safeGetBoolean("isFlipAnimation", true),
                 isPageCurlAnimation = prefs.safeGetBoolean("isPageCurlAnimation", false),
+                isCurlContentAreaOnly = prefs.safeGetBoolean("isCurlContentAreaOnly", false),
                 isShowPageNum = prefs.safeGetBoolean("isShowPageNum", true),
                 isKeepScreenOn = prefs.safeGetBoolean("isKeepScreenOn", true),
                 isTrimWhiteBorder = prefs.safeGetBoolean("${prefix}isTrimWhiteBorder", false),
