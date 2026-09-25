@@ -3,6 +3,7 @@ package com.mangareader.ui
 import android.content.pm.ActivityInfo
 import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -17,6 +18,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
@@ -167,6 +169,57 @@ private fun GroupTitle(title: String) {
         ),
         modifier = Modifier.fillMaxWidth().padding(horizontal = HORIZONTAL_PAD, vertical = VERTICAL_PAD)
     )
+}
+
+/** 抖动预览样张数据（纯 Kotlin 生成：渐变/网点/线条三段，覆盖断层消除、网点层次、端点直通与线条锐度） */
+private class DitherSample(val width: Int, val height: Int) {
+    val pixels = IntArray(width * height)
+
+    init {
+        val w = width; val h = height
+        for (y in 0 until h) for (x in 0 until w) {
+            val g = when {
+                y < h * 2 / 5 -> x * 255 / (w - 1)                                    // 水平渐变
+                y < h * 4 / 5 -> (200 - x * 140 / w + (Math.sin(x * 0.35) * Math.cos(y * 0.35) * 50)).toInt().coerceIn(0, 255) // 网点
+                else -> {                                                             // 白底 + 由粗到细的黑线条（端点直通/线条锐度）
+                    val band = x % 16
+                    val lineW = 1 + ((x / 16) % 8) * 3 / 8
+                    if (band < lineW) 20 else 255
+                }
+            }
+            pixels[y * w + x] = -0x1000000 or (g shl 16) or (g shl 8) or g
+        }
+    }
+}
+
+/** 抖动实时预览：左=原图，右=按当前算法/档位抖动。点 chips 即变，纯内存小图零负担 */
+@Composable
+private fun EinkDitherPreview(algorithm: Int, levels: Int) {
+    val sample = remember { DitherSample(320, 120) }
+    val srcBmp = remember(sample) {
+        android.graphics.Bitmap.createBitmap(sample.width, sample.height, android.graphics.Bitmap.Config.ARGB_8888).also {
+            it.setPixels(sample.pixels, 0, sample.width, 0, 0, sample.width, sample.height)
+        }.asImageBitmap()
+    }
+    val outBmp = remember(sample, algorithm, levels) {
+        val px = sample.pixels.copyOf()
+        com.mangareader.eink.EinkDither.apply(px, sample.width, sample.height, algorithm, levels)
+        android.graphics.Bitmap.createBitmap(sample.width, sample.height, android.graphics.Bitmap.Config.ARGB_8888).also {
+            it.setPixels(px, 0, sample.width, 0, 0, sample.width, sample.height)
+        }.asImageBitmap()
+    }
+    Column(Modifier.fillMaxWidth().padding(horizontal = HORIZONTAL_PAD, vertical = 2.dp)) {
+        Text(
+            "预览（左原图 / 右当前算法）",
+            fontSize = 11.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+            modifier = Modifier.padding(bottom = 2.dp)
+        )
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Image(srcBmp, contentDescription = null, modifier = Modifier.weight(1f))
+            Image(outBmp, contentDescription = null, modifier = Modifier.weight(1f))
+        }
+    }
 }
 
 @Composable
@@ -354,10 +407,10 @@ private fun GeneralTab(config: ReaderConfig, onConfigChange: (ReaderConfig) -> U
             }
         }
     }
-    // ★ 墨水屏灰阶抖动（256级模拟）：解码管线参数，重进生效；仅黑白墨水屏设备有意义
-    CheckboxItem("灰阶抖动·256级模拟（墨水屏专用，重进生效）", config.isEinkDither) { onConfigChange(config.copy(isEinkDither = it)) }
+    // ★ 墨水屏灰阶抖动：总开关在「阅读设置→墨水屏」（全局），开启后此处出现算法/档位面板。
+    //   参数即时生效（NES 侧清缓存重载当前页），预览样张实时反映当前算法/档位
     if (config.isEinkDither) {
-        SettingsChipRow("抖动算法") {
+        SettingsChipRow("抖动算法（即时生效）") {
             listOf("Floyd-Steinberg" to 0, "Atkinson" to 1, "Stucki" to 2, "Bayer 4×4" to 3).forEach { (label, value) ->
                 FilterChip(
                     selected = value == config.einkDitherAlgorithm,
@@ -375,8 +428,9 @@ private fun GeneralTab(config: ReaderConfig, onConfigChange: (ReaderConfig) -> U
                 )
             }
         }
+        EinkDitherPreview(algorithm = config.einkDitherAlgorithm, levels = config.einkDitherLevels)
         Text(
-            "原理：抖动模拟256级灰阶，纯白/纯黑不受噪声污染。需在系统中将本应用的刷新模式设为标准/质量（GC16）；快速/A2模式只渲染黑白两值，抖动会呈现为噪点。",
+            "原理：抖动模拟256级灰阶，纯白/纯黑不参与抖动。需在系统中将本应用的刷新模式设为标准/质量（GC16）；快速/A2模式只渲染黑白两值，抖动会呈现为噪点。",
             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f), fontSize = 11.sp,
             modifier = Modifier.padding(start = 4.dp, bottom = 4.dp)
         )

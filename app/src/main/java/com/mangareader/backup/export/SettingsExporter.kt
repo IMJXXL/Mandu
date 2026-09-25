@@ -9,6 +9,7 @@ object SettingsExporter {
         "trimWhiteRatio", "imageMarginH", "readBackground", "isEinkMode", "einkDecodeSize",
         "einkUiHideDelay", "pdfQuality", "autoFlipInterval", "isGrayscale", "isInvertColors",
         "isFlipFlashEnabled", "flipFlashDuration", "flipFlashInterval", "flipFlashColor",
+        "isEinkDither", "einkDitherAlgorithm", "einkDitherLevels",
         "pageLayout", "useSSIV", "panNavigation", "doublePageShift", "doublePageSplit",
         "doublePageReverse", "centerGapType", "forceFullDecode",
         "isFlipAnimation", "isShowPageNum", "isKeepScreenOn", "isImmersiveMode",

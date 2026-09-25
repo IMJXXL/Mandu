@@ -51,5 +51,12 @@ class CurlBitmapCache(maxSize: Int = 12) {
 
     }
 
+    /** 清空全部（含保护集）用于本视图内部的整批失效重载（如抖动参数变更）。
+     *  ★ 不可 recycle：显示中的位图仍被 Compose 持有绘制中，交给 GC 随引用消失回收 */
+    fun clear() {
+        lru.evictAll()
+        protectedSet = mutableSetOf()
+    }
+
     fun size(): Int = lru.size()
 }
