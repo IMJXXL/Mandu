@@ -82,18 +82,6 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         einkDither = enabled; einkDitherAlgorithm = algorithm; einkDitherLevels = levels
     }
 
-    /** ★ 抖动参数即时生效：同 setTrimWhiteBorder 的无白屏策略——全缓存失效（显示中的 holder
-     *  继续持有旧图直到重绑），当前±窗口立即重载，其余页滑到时 cache miss 按新参数解码 */
-    fun applyEinkDitherNow(enabled: Boolean, algorithm: Int, levels: Int) {
-        if (einkDither == enabled && einkDitherAlgorithm == algorithm && einkDitherLevels == levels) return
-        setEinkDither(enabled, algorithm, levels)
-        bitmapCache.evictAll()
-        val cur = currentPage
-        (cur - 2..cur + 5).forEach {
-            if (it in pageList.indices) { inflightLoads.remove(it); loadPageAsync(it) }
-        }
-    }
-
     private var pageLayoutMode = 0 // 0=SINGLE, 1=DOUBLE, 2=AUTO
     var pageBgColor: Int = android.graphics.Color.parseColor("#FFFFFF")
     var imageMarginH: Int = 0

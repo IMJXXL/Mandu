@@ -110,17 +110,6 @@ class CurlDoublePageView(context: Context) : FrameLayout(context), ReaderViewDel
         loader.einkDitherLevels = levels
     }
 
-    /** ★ 抖动参数即时生效：清缓存重载当前 spread（重组短暂白帧后按新参数回显，低频操作可接受） */
-    fun applyEinkDitherNow(enabled: Boolean, algorithm: Int, levels: Int) {
-        if (loader.einkDither == enabled && loader.einkDitherAlgorithm == algorithm && loader.einkDitherLevels == levels) return
-        loader.einkDither = enabled
-        loader.einkDitherAlgorithm = algorithm
-        loader.einkDitherLevels = levels
-        cache.clear()
-        reloadTrigger.intValue++
-        preloadSpread(currentPage)
-    }
-
     fun setPanNavigation(pan: Boolean) {
     }
 
