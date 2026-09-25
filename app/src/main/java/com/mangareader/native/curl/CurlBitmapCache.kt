@@ -24,6 +24,11 @@ class CurlBitmapCache(maxSize: Int = 12) {
         protectedSet = mutableSetOf(center - 1, center, center + 1)
     }
 
+    /** 双页路径：按 spread 页集合设置保护集（trimNonProtected 只清保护集之外的位图） */
+    fun protectPages(pages: Set<Int>) {
+        protectedSet = pages.toMutableSet()
+    }
+
     fun drainAll(): Map<Int, Bitmap> {
         val out = LinkedHashMap<Int, Bitmap>()
         for (k in lru.snapshot().keys) {

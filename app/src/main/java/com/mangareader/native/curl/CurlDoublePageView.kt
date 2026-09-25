@@ -118,6 +118,9 @@ class CurlDoublePageView(context: Context) : FrameLayout(context), ReaderViewDel
     private fun preloadSpread(page: Int) {
         val spread = SpreadMapping.pageToSpread(page, pageList.size, doublePageShift)
         val pages = SpreadMapping.protectSpreadPages(spread, pageList.size, doublePageShift)
+        // 接入缓存保护（对齐单页 preloadAround 的 protectThreeLayers）：protectedSet 恒空时
+        // trimMemory→trimNonProtected 会清光全部位图包括正在显示的 spread，白屏到下次翻页
+        cache.protectPages(pages)
         val currentLeft = SpreadMapping.leftPage(spread, pageList.size, doublePageShift)
         val currentRight = SpreadMapping.rightPage(spread, pageList.size, doublePageShift)
         for (p in pages) {
