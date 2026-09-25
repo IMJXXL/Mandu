@@ -49,6 +49,11 @@ class CurlReaderView(context: Context) : FrameLayout(context), ReaderViewDelegat
     var curlShadowAlpha: Float
         get() = curlShadowAlphaState.floatValue
         set(value) { curlShadowAlphaState.floatValue = value }
+    // 背面透出程度同上：单页翻页背面画的是当前页镜像，该值控制背面纸的明暗可见度
+    private val curlBackContentAlphaState = mutableFloatStateOf(0.1f)
+    var curlBackContentAlpha: Float
+        get() = curlBackContentAlphaState.floatValue
+        set(value) { curlBackContentAlphaState.floatValue = value }
     var remotePageSupply: RemotePageSupply? = null
         set(value) {
             field = value
@@ -127,6 +132,7 @@ class CurlReaderView(context: Context) : FrameLayout(context), ReaderViewDelegat
                 cache = cache,
                 landscapeZoom = landscapeZoom,
                 fitScreen = fitScreen,
+                backContentAlpha = curlBackContentAlpha,
                 shadowAlpha = curlShadowAlpha,
                 reloadTrigger = reloadTrigger,
                 tapForwardTrigger = tapForwardTrigger,

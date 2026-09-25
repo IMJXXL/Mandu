@@ -324,6 +324,7 @@ fun NativeReaderScreen(
             delegate.curlBackContentAlpha = curlBackContentAlpha
             delegate.curlShadowAlpha = curlShadowAlpha
         } else if (delegate is com.mangareader.native.curl.CurlReaderView) {
+            delegate.curlBackContentAlpha = curlBackContentAlpha
             delegate.curlShadowAlpha = curlShadowAlpha
         }
     }
