@@ -117,7 +117,8 @@ private fun aggregateKomgaSeries(books: List<Book>): List<ShelfItem> {
             val (serverId, seriesId) = key
             val seriesName = volumes.firstOrNull { !it.seriesName.isNullOrEmpty() }?.seriesName
                 ?: volumes.first().title
-            val coverPath = volumes.firstOrNull { !it.coverPath.isNullOrEmpty() }?.coverPath
+            // 系列卡封面：子卷 displayCoverPath（含自定义封面）优先
+            val coverPath = volumes.firstOrNull { !it.displayCoverPath.isNullOrEmpty() }?.displayCoverPath
             result.add(ShelfItem.Series(serverId, seriesId, seriesName, coverPath, volumes.size, volumes))
         } else {
             volumes.forEach { result.add(ShelfItem.Single(it)) }
@@ -233,6 +234,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
     var isDark by remember { mutableStateOf(false) }
     var deleteTarget by remember { mutableStateOf<Book?>(null) }
     var showBookInfo by remember { mutableStateOf<Book?>(null) }
+    var coverEditBook by remember { mutableStateOf<Book?>(null) }
 
     var isMultiSelect by remember { mutableStateOf(false) }
     var selectedBooks by remember { mutableStateOf(setOf<Long>()) }
@@ -285,6 +287,8 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                 coverScope.launch(limitedDispatcher) {
                     val coverPath = book.coverPath ?: return@launch
                     if (coverPath.startsWith("cv:smb:") || coverPath.startsWith("cv:webdav:") || coverPath.startsWith("cv:komga:") || coverPath.startsWith("cv:opds:")) return@launch
+                    // custom: 私有文件即取即显，无需预热
+                    if (coverPath.startsWith("custom:")) return@launch
                     val key = synchronized(md5) { md5.reset(); md5.digest(coverPath.toByteArray()) }.joinToString("") { "%02x".format(it) }
                     val file = java.io.File(ctx.filesDir, "covers/$key.thumb")
                     if (file.exists()) return@launch
@@ -294,6 +298,20 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                 }
             }
             jobs.forEach { it.join() }
+        }
+    }
+
+    // 自定义封面孤儿自愈：covers 被清（签名降级/清数据）→ 置回默认封面，不留死指针
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) {
+            runCatching {
+                dao.booksWithCustomCover().forEach { b ->
+                    val name = b.customCoverPath?.removePrefix("custom:") ?: return@forEach
+                    if (!java.io.File(ctx.filesDir, "covers/$name").exists()) {
+                        dao.updateBookCustomCoverPath(b.id, null)
+                    }
+                }
+            }
         }
     }
 
@@ -338,9 +356,15 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
     }
 
     deleteTarget?.let { b ->
+        val customNote = if (b.customCoverPath != null) "已设置的自定义封面将一并删除。" else ""
         AlertDialog(onDismissRequest = { deleteTarget = null }, title = { Text("删除") },
-            text = { Text("删除「${b.title}」？不删原始文件。") },
-            confirmButton = { TextButton(onClick = { scope.launch { dao.deleteBook(b); deleteTarget = null } }) { Text("删除", color = MaterialTheme.colorScheme.error) } },
+            text = { Text("删除「${b.title}」？不删原始文件。$customNote") },
+            confirmButton = { TextButton(onClick = {
+                scope.launch {
+                    withContext(Dispatchers.IO) { b.customCoverPath?.let { engine.deleteCustomCoverByPath(it) } }
+                    dao.deleteBook(b); deleteTarget = null
+                }
+            }) { Text("删除", color = MaterialTheme.colorScheme.error) } },
             dismissButton = { TextButton(onClick = { deleteTarget = null }) { Text("取消") } })
     }
 
@@ -357,7 +381,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                         }
                         Spacer(Modifier.height(12.dp))
                     }
-                    Text("确定删除选中的 ${selectedBooks.size} 本漫画？")
+                    Text("确定删除选中的 ${selectedBooks.size} 本漫画？已设置的自定义封面将一并删除。")
                     Spacer(Modifier.height(16.dp))
                     Text("选择删除方式：", fontSize = 14.sp, fontWeight = FontWeight.Medium)
                     Spacer(Modifier.height(8.dp))
@@ -417,10 +441,15 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                                                     }
                                                 }
                                                 engine.deleteCoverCache(b.coverPath ?: "")
+                                                b.customCoverPath?.let { engine.deleteCustomCoverByPath(it) }
                                             }
                                         } catch (e: Exception) { Log.e("Library", "delete file error: ${e.message}") }
                                     }
                                 }
+                            }
+                            // 自定义封面文件一并清理（仅移除记录模式也清，防孤儿）
+                            selectedBooks.forEach { bid ->
+                                dao.getBookById(bid)?.customCoverPath?.let { engine.deleteCustomCoverByPath(it) }
                             }
                             dao.deleteBooksByIds(selectedBooks.toList())
                         }
@@ -516,6 +545,37 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
         AlertDialog(onDismissRequest = { showBookInfo = null }, title = { Text(b.title) },
             text = {
                 Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        coil3.compose.AsyncImage(
+                            model = coil3.request.ImageRequest.Builder(ctx)
+                                .data(com.mangareader.viewer.CoverData(b.displayCoverPath ?: "", dynOn = false))
+                                .build(),
+                            contentDescription = null,
+                            modifier = Modifier.size(width = 96.dp, height = 128.dp).clip(RoundedCornerShape(8.dp)),
+                            contentScale = ContentScale.Crop,
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Column {
+                            TextButton(onClick = { coverEditBook = b; showBookInfo = null }) { Text("更换封面") }
+                            TextButton(
+                                enabled = b.customCoverPath != null,
+                                onClick = {
+                                    scope.launch {
+                                        withContext(Dispatchers.IO) {
+                                            b.customCoverPath?.let { engine.deleteCustomCoverByPath(it) }
+                                            dao.updateBookCustomCoverPath(b.id, null)
+                                        }
+                                        withContext(Dispatchers.Main) {
+                                            coil3.SingletonImageLoader.get(ctx).memoryCache?.clear()
+                                            Toast.makeText(ctx, "已恢复默认封面", Toast.LENGTH_SHORT).show()
+                                            showBookInfo = null
+                                        }
+                                    }
+                                },
+                            ) { Text("恢复默认封面") }
+                        }
+                    }
+                    Spacer(Modifier.height(10.dp))
                     Text("状态: $statusText")
                     Spacer(Modifier.height(8.dp))
                     Text("进度: ${b.readPages}/${b.totalPages} 页 ($progress%)")
@@ -566,6 +626,23 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                     }) { Text("清除缓存", color = MaterialTheme.colorScheme.error) }
                 }
             } else null)
+    }
+
+    coverEditBook?.let { b ->
+        CoverEditDialog(
+            book = b, engine = engine, ctx = ctx,
+            onResult = { newPath ->
+                scope.launch(Dispatchers.IO) {
+                    dao.updateBookCustomCoverPath(b.id, newPath)
+                    withContext(Dispatchers.Main) {
+                        coil3.SingletonImageLoader.get(ctx).memoryCache?.clear()
+                        Toast.makeText(ctx, if (newPath != null) "封面已更新" else "封面保存失败", Toast.LENGTH_SHORT).show()
+                        coverEditBook = null
+                    }
+                }
+            },
+            onDismiss = { coverEditBook = null },
+        )
     }
 
     Scaffold(
@@ -975,15 +1052,16 @@ private fun BookCard(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, isS
                         Text(text = fileExt.uppercase(), fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f), modifier = Modifier.padding(top = 2.dp))
                     }
                 }
-                b.coverPath != null -> {
+                b.displayCoverPath != null -> {
+                    val dispCover = b.displayCoverPath!!
                     if (b.source == "komga") android.util.Log.i("CoverFetch", "BookCard komga coverPath=${b.coverPath} title=${b.title}")
-                    val coverRequest = remember(b.coverPath, decodePx) {
+                    val coverRequest = remember(dispCover, decodePx) {
                         coil3.request.ImageRequest.Builder(ctx)
-                            .data(com.mangareader.viewer.CoverData(b.coverPath, dynOn = false))
+                            .data(com.mangareader.viewer.CoverData(dispCover, dynOn = false))
                             .coverThumb(
                                 decodePx,
-                                memoryKey = "cover:${b.id}@${b.coverPath}",
-                                diskKey = "${b.coverPath}",
+                                memoryKey = "cover:${b.id}@$dispCover",
+                                diskKey = "$dispCover",
                             )
                             .decoderFactory(com.mangareader.coil.CoverAnimGateDecoder)
                             .build()
@@ -1090,11 +1168,12 @@ private fun BookListRow(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, 
                     isRemoteUnsupported -> {
                         Icon(Icons.Filled.Download, contentDescription = null, tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f), modifier = Modifier.size(24.dp))
                     }
-                    b.coverPath != null -> {
-                        val coverRequest = remember(b.coverPath, decodePx) {
+                    b.displayCoverPath != null -> {
+                        val dispCover = b.displayCoverPath!!
+                        val coverRequest = remember(dispCover, decodePx) {
                             coil3.request.ImageRequest.Builder(ctx)
-                                .data(com.mangareader.viewer.CoverData(b.coverPath, dynOn = false))
-                                .coverThumb(decodePx, memoryKey = "cover:${b.id}@${b.coverPath}", diskKey = "${b.coverPath}")
+                                .data(com.mangareader.viewer.CoverData(dispCover, dynOn = false))
+                                .coverThumb(decodePx, memoryKey = "cover:${b.id}@$dispCover", diskKey = "$dispCover")
                                 .decoderFactory(com.mangareader.coil.CoverAnimGateDecoder)
                                 .build()
                         }
