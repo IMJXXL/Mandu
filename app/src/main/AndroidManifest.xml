@@ -24,8 +24,6 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
-        <!-- ★ 取证 Provider 声明在所有 provider 之前：ContentProvider 按声明顺序初始化且先于 Application.onCreate，这里留下最早的启动标记 -->
-        <provider android:authorities="com.mangareader.diag" android:exported="false" android:name="com.mangareader.DiagProvider"/>
         <provider android:authorities="com.mangareader.fileprovider" android:exported="false" android:grantUriPermissions="true" android:name="androidx.core.content.FileProvider">
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths"/>
         </provider>

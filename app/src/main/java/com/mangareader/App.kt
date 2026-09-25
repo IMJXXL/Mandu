@@ -92,7 +92,6 @@ class App : Application(), SingletonImageLoader.Factory {
         crashHandler.init()
         // ★ 无日志闪退专项取证：阶段标记 + 主线程心跳（native crash/系统杀也截断文件，必留痕）
         DiagTracer.mark(this, "app.onCreate: enter")
-        DiagTracer.startHeartbeat(this)
         DiagTracer.startLogcatCapture(this)
         try { System.loadLibrary("archive_stream") } catch (_: Throwable) {}
         DiagTracer.mark(this, "app.onCreate: lib archive_stream loaded")

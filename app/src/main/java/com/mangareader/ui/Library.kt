@@ -596,21 +596,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
             ) else TopAppBar(
                 title = { Column {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("瑾", fontWeight = FontWeight.Bold, fontSize = 20.sp, modifier = Modifier.clickable { showDonation = true })
-                        Spacer(Modifier.width(10.dp))
-                        // ★ 排障入口（2026-09-25 无日志闪退专项）：书架可达即可一键导出诊断，
-                        //   无需进设置；结果 Toast 给出落盘位置
-                        Text(
-                            "导出日志",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.clickable {
-                                val msg = com.mangareader.DiagExporter.export(ctx)
-                                android.widget.Toast.makeText(ctx, msg, android.widget.Toast.LENGTH_LONG).show()
-                            }
-                        )
-                    }
+                    Text("瑾", fontWeight = FontWeight.Bold, fontSize = 20.sp, modifier = Modifier.clickable { showDonation = true })
                     Text("${books?.size ?: 0} 本", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 } },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),

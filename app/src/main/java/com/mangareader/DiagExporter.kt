@@ -4,7 +4,7 @@ import android.content.Context
 
 /**
  * 诊断日志导出（2026-09-25 无日志闪退专项）：汇总设备/版本信息 + crash_logs + ANR 记录 +
- * 启动阶段标记 + 主线程心跳 + 签名校验失败诊断，写入公共 Download（API 29+ 经 MediaStore），
+ * 启动阶段标记 + 签名校验失败诊断，写入公共 Download（API 29+ 经 MediaStore），
  * 文件管理器直接可见，无需 adb/root。书架顶栏与关于页共用。
  * 返回给用户看的结果消息（含落盘位置）。
  */
@@ -53,11 +53,6 @@ object DiagExporter {
                 val start = if (bytes.size > 4096) bytes.size - 4096 else 0
                 sb.appendLine(String(bytes, start, bytes.size - start))
             } else sb.appendLine("[diag_stages] 无（未到达任何启动标记点 = 崩溃极早期）")
-        }
-        runCatching {
-            val f = java.io.File(ctx.filesDir, "diag_heartbeat.txt")
-            if (f.exists()) sb.appendLine("[diag_heartbeat] 心跳最后时刻: ${f.readText().trim()}")
-            else sb.appendLine("[diag_heartbeat] 无")
         }
         // 签名校验失败诊断（degrade 硬退出前落盘，filesDir）
         runCatching {
