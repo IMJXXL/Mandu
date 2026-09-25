@@ -7,6 +7,7 @@ import android.view.MotionEvent
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.platform.ComposeView
 import com.mangareader.viewer.ArchiveEngine
 import com.mangareader.native.ReaderViewDelegate
@@ -46,7 +47,13 @@ class CurlDoublePageView(context: Context) : FrameLayout(context), ReaderViewDel
     var pageBgColor: Int = android.graphics.Color.parseColor("#FFFFFF")
     var landscapeZoom: Boolean = false
     var fitScreen: Boolean = false
-    var curlContentAreaOnly: Boolean = false
+    // 「仅画面区域」用 Compose 状态承载：NES 里 delegate.setup()（内部 renderCompose 组合）
+    // 先执行、本字段赋值在后，普通 var 赋值不触发重组 → 勾选设置后当前页不变，翻页时
+    // 其他状态变化引起重组才读到新值。改 state 后赋值即重组，当前页立即应用留边。
+    private val curlContentAreaOnlyState = mutableStateOf(false)
+    var curlContentAreaOnly: Boolean
+        get() = curlContentAreaOnlyState.value
+        set(value) { curlContentAreaOnlyState.value = value }
     var remotePageSupply: RemotePageSupply? = null
     var onChapterEnd: ((Boolean) -> Unit)? = null
 
