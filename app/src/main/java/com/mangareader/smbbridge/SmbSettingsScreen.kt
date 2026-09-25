@@ -1,5 +1,6 @@
 package com.mangareader.smbbridge
 
+import com.hippo.ehviewer.util.LocalNetworkPermissionEffect
 import android.app.Activity
 import android.content.ContextWrapper
 import android.content.Intent
@@ -55,6 +56,7 @@ private val SMB_CACHE_ENTRIES = listOf(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SmbSettingsScreen(onBack: () -> Unit, onOpenDownloadQueue: () -> Unit = {}) {
+    LocalNetworkPermissionEffect()  // Android 17 局域网 socket 运行时授权（缺失时 SMB 必报 permission denied）
     BackHandler { onBack() }
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()

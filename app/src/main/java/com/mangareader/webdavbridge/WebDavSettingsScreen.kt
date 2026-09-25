@@ -1,5 +1,6 @@
 package com.mangareader.webdavbridge
 
+import com.hippo.ehviewer.util.LocalNetworkPermissionEffect
 import com.mangareader.smbbridge.CacheEntry
 import com.mangareader.smbbridge.CacheManagementCard
 import com.mangareader.smbbridge.IntRow
@@ -60,6 +61,7 @@ private val WEBDAV_CACHE_ENTRIES = listOf(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WebDavSettingsScreen(onBack: () -> Unit, onOpenDownloadQueue: () -> Unit = {}) {
+    LocalNetworkPermissionEffect()  // Android 17 局域网 socket 运行时授权（本地 WebDAV 同受管制）
     BackHandler { onBack() }
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()

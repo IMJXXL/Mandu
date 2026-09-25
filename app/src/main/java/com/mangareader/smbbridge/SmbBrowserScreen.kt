@@ -1,5 +1,6 @@
 package com.mangareader.smbbridge
 
+import com.hippo.ehviewer.util.LocalNetworkPermissionEffect
 import android.content.Intent
 import android.net.Uri
 import android.provider.DocumentsContract
@@ -76,6 +77,7 @@ import kotlinx.coroutines.withContext
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long, Int) -> Unit = { _, _ -> }, onOpenSettings: () -> Unit = {}) {
+    LocalNetworkPermissionEffect()  // Android 17 局域网 socket 运行时授权（缺失时 SMB 必报 permission denied）
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var source by remember { mutableStateOf<SmbSourceEntity?>(null) }

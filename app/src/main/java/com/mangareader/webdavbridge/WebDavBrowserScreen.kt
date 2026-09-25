@@ -1,5 +1,6 @@
 package com.mangareader.webdavbridge
 
+import com.hippo.ehviewer.util.LocalNetworkPermissionEffect
 import android.content.Intent
 import android.net.Uri
 import android.provider.DocumentsContract
@@ -67,6 +68,7 @@ import kotlinx.coroutines.withContext
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun WebDavBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long, Int) -> Unit = { _, _ -> }, onOpenSettings: () -> Unit = {}) {
+    LocalNetworkPermissionEffect()  // Android 17 局域网 socket 运行时授权（本地 WebDAV 同受管制）
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var source by remember { mutableStateOf<WebDavSourceEntity?>(null) }
