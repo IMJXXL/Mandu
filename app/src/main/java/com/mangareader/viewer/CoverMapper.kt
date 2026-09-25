@@ -238,7 +238,9 @@ class CoverFetcher(
 
     class Factory(private val engine: ArchiveEngine) : Fetcher.Factory<CoverData> {
         override fun create(data: CoverData, options: Options, imageLoader: ImageLoader): Fetcher? =
-            if (data.path.startsWith("cv:") || data.path.startsWith("z:")) CoverFetcher(engine, data, options) else null
+            // ★ custom: 必须在此放行——fetch() 里的 custom: 分支只有工厂返回 Fetcher 才会被执行，
+            //   漏放行时 Coil 找不到 Fetcher 直接加载失败（更换封面后显示空白，2026-09-26 实测）。
+            if (data.path.startsWith("cv:") || data.path.startsWith("z:") || data.path.startsWith("custom:")) CoverFetcher(engine, data, options) else null
     }
 }
 
