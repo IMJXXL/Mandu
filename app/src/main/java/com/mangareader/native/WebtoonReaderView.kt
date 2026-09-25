@@ -149,8 +149,11 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
     // ★ F3.1 修正版（0829 双页闪退实锤）：按张数限容（8 张），sizeOf 恒返回 1。
     //   byteCount 计重在位图 recycle 后归 0 → LruCache 计重失配 → evictAll 抛异常闪退。
     //   单页内存上限由 F3.2 解码闸兜底。原有 synchronized 包裹保留（嵌套无害）。
-    private val bitmapCache = object : android.util.LruCache<Int, Bitmap>(8) {
-        override fun sizeOf(key: Int, value: Bitmap): Int = 1
+    // ★ 内存预算制（2026-09-25 PDF 条漫分割实查）：原 LruCache(8) 按条数计重，分割段位图
+    //   1080×4800≈20MB/段 × 8 = 166MB 常驻逼近 largeHeap 上限。改为字节预算 128MB：
+    //   小页（~7MB）可缓 18 条提升命中率，大段自动减条数，总量有界。
+    private val bitmapCache = object : android.util.LruCache<Int, Bitmap>(128 * 1024 * 1024) {
+        override fun sizeOf(key: Int, value: Bitmap): Int = value.byteCount.coerceAtLeast(1)
     }
     // ★ ⑧ 最小修复辅助：清空同步块。
     //   ★ v102 关键修复：不再 recycle——Bitmap 可能仍被显示中的 ImageView/SSIV 异步持有，
