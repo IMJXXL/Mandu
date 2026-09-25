@@ -2840,7 +2840,10 @@ class ArchiveEngine(private val ctx: Context) {
             val uri = DocumentsContract.buildDocumentUriUsingTree(tree, meta.ext)
             val pageIndex = meta.localIdx
             val sharedKey = "pdf:$uri|$pageIndex"
-            val segKey = com.mangareader.engine.pdf.PdfSegmentRenderer.segmentCacheKey(sharedKey, pageIndex, segmentIndex)
+            // ★ 尺寸先于 key：key 携带当前屏幕尺寸（见 PdfSegmentRenderer 注释），换尺寸后旧缓存不可达
+            val screenWidth0 = ctx.resources.displayMetrics.widthPixels
+            val screenMax0 = maxOf(screenWidth0, ctx.resources.displayMetrics.heightPixels)
+            val segKey = com.mangareader.engine.pdf.PdfSegmentRenderer.segmentCacheKey(sharedKey, pageIndex, segmentIndex, screenWidth0, screenMax0)
             getCachedBitmap(segKey)?.let { return it }
             inflightSegments[segKey]?.let { f -> try { return f.get() } catch (_: Exception) {} }
             val future = java.util.concurrent.CompletableFuture<Bitmap?>()
@@ -2864,8 +2867,8 @@ class ArchiveEngine(private val ctx: Context) {
                 val pageSize = com.mangareader.native.NativeEngine.pdfGetPageSize(docKey, pageIndex)
                 val pageWidth = pageSize?.get(0)?.toFloat() ?: 100f
                 val pageHeight = pageSize?.get(1)?.toFloat() ?: 100f
-                val screenMax = maxOf(ctx.resources.displayMetrics.widthPixels, ctx.resources.displayMetrics.heightPixels)
-                val screenWidth = ctx.resources.displayMetrics.widthPixels
+                val screenMax = screenMax0
+                val screenWidth = screenWidth0
                 val splitH = com.mangareader.engine.pdf.PdfTallSplitCalculator.splitHeightPdf(screenMax, screenWidth, pageWidth)
                 val rect = com.mangareader.engine.pdf.PdfTallSplitCalculator.segmentRect(pageWidth, pageHeight, splitH, segmentIndex)
                 val segW = screenWidth.coerceAtLeast(1)
