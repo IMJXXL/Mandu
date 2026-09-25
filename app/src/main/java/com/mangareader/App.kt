@@ -90,15 +90,22 @@ class App : Application(), SingletonImageLoader.Factory {
         //   onCreate 早期崩溃（含 verify 逃逸的 Error 类异常）完全无 crash_logs，取证盲区。
         //   loadLibrary 已自行 catch，故此处为首个可崩点之前。
         crashHandler.init()
+        // ★ 无日志闪退专项取证：阶段标记 + 主线程心跳（native crash/系统杀也截断文件，必留痕）
+        DiagTracer.mark(this, "app.onCreate: enter")
+        DiagTracer.startHeartbeat(this)
         try { System.loadLibrary("archive_stream") } catch (_: Throwable) {}
+        DiagTracer.mark(this, "app.onCreate: lib archive_stream loaded")
         // SMB 连接池预热（对齐上游 prewarm）：SmbConfig.builder 走 ServiceLoader 读 APK，
         // 懒构建防主线程磁盘 IO；启动即后台构建，首次进 SMB 浏览不再现等
         appScope.launch(Dispatchers.IO) {
             runCatching { com.hippo.ehviewer.smb.SmbGateway.prewarm() }
         }
+        DiagTracer.mark(this, "app.onCreate: before signature verify")
         SignatureVerifier.verify(this, "F6D95465BE7D17C1B3BE2B0C59969C22")
+        DiagTracer.mark(this, "app.onCreate: signature verify passed")
         startBackgroundVerify()
         startAnrWatchdog()
+        DiagTracer.mark(this, "app.onCreate: watchdog+bgverify started")
         appScope.launch {
             com.mangareader.smbbridge.SmbAppContextBridge.init(this@App)
             com.mangareader.smbbridge.SmbDbBridge.mangaDatabase = db

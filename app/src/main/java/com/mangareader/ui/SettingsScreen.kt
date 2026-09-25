@@ -640,6 +640,21 @@ private fun exportDiagnostics(ctx: android.content.Context): String {
             sb.appendLine(String(bytes, start, bytes.size - start))
         } else sb.appendLine("[anr_log] 无记录")
     }
+    // 启动阶段标记 + 主线程心跳（无日志闪退专项取证）
+    runCatching {
+        val f = java.io.File(ctx.filesDir, "diag_stages.txt")
+        if (f.exists()) {
+            sb.appendLine("----- diag_stages.txt（末尾 4KB，最后一行即最后到达的阶段）-----")
+            val bytes = f.readBytes()
+            val start = if (bytes.size > 4096) bytes.size - 4096 else 0
+            sb.appendLine(String(bytes, start, bytes.size - start))
+        } else sb.appendLine("[diag_stages] 无")
+    }
+    runCatching {
+        val f = java.io.File(ctx.filesDir, "diag_heartbeat.txt")
+        if (f.exists()) sb.appendLine("[diag_heartbeat] 心跳最后时刻: " + f.readText().trim() + "（对比当前时间判断主线程死亡时刻）")
+        else sb.appendLine("[diag_heartbeat] 无")
+    }
     // 签名校验失败诊断（degrade 硬退出前落盘，filesDir）
     runCatching {
         val f = java.io.File(ctx.filesDir, "sig_check_failed.txt")

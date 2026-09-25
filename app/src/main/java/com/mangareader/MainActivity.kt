@@ -64,10 +64,12 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        com.mangareader.DiagTracer.mark(this, "mainActivity.onCreate: enter")
 
         enableEdgeToEdge()
         requestAllFilesAccess()
         val prefs = getSharedPreferences("manga_reader", MODE_PRIVATE)
+        com.mangareader.DiagTracer.mark(this, "mainActivity.onCreate: prefs+edge done, setContent next")
         setContent {
             val darkModeValue = prefs.getString("dark_mode", "SYSTEM") ?: "SYSTEM"
             val isSystemDark = isSystemInDarkTheme()
@@ -81,6 +83,8 @@ class MainActivity : ComponentActivity() {
             val dynamicColor = prefs.getBoolean("dynamic_color", false)
 
             Theme(dark = dark, appTheme = currentTheme, dynamicColor = dynamicColor) {
+                // 首次组合提交 = 界面真正挂载（闪退若发生在此前，stages 终止于 setContent 上一条）
+                SideEffect { com.mangareader.DiagTracer.mark(this@MainActivity, "mainActivity: first composition committed") }
                 val nav = rememberNavController()
 
                 // ★ 免疫沉浸式：只要当前屏幕不是阅读器，状态栏强制可见。
