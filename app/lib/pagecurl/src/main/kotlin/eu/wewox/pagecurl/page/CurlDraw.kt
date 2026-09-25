@@ -34,9 +34,10 @@ import kotlin.math.atan2
 @ExperimentalPageCurlApi
 internal fun Modifier.drawCurl(
     config: PageCurlConfig,
-    posA: Offset,
-    posB: Offset,
+    edge: () -> Edge,
 ): Modifier = drawWithCache {
+    val posA = edge().top
+    val posB = edge().bottom
     // Fast-check if curl is in left most position (gesture is fully completed)
     // In such case do not bother and draw nothing
     if (posA == size.toRect().topLeft && posB == size.toRect().bottomLeft) {
@@ -90,9 +91,10 @@ internal fun Modifier.drawCurl(
 @ExperimentalPageCurlApi
 internal fun Modifier.drawCurlFront(
     config: PageCurlConfig,
-    posA: Offset,
-    posB: Offset,
+    edge: () -> Edge,
 ): Modifier = drawWithCache {
+    val posA = edge().top
+    val posB = edge().bottom
     if (posA == size.toRect().topLeft && posB == size.toRect().bottomLeft) {
         return@drawWithCache drawNothing()
     }
@@ -136,9 +138,10 @@ internal fun Modifier.drawCurlFront(
 @ExperimentalPageCurlApi
 internal fun Modifier.drawCurlBack(
     config: PageCurlConfig,
-    posA: Offset,
-    posB: Offset,
+    edge: () -> Edge,
 ): Modifier = drawWithCache {
+    val posA = edge().top
+    val posB = edge().bottom
     if (posA == size.toRect().topLeft && posB == size.toRect().bottomLeft) {
         return@drawWithCache drawNothing()
     }

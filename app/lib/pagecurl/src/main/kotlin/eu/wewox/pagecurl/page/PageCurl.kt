@@ -6,6 +6,7 @@ package eu.wewox.pagecurl.page
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -57,6 +58,16 @@ public fun PageCurl(
 
         val updatedConfig by rememberUpdatedState(config)
 
+        // ★ 组合期绝不读 forward/backward 的每帧 Edge 值（2026-09-25 双页翻页中段闪烁实锤）：
+        //   曾把 forward.value/backward.value 放进下方 key 并在组合期解包传给 draw 修饰符，
+        //   动画每帧改值 → key 每帧变 → content/backContent 整树销毁重建（含宿主每帧重新
+        //   合并全屏位图），纸面盖过底页面积最大的中段一帧掉链子即肉眼闪烁。改为：几何统一
+        //   经 edge() lambda 在 drawWithCache 缓存块读取（每帧只重绘不重组），key 仅随换页
+        //   落地重建；backward 是否激活收敛为 derivedStateOf 布尔，翻转才重组。
+        val backwardActive by remember {
+            derivedStateOf { internalState.backward.value != internalState.leftEdge }
+        }
+
         val dragGestureModifier = if (interactionsEnabled) {
             when (val interaction = updatedConfig.dragInteraction) {
                 is PageCurlConfig.GestureDragInteraction ->
@@ -101,57 +112,60 @@ public fun PageCurl(
                     }
                 )
         ) {
-            // Wrap in key to synchronize state updates
-            key(updatedCurrent, internalState.forward.value, internalState.backward.value) {
+            // Wrap in key to synchronize state updates on page change only (turn geometry
+            // is read at draw time — see the backwardActive note above)
+            key(updatedCurrent) {
                 if (updatedCurrent + 1 < state.max) {
                     content(updatedCurrent + 1)
                 }
 
                 if (updatedCurrent < state.max) {
-                    val forward = internalState.forward.value
                     if (backContent == null) {
-                        Box(Modifier.drawCurl(updatedConfig, forward.top, forward.bottom)) {
+                        Box(Modifier.drawCurl(updatedConfig, { internalState.forward.value })) {
                             content(updatedCurrent)
                         }
                     } else {
-                        Box(Modifier.drawCurlFront(updatedConfig, forward.top, forward.bottom)) {
+                        Box(Modifier.drawCurlFront(updatedConfig, { internalState.forward.value })) {
                             content(updatedCurrent)
                         }
-                        Box(Modifier.drawCurlBack(updatedConfig, forward.top, forward.bottom)) {
+                        Box(Modifier.drawCurlBack(updatedConfig, { internalState.forward.value })) {
                             backContent(updatedCurrent, true)
                         }
                     }
                 }
 
                 if (updatedCurrent > 0) {
-                    val backward = internalState.backward.value
                     if (backContent == null || !internalState.leafTurn) {
                         // The mirrored-forward treatment below models a spine-bound leaf;
                         // full-page turns keep the vanilla backward (custom back faces are
                         // currently only supported in leaf mode).
-                        Box(Modifier.drawCurl(updatedConfig, backward.top, backward.bottom)) {
+                        Box(Modifier.drawCurl(updatedConfig, { internalState.backward.value })) {
                             content(updatedCurrent - 1)
                         }
-                    } else if (backward != internalState.leftEdge) {
+                    } else if (backwardActive) {
                         // A spine-bound leaf cannot un-turn the way an edge-bound page does:
                         // going backward is a forward turn seen in a horizontally mirrored
                         // space (the LTR/RTL flip). Mirror the edge and the drawing, and let
                         // the inner mirrors restore the content orientation.
                         val widthPx = internalState.constraints.maxWidth.toFloat()
-                        val mirroredTop = Offset(widthPx - backward.top.x, backward.top.y)
-                        val mirroredBottom = Offset(widthPx - backward.bottom.x, backward.bottom.y)
+                        // Mirror the edge inside the draw-time lambda: reading backward.value
+                        // here (composition) would re-enter the per-frame rebuild.
+                        val mirroredEdge: () -> Edge = {
+                            val b = internalState.backward.value
+                            Edge(Offset(widthPx - b.top.x, b.top.y), Offset(widthPx - b.bottom.x, b.bottom.y))
+                        }
                         // The revealed area and the landing base both belong to the previous
                         // page; it fully covers the idle forward pair beneath.
                         content(updatedCurrent - 1)
                         Box(Modifier.graphicsLayer { scaleX = -1f }) {
-                            Box(Modifier.drawCurlFront(updatedConfig, mirroredTop, mirroredBottom)) {
+                            Box(Modifier.drawCurlFront(updatedConfig, mirroredEdge)) {
                                 Box(Modifier.graphicsLayer { scaleX = -1f }) {
                                     content(updatedCurrent)
                                 }
                             }
                         }
                         Box(Modifier.graphicsLayer { scaleX = -1f }) {
-                            Box(Modifier.drawCurlBack(updatedConfig, mirroredTop, mirroredBottom)) {
+                            Box(Modifier.drawCurlBack(updatedConfig, mirroredEdge)) {
                                 Box(Modifier.graphicsLayer { scaleX = -1f }) {
                                     backContent(updatedCurrent, false)
                                 }
