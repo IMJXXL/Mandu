@@ -171,57 +171,6 @@ private fun GroupTitle(title: String) {
     )
 }
 
-/** 抖动预览样张数据（纯 Kotlin 生成：渐变/网点/线条三段，覆盖断层消除、网点层次、端点直通与线条锐度） */
-private class DitherSample(val width: Int, val height: Int) {
-    val pixels = IntArray(width * height)
-
-    init {
-        val w = width; val h = height
-        for (y in 0 until h) for (x in 0 until w) {
-            val g = when {
-                y < h * 2 / 5 -> x * 255 / (w - 1)                                    // 水平渐变
-                y < h * 4 / 5 -> (200 - x * 140 / w + (Math.sin(x * 0.35) * Math.cos(y * 0.35) * 50)).toInt().coerceIn(0, 255) // 网点
-                else -> {                                                             // 白底 + 由粗到细的黑线条（端点直通/线条锐度）
-                    val band = x % 16
-                    val lineW = 1 + ((x / 16) % 8) * 3 / 8
-                    if (band < lineW) 20 else 255
-                }
-            }
-            pixels[y * w + x] = -0x1000000 or (g shl 16) or (g shl 8) or g
-        }
-    }
-}
-
-/** 抖动实时预览：左=原图，右=按当前算法/档位抖动。点 chips 即变，纯内存小图零负担 */
-@Composable
-private fun EinkDitherPreview(algorithm: Int, levels: Int) {
-    val sample = remember { DitherSample(320, 120) }
-    val srcBmp = remember(sample) {
-        android.graphics.Bitmap.createBitmap(sample.width, sample.height, android.graphics.Bitmap.Config.ARGB_8888).also {
-            it.setPixels(sample.pixels, 0, sample.width, 0, 0, sample.width, sample.height)
-        }.asImageBitmap()
-    }
-    val outBmp = remember(sample, algorithm, levels) {
-        val px = sample.pixels.copyOf()
-        com.mangareader.eink.EinkDither.apply(px, sample.width, sample.height, algorithm, levels)
-        android.graphics.Bitmap.createBitmap(sample.width, sample.height, android.graphics.Bitmap.Config.ARGB_8888).also {
-            it.setPixels(px, 0, sample.width, 0, 0, sample.width, sample.height)
-        }.asImageBitmap()
-    }
-    Column(Modifier.fillMaxWidth().padding(horizontal = HORIZONTAL_PAD, vertical = 2.dp)) {
-        Text(
-            "预览（左原图 / 右当前算法）",
-            fontSize = 11.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-            modifier = Modifier.padding(bottom = 2.dp)
-        )
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            Image(srcBmp, contentDescription = null, modifier = Modifier.weight(1f))
-            Image(outBmp, contentDescription = null, modifier = Modifier.weight(1f))
-        }
-    }
-}
-
 @Composable
 private fun CheckboxItem(label: String, checked: Boolean, enabled: Boolean = true, onCheckedChange: (Boolean) -> Unit) {
     Row(
@@ -381,15 +330,15 @@ private fun GeneralTab(config: ReaderConfig, onConfigChange: (ReaderConfig) -> U
 
     // ★ N1：无缝续读（默认关；仅同本分卷；开启时读到卷末静默进入下一卷，无过渡页无确认弹窗）
     CheckboxItem("无缝续读下一卷（读到卷末自动进入同书下一卷）", config.seamlessNextVolume) { onConfigChange(config.copy(seamlessNextVolume = it)) }
-    // ★ 翻页闪烁「全局 > 单本」：全局（设置→阅读设置→墨水屏）开启时整组被接管，
-    //   常规里的单本开关/滑块/颜色灰掉不可改，文案注明去向
+    // ★ 翻页闪烁「全局 > 单本」：全局接管时常规只保留一行灰置开关（子项不可改故不显示），
+    //   全局未开启时为常规的单本完整设置组
     val flashGlobal = config.flipFlashGlobalActive
     CheckboxItem(
-        "翻页时闪烁（开启后可降低墨水屏残影）" + if (flashGlobal) "（全局生效中，由「设置→阅读设置→墨水屏」控制，此处不可改）" else "",
+        if (flashGlobal) "翻页时闪烁（全局接管中：设置→阅读设置→墨水屏）" else "翻页时闪烁（开启后可降低墨水屏残影）",
         config.isFlipFlashEnabled,
         enabled = !flashGlobal,
     ) { onConfigChange(config.copy(isFlipFlashEnabled = it)) }
-    if (config.isFlipFlashEnabled) {
+    if (config.isFlipFlashEnabled && !flashGlobal) {
         SliderItem("持续时间", config.flipFlashDuration.toFloat(), 50f..1500f, 14, "${config.flipFlashDuration}ms", enabled = !flashGlobal) {
             onConfigChange(config.copy(flipFlashDuration = it.toInt()))
         }
@@ -407,11 +356,21 @@ private fun GeneralTab(config: ReaderConfig, onConfigChange: (ReaderConfig) -> U
             }
         }
     }
-    // ★ 墨水屏灰阶抖动：总开关在「阅读设置→墨水屏」（全局），开启后此处出现算法/档位面板。
-    //   参数即时生效（NES 侧清缓存重载当前页），预览样张实时反映当前算法/档位
+    CheckboxItem("自动进入条漫模式", config.autoWebtoon) { onConfigChange(config.copy(autoWebtoon = it)) }
+}
+
+// ===== Tab 2 =====
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun FilterTab(config: ReaderConfig, onConfigChange: (ReaderConfig) -> Unit) {
+    CheckboxItem("灰度模式", config.isGrayscale) { onConfigChange(config.copy(isGrayscale = it)) }
+    CheckboxItem("反色", config.isInvertColors) { onConfigChange(config.copy(isInvertColors = it)) }
+    // ★ 墨水屏灰阶抖动（256级模拟）：画面观感类设置归入滤镜 tab；总开关在阅读设置→墨水屏开启后
+    //   常规 tab 不再重复出现；算法名以中文特性描述呈现，存值仍为 0/1/2/3
+    CheckboxItem("灰阶抖动·256级模拟（墨水屏设备，重进生效）", config.isEinkDither) { onConfigChange(config.copy(isEinkDither = it)) }
     if (config.isEinkDither) {
-        SettingsChipRow("抖动算法（即时生效）") {
-            listOf("Floyd-Steinberg" to 0, "Atkinson" to 1, "Stucki" to 2, "Bayer 4×4" to 3).forEach { (label, value) ->
+        SettingsChipRow("抖动算法") {
+            listOf("细腻（默认）" to 0, "胶片颗粒" to 1, "柔和" to 2, "规则纹理" to 3).forEach { (label, value) ->
                 FilterChip(
                     selected = value == config.einkDitherAlgorithm,
                     onClick = { onConfigChange(config.copy(einkDitherAlgorithm = value)) },
@@ -428,20 +387,10 @@ private fun GeneralTab(config: ReaderConfig, onConfigChange: (ReaderConfig) -> U
                 )
             }
         }
-        EinkDitherPreview(algorithm = config.einkDitherAlgorithm, levels = config.einkDitherLevels)
         Text(
-            "原理：抖动模拟256级灰阶，纯白/纯黑不参与抖动。需在系统中将本应用的刷新模式设为标准/质量（GC16）；快速/A2模式只渲染黑白两值，抖动会呈现为噪点。",
+            "把画面抖动模拟出256级灰阶，纯白/纯黑不参与抖动。需在系统将本应用的刷新模式设为标准/质量（GC16）；快速/A2模式只渲染黑白，抖动会呈现为噪点。",
             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f), fontSize = 11.sp,
             modifier = Modifier.padding(start = 4.dp, bottom = 4.dp)
         )
     }
-    CheckboxItem("自动进入条漫模式", config.autoWebtoon) { onConfigChange(config.copy(autoWebtoon = it)) }
-}
-
-// ===== Tab 2 =====
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun FilterTab(config: ReaderConfig, onConfigChange: (ReaderConfig) -> Unit) {
-    CheckboxItem("灰度模式", config.isGrayscale) { onConfigChange(config.copy(isGrayscale = it)) }
-    CheckboxItem("反色", config.isInvertColors) { onConfigChange(config.copy(isInvertColors = it)) }
 }
