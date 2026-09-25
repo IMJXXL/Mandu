@@ -147,10 +147,6 @@ fun NativeReaderScreen(
     curlBackContentAlpha: Float = 0.1f,
     /** 仿真翻页投影阴影浓度 0~0.5（0=关闭阴影，默认 0.2），单页/双页 curl 共用 */
     curlShadowAlpha: Float = 0.2f,
-    /** ★ 墨水屏灰阶抖动（256级模拟）：解码管线参数，变更经重进生效 */
-    einkDither: Boolean = false,
-    einkDitherAlgorithm: Int = 0,
-    einkDitherLevels: Int = 16,
     /** ★ SMB/WebDAV 页面供给（design.md 2.2.2）：非 null 时阅读页面走远程会话。
      *   以参数形式在 setup() 之前注入 delegate，消除"setup 早于供给挂接"的竞态窗口。 */
     remoteSupply: com.mangareader.native.RemotePageSupply? = null,
@@ -265,7 +261,6 @@ fun NativeReaderScreen(
             delegate.setFitScreen(fitScreen)
             delegate.setTrimWhiteBorder(trimWhiteBorder, trimThreshold, trimWhiteRatio)
             delegate.setPanNavigation(panNavigation)
-            delegate.setEinkDither(einkDither, einkDitherAlgorithm, einkDitherLevels)
         }
         if (delegate is PagerReaderView) {
             delegate.setDoublePageReverse(doublePageReverse)
@@ -276,7 +271,6 @@ fun NativeReaderScreen(
             delegate.trimWhiteBorder = trimWhiteBorder
             delegate.trimThreshold = trimThreshold
             delegate.trimWhiteRatio = trimWhiteRatio
-            delegate.setEinkDither(einkDither, einkDitherAlgorithm, einkDitherLevels)
         }
         if (delegate is com.mangareader.native.curl.CurlReaderView) {
             delegate.pageBgColor = pageBgColor
@@ -285,7 +279,6 @@ fun NativeReaderScreen(
             delegate.fitScreen = fitScreen
             delegate.setTrimWhiteBorder(trimWhiteBorder, trimThreshold, trimWhiteRatio)
             delegate.setPanNavigation(panNavigation)
-            delegate.setEinkDither(einkDither, einkDitherAlgorithm, einkDitherLevels)
             delegate.onChapterEnd = onChapterEnd
         }
         if (delegate is com.mangareader.native.curl.CurlDoublePageView) {
@@ -296,7 +289,6 @@ fun NativeReaderScreen(
             delegate.curlContentAreaOnly = curlContentAreaOnly
             delegate.setTrimWhiteBorder(trimWhiteBorder, trimThreshold, trimWhiteRatio)
             delegate.setPanNavigation(panNavigation)
-            delegate.setEinkDither(einkDither, einkDitherAlgorithm, einkDitherLevels)
             delegate.setDoublePageModeAndShift(pageLayout == 1 || pageLayout == 2, pageLayout == 2)
             delegate.setDoublePageReverse(doublePageReverse)
             delegate.onChapterEnd = onChapterEnd

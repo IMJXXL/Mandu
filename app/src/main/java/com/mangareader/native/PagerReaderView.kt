@@ -20,7 +20,6 @@ import android.widget.ImageView
 import androidx.viewpager2.widget.ViewPager2
 import androidx.recyclerview.widget.RecyclerView
 import androidx.recyclerview.widget.LinearLayoutManager
-import com.mangareader.eink.applyEinkDither
 import com.mangareader.viewer.AnimKind
 import com.mangareader.viewer.ArchiveEngine
 
@@ -74,13 +73,6 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     private var trimThreshold: Int = 220
     private var trimWhiteRatio: Float = 0.90f
     private var panNavigation = false
-    /** ★ 墨水屏灰阶抖动参数（解码管线参数，非 UI 状态；变更经重进生效） */
-    private var einkDither = false
-    private var einkDitherAlgorithm = 0
-    private var einkDitherLevels = 16
-    fun setEinkDither(enabled: Boolean, algorithm: Int, levels: Int) {
-        einkDither = enabled; einkDitherAlgorithm = algorithm; einkDitherLevels = levels
-    }
 
     private var pageLayoutMode = 0 // 0=SINGLE, 1=DOUBLE, 2=AUTO
     var pageBgColor: Int = android.graphics.Color.parseColor("#FFFFFF")
@@ -1013,10 +1005,6 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                         com.mangareader.sr.SrPipeline.pollForResult(idx) { b -> injectUpscaledBitmap(idx, b) }
                     }
                 } catch (_: Exception) {}
-                // ★ 墨水屏灰阶抖动（本地路径）：SR 之后、入缓存之前
-                if (einkDither && !bmp.isRecycled) {
-                    try { bmp.applyEinkDither(einkDitherAlgorithm, einkDitherLevels) } catch (_: Exception) {}
-                }
                 bitmapCache.put(idx, bmp)
                 withContext(Dispatchers.Main) {
                     val adapterPos = positionOf(idx)
@@ -1068,10 +1056,6 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                         com.mangareader.sr.SrPipeline.pollForResult(idx) { b -> injectUpscaledBitmap(idx, b) }
                     }
                 } catch (_: Exception) {}
-                // ★ 墨水屏灰阶抖动（远程路径）：SR 之后、入缓存之前
-                if (einkDither && !bmp.isRecycled) {
-                    try { bmp.applyEinkDither(einkDitherAlgorithm, einkDitherLevels) } catch (_: Exception) {}
-                }
                 bitmapCache.put(idx, bmp)
                 withContext(Dispatchers.Main) {
                     val adapterPos = positionOf(idx)

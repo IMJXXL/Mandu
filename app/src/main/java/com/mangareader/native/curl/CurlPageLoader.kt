@@ -2,7 +2,6 @@ package com.mangareader.native.curl
 
 import android.content.Context
 import android.graphics.Bitmap
-import com.mangareader.eink.applyEinkDither
 import com.mangareader.viewer.ArchiveEngine
 import com.mangareader.native.RemotePageSupply
 import kotlinx.coroutines.CoroutineScope
@@ -28,10 +27,6 @@ class CurlPageLoader(
     var trimWhiteBorder: Boolean = false
     var trimThreshold: Int = 220
     var trimWhiteRatio: Float = 0.90f
-    /** ★ 墨水屏灰阶抖动参数（解码管线参数，单/双页 curl 共用本 loader；变更经重进生效） */
-    var einkDither: Boolean = false
-    var einkDitherAlgorithm: Int = 0
-    var einkDitherLevels: Int = 16
 
     private val inflightLoads = ConcurrentHashMap<Int, Long>()
     private val loadJobs = ConcurrentHashMap<Int, Job>()
@@ -106,10 +101,6 @@ class CurlPageLoader(
                         val srHit = com.mangareader.sr.SrPipeline.attachOrSchedule(idx, bmp)
                         if (srHit != null && !srHit.isRecycled) bmp = srHit
                     } catch (_: Exception) {}
-                    // ★ 墨水屏灰阶抖动（本地路径）：SR 之后、入缓存之前
-                    if (einkDither && !bmp.isRecycled) {
-                        try { bmp.applyEinkDither(einkDitherAlgorithm, einkDitherLevels) } catch (_: Exception) {}
-                    }
                     cache.put(idx, bmp)
                     withContext(Dispatchers.Main) { onLoaded(idx) }
                 } else {
@@ -139,10 +130,6 @@ class CurlPageLoader(
                             val srHit = com.mangareader.sr.SrPipeline.attachOrSchedule(idx, bmp)
                             if (srHit != null && !srHit.isRecycled) bmp = srHit
                         } catch (_: Exception) {}
-                        // ★ 墨水屏灰阶抖动（远程路径）：SR 之后、入缓存之前
-                        if (einkDither && !bmp.isRecycled) {
-                            try { bmp.applyEinkDither(einkDitherAlgorithm, einkDitherLevels) } catch (_: Exception) {}
-                        }
                         cache.put(idx, bmp)
                         withContext(Dispatchers.Main) { onLoaded(idx) }
                     }
