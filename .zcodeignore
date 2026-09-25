@@ -1,0 +1,89 @@
+# Build outputs
+build/
+app/build/
+*/build/
+app/lib/pagecurl/build/
+
+# Gradle
+.gradle/
+
+# NDK build cache
+.cxx/
+
+# Kotlin compile cache
+.kotlin/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Machine-local SDK path
+local.properties
+
+# Logs & dumps
+*.log
+*.hprof
+crash-logs/
+.codegraph/
+app/libs/*.bak
+.tmp_old_pager.kt
+
+tmp_db/
+check_*.py
+analyze_comments.py
+crash_buf.txt
+tmp_logcat*.txt
+tmp_*.txt
+tmp_*.cbz
+tmp_*.py
+device_log*.txt
+smb_open_log.txt
+/splash_*.png
+/splash_*.py
+full_log*.txt
+jdb_dump*.txt
+.zcode_*
+mr_debug.db
+mr.db
+nul
+screen_theme.png
+logcat_*.txt
+screenshot*.png
+seg_*.png
+test*.png
+pdf_*.png
+hs_err_pid*.log
+replay_pid*.log
+
+# ===== ↑ 以上同步自 .gitignore（「从 .gitignore 同步」只重写以上部分）=====
+.git/
+.hg/
+.svn/
+node_modules/
+bower_components/
+jspm_packages/
+__pycache__/
+site-packages/
+venv/
+coverage/
+htmlcov/
+lcov-report/
+cmakefiles/
+cmake-build-*/
+bazel-*/
+pods/
+deriveddata/
+storybook-static/
+playwright-report/
+test-results/
+allure-results/
+allure-report/
+cdk.out/
+*.egg-info/
+*.dist-info/
+eggs/
+pip-wheel-metadata/
+wheels/
+# ----- ↑ 以上为 ZCode 默认排除规则（自定义规则请写在本行下方，不会被同步/恢复改动）-----
+# 自定义规则写在下方（本行提示可删除）

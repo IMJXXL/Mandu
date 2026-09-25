@@ -4,8 +4,8 @@ import android.content.Context
 
 /**
  * 诊断日志导出（2026-09-25 无日志闪退专项）：汇总设备/版本信息 + crash_logs + ANR 记录 +
- * 启动阶段标记 + 签名校验失败诊断，写入公共 Download（API 29+ 经 MediaStore），
- * 文件管理器直接可见，无需 adb/root。书架顶栏与关于页共用。
+ * 启动阶段标记，写入公共 Download（API 29+ 经 MediaStore），
+ * 文件管理器直接可见，无需 adb/root。关于页「导出诊断日志」按钮调用。
  * 返回给用户看的结果消息（含落盘位置）。
  */
 object DiagExporter {
@@ -44,7 +44,7 @@ object DiagExporter {
                 sb.appendLine(String(bytes, start, bytes.size - start))
             } else sb.appendLine("[anr_log] 无记录")
         }
-        // 启动阶段标记 + 主线程心跳（无日志闪退专项取证）
+        // 启动阶段标记（无日志闪退专项取证）
         runCatching {
             val f = java.io.File(ctx.filesDir, "diag_stages.txt")
             if (f.exists()) {

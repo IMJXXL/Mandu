@@ -74,7 +74,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     private var trimThreshold: Int = 220
     private var trimWhiteRatio: Float = 0.90f
     private var panNavigation = false
-    /** ★ 墨水屏灰阶抖动参数（解码管线参数，非 UI 状态；变更经重进生效） */
+    /** ★ 墨水屏灰阶抖动参数（解码管线参数，非 UI 状态；变更经 applyEinkDitherNow 即时生效） */
     private var einkDither = false
     private var einkDitherAlgorithm = 0
     private var einkDitherLevels = 16

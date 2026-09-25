@@ -117,10 +117,13 @@ data class ReaderConfig(
             putInt("autoFlipInterval", autoFlipInterval)
             putBoolean("${prefix}isGrayscale", isGrayscale)
             putBoolean("${prefix}isInvertColors", isInvertColors)
-            putBoolean("${prefix}isFlipFlashEnabled", isFlipFlashEnabled)
-            putInt("${prefix}flipFlashDuration", flipFlashDuration)
-            putInt("${prefix}flipFlashInterval", flipFlashInterval)
-            putInt("${prefix}flipFlashColor", flipFlashColor)
+            // ★ 与 load 的合并逻辑镜像：全局接管时闪烁组写回全局键（值本就取自全局键，幂等），
+            //   防止把全局读到的值污染进单本键——否则全局关闭后单本会被残留值顶替
+            val flashPrefix = if (flipFlashGlobalActive) "" else prefix
+            putBoolean("${flashPrefix}isFlipFlashEnabled", isFlipFlashEnabled)
+            putInt("${flashPrefix}flipFlashDuration", flipFlashDuration)
+            putInt("${flashPrefix}flipFlashInterval", flipFlashInterval)
+            putInt("${flashPrefix}flipFlashColor", flipFlashColor)
             putString("${prefix}pageLayout", pageLayout.name)
             putBoolean("${prefix}useSSIV", useSSIV)
             putBoolean("landscapeZoom", landscapeZoom)

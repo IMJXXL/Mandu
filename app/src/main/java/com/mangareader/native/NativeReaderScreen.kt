@@ -147,7 +147,7 @@ fun NativeReaderScreen(
     curlBackContentAlpha: Float = 0.1f,
     /** 仿真翻页投影阴影浓度 0~0.5（0=关闭阴影，默认 0.2），单页/双页 curl 共用 */
     curlShadowAlpha: Float = 0.2f,
-    /** ★ 墨水屏灰阶抖动（256级模拟）：解码管线参数，变更经重进生效 */
+    /** ★ 墨水屏灰阶抖动（256级模拟）：解码管线参数，变更经 appliedDither SideEffect 即时生效 */
     einkDither: Boolean = false,
     einkDitherAlgorithm: Int = 0,
     einkDitherLevels: Int = 16,

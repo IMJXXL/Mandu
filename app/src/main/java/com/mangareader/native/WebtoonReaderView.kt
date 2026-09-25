@@ -234,7 +234,7 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
         return result
     }
 
-    /** ★ 墨水屏灰阶抖动参数（解码管线参数，非 UI 状态；变更经重进生效） */
+    /** ★ 墨水屏灰阶抖动参数（解码管线参数，非 UI 状态；变更经 applyEinkDitherNow 即时生效） */
     var einkDither = false
     var einkDitherAlgorithm = 0
     var einkDitherLevels = 16

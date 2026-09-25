@@ -28,7 +28,7 @@ class CurlPageLoader(
     var trimWhiteBorder: Boolean = false
     var trimThreshold: Int = 220
     var trimWhiteRatio: Float = 0.90f
-    /** ★ 墨水屏灰阶抖动参数（解码管线参数，单/双页 curl 共用本 loader；变更经重进生效） */
+    /** ★ 墨水屏灰阶抖动参数（解码管线参数，单/双页 curl 共用本 loader；变更经 applyEinkDitherNow 即时生效） */
     var einkDither: Boolean = false
     var einkDitherAlgorithm: Int = 0
     var einkDitherLevels: Int = 16

@@ -305,7 +305,7 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
                         Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
                                 Text("灰阶抖动（256级模拟）", fontSize = 14.sp)
-                                Text("误差扩散抖动模拟256级灰阶，纯白/纯黑不抖。开启后阅读内设置的常规tab出现算法/档位面板", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("误差扩散抖动模拟256级灰阶，纯白/纯黑不抖。开启后阅读内设置的滤镜tab出现算法/档位面板（改动即时生效）", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             Switch(checked = config.isEinkDither, onCheckedChange = { config = config.copy(isEinkDither = it); config.save(ctx) })
                         }

@@ -365,9 +365,9 @@ private fun GeneralTab(config: ReaderConfig, onConfigChange: (ReaderConfig) -> U
 private fun FilterTab(config: ReaderConfig, onConfigChange: (ReaderConfig) -> Unit) {
     CheckboxItem("灰度模式", config.isGrayscale) { onConfigChange(config.copy(isGrayscale = it)) }
     CheckboxItem("反色", config.isInvertColors) { onConfigChange(config.copy(isInvertColors = it)) }
-    // ★ 墨水屏灰阶抖动（256级模拟）：画面观感类设置归入滤镜 tab；总开关在阅读设置→墨水屏开启后
-    //   常规 tab 不再重复出现；算法名以中文特性描述呈现，存值仍为 0/1/2/3
-    CheckboxItem("灰阶抖动·256级模拟（墨水屏设备，重进生效）", config.isEinkDither) { onConfigChange(config.copy(isEinkDither = it)) }
+    // ★ 墨水屏灰阶抖动（256级模拟）：画面观感类设置归入滤镜 tab；算法名以中文特性描述呈现，
+    //   存值仍为 0/1/2/3；阅读设置→墨水屏的开关与本开关同写全局键；改动经 NES 即时重载生效
+    CheckboxItem("灰阶抖动·256级模拟（墨水屏设备，改动即时生效）", config.isEinkDither) { onConfigChange(config.copy(isEinkDither = it)) }
     if (config.isEinkDither) {
         SettingsChipRow("抖动算法") {
             listOf("细腻（默认）" to 0, "胶片颗粒" to 1, "柔和" to 2, "规则纹理" to 3).forEach { (label, value) ->
