@@ -118,7 +118,7 @@ fun CurlDoublePageContent(
 
             val targetSpread = if (forward) current + 1 else current - 1
             if (targetSpread < 0 || targetSpread >= totalSpreads) {
-                SpreadImage(null, null, doublePageReverse, pageBgColor)
+                SpreadImage(null, null, doublePageReverse, pageBgColor, isRtl)
             } else {
                 val tLeftIdx = SpreadMapping.leftPage(targetSpread, totalPages, shift)
                 val tRightIdx = SpreadMapping.rightPage(targetSpread, totalPages, shift)
@@ -127,6 +127,7 @@ fun CurlDoublePageContent(
                     if (tRightIdx >= 0) cache.get(tRightIdx) else null,
                     doublePageReverse,
                     pageBgColor,
+                    isRtl,
                 )
             }
         },
@@ -141,6 +142,7 @@ fun CurlDoublePageContent(
             if (rightIdx >= 0) cache.get(rightIdx) else null,
             doublePageReverse,
             pageBgColor,
+            isRtl,
         )
     }
 }
@@ -151,14 +153,20 @@ private fun SpreadImage(
     rightBmp: Bitmap?,
     doublePageReverse: Boolean,
     pageBgColor: Int,
+    isRtl: Boolean,
 ) {
     val emptyBmp = remember { Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888).asImageBitmap() }
 
-    val merged = remember(leftBmp, rightBmp) {
+    // RTL 双层镜像（对齐单页 CurlPageContent 的既定模式）：外层 curlModifier 已镜像整个
+    // PageCurl（翻页几何+手势），内容在此反镜像一次恢复正立。合并序取反（XOR）后两次镜像
+    // 抵消，落屏页序=bitmap 序，与 PagerReaderView 的 RTL 排布语义一致（偶数页在右先读）。
+    val effReverse = doublePageReverse != isRtl
+
+    val merged = remember(leftBmp, rightBmp, effReverse) {
         if (leftBmp != null && !leftBmp.isRecycled) {
             try {
                 if (rightBmp != null && !rightBmp.isRecycled) {
-                    if (doublePageReverse) {
+                    if (effReverse) {
                         SpreadMapping.mergeBitmaps(rightBmp, leftBmp, 0, pageBgColor)
                     } else {
                         SpreadMapping.mergeBitmaps(leftBmp, rightBmp, 0, pageBgColor)
@@ -178,10 +186,12 @@ private fun SpreadImage(
         if (merged != null && !merged.isRecycled) merged.asImageBitmap() else null
     }
 
+    val mirror = if (isRtl) Modifier.graphicsLayer { scaleX = -1f } else Modifier
+
     Image(
         bitmap = imgBmp ?: emptyBmp,
         contentDescription = null,
-        modifier = Modifier.fillMaxSize().background(Color(pageBgColor)),
+        modifier = Modifier.fillMaxSize().background(Color(pageBgColor)).then(mirror),
         contentScale = ContentScale.Fit,
     )
 }
