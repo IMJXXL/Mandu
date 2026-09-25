@@ -4,7 +4,6 @@ import android.app.ActivityManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
@@ -33,7 +32,6 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -76,8 +74,9 @@ import java.util.concurrent.ConcurrentHashMap
 /**
  * 封面编辑全屏对话框（2026-09-26）。
  *
- * 流程：来源选择 → ①相册（PickVisualMedia）或 ②本卷内容（dir 树浏览器可下钻子文件夹/
- * 压缩包；档案书直出页网格）→ 取景框裁剪（双指缩放+平移+固定比例框）→ JPEG 90 落盘
+ * 流程：来源选择 → ①系统文件选择器（OpenDocument，用户从文件管理器任意目录找图）或
+ * ②本卷内容（dir 树浏览器可下钻子文件夹/压缩包；档案书直出页网格）→ 取景框裁剪
+ * （双指缩放+平移，框比例固定为书架封面卡 0.72）→ JPEG 90 落盘
  * covers/custom_{md5}.jpg → onResult("custom:<fileName>") 由调用方写 DB + 清缓存。
  *
  * 安全：所有解码 inSampleSize 钳制（低内存机 2048 / 其余 4096）防 OOM；网格缩略图 32MB
@@ -131,7 +130,7 @@ internal fun CoverEditDialog(
     val isLocal = book.source == "local"
     val isTreeBook = book.filePath.startsWith("d:") || book.filePath.startsWith("z:")
 
-    val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+    val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         scope.launch {
             val bmp = withContext(Dispatchers.IO) {
@@ -151,8 +150,8 @@ internal fun CoverEditDialog(
                     Spacer(Modifier.height(4.dp))
                     Text(book.title, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
                     Spacer(Modifier.height(24.dp))
-                    SourceCard("从相册选择", "选择外部图片，取景框裁剪后设为封面") {
-                        pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                    SourceCard("从文件选择", "从文件管理器选择图片，取景框裁剪后设为封面") {
+                        pickImage.launch(arrayOf("image/*"))
                     }
                     Spacer(Modifier.height(12.dp))
                     if (isLocal) {
@@ -165,7 +164,7 @@ internal fun CoverEditDialog(
                     } else {
                         Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(10.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
                             Text(
-                                "远程书暂不支持从内容中选择，请使用相册图片",
+                                "远程书暂不支持从内容中选择，请使用本地图片",
                                 fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(14.dp),
                             )
                         }
@@ -384,19 +383,31 @@ private fun StageTopBar(title: String, onBack: () -> Unit) {
     }
 }
 
+/** 书架封面卡宽高比（BookCard aspectRatio(0.72f)）：取景框固定同比例，裁出即满卡无二次裁切 */
+private const val COVER_FRAME_RATIO = 0.72f
+
 /**
- * 取景框裁剪：双指缩放+平移，固定比例框（默认 1:1 与书架方图显示一致，可选 2:3/3:4）。
+ * 取景框裁剪：双指缩放+平移，框比例固定 0.72（与书架封面卡一致）。
  * 确认 = 框内区域映射回源位图裁剪，输出长边 ≤1280（显示端 ~500px，4 倍冗余）。
  */
 @Composable
 private fun CropStage(src: Bitmap, onConfirm: (Bitmap) -> Unit, onCancel: () -> Unit) {
-    var ratio by remember { mutableFloatStateOf(1f) }
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
     var viewSize by remember { mutableStateOf(IntSize.Zero) }
     var confirming by remember { mutableStateOf(false) }
+    var initFit by remember { mutableStateOf(false) }
 
-    Box(Modifier.fillMaxSize().background(Color.Black).onSizeChanged { viewSize = it }) {
+    Box(Modifier.fillMaxSize().background(Color.Black).onSizeChanged { v ->
+        viewSize = v
+        // 首次得知视图尺寸：预缩放到恰好覆盖取景框（横图/方图初始也满框，否则映射裁剪区会缺内容）
+        if (!initFit && v.width > 0 && v.height > 0) {
+            initFit = true
+            val fit = fitRect(src, v)
+            val frame = frameRect(Size(v.width.toFloat(), v.height.toFloat()), COVER_FRAME_RATIO)
+            if (fit.width > 0f && fit.height > 0f) scale = maxOf(1f, frame.width / fit.width, frame.height / fit.height)
+        }
+    }) {
         // 源图 Fit 居中显示，graphicsLayer 以视图中心为原点缩放/平移
         Image(
             src.asImageBitmap(), null,
@@ -407,12 +418,12 @@ private fun CropStage(src: Bitmap, onConfirm: (Bitmap) -> Unit, onCancel: () -> 
             contentScale = ContentScale.Fit,
         )
         // 取景框遮罩 + 手势
-        Canvas(Modifier.fillMaxSize().pointerInput(ratio, viewSize) {
+        Canvas(Modifier.fillMaxSize().pointerInput(viewSize) {
             detectTransformGestures { _, pan, zoom, _ ->
                 val v = viewSize
                 if (v.width > 0 && v.height > 0) {
                     val fit = fitRect(src, v)
-                    val frame = frameRect(Size(v.width.toFloat(), v.height.toFloat()), ratio)
+                    val frame = frameRect(Size(v.width.toFloat(), v.height.toFloat()), COVER_FRAME_RATIO)
                     val ns = (scale * zoom).coerceIn(1f, 12f)
                     val nx = offset.x + pan.x
                     val ny = offset.y + pan.y
@@ -427,7 +438,7 @@ private fun CropStage(src: Bitmap, onConfirm: (Bitmap) -> Unit, onCancel: () -> 
         }) {
             val v = size
             if (v.width > 0 && v.height > 0) {
-                val frame = frameRect(v, ratio)
+                val frame = frameRect(v, COVER_FRAME_RATIO)
                 // 四周压暗
                 val dim = Color.Black.copy(alpha = 0.6f)
                 drawRect(dim, Offset(0f, 0f), Size(v.width, frame.top))
@@ -456,7 +467,7 @@ private fun CropStage(src: Bitmap, onConfirm: (Bitmap) -> Unit, onCancel: () -> 
                     confirming = true
                     val v = viewSize
                     if (v.width <= 0) { confirming = false; return@IconButton }
-                    val frame = frameRect(Size(v.width.toFloat(), v.height.toFloat()), ratio)
+                    val frame = frameRect(Size(v.width.toFloat(), v.height.toFloat()), COVER_FRAME_RATIO)
                     val fit = fitRect(src, v)
                     // 视图坐标 → 源位图坐标
                     val sx = (frame.left - fit.left) / scale / fit.width * src.width
@@ -477,27 +488,6 @@ private fun CropStage(src: Bitmap, onConfirm: (Bitmap) -> Unit, onCancel: () -> 
                     onConfirm(out)
                 },
             ) { Icon(Icons.Default.Check, "确认", tint = Color.White) }
-        }
-        // 底部比例选择
-        Row(Modifier.align(Alignment.BottomCenter).padding(bottom = 24.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf("1:1" to 1f, "2:3" to (2f / 3f), "3:4" to 0.75f).forEach { (label, r) ->
-                FilterChip(
-                    selected = kotlin.math.abs(ratio - r) < 1e-3f,
-                    onClick = {
-                        ratio = r
-                        // 换比例后重钳位移，防图像脱离新框
-                        val v = viewSize
-                        if (v.width > 0) {
-                            val fit = fitRect(src, v)
-                            val frame = frameRect(Size(v.width.toFloat(), v.height.toFloat()), r)
-                            val maxX = maxOf(0f, fit.width / 2f * scale - frame.width / 2f)
-                            val maxY = maxOf(0f, fit.height / 2f * scale - frame.height / 2f)
-                            offset = Offset(offset.x.coerceIn(-maxX, maxX), offset.y.coerceIn(-maxY, maxY))
-                        }
-                    },
-                    label = { Text(label) },
-                )
-            }
         }
     }
 }
