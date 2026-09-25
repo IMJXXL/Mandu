@@ -32,7 +32,12 @@ class CurlReaderView(context: Context) : FrameLayout(context), ReaderViewDelegat
     private var engine: ArchiveEngine? = null
     private var treePath: String = ""
     private var pageList: List<ArchiveEngine.PageMeta> = emptyList()
-    private var currentPage = 0
+    // 同 CurlDoublePageView：当前页用 Compose 状态承载，goToPage（目录/书签跳转）才能
+    // 经重组把新 currentPage 传进 CurlReaderContent 触发 state.snapTo，否则画面与进度脱节
+    private val currentPageState = mutableIntStateOf(0)
+    private var currentPage: Int
+        get() = currentPageState.intValue
+        set(value) { currentPageState.intValue = value }
     private var isRtl = false
 
     var pageBgColor: Int = android.graphics.Color.parseColor("#FFFFFF")

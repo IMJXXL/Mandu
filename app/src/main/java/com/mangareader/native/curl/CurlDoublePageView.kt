@@ -31,7 +31,14 @@ class CurlDoublePageView(context: Context) : FrameLayout(context), ReaderViewDel
     private var engine: ArchiveEngine? = null
     private var treePath: String = ""
     private var pageList: List<ArchiveEngine.PageMeta> = emptyList()
-    private var currentPage = 0
+    // 当前 spread 页索引用 Compose 状态承载：renderCompose 根作用域读它，goToPage（目录/书签
+    // 跳转）改值才能触发重组把新 currentSpread 传进 CurlDoublePageContent，其
+    // LaunchedEffect(currentSpread)→state.snapTo 才会执行。曾经是普通字段，参数闭包过期，
+    // 跳转后画面停在旧页而进度照走（画面与进度脱节）
+    private val currentPageState = mutableIntStateOf(0)
+    private var currentPage: Int
+        get() = currentPageState.intValue
+        set(value) { currentPageState.intValue = value }
     private var isRtl = false
     private var doublePageShift = false
     private var doublePageReverse = false

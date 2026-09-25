@@ -165,6 +165,10 @@ public class PageCurlState(
     internal var max: Int = initialMax
         private set
 
+    // 提交代际：snapTo（目录/书签跳转）递增，作废在飞 turn 动画的落地提交，
+    // 否则 animateTo 的 finally 会用旧目标覆盖刚 snap 的 current
+    private var turnGeneration: Int = 0
+
     internal var internalState: InternalState? by mutableStateOf(null)
         private set
 
@@ -214,6 +218,12 @@ public class PageCurlState(
         if (max <= 0) {
             interactiveTurn = null
             return
+        }
+        // 终止在飞 turn 动画并作废其落地提交（跳转优先于未完成的翻页动画）
+        turnGeneration++
+        internalState?.animateJob?.let { running ->
+            running.cancel()
+            running.join()
         }
         current = value.coerceIn(0, max - 1)
         interactiveTurn = null
@@ -420,12 +430,16 @@ public class PageCurlState(
 
             coroutineScope {
                 animateJob = launch {
+                    val gen = turnGeneration
                     try {
                         if (!continuing) reset()
                         animate(Size(constraints.maxWidth.toFloat(), constraints.maxHeight.toFloat()))
                     } finally {
                         withContext(NonCancellable) {
-                            current = target().coerceIn(0, max - 1)
+                            // 代际不符 = 期间发生过 snapTo 跳转，本动画无权再写 current
+                            if (gen == turnGeneration) {
+                                current = target().coerceIn(0, max - 1)
+                            }
                             if (!skipResetOnCommit) reset()
                         }
                     }
