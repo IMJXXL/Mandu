@@ -46,8 +46,10 @@ public fun rememberPageCurlState(
     initialCurrent: Int = 0,
     turnEndFractionX: Float = 0f,
 ): PageCurlState =
+    // Kamigura fork: initialCurrent 仅作首次初值，不进 rememberSaveable 的 inputs——
+    // 宿主（漫读 curl 视图）把实时页码传进来时，把它当 key 会导致每次翻页落地都
+    // 销毁重建整个状态机（翻页动画/折叠几何被重置）。页码对齐交给宿主的 snapTo。
     rememberSaveable(
-        initialCurrent,
         turnEndFractionX,
         saver = Saver(
             save = { it.current },
