@@ -46,9 +46,6 @@ data class ReaderConfig(
     val flipFlashDuration: Int = 100,
     val flipFlashInterval: Int = 1,
     val flipFlashColor: Int = 0,
-    /** ★ 运行时标记（不落盘）：全局翻页闪烁已开启 → 本组值整组来自全局键，
-     *   阅读内常规据此灰掉单本设置（全局 > 单本，见 load 的合并逻辑） */
-    val flipFlashGlobalActive: Boolean = false,
     val pageLayout: PageLayout = PageLayout.SINGLE,
     val useSSIV: Boolean = true,
     val landscapeZoom: Boolean = false,
@@ -136,11 +133,6 @@ data class ReaderConfig(
         fun load(context: Context, bookId: Long = -1): ReaderConfig {
             val prefs = context.getSharedPreferences("manga_reader", Context.MODE_PRIVATE)
             val prefix = if (bookId >= 0) "book_${bookId}_" else ""
-            // ★ 翻页闪烁「全局 > 单本」合并：全局开 = 整组接管（开关+参数全部取全局键），
-            //   全局关 = 单本自决（读 book_ 前缀键）。全局键由 设置→阅读设置→墨水屏 写入。
-            //   flipFlashGlobalActive 仅作运行时标记供阅读内 UI 灰置单本设置，不落盘。
-            val globalFlash = prefs.safeGetBoolean("isFlipFlashEnabled", false)
-            val flashPrefix = if (globalFlash) "" else prefix
             return ReaderConfig(
                 scrollMode = try { ScrollMode.valueOf(prefs.getString("${prefix}scrollMode", "HORIZONTAL_LEFT")!!) } catch (_: Exception) { ScrollMode.HORIZONTAL_LEFT },
                 clickFlipType = try { ClickFlipType.valueOf(prefs.getString("${prefix}clickFlipType", "LEFT_RIGHT")!!) } catch (_: Exception) { ClickFlipType.LEFT_RIGHT },
@@ -166,11 +158,10 @@ data class ReaderConfig(
                 autoFlipInterval = prefs.safeGetInt("autoFlipInterval", 0),
                 isGrayscale = prefs.safeGetBoolean("${prefix}isGrayscale", false),
                 isInvertColors = prefs.safeGetBoolean("${prefix}isInvertColors", false),
-                isFlipFlashEnabled = prefs.safeGetBoolean("${flashPrefix}isFlipFlashEnabled", false),
-                flipFlashDuration = prefs.safeGetInt("${flashPrefix}flipFlashDuration", 100),
-                flipFlashInterval = prefs.safeGetInt("${flashPrefix}flipFlashInterval", 1),
-                flipFlashColor = prefs.safeGetInt("${flashPrefix}flipFlashColor", 0),
-                flipFlashGlobalActive = globalFlash,
+                isFlipFlashEnabled = prefs.safeGetBoolean("${prefix}isFlipFlashEnabled", false),
+                flipFlashDuration = prefs.safeGetInt("${prefix}flipFlashDuration", 100),
+                flipFlashInterval = prefs.safeGetInt("${prefix}flipFlashInterval", 1),
+                flipFlashColor = prefs.safeGetInt("${prefix}flipFlashColor", 0),
                 pageLayout = try { PageLayout.valueOf(prefs.getString("${prefix}pageLayout", "SINGLE")!!) } catch (_: Exception) { PageLayout.SINGLE },
                 useSSIV = prefs.safeGetBoolean("${prefix}useSSIV", true),
                 landscapeZoom = prefs.safeGetBoolean("landscapeZoom", false),

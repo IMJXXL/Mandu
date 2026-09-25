@@ -15,7 +15,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalConfiguration
@@ -170,31 +169,27 @@ private fun GroupTitle(title: String) {
 }
 
 @Composable
-private fun CheckboxItem(label: String, checked: Boolean, enabled: Boolean = true, onCheckedChange: (Boolean) -> Unit) {
+private fun CheckboxItem(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .alpha(if (enabled) 1f else 0.38f)
-            .clickable(enabled = enabled) { onCheckedChange(!checked) }
+            .clickable { onCheckedChange(!checked) }
             .padding(horizontal = HORIZONTAL_PAD, vertical = VERTICAL_PAD),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(24.dp)
     ) {
-        Checkbox(checked = checked, onCheckedChange = null, enabled = enabled)
+        Checkbox(checked = checked, onCheckedChange = null)
         Text(text = label, style = MaterialTheme.typography.bodyMedium)
     }
 }
 
 @Composable
-private fun SliderItem(label: String, value: Float, range: ClosedFloatingPointRange<Float>, steps: Int, valueText: String, enabled: Boolean = true, onValueChange: (Float) -> Unit) {
+private fun SliderItem(label: String, value: Float, range: ClosedFloatingPointRange<Float>, steps: Int, valueText: String, onValueChange: (Float) -> Unit) {
     val haptic = LocalHapticFeedback.current
     val pillColor = MaterialTheme.colorScheme.surfaceContainerHigh
 
     Column(
-        Modifier
-            .fillMaxWidth()
-            .alpha(if (enabled) 1f else 0.38f)
-            .padding(horizontal = HORIZONTAL_PAD, vertical = 2.dp),
+        Modifier.fillMaxWidth().padding(horizontal = HORIZONTAL_PAD, vertical = 2.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(SPACING_SMALL)) {
@@ -217,7 +212,6 @@ private fun SliderItem(label: String, value: Float, range: ClosedFloatingPointRa
             },
             valueRange = range,
             steps = steps,
-            enabled = enabled,
         )
     }
 }
@@ -328,19 +322,12 @@ private fun GeneralTab(config: ReaderConfig, onConfigChange: (ReaderConfig) -> U
 
     // ★ N1：无缝续读（默认关；仅同本分卷；开启时读到卷末静默进入下一卷，无过渡页无确认弹窗）
     CheckboxItem("无缝续读下一卷（读到卷末自动进入同书下一卷）", config.seamlessNextVolume) { onConfigChange(config.copy(seamlessNextVolume = it)) }
-    // ★ 翻页闪烁「全局 > 单本」：全局（设置→阅读设置→墨水屏）开启时整组被接管，
-    //   常规里的单本开关/滑块/颜色灰掉不可改，文案注明去向
-    val flashGlobal = config.flipFlashGlobalActive
-    CheckboxItem(
-        "翻页时闪烁（开启后可降低墨水屏残影）" + if (flashGlobal) "（全局生效中，由「设置→阅读设置→墨水屏」控制，此处不可改）" else "",
-        config.isFlipFlashEnabled,
-        enabled = !flashGlobal,
-    ) { onConfigChange(config.copy(isFlipFlashEnabled = it)) }
+    CheckboxItem("翻页时闪烁（开启后可降低墨水屏残影）", config.isFlipFlashEnabled) { onConfigChange(config.copy(isFlipFlashEnabled = it)) }
     if (config.isFlipFlashEnabled) {
-        SliderItem("持续时间", config.flipFlashDuration.toFloat(), 50f..1500f, 14, "${config.flipFlashDuration}ms", enabled = !flashGlobal) {
+        SliderItem("持续时间", config.flipFlashDuration.toFloat(), 50f..1500f, 14, "${config.flipFlashDuration}ms") {
             onConfigChange(config.copy(flipFlashDuration = it.toInt()))
         }
-        SliderItem("间隔页数", config.flipFlashInterval.toFloat(), 1f..10f, 9, "${config.flipFlashInterval}页", enabled = !flashGlobal) {
+        SliderItem("间隔页数", config.flipFlashInterval.toFloat(), 1f..10f, 9, "${config.flipFlashInterval}页") {
             onConfigChange(config.copy(flipFlashInterval = it.toInt()))
         }
         SettingsChipRow("闪烁颜色") {
@@ -348,7 +335,6 @@ private fun GeneralTab(config: ReaderConfig, onConfigChange: (ReaderConfig) -> U
                 FilterChip(
                     selected = value == config.flipFlashColor,
                     onClick = { onConfigChange(config.copy(flipFlashColor = value)) },
-                    enabled = !flashGlobal,
                     label = { Text(label, fontSize = 13.sp) },
                 )
             }

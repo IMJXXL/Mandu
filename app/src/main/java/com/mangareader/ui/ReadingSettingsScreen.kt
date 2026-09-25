@@ -276,7 +276,6 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
                     if (config.isEinkMode) {
                         Spacer(Modifier.height(8.dp))
                         Text("翻页闪烁", fontSize = 16.sp, fontWeight = FontWeight.Medium)
-                        Text("全局生效：开启后对所有漫画强制使用此组设置（覆盖阅读内的单本设置，书内对应项将置灰）", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Text("启用翻页闪烁（降低残影）", fontSize = 14.sp)
                             Switch(checked = config.isFlipFlashEnabled, onCheckedChange = { config = config.copy(isFlipFlashEnabled = it); config.save(ctx) })
