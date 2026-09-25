@@ -765,6 +765,13 @@ class ArchiveEngine(private val ctx: Context) {
         } catch (_: Exception) { null }
     }
 
+    /** ★ 长图分割 §2：尺寸表缓存入口（PageSizeCacheStore 包装，供 VirtualPageExpander 使用） */
+    fun loadPageSizeCache(bookPath: String, stamp: String): Map<String, IntArray>? =
+        com.mangareader.data.PageSizeCacheStore.load(ctx, bookPath, stamp)
+
+    fun savePageSizeCache(bookPath: String, stamp: String, sizes: Map<String, IntArray>) =
+        com.mangareader.data.PageSizeCacheStore.save(ctx, bookPath, stamp, sizes)
+
     private fun readUpTo(input: java.io.InputStream, maxLen: Int): ByteArray {
         val buf = java.io.ByteArrayOutputStream(maxLen)
         val chunk = ByteArray(16 * 1024)

@@ -15,24 +15,34 @@ import org.json.JSONObject
  */
 object PageSizeCacheStore {
 
+    // ★ 进程内镜像：磁盘写失败/竞态时保证同进程内 Reader 入口与 setup 重入读到同一张表，
+    //   展开结果永不分叉（二开也从这里直取，磁盘只在冷启动生效）
+    private val mem = java.util.concurrent.ConcurrentHashMap<String, Pair<String, Map<String, IntArray>>>()
+
     fun load(ctx: Context, bookPath: String, stamp: String): Map<String, IntArray>? {
+        val key = md5(bookPath)
+        mem[key]?.let { (s, sizes) -> return if (s == stamp) sizes else null }
         return try {
-            val f = java.io.File(ctx.filesDir, "page_sizes/${md5(bookPath)}.json")
+            val f = java.io.File(ctx.filesDir, "page_sizes/$key.json")
             if (!f.exists()) return null
             val obj = JSONObject(f.readText())
             if (obj.optString("stamp") != stamp) return null
             val sizesObj = obj.optJSONObject("sizes") ?: return null
             val out = HashMap<String, IntArray>(sizesObj.length())
-            for (key in sizesObj.keys()) {
-                val arr = sizesObj.getJSONArray(key)
-                out[key] = intArrayOf(arr.getInt(0), arr.getInt(1))
+            for (k in sizesObj.keys()) {
+                val arr = sizesObj.getJSONArray(k)
+                out[k] = intArrayOf(arr.getInt(0), arr.getInt(1))
             }
-            out
+            val frozen = java.util.Collections.unmodifiableMap(out)
+            mem[key] = stamp to frozen
+            frozen
         } catch (_: Exception) { null }
     }
 
     fun save(ctx: Context, bookPath: String, stamp: String, sizes: Map<String, IntArray>) {
         try {
+            val key = md5(bookPath)
+            mem[key] = stamp to java.util.Collections.unmodifiableMap(HashMap(sizes))
             val dir = java.io.File(ctx.filesDir, "page_sizes")
             if (!dir.exists()) dir.mkdirs()
             val obj = JSONObject().put("stamp", stamp).put("savedAt", System.currentTimeMillis())
@@ -41,9 +51,9 @@ object PageSizeCacheStore {
                 if (v.size >= 2) sizesObj.put(k, JSONArray().put(v[0]).put(v[1]))
             }
             obj.put("sizes", sizesObj)
-            java.io.File(dir, "${md5(bookPath)}.json").writeText(obj.toString())
+            java.io.File(dir, "$key.json").writeText(obj.toString())
         } catch (_: Exception) {
-            // 尺寸表写盘失败静默跳过：仅损失二开免探收益，不影响功能
+            // 尺寸表写盘失败静默跳过：仅损失二开免探收益，不影响功能（内存镜像已生效）
         }
     }
 

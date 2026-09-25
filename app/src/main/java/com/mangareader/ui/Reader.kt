@@ -922,12 +922,13 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                 }
             }
         }
-        val expandedPages = if (config.tallSplitEnabled && path.endsWith("|pdf") &&
+        val expandedPages = if (config.tallSplitEnabled &&
             (mode == Mode.VERT || mode == Mode.WEBTOON_GAP)) {
             val sm = maxOf(ctx.resources.displayMetrics.widthPixels, ctx.resources.displayMetrics.heightPixels)
             val sw = ctx.resources.displayMetrics.widthPixels
-            // ★ B3：展开（PDF 元数据查询 / 长图头部探测）全程 IO，主线程零阻塞
-            try { withContext(Dispatchers.IO) { com.mangareader.engine.pdf.VirtualPageExpander.expand(pages, true, true, sm, sw, engine, path) } }
+            // ★ 长图分割：入口放宽到全部本地书（PDF + 图片族），白名单在 expander 内把守；
+            //   allowProbe=true 探测尺寸并落尺寸表，全程 IO（B3）
+            try { withContext(Dispatchers.IO) { com.mangareader.engine.pdf.VirtualPageExpander.expand(pages, true, true, sm, sw, engine, path, allowProbe = true) } }
             catch (_: Exception) { pages }
         } else pages
         pageList = expandedPages
