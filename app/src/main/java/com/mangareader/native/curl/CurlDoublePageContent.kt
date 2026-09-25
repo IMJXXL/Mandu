@@ -41,6 +41,7 @@ fun CurlDoublePageContent(
     fitScreen: Boolean,
     curlContentAreaOnly: Boolean,
     backContentAlpha: Float,
+    shadowAlpha: Float,
     reloadTrigger: MutableIntState,
     tapForwardTrigger: MutableIntState,
     tapBackwardTrigger: MutableIntState,
@@ -79,7 +80,7 @@ fun CurlDoublePageContent(
             backPageColor = Color(pageBgColor),
             backPageContentAlpha = backContentAlpha,
             shadowColor = Color.Black,
-            shadowAlpha = 0.2f,
+            shadowAlpha = shadowAlpha,
             shadowRadius = 15.dp,
             shadowOffset = DpOffset((-5).dp, 0.dp),
             dragForwardEnabled = true,
@@ -92,10 +93,13 @@ fun CurlDoublePageContent(
             onCustomTap = { _, _ -> false },
         )
     }
-    // 背面透出程度运行时可调：PageCurlConfig 的字段本身是 mutableStateOf，绘制层直接读
-    // state，改值即重绘且不打断进行中的翻页动画，无需重建 config 对象
+    // 背面透出程度/阴影浓度运行时可调：PageCurlConfig 的字段本身是 mutableStateOf，
+    // 绘制层直接读 state，改值即重绘且不打断进行中的翻页动画，无需重建 config 对象
     LaunchedEffect(backContentAlpha) {
         config.backPageContentAlpha = backContentAlpha
+    }
+    LaunchedEffect(shadowAlpha) {
+        config.shadowAlpha = shadowAlpha
     }
 
     LaunchedEffect(state.current) {

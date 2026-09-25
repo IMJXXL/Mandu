@@ -260,6 +260,9 @@ private fun ReadingModeTab(config: ReaderConfig, mode: Mode, onConfigChange: (Re
                 SliderItem("背面透出程度（双页模式：翻页动画的背面显示下一页内容的强度）", config.curlBackContentAlpha, 0f..1f, 19, "${(config.curlBackContentAlpha * 100).toInt()}%") {
                     onConfigChange(config.copy(curlBackContentAlpha = it))
                 }
+                SliderItem("翻页阴影浓度（0=关闭）", config.curlShadowAlpha, 0f..0.5f, 9, "${(config.curlShadowAlpha * 100).toInt()}%") {
+                    onConfigChange(config.copy(curlShadowAlpha = it))
+                }
             }
         }
         Text("以下功能设置后，需重新进入漫画生效", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f), fontSize = 11.sp, modifier = Modifier.padding(start = 4.dp, bottom = 4.dp))

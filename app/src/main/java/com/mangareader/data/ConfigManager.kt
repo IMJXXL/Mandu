@@ -16,6 +16,7 @@ class ConfigManager(private val context: Context) {
             put("isFlipAnimation", config.isFlipAnimation)
             put("isCurlContentAreaOnly", config.isCurlContentAreaOnly)
             put("curlBackContentAlpha", config.curlBackContentAlpha.toDouble())
+            put("curlShadowAlpha", config.curlShadowAlpha.toDouble())
             put("isShowPageNum", config.isShowPageNum)
             put("isKeepScreenOn", config.isKeepScreenOn)
             put("isTrimWhiteBorder", config.isTrimWhiteBorder)
@@ -62,6 +63,7 @@ class ConfigManager(private val context: Context) {
                 isFlipAnimation = json.optBoolean("isFlipAnimation", true),
                 isCurlContentAreaOnly = json.optBoolean("isCurlContentAreaOnly", false),
                 curlBackContentAlpha = json.optDouble("curlBackContentAlpha", 0.1).toFloat(),
+                curlShadowAlpha = json.optDouble("curlShadowAlpha", 0.2).toFloat(),
                 isShowPageNum = json.optBoolean("isShowPageNum", true),
                 isKeepScreenOn = json.optBoolean("isKeepScreenOn", true),
                 isTrimWhiteBorder = json.optBoolean("isTrimWhiteBorder", false),

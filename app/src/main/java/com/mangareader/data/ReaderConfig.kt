@@ -21,6 +21,8 @@ data class ReaderConfig(
     val isCurlContentAreaOnly: Boolean = false,
     /** 双页仿真翻页背面透出程度：翻页动画背面显示下一页内容的强度 0~1（0=纯背景色，1=完全清晰，默认 0.1=纸张背透） */
     val curlBackContentAlpha: Float = 0.1f,
+    /** 仿真翻页投影阴影浓度 0~0.5（0=关闭阴影，默认 0.2） */
+    val curlShadowAlpha: Float = 0.2f,
     val isShowPageNum: Boolean = true,
     val isKeepScreenOn: Boolean = true,
     val isTrimWhiteBorder: Boolean = false,
@@ -84,6 +86,7 @@ data class ReaderConfig(
             putBoolean("isPageCurlAnimation", isPageCurlAnimation)
             putBoolean("isCurlContentAreaOnly", isCurlContentAreaOnly)
             putFloat("curlBackContentAlpha", curlBackContentAlpha)
+            putFloat("curlShadowAlpha", curlShadowAlpha)
             putBoolean("isShowPageNum", isShowPageNum)
             putBoolean("isKeepScreenOn", isKeepScreenOn)
             putBoolean("${prefix}isTrimWhiteBorder", isTrimWhiteBorder)
@@ -137,6 +140,7 @@ data class ReaderConfig(
                 isPageCurlAnimation = prefs.safeGetBoolean("isPageCurlAnimation", false),
                 isCurlContentAreaOnly = prefs.safeGetBoolean("isCurlContentAreaOnly", false),
                 curlBackContentAlpha = prefs.safeGetFloat("curlBackContentAlpha", 0.1f),
+                curlShadowAlpha = prefs.safeGetFloat("curlShadowAlpha", 0.2f),
                 isShowPageNum = prefs.safeGetBoolean("isShowPageNum", true),
                 isKeepScreenOn = prefs.safeGetBoolean("isKeepScreenOn", true),
                 isTrimWhiteBorder = prefs.safeGetBoolean("${prefix}isTrimWhiteBorder", false),

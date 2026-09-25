@@ -7,6 +7,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.platform.ComposeView
 import com.mangareader.viewer.ArchiveEngine
@@ -43,6 +44,11 @@ class CurlReaderView(context: Context) : FrameLayout(context), ReaderViewDelegat
     var pageBgColor: Int = android.graphics.Color.parseColor("#FFFFFF")
     var landscapeZoom: Boolean = false
     var fitScreen: Boolean = false
+    // 翻页阴影浓度用 Compose 状态承载（NES 侧经 SideEffect 同步，拖滑块即重组生效）
+    private val curlShadowAlphaState = mutableFloatStateOf(0.2f)
+    var curlShadowAlpha: Float
+        get() = curlShadowAlphaState.floatValue
+        set(value) { curlShadowAlphaState.floatValue = value }
     var remotePageSupply: RemotePageSupply? = null
         set(value) {
             field = value
@@ -121,6 +127,7 @@ class CurlReaderView(context: Context) : FrameLayout(context), ReaderViewDelegat
                 cache = cache,
                 landscapeZoom = landscapeZoom,
                 fitScreen = fitScreen,
+                shadowAlpha = curlShadowAlpha,
                 reloadTrigger = reloadTrigger,
                 tapForwardTrigger = tapForwardTrigger,
                 tapBackwardTrigger = tapBackwardTrigger,

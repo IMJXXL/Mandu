@@ -2226,6 +2226,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                             pageCurlAnimationEnabled = config.isPageCurlAnimation,
                             curlContentAreaOnly = config.isCurlContentAreaOnly,
                             curlBackContentAlpha = config.curlBackContentAlpha,
+                            curlShadowAlpha = config.curlShadowAlpha,
 
                             remoteSupply = smbSession,
                             modifier = Modifier.fillMaxSize(),

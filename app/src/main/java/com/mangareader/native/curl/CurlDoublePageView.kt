@@ -60,6 +60,11 @@ class CurlDoublePageView(context: Context) : FrameLayout(context), ReaderViewDel
     var curlBackContentAlpha: Float
         get() = curlBackContentAlphaState.floatValue
         set(value) { curlBackContentAlphaState.floatValue = value }
+    // 翻页阴影浓度同上（0=关闭阴影）
+    private val curlShadowAlphaState = mutableFloatStateOf(0.2f)
+    var curlShadowAlpha: Float
+        get() = curlShadowAlphaState.floatValue
+        set(value) { curlShadowAlphaState.floatValue = value }
     var remotePageSupply: RemotePageSupply? = null
     var onChapterEnd: ((Boolean) -> Unit)? = null
 
@@ -164,6 +169,7 @@ class CurlDoublePageView(context: Context) : FrameLayout(context), ReaderViewDel
                 fitScreen = fitScreen,
                 curlContentAreaOnly = curlContentAreaOnly,
                 backContentAlpha = curlBackContentAlpha,
+                shadowAlpha = curlShadowAlpha,
                 reloadTrigger = reloadTrigger,
                 tapForwardTrigger = tapForwardTrigger,
                 tapBackwardTrigger = tapBackwardTrigger,

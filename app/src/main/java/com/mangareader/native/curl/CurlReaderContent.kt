@@ -69,6 +69,7 @@ fun CurlReaderContent(
     cache: CurlBitmapCache,
     landscapeZoom: Boolean,
     fitScreen: Boolean,
+    shadowAlpha: Float,
     reloadTrigger: MutableIntState,
     tapForwardTrigger: MutableIntState,
     tapBackwardTrigger: MutableIntState,
@@ -105,7 +106,7 @@ fun CurlReaderContent(
             backPageColor = Color(pageBgColor),
             backPageContentAlpha = 0.1f,
             shadowColor = Color.Black,
-            shadowAlpha = 0.2f,
+            shadowAlpha = shadowAlpha,
             shadowRadius = 15.dp,
             shadowOffset = DpOffset((-5).dp, 0.dp),
             dragForwardEnabled = true,
@@ -117,6 +118,11 @@ fun CurlReaderContent(
             tapInteraction = tapInteraction,
             onCustomTap = { _, _ -> false },
         )
+    }
+    // 阴影浓度运行时可调：PageCurlConfig 的字段本身是 mutableStateOf，绘制层直接读
+    // state，改值即重绘且不打断进行中的翻页动画，无需重建 config 对象（0=关闭阴影）
+    LaunchedEffect(shadowAlpha) {
+        config.shadowAlpha = shadowAlpha
     }
 
     LaunchedEffect(state.current) {

@@ -145,6 +145,8 @@ fun NativeReaderScreen(
     curlContentAreaOnly: Boolean = false,
     /** 双页 curl 翻页背面透出程度 0~1：背面显示下一页内容的强度（0=纯背景色，1=完全清晰） */
     curlBackContentAlpha: Float = 0.1f,
+    /** 仿真翻页投影阴影浓度 0~0.5（0=关闭阴影，默认 0.2），单页/双页 curl 共用 */
+    curlShadowAlpha: Float = 0.2f,
     /** ★ SMB/WebDAV 页面供给（design.md 2.2.2）：非 null 时阅读页面走远程会话。
      *   以参数形式在 setup() 之前注入 delegate，消除"setup 早于供给挂接"的竞态窗口。 */
     remoteSupply: com.mangareader.native.RemotePageSupply? = null,
@@ -313,12 +315,17 @@ fun NativeReaderScreen(
         }
     }
 
-    // ★ 背面透出程度走轻量同步：故意不进上面 DisposableEffect 的 key——滑块拖动会高频
-    //   触发，重启该 effect 会把 delegate.setup 整个重跑（重载页面）。重组提交后直接写
-    //   delegate 侧的 Compose state 字段，由其内部重组即时生效（写相同值无副作用）。
+    // ★ 背面透出程度/阴影浓度走轻量同步：故意不进上面 DisposableEffect 的 key——滑块拖动
+    //   会高频触发，重启该 effect 会把 delegate.setup 整个重跑（重载页面）。重组提交后直接
+    //   写 delegate 侧的 Compose state 字段，由其内部重组即时生效（写相同值无副作用）。
     SideEffect {
-        (activeDelegate(isVertical) as? com.mangareader.native.curl.CurlDoublePageView)
-            ?.curlBackContentAlpha = curlBackContentAlpha
+        val delegate = activeDelegate(isVertical)
+        if (delegate is com.mangareader.native.curl.CurlDoublePageView) {
+            delegate.curlBackContentAlpha = curlBackContentAlpha
+            delegate.curlShadowAlpha = curlShadowAlpha
+        } else if (delegate is com.mangareader.native.curl.CurlReaderView) {
+            delegate.curlShadowAlpha = curlShadowAlpha
+        }
     }
 
     // Handle pageLayout: SINGLE=0, DOUBLE=1, DOUBLE_SHIFTED=2
