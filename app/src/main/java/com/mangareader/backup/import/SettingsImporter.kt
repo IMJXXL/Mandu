@@ -7,7 +7,7 @@ object SettingsImporter {
     private val booleanKeys = setOf(
         "isFlipAnimation", "isShowPageNum", "isKeepScreenOn", "isTrimWhiteBorder",
         "isEinkMode", "isImmersiveMode", "isGrayscale", "isInvertColors",
-        "isFlipFlashEnabled", "useSSIV", "landscapeZoom", "fitScreen",
+        "isFlipFlashEnabled", "useSSIV", "landscapeZoom", "fitScreen", "isEinkDither",
         "panNavigation", "doublePageSplit", "doublePageReverse", "autoWebtoon",
         "chapterTransition", "seamlessNextVolume", "forceFullDecode",
         "reader_volume_keys", "reader_volume_keys_inverted", "long_press_save",
@@ -16,6 +16,7 @@ object SettingsImporter {
     )
     private val intKeys = setOf(
         "trimThreshold", "einkDecodeSize", "autoFlipInterval", "flipFlashDuration",
+        "einkDitherAlgorithm", "einkDitherLevels",
         "flipFlashInterval", "flipFlashColor", "orientation", "imageMarginH",
         "doublePageShift", "centerGapType", "default_read_mode", "sr_model",
         "sr_quality", "sr_bw_gray_levels", "sr_bw_density", "sr_preload_override",

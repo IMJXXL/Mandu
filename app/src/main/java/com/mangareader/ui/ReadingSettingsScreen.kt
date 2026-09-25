@@ -301,6 +301,15 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
                             Slider(value = config.flipFlashInterval.toFloat(), onValueChange = { config = config.copy(flipFlashInterval = it.toInt()) }, onValueChangeFinished = { config.save(ctx) }, valueRange = 1f..10f, steps = 8, modifier = Modifier.fillMaxWidth())
                         }
 
+                        Spacer(Modifier.height(8.dp))
+                        Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text("灰阶抖动（256级模拟）", fontSize = 14.sp)
+                                Text("误差扩散抖动模拟256级灰阶，纯白/纯黑不抖。开启后阅读内设置的常规tab出现算法/档位面板", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Switch(checked = config.isEinkDither, onCheckedChange = { config = config.copy(isEinkDither = it); config.save(ctx) })
+                        }
+
                         Spacer(Modifier.height(12.dp))
                         Text("解码分辨率", fontSize = 16.sp, fontWeight = FontWeight.Medium)
                         Text("降低分辨率可加快解码速度、减少内存占用", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)

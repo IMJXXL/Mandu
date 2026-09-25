@@ -34,7 +34,8 @@ data class ReaderConfig(
     val imageMarginH: Int = 0,
     val readBackground: ReadBackground = ReadBackground.WHITE,
     val isEinkMode: Boolean = false,
-    /** 墨水屏灰阶抖动（256级模拟）：误差扩散/有序抖动把 8bit 灰度映射到面板实际档位（需重进生效） */
+    /** 墨水屏灰阶抖动（256级模拟）：设备级特性，全局键（外部「阅读设置→墨水屏」开关，常规内出子面板）
+     *  ★ 必须无前缀：外部设置页写全局键，阅读器 load 直读同名键，避开墨水屏单本组的"外部死设置"坑 */
     val isEinkDither: Boolean = false,
     /** 抖动算法：0=Floyd-Steinberg 1=Atkinson 2=Stucki 3=Bayer 4×4 */
     val einkDitherAlgorithm: Int = 0,
@@ -105,9 +106,9 @@ data class ReaderConfig(
             putInt("${prefix}imageMarginH", imageMarginH)
             putString("${prefix}readBackground", readBackground.name)
             putBoolean("${prefix}isEinkMode", isEinkMode)
-            putBoolean("${prefix}isEinkDither", isEinkDither)
-            putInt("${prefix}einkDitherAlgorithm", einkDitherAlgorithm)
-            putInt("${prefix}einkDitherLevels", einkDitherLevels)
+            putBoolean("isEinkDither", isEinkDither)
+            putInt("einkDitherAlgorithm", einkDitherAlgorithm)
+            putInt("einkDitherLevels", einkDitherLevels)
             putInt("${prefix}einkDecodeSize", einkDecodeSize)
             putLong("${prefix}einkUiHideDelay", einkUiHideDelay)
             putFloat("${prefix}pdfQuality", pdfQuality)
@@ -167,9 +168,9 @@ data class ReaderConfig(
                 imageMarginH = prefs.safeGetInt("${prefix}imageMarginH", 0),
                 readBackground = try { ReadBackground.valueOf(prefs.getString("${prefix}readBackground", "WHITE")!!) } catch (_: Exception) { ReadBackground.WHITE },
                 isEinkMode = prefs.safeGetBoolean("${prefix}isEinkMode", false),
-                isEinkDither = prefs.safeGetBoolean("${prefix}isEinkDither", false),
-                einkDitherAlgorithm = prefs.safeGetInt("${prefix}einkDitherAlgorithm", 0),
-                einkDitherLevels = prefs.safeGetInt("${prefix}einkDitherLevels", 16),
+                isEinkDither = prefs.safeGetBoolean("isEinkDither", false),
+                einkDitherAlgorithm = prefs.safeGetInt("einkDitherAlgorithm", 0),
+                einkDitherLevels = prefs.safeGetInt("einkDitherLevels", 16),
                 einkDecodeSize = prefs.safeGetInt("${prefix}einkDecodeSize", 1920),
                 einkUiHideDelay = prefs.safeGetLong("${prefix}einkUiHideDelay", 6000L),
                 pdfQuality = prefs.safeGetFloat("${prefix}pdfQuality", 3.0f),

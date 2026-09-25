@@ -241,6 +241,14 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
     fun setEinkDither(enabled: Boolean, algorithm: Int, levels: Int) {
         einkDither = enabled; einkDitherAlgorithm = algorithm; einkDitherLevels = levels
     }
+
+    /** ★ 抖动参数即时生效：清缓存 + notify 触发可见项重绑按需重载（条漫按需加载，miss 即新参数解码） */
+    fun applyEinkDitherNow(enabled: Boolean, algorithm: Int, levels: Int) {
+        if (einkDither == enabled && einkDitherAlgorithm == algorithm && einkDitherLevels == levels) return
+        setEinkDither(enabled, algorithm, levels)
+        synchronized(bitmapCache) { bitmapCache.evictAll() }
+        adapter?.notifyDataSetChanged()
+    }
     var gapEnabled: Boolean = false
         set(value) {
             field = value

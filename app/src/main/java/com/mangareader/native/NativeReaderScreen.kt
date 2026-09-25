@@ -337,6 +337,24 @@ fun NativeReaderScreen(
         }
     }
 
+    // ★ 灰阶抖动参数即时生效：变化即清缓存重载当前页（约 40~90ms/页）。remember 初值取
+    //   当前参数，避免首次组合与 DisposableEffect setup 的 setEinkDither 重复触发重载；
+    //   抖动不进上面 DisposableEffect 的 key（重启会整跑 setup），走此轻量通道
+    var appliedDither by remember { mutableStateOf(Triple(einkDither, einkDitherAlgorithm, einkDitherLevels)) }
+    SideEffect {
+        val cur = Triple(einkDither, einkDitherAlgorithm, einkDitherLevels)
+        if (appliedDither != cur) {
+            appliedDither = cur
+            when (val d = activeDelegate(isVertical)) {
+                is WebtoonReaderView -> d.applyEinkDitherNow(einkDither, einkDitherAlgorithm, einkDitherLevels)
+                is PagerReaderView -> d.applyEinkDitherNow(einkDither, einkDitherAlgorithm, einkDitherLevels)
+                is com.mangareader.native.curl.CurlReaderView -> d.applyEinkDitherNow(einkDither, einkDitherAlgorithm, einkDitherLevels)
+                is com.mangareader.native.curl.CurlDoublePageView -> d.applyEinkDitherNow(einkDither, einkDitherAlgorithm, einkDitherLevels)
+                else -> {}
+            }
+        }
+    }
+
     // Handle pageLayout: SINGLE=0, DOUBLE=1, DOUBLE_SHIFTED=2
     LaunchedEffect(isVertical, isRtl, pageLayout) {
         if (!isVertical && pagerView is PagerReaderView) {
