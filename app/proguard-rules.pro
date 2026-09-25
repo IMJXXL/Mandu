@@ -31,6 +31,13 @@
 #   NativeEngine 有 native 方法默认保留，但 PdfRangeReader 是纯 Java 接口会被改名。
 -keep class com.mangareader.native.** { *; }
 
+# ★ 仿真翻页 pagecurl 本地模块（2026-09-25 红米真机闪退实锤）：
+#   Compose 编译器在 PageCurlState$InternalState 等本模块类上生成 static $stable 字段，
+#   R8 类合并/裁剪会把该字段从类上移除，而 PageCurl 内容 lambda 仍在读取 →
+#   release 运行时 NoSuchFieldError: No static field $stable（debug 不混淆不复现，
+#   恢复默认关掉仿真不进该路径）。整包冻结杜绝 R8 任何合并/改名/裁剪，模块小无体积负担。
+-keep class eu.wewox.pagecurl.** { *; }
+
 # ==================== SMB + WebDAV 集成（smb_embed_lv119 任务9.1/19.1） ====================
 # 拷入的参考项目 com.hippo.ehviewer 包：JNI 桥接（ArchiveStreamBridge 的 nativeRead/nativeSeek
 # 按 JNI 符号注册）、smbj 反射、ktor 序列化符号均需类名/成员名冻结。
