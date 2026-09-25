@@ -86,6 +86,10 @@ class App : Application(), SingletonImageLoader.Factory {
 
     override fun onCreate() {
         super.onCreate()
+        // ★ 崩溃处理器最先安装（2026-09-25 闪退排查教训）：原先排在签名校验之后，
+        //   onCreate 早期崩溃（含 verify 逃逸的 Error 类异常）完全无 crash_logs，取证盲区。
+        //   loadLibrary 已自行 catch，故此处为首个可崩点之前。
+        crashHandler.init()
         try { System.loadLibrary("archive_stream") } catch (_: Throwable) {}
         // SMB 连接池预热（对齐上游 prewarm）：SmbConfig.builder 走 ServiceLoader 读 APK，
         // 懒构建防主线程磁盘 IO；启动即后台构建，首次进 SMB 浏览不再现等
@@ -94,7 +98,6 @@ class App : Application(), SingletonImageLoader.Factory {
         }
         SignatureVerifier.verify(this, "F6D95465BE7D17C1B3BE2B0C59969C22")
         startBackgroundVerify()
-        crashHandler.init()
         startAnrWatchdog()
         appScope.launch {
             com.mangareader.smbbridge.SmbAppContextBridge.init(this@App)
