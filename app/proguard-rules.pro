@@ -45,6 +45,12 @@
 -keep class com.ehviewer.core.** { *; }
 -keep class moe.tarsin.** { *; }
 -keep class eu.kanade.tachiyomi.** { *; }
+# ★ 2026-09-25 无日志闪退实锤修复：libimagedecoder.so 的 JNI_OnLoad→init_java_objects
+#   按硬编码签名反射 ImageDecoder.<init>(JII)V（private 构造器），该类包名是
+#   tachiyomi.decoder（无 eu.kanade 前缀）未被上面的 keep 覆盖——R8 某次优化决策
+#   删除了该 private 构造器，JNI_OnLoad 查不到即 abort（SIGABRT，native 退出无任何
+#   Java 崩溃日志）。必须整类保留。
+-keep class tachiyomi.decoder.** { *; }
 # smbj（SMB 协议栈：bouncycastle/asn1 反射较重，整包保留）
 -keep class com.hierynomus.** { *; }
 -dontwarn com.hierynomus.**
