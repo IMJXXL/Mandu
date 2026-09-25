@@ -725,6 +725,8 @@ class ArchiveEngine(private val ctx: Context) {
                                 com.mangareader.native.NativeEngine.pdfOpen(docKey, fd)
                             } catch (e: Exception) {
                                 Log.e(TAG, "loadPageSize pdfOpen failed: ${e.message}", e)
+                                // ★ A2：pdfOpen 失败 = native 未接管 fd，必须手动关闭防泄漏
+                                try { android.os.ParcelFileDescriptor.adoptFd(fd).close() } catch (_: Exception) {}
                             }
                         } finally { try { pfd.close() } catch (_: Exception) {} }
                     }
@@ -2619,7 +2621,11 @@ class ArchiveEngine(private val ctx: Context) {
                     val fd = pfd.detachFd()
                     try {
                         com.mangareader.native.NativeEngine.pdfOpen(key, fd)
-                    } catch (_: Exception) {}
+                    } catch (e: Exception) {
+                        Log.e(TAG, "countPdfPages pdfOpen failed: ${e.message}")
+                        // ★ A2：pdfOpen 失败 = native 未接管 fd，必须手动关闭防泄漏
+                        try { android.os.ParcelFileDescriptor.adoptFd(fd).close() } catch (_: Exception) {}
+                    }
                 }
             }
             val count = com.mangareader.native.NativeEngine.pdfGetPageCount(key)
@@ -2782,6 +2788,8 @@ class ArchiveEngine(private val ctx: Context) {
                             Log.d(TAG, "loadPdfPage: pdfOpen success")
                         } catch (e: Exception) {
                             Log.e(TAG, "pdfOpen failed: ${e.message}", e)
+                            // ★ A2：pdfOpen 失败 = native 未接管 fd，必须手动关闭防泄漏
+                            try { android.os.ParcelFileDescriptor.adoptFd(fd).close() } catch (_: Exception) {}
                         }
                     } finally { try { pfd.close() } catch (_: Exception) {} }
                 } else {
@@ -2860,6 +2868,8 @@ class ArchiveEngine(private val ctx: Context) {
                                 com.mangareader.native.NativeEngine.pdfOpen(docKey, fd)
                             } catch (e: Exception) {
                                 Log.e(TAG, "loadPdfPageSegment pdfOpen failed: ${e.message}", e)
+                                // ★ A2：pdfOpen 失败 = native 未接管 fd，必须手动关闭防泄漏
+                                try { android.os.ParcelFileDescriptor.adoptFd(fd).close() } catch (_: Exception) {}
                             }
                         } finally { try { pfd.close() } catch (_: Exception) {} }
                     }
@@ -2872,7 +2882,7 @@ class ArchiveEngine(private val ctx: Context) {
                 val splitH = com.mangareader.engine.pdf.PdfTallSplitCalculator.splitHeightPdf(screenMax, screenWidth, pageWidth)
                 val rect = com.mangareader.engine.pdf.PdfTallSplitCalculator.segmentRect(pageWidth, pageHeight, splitH, segmentIndex)
                 val segW = screenWidth.coerceAtLeast(1)
-                val segH = (segW.toFloat() * rect.height() / pageWidth).toInt().coerceAtLeast(1)
+                val segH = (segW.toFloat() * rect.height / pageWidth).toInt().coerceAtLeast(1)
                 val bmp = try {
                     loadPdfPageSegmentViaRenderer(uri, pageIndex, rect, pageWidth, pageHeight, segW, segH)
                 } catch (oom: OutOfMemoryError) {
@@ -2895,7 +2905,7 @@ class ArchiveEngine(private val ctx: Context) {
         }
     }
 
-    private fun loadPdfPageSegmentViaRenderer(uri: Uri, pageIndex: Int, rect: android.graphics.RectF, pageWidth: Float, pageHeight: Float, segW: Int, segH: Int): Bitmap? {
+    private fun loadPdfPageSegmentViaRenderer(uri: Uri, pageIndex: Int, rect: com.mangareader.engine.pdf.PdfTallSplitCalculator.SplitRect, pageWidth: Float, pageHeight: Float, segW: Int, segH: Int): Bitmap? {
         val slot = (renderSlotCounter.getAndIncrement() and 0x7fffffff) % renderSlotLocks.size
         synchronized(renderSlotLocks[slot]) {
             val r = getSlotRenderer(slot, uri) ?: return null
@@ -2905,7 +2915,7 @@ class ArchiveEngine(private val ctx: Context) {
                 val bmp = Bitmap.createBitmap(segW, segH, Bitmap.Config.ARGB_8888)
                 bmp.eraseColor(android.graphics.Color.WHITE)
                 val scaleX = segW.toFloat() / pageWidth
-                val scaleY = segH.toFloat() / rect.height()
+                val scaleY = segH.toFloat() / rect.height
                 val matrix = android.graphics.Matrix()
                 matrix.setScale(scaleX, scaleY)
                 matrix.postTranslate(0f, -rect.top * scaleY)

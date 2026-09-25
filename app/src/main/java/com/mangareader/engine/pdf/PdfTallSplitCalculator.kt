@@ -1,13 +1,25 @@
 package com.mangareader.engine.pdf
 
-import android.graphics.RectF
-import android.util.Log
 import kotlin.math.ceil
 
+/**
+ * PDF / 长图通用分割几何（纯 Kotlin，零 Android 依赖，可 JVM 单测）。
+ *
+ * ★ A1 均分语义（2026-09-25）：段矩形不再按 splitH 硬切，而是先算段数 n，再把整页
+ *   均分为 n 段。修复两个旧算法缺陷：
+ *   ① 尾段薄片——页高刚过 n×splitH 时旧算法切出极矮末段；
+ *   ② 封顶截断——MAX_SEGMENTS 封顶后旧算法仍按原 splitH 切，超过 64×splitH 的页尾内容丢失。
+ *   展开器（VirtualPageExpander）与渲染器（ArchiveEngine/ImageSegmentRenderer）都经由
+ *   本对象取段几何，单一事实来源，永不分叉。
+ */
 object PdfTallSplitCalculator {
-    private const val TAG = "PdfTallSplit"
-    private const val TALL_RATIO_THRESHOLD = 3f
-    private const val MAX_SEGMENTS = 64
+    const val TALL_RATIO_THRESHOLD = 3f
+    const val MAX_SEGMENTS = 64
+
+    /** 纯 Kotlin 段矩形（页面坐标系），替代 android.graphics.RectF 使几何层可 JVM 测试 */
+    data class SplitRect(val left: Float, val top: Float, val right: Float, val bottom: Float) {
+        val height: Float get() = bottom - top
+    }
 
     fun optimalSplitHeightPx(screenMax: Int): Float =
         if (screenMax <= 0) 4096f else screenMax * 2f
@@ -19,23 +31,24 @@ object PdfTallSplitCalculator {
 
     fun isTallPage(pageWidth: Float, pageHeight: Float, splitHeightPdf: Float): Boolean {
         if (pageWidth <= 0f) return false
-        return pageHeight / pageWidth > TALL_RATIO_THRESHOLD &&
-            pageHeight > splitHeightPdf
+        return pageHeight / pageWidth > TALL_RATIO_THRESHOLD && pageHeight > splitHeightPdf
     }
 
     fun segmentCount(pageHeight: Float, splitHeightPdf: Float): Int {
         if (splitHeightPdf <= 0f || pageHeight <= 0f) return 1
-        var n = ceil(pageHeight / splitHeightPdf).toInt().coerceAtLeast(1)
-        if (n > MAX_SEGMENTS) {
-            Log.w(TAG, "segmentCount capped $n -> $MAX_SEGMENTS pageHeight=$pageHeight")
-            n = MAX_SEGMENTS
-        }
-        return n
+        return ceil(pageHeight / splitHeightPdf).toInt().coerceIn(1, MAX_SEGMENTS)
     }
 
-    fun segmentRect(pageWidth: Float, pageHeight: Float, splitHeightPdf: Float, segmentIndex: Int): RectF {
-        val y0 = (segmentIndex - 1) * splitHeightPdf
-        val y1 = minOf(segmentIndex * splitHeightPdf, pageHeight)
-        return RectF(0f, y0, pageWidth, y1.coerceAtMost(pageHeight))
+    /**
+     * ★ 均分：n = segmentCount(pageHeight, splitHeightPdf)，段 i（1 基）覆盖
+     *   [H×(i-1)/n, H×i/n] —— 全段等高、无缝无叠、联合恰好覆盖整页。
+     *   segmentIndex 越界时钳制到 [1, n]（陈旧几何请求落末段而非越界）。
+     */
+    fun segmentRect(pageWidth: Float, pageHeight: Float, splitHeightPdf: Float, segmentIndex: Int): SplitRect {
+        val n = segmentCount(pageHeight, splitHeightPdf)
+        val i = segmentIndex.coerceIn(1, n)
+        val y0 = pageHeight * (i - 1) / n
+        val y1 = pageHeight * i / n
+        return SplitRect(0f, y0, pageWidth, y1)
     }
 }
