@@ -54,6 +54,17 @@ class CrashHandler(private val context: Context) : Thread.UncaughtExceptionHandl
         pw.println("Android版本: ${Build.VERSION.RELEASE}")
         pw.println("SDK版本: ${Build.VERSION.SDK_INT}")
         pw.println("ABIS: ${Build.SUPPORTED_ABIS.joinToString()}")
+        // ★ 应用版本与安装时间（2026-09-25 实战教训：新旧包混装时崩溃文件无从分辨，
+        //   r8-map-id 比对属于事后考古。写入版本三元组，一眼判定崩溃来自哪个包）
+        run {
+            val pkg = try { context.packageManager.getPackageInfo(context.packageName, 0) } catch (_: Exception) { null }
+            if (pkg != null) {
+                pw.println("versionName: ${pkg.versionName}")
+                pw.println("versionCode: ${pkg.longVersionCode}")
+                pw.println("安装时间: ${SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date(pkg.firstInstallTime))}")
+                pw.println("更新时间: ${SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date(pkg.lastUpdateTime))}")
+            }
+        }
         pw.println()
         
         pw.println("--- 崩溃堆栈 ---")
