@@ -517,6 +517,10 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
     fun prevPage() { if (currentPage > 0) goToPage(currentPage - 1) }
 
     fun injectUpscaledBitmap(pageIndex: Int, bitmap: Bitmap) {
+        // ★ 墨水屏灰阶抖动：SR 注入的高清图不走 processBitmap，此处补抖动保持同一标准
+        if (einkDither && !bitmap.isRecycled) {
+            try { bitmap.applyEinkDither(einkDitherAlgorithm, einkDitherLevels) } catch (_: Exception) {}
+        }
         synchronized(bitmapCache) { bitmapCache.put(pageIndex, bitmap) }
         android.util.Log.i("WebtoonRV", "srInject p=$pageIndex bmp=${bitmap.width}x${bitmap.height}")
         recycler.post {
