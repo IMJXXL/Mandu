@@ -354,6 +354,33 @@ private fun GeneralTab(config: ReaderConfig, onConfigChange: (ReaderConfig) -> U
             }
         }
     }
+    // ★ 墨水屏灰阶抖动（256级模拟）：解码管线参数，重进生效；仅黑白墨水屏设备有意义
+    CheckboxItem("灰阶抖动·256级模拟（墨水屏专用，重进生效）", config.isEinkDither) { onConfigChange(config.copy(isEinkDither = it)) }
+    if (config.isEinkDither) {
+        SettingsChipRow("抖动算法") {
+            listOf("Floyd-Steinberg" to 0, "Atkinson" to 1, "Stucki" to 2, "Bayer 4×4" to 3).forEach { (label, value) ->
+                FilterChip(
+                    selected = value == config.einkDitherAlgorithm,
+                    onClick = { onConfigChange(config.copy(einkDitherAlgorithm = value)) },
+                    label = { Text(label, fontSize = 13.sp) },
+                )
+            }
+        }
+        SettingsChipRow("灰阶档位（面板实际灰度数）") {
+            listOf("16（默认）" to 16, "32" to 32, "64" to 64).forEach { (label, value) ->
+                FilterChip(
+                    selected = value == config.einkDitherLevels,
+                    onClick = { onConfigChange(config.copy(einkDitherLevels = value)) },
+                    label = { Text(label, fontSize = 13.sp) },
+                )
+            }
+        }
+        Text(
+            "原理：抖动模拟256级灰阶，纯白/纯黑不受噪声污染。需在系统中将本应用的刷新模式设为标准/质量（GC16）；快速/A2模式只渲染黑白两值，抖动会呈现为噪点。",
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f), fontSize = 11.sp,
+            modifier = Modifier.padding(start = 4.dp, bottom = 4.dp)
+        )
+    }
     CheckboxItem("自动进入条漫模式", config.autoWebtoon) { onConfigChange(config.copy(autoWebtoon = it)) }
 }
 

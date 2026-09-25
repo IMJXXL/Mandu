@@ -16,6 +16,7 @@ import android.widget.FrameLayout
 import androidx.core.animation.doOnEnd
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.mangareader.eink.applyEinkDither
 import com.mangareader.viewer.AnimKind
 import com.mangareader.viewer.ArchiveEngine
 import java.io.File
@@ -226,7 +227,19 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
                 result = Bitmap.createBitmap(result!!, 0, 0, result!!.width, result!!.height, matrix, true)
             }
         }
+        // ★ 墨水屏灰阶抖动（256级模拟）：所有现有处理之后、入缓存之前，最终位图一次性处理
+        if (result != null && !result.isRecycled && einkDither) {
+            try { result!!.applyEinkDither(einkDitherAlgorithm, einkDitherLevels) } catch (_: Exception) {}
+        }
         return result
+    }
+
+    /** ★ 墨水屏灰阶抖动参数（解码管线参数，非 UI 状态；变更经重进生效） */
+    var einkDither = false
+    var einkDitherAlgorithm = 0
+    var einkDitherLevels = 16
+    fun setEinkDither(enabled: Boolean, algorithm: Int, levels: Int) {
+        einkDither = enabled; einkDitherAlgorithm = algorithm; einkDitherLevels = levels
     }
     var gapEnabled: Boolean = false
         set(value) {

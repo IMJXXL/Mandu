@@ -26,6 +26,9 @@ class ConfigManager(private val context: Context) {
             put("imageMarginH", config.imageMarginH)
             put("readBackground", config.readBackground.name)
             put("isEinkMode", config.isEinkMode)
+            put("isEinkDither", config.isEinkDither)
+            put("einkDitherAlgorithm", config.einkDitherAlgorithm)
+            put("einkDitherLevels", config.einkDitherLevels)
             put("einkDecodeSize", config.einkDecodeSize)
             put("einkUiHideDelay", config.einkUiHideDelay)
             put("pdfQuality", config.pdfQuality.toDouble())
@@ -73,6 +76,9 @@ class ConfigManager(private val context: Context) {
                 imageMarginH = json.optInt("imageMarginH", 0),
                 readBackground = try { ReaderConfig.ReadBackground.valueOf(json.getString("readBackground")) } catch (_: Exception) { ReaderConfig.ReadBackground.DEFAULT },
                 isEinkMode = json.optBoolean("isEinkMode", false),
+                isEinkDither = json.optBoolean("isEinkDither", false),
+                einkDitherAlgorithm = json.optInt("einkDitherAlgorithm", 0),
+                einkDitherLevels = json.optInt("einkDitherLevels", 16),
                 einkDecodeSize = json.optInt("einkDecodeSize", 1920),
                 einkUiHideDelay = json.optLong("einkUiHideDelay", 6000L),
                 pdfQuality = json.optDouble("pdfQuality", 3.0).toFloat(),

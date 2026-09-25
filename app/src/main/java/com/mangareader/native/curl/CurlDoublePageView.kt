@@ -103,6 +103,13 @@ class CurlDoublePageView(context: Context) : FrameLayout(context), ReaderViewDel
         loader.trimWhiteRatio = whiteRatio
     }
 
+    /** ★ 墨水屏灰阶抖动透传 loader（单/双页 curl 共用解码管线） */
+    fun setEinkDither(enabled: Boolean, algorithm: Int, levels: Int) {
+        loader.einkDither = enabled
+        loader.einkDitherAlgorithm = algorithm
+        loader.einkDitherLevels = levels
+    }
+
     fun setPanNavigation(pan: Boolean) {
     }
 
