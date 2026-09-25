@@ -181,7 +181,13 @@ class CurlDoublePageView(context: Context) : FrameLayout(context), ReaderViewDel
         val spread = currentSpread()
         val leftIdx = SpreadMapping.leftPage(spread, pageList.size, doublePageShift)
         val leftBmp = cache.get(leftIdx)
-        return leftBmp != null && !leftBmp.isRecycled
+        if (leftBmp == null || leftBmp.isRecycled) return false
+        // 右页存在时也需就绪：该方法是"当前页已渲染出内容"的就绪信号，右页缺位时
+        // 返回 true 会让调用方提前撤遮罩露出半边白
+        val rightIdx = SpreadMapping.rightPage(spread, pageList.size, doublePageShift)
+        if (rightIdx < 0) return true
+        val rightBmp = cache.get(rightIdx)
+        return rightBmp != null && !rightBmp.isRecycled
     }
 
     override fun drainLiveBitmaps(): Map<Int, Bitmap> {
