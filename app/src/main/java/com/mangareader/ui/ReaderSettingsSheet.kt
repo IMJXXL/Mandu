@@ -257,6 +257,9 @@ private fun ReadingModeTab(config: ReaderConfig, mode: Mode, onConfigChange: (Re
             CheckboxItem("仿真翻页Beta（仅静图左右翻页生效，拆分双页/动图等模式下失效）", config.isPageCurlAnimation) { onConfigChange(config.copy(isPageCurlAnimation = it)) }
             if (config.isPageCurlAnimation) {
                 CheckboxItem("翻页仅限画面区域（双页模式：画面外的留边不参与翻页动画）", config.isCurlContentAreaOnly) { onConfigChange(config.copy(isCurlContentAreaOnly = it)) }
+                SliderItem("背面透出程度（双页模式：翻页动画的背面显示下一页内容的强度）", config.curlBackContentAlpha, 0f..1f, 19, "${(config.curlBackContentAlpha * 100).toInt()}%") {
+                    onConfigChange(config.copy(curlBackContentAlpha = it))
+                }
             }
         }
         Text("以下功能设置后，需重新进入漫画生效", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f), fontSize = 11.sp, modifier = Modifier.padding(start = 4.dp, bottom = 4.dp))

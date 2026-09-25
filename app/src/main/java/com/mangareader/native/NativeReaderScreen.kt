@@ -14,6 +14,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
@@ -142,6 +143,8 @@ fun NativeReaderScreen(
     pageCurlAnimationEnabled: Boolean = false,
     /** 双页 curl「仅画面区域」模式：翻页动画范围缩到画面矩形，留边不参与 */
     curlContentAreaOnly: Boolean = false,
+    /** 双页 curl 翻页背面透出程度 0~1：背面显示下一页内容的强度（0=纯背景色，1=完全清晰） */
+    curlBackContentAlpha: Float = 0.1f,
     /** ★ SMB/WebDAV 页面供给（design.md 2.2.2）：非 null 时阅读页面走远程会话。
      *   以参数形式在 setup() 之前注入 delegate，消除"setup 早于供给挂接"的竞态窗口。 */
     remoteSupply: com.mangareader.native.RemotePageSupply? = null,
@@ -308,6 +311,14 @@ fun NativeReaderScreen(
             delegate.release()
             lastReleasedDelegate = null
         }
+    }
+
+    // ★ 背面透出程度走轻量同步：故意不进上面 DisposableEffect 的 key——滑块拖动会高频
+    //   触发，重启该 effect 会把 delegate.setup 整个重跑（重载页面）。重组提交后直接写
+    //   delegate 侧的 Compose state 字段，由其内部重组即时生效（写相同值无副作用）。
+    SideEffect {
+        (activeDelegate(isVertical) as? com.mangareader.native.curl.CurlDoublePageView)
+            ?.curlBackContentAlpha = curlBackContentAlpha
     }
 
     // Handle pageLayout: SINGLE=0, DOUBLE=1, DOUBLE_SHIFTED=2

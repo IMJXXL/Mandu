@@ -6,6 +6,7 @@ import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.platform.ComposeView
@@ -54,6 +55,11 @@ class CurlDoublePageView(context: Context) : FrameLayout(context), ReaderViewDel
     var curlContentAreaOnly: Boolean
         get() = curlContentAreaOnlyState.value
         set(value) { curlContentAreaOnlyState.value = value }
+    // 翻页背面透出程度同用 state 承载（NES 侧经 SideEffect 同步，滑块拖动即重组生效）
+    private val curlBackContentAlphaState = mutableFloatStateOf(0.1f)
+    var curlBackContentAlpha: Float
+        get() = curlBackContentAlphaState.floatValue
+        set(value) { curlBackContentAlphaState.floatValue = value }
     var remotePageSupply: RemotePageSupply? = null
     var onChapterEnd: ((Boolean) -> Unit)? = null
 
@@ -157,6 +163,7 @@ class CurlDoublePageView(context: Context) : FrameLayout(context), ReaderViewDel
                 landscapeZoom = landscapeZoom,
                 fitScreen = fitScreen,
                 curlContentAreaOnly = curlContentAreaOnly,
+                backContentAlpha = curlBackContentAlpha,
                 reloadTrigger = reloadTrigger,
                 tapForwardTrigger = tapForwardTrigger,
                 tapBackwardTrigger = tapBackwardTrigger,
