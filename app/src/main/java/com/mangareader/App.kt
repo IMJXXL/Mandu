@@ -45,7 +45,11 @@ class App : Application(), SingletonImageLoader.Factory {
             .diskCache {
                 DiskCache.Builder()
                     .directory(context.cacheDir.toOkioPath() / "image_cache")
-                    .maxSizeBytes(10L * 1024 * 1024 * 1024)
+                    // ★ 2026-09-26 用户拍板：磁盘缓存无上限（原 10GB，e296f15 引入）。
+                    //   封面缩略图/浏览图共用此缓存，10GB 触发 LRU 淘汰会把封面逐出，
+                    //   之后本地书重新提取、远程书重新下载。Long.MAX_VALUE = 永不淘汰；
+                    //   极端磁盘压力下系统仍可自行清 cacheDir，设置页手动清理入口不变。
+                    .maxSizeBytes(Long.MAX_VALUE)
                     .build()
             }
             .crossfade(300)
