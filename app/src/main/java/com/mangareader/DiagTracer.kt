@@ -34,6 +34,23 @@ object DiagTracer {
     private var heartbeatRunning = false
     private val stageLines = StringBuilder()
 
+    /**
+     * ★ 启动 logcat 持续抓取（无 adb 闪退专项）：spawn 独立 logcat 子进程把本应用日志
+     *   续写到 filesDir/diag_logcat.txt（2MB 轮转）。子进程在 app 被杀后依然存活继续记录，
+     *   native crash 的 "Fatal signal" 行恰好由本进程自身写入 logd（同 UID 可读）——
+     *   是无 adb 环境下拿到 native 崩溃遗言的唯一通道。重复启动幂等（同名文件续写）。
+     */
+    fun startLogcatCapture(context: Context) {
+        runCatching {
+            val dir = context.getExternalFilesDir(null) ?: context.filesDir
+            val out = File(dir, "diag_logcat.txt")
+            out.parentFile?.mkdirs()
+            ProcessBuilder("logcat", "-T", "200", "-v", "time", "-r", "2048", "-n", "1", "-f", out.absolutePath)
+                .redirectErrorStream(true)
+                .start()
+        }
+    }
+
     fun mark(context: Context, stage: String) {
         try {
             synchronized(lock) {
