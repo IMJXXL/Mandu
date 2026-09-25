@@ -104,14 +104,14 @@ data class ReaderConfig(
             putInt("${prefix}trimThreshold", trimThreshold)
             putFloat("${prefix}trimWhiteRatio", trimWhiteRatio)
             putInt("${prefix}imageMarginH", imageMarginH)
-            putString("${prefix}readBackground", readBackground.name)
-            putBoolean("${prefix}isEinkMode", isEinkMode)
+            putString("readBackground", readBackground.name)
+            putBoolean("isEinkMode", isEinkMode)
             putBoolean("isEinkDither", isEinkDither)
             putInt("einkDitherAlgorithm", einkDitherAlgorithm)
             putInt("einkDitherLevels", einkDitherLevels)
-            putInt("${prefix}einkDecodeSize", einkDecodeSize)
-            putLong("${prefix}einkUiHideDelay", einkUiHideDelay)
-            putFloat("${prefix}pdfQuality", pdfQuality)
+            putInt("einkDecodeSize", einkDecodeSize)
+            putLong("einkUiHideDelay", einkUiHideDelay)
+            putFloat("pdfQuality", pdfQuality)
             putBoolean("isImmersiveMode", isImmersiveMode)
             putInt("orientation", orientation)
             putInt("autoFlipInterval", autoFlipInterval)
@@ -166,14 +166,14 @@ data class ReaderConfig(
                 trimThreshold = prefs.safeGetInt("${prefix}trimThreshold", 220),
                 trimWhiteRatio = prefs.safeGetFloat("${prefix}trimWhiteRatio", 0.90f),
                 imageMarginH = prefs.safeGetInt("${prefix}imageMarginH", 0),
-                readBackground = try { ReadBackground.valueOf(prefs.getString("${prefix}readBackground", "WHITE")!!) } catch (_: Exception) { ReadBackground.WHITE },
-                isEinkMode = prefs.safeGetBoolean("${prefix}isEinkMode", false),
+                readBackground = try { ReadBackground.valueOf(prefs.getString("readBackground", "WHITE")!!) } catch (_: Exception) { ReadBackground.WHITE },
+                isEinkMode = prefs.safeGetBoolean("isEinkMode", false),
                 isEinkDither = prefs.safeGetBoolean("isEinkDither", false),
                 einkDitherAlgorithm = prefs.safeGetInt("einkDitherAlgorithm", 0),
                 einkDitherLevels = prefs.safeGetInt("einkDitherLevels", 16),
-                einkDecodeSize = prefs.safeGetInt("${prefix}einkDecodeSize", 1920),
-                einkUiHideDelay = prefs.safeGetLong("${prefix}einkUiHideDelay", 6000L),
-                pdfQuality = prefs.safeGetFloat("${prefix}pdfQuality", 3.0f),
+                einkDecodeSize = prefs.safeGetInt("einkDecodeSize", 1920),
+                einkUiHideDelay = prefs.safeGetLong("einkUiHideDelay", 6000L),
+                pdfQuality = prefs.safeGetFloat("pdfQuality", 3.0f),
                 isImmersiveMode = prefs.safeGetBoolean("isImmersiveMode", true),
                 orientation = prefs.safeGetInt("orientation", -1),
                 autoFlipInterval = prefs.safeGetInt("autoFlipInterval", 0),

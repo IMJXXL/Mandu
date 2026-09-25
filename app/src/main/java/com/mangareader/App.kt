@@ -136,7 +136,7 @@ class App : Application(), SingletonImageLoader.Factory {
 
     private fun startAnrWatchdog() {
         val mainHandler = Handler(Looper.getMainLooper())
-        val isEink = getSharedPreferences("manga_reader", MODE_PRIVATE).getBoolean("eink_mode", false)
+        val isEink = getSharedPreferences("manga_reader", MODE_PRIVATE).getBoolean("isEinkMode", false)
         val checkInterval = if (isEink) 5000L else 2000L
         val blockThreshold = if (isEink) 8000L else 3000L
         val watchdog = Thread {
