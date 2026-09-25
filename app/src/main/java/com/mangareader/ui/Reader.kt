@@ -2227,6 +2227,9 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                             curlContentAreaOnly = config.isCurlContentAreaOnly,
                             curlBackContentAlpha = config.curlBackContentAlpha,
                             curlShadowAlpha = config.curlShadowAlpha,
+                            einkDither = config.isEinkDither,
+                            einkDitherAlgorithm = config.einkDitherAlgorithm,
+                            einkDitherLevels = config.einkDitherLevels,
 
                             remoteSupply = smbSession,
                             modifier = Modifier.fillMaxSize(),
