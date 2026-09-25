@@ -92,7 +92,6 @@ class App : Application(), SingletonImageLoader.Factory {
         crashHandler.init()
         // ★ 无日志闪退专项取证：阶段标记 + 主线程心跳（native crash/系统杀也截断文件，必留痕）
         DiagTracer.mark(this, "app.onCreate: enter")
-        DiagTracer.startLogcatCapture(this)
         try { System.loadLibrary("archive_stream") } catch (_: Throwable) {}
         DiagTracer.mark(this, "app.onCreate: lib archive_stream loaded")
         // SMB 连接池预热（对齐上游 prewarm）：SmbConfig.builder 走 ServiceLoader 读 APK，
