@@ -10,6 +10,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableIntState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
@@ -17,9 +18,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
-import com.davemorrissey.labs.subscaleview.ImageSource
-import com.mangareader.native.PagerSSIV
 import eu.wewox.pagecurl.ExperimentalPageCurlApi
 import eu.wewox.pagecurl.config.PageCurlConfig
 import eu.wewox.pagecurl.page.PageCurl
@@ -28,53 +26,37 @@ import eu.wewox.pagecurl.page.rememberPageCurlState
 @OptIn(ExperimentalPageCurlApi::class)
 @Composable
 fun CurlPageContent(
-    idx: Int,
     bmp: Bitmap?,
-    isCurrentPage: Boolean,
     isRtl: Boolean,
     pageBgColor: Int,
     landscapeZoom: Boolean,
     fitScreen: Boolean,
 ) {
+    // 缩放语义与双页 SpreadImage / pager applyScale 对齐：fitScreen（漫画完整显示）=contain；
+    // 否则贴满宽度；landscapeZoom（自动放大横向图片，仅 fitScreen 关闭时插手）宽图贴满高度。
+    // 全部页面统一 Image 常驻：曾对当前页用 SSIV（可双指缩放）其余页用 Image，翻页落地
+    // 瞬间 AndroidView↔Image 组件类型切换产生空白帧（b12d1e4/bc54d52 双页同类问题的
+    // 单页残留），统一 Image 消除切换；代价是单页仿真模式放弃双指缩放（与双页取舍一致）。
+    val wide = bmp != null && !bmp.isRecycled && bmp.width > bmp.height
+    val contentScale = when {
+        fitScreen -> ContentScale.Fit
+        landscapeZoom && wide -> ContentScale.FillHeight
+        else -> ContentScale.FillWidth
+    }
     val mirror = if (isRtl) Modifier.graphicsLayer { scaleX = -1f } else Modifier
-    val baseModifier = Modifier.fillMaxSize().then(mirror)
+    val baseModifier = Modifier.fillMaxSize().clipToBounds().then(mirror)
 
     if (bmp == null || bmp.isRecycled) {
-        Box(modifier = baseModifier.background(Color(pageBgColor)))
+        Box(modifier = Modifier.fillMaxSize().background(Color(pageBgColor)))
         return
     }
 
-    if (isCurrentPage) {
-        AndroidView(
-            factory = { ctx ->
-                PagerSSIV(ctx).apply {
-                    isZoomEnabled = true
-                    isPanEnabled = true
-                    isQuickScaleEnabled = true
-                    setMaxScale(5f)
-                    setMaxTileSize(512)
-                    setMinimumTileDpi(160)
-                    setMinimumScaleType(1)
-                    setDoubleTapZoomDuration(300)
-                    visibility = android.view.View.VISIBLE
-                    setImage(ImageSource.cachedBitmap(bmp))
-                }
-            },
-            update = { ssiv ->
-                if (ssiv.visibility != android.view.View.VISIBLE) {
-                    ssiv.visibility = android.view.View.VISIBLE
-                }
-            },
-            modifier = baseModifier,
-        )
-    } else {
-        Image(
-            bitmap = bmp.asImageBitmap(),
-            contentDescription = null,
-            modifier = baseModifier,
-            contentScale = ContentScale.Fit,
-        )
-    }
+    Image(
+        bitmap = bmp.asImageBitmap(),
+        contentDescription = null,
+        modifier = baseModifier.background(Color(pageBgColor)),
+        contentScale = contentScale,
+    )
 }
 
 @OptIn(ExperimentalPageCurlApi::class)
@@ -164,10 +146,7 @@ fun CurlReaderContent(
         config = config,
     ) { idx ->
         CurlPageContent(
-            idx = idx,
             bmp = cache.get(idx),
-
-            isCurrentPage = idx == state.current,
             isRtl = isRtl,
             pageBgColor = pageBgColor,
             landscapeZoom = landscapeZoom,
