@@ -946,19 +946,29 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         // ★ §37(14) 要点2 修"读完未变已读"：progress.completed=false 但 lastPage 已是末页 → 历史上曾读到末页，
         //   但完成位没被 save() 写进去（停在末页未翻页 → onPageChanged 没 fire → done=true 那次 save 没机会触发）。
         //   顺手在此时补 completed=true，保证下次回卷/查徽章能命中"已读完"。
+        // ★ PDF 分割跨形态重映射（2026-09-25 实查）：进度行存的是"保存时的展开形态"索引
+        //   （totalPages=当时的展开总页数）。分割开关切换/换设备（屏宽不同→段数不同）后两个
+        //   空间对不上：直接用会落错页，且 lastPage(旧空间) ≥ 当前末页会误触发"读完"标记。
+        //   按比例映射回当前形态；同形态（含旧数据 totalPages=0）原样透传。
+        val savedIdx = progress?.lastPage ?: 0
+        val savedSize = progress?.totalPages ?: 0
+        val remappedLastPage = if (progress != null && savedSize > 0 && savedSize != expandedSize && savedIdx > 0) {
+            ((savedIdx.toLong() * expandedSize) / savedSize).toInt()
+                .coerceIn(0, (expandedSize - 1).coerceAtLeast(0))
+        } else savedIdx
         // ★ ⑦B 修复：willMarkRead 是「本次进卷正在补完成位」的本地信号。
         //   下方 lastPage 判定必须用同一个信号——否则 388 行 upsert 把 DB 改 completed=true
         //   但本地 val progress 仍 false → 走 else 分支 cur=末页，与"已读完卷再入应跳第 1 页"语义矛盾。
         //   修复后：willMarkRead=true 时也跳第 1 页，与 progress.completed==true 一致。
         //   下次回卷进 enterReader 重读 progress（DB 已 true）走第 1 个分支，自愈。
         // ★ v1.11：willMarkRead 加 pages.size > 1 守卫（单页列表不构成"读到过末页"，与 save() 的 done 守卫对齐）
-        val willMarkRead = !healed && progress != null && !progress.completed && expandedSize > 1 && progress.lastPage >= expandedSize - 1
+        val willMarkRead = !healed && progress != null && !progress.completed && expandedSize > 1 && remappedLastPage >= expandedSize - 1
         if (willMarkRead) {
             val now = System.currentTimeMillis()
-            try { withContext(Dispatchers.IO) { dao.upsertProgress(b.id, path, progress.lastPage, true, now, expandedSize) } } catch (_: Exception) {}
+            try { withContext(Dispatchers.IO) { dao.upsertProgress(b.id, path, remappedLastPage, true, now, expandedSize) } } catch (_: Exception) {}
         }
         // ★ 已读完卷再次进入跳第 1 页（progress.completed==true 或本次正补写完成位 willMarkRead → lastPage=0）
-        val lastPage = if (progress?.completed == true || willMarkRead) 0 else (progress?.lastPage ?: 0)
+        val lastPage = if (progress?.completed == true || willMarkRead) 0 else remappedLastPage
         // 书签直跳优先级最高：targetPage 显式覆盖
         cur = (if (targetPage >= 0) targetPage else lastPage).coerceIn(0, (expandedSize - 1).coerceAtLeast(0))
 
