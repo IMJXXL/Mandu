@@ -10,6 +10,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableIntState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
@@ -118,7 +119,7 @@ fun CurlDoublePageContent(
 
             val targetSpread = if (forward) current + 1 else current - 1
             if (targetSpread < 0 || targetSpread >= totalSpreads) {
-                SpreadImage(null, null, doublePageReverse, pageBgColor, isRtl)
+                SpreadImage(null, null, doublePageReverse, pageBgColor, isRtl, landscapeZoom, fitScreen)
             } else {
                 val tLeftIdx = SpreadMapping.leftPage(targetSpread, totalPages, shift)
                 val tRightIdx = SpreadMapping.rightPage(targetSpread, totalPages, shift)
@@ -128,6 +129,8 @@ fun CurlDoublePageContent(
                     doublePageReverse,
                     pageBgColor,
                     isRtl,
+                    landscapeZoom,
+                    fitScreen,
                 )
             }
         },
@@ -143,6 +146,8 @@ fun CurlDoublePageContent(
             doublePageReverse,
             pageBgColor,
             isRtl,
+            landscapeZoom,
+            fitScreen,
         )
     }
 }
@@ -154,6 +159,8 @@ private fun SpreadImage(
     doublePageReverse: Boolean,
     pageBgColor: Int,
     isRtl: Boolean,
+    landscapeZoom: Boolean,
+    fitScreen: Boolean,
 ) {
     val emptyBmp = remember { Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888).asImageBitmap() }
 
@@ -186,12 +193,22 @@ private fun SpreadImage(
         if (merged != null && !merged.isRecycled) merged.asImageBitmap() else null
     }
 
+    // 缩放语义对齐 pager applyScale：fitScreen（漫画完整显示）=contain；否则贴满宽度；
+    // landscapeZoom（自动放大横向图片，仅 fitScreen 关闭时插手）宽图再放大到贴满高度。
+    // FillWidth/FillHeight 会溢出边界，必须 clipToBounds（ImageView 自带裁剪，Compose 没有）
+    val wide = merged != null && !merged.isRecycled && merged.width > merged.height
+    val contentScale = when {
+        fitScreen -> ContentScale.Fit
+        landscapeZoom && wide -> ContentScale.FillHeight
+        else -> ContentScale.FillWidth
+    }
+
     val mirror = if (isRtl) Modifier.graphicsLayer { scaleX = -1f } else Modifier
 
     Image(
         bitmap = imgBmp ?: emptyBmp,
         contentDescription = null,
-        modifier = Modifier.fillMaxSize().background(Color(pageBgColor)).then(mirror),
-        contentScale = ContentScale.Fit,
+        modifier = Modifier.fillMaxSize().clipToBounds().background(Color(pageBgColor)).then(mirror),
+        contentScale = contentScale,
     )
 }
