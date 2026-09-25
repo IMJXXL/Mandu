@@ -932,6 +932,8 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             catch (_: Exception) { pages }
         } else pages
         pageList = expandedPages
+        // ★ B1：分割实际生效（存在展开段）时提升共享位图缓存额度（仅大内存设备）
+        try { engine.setSegmentCacheBoost(expandedPages.size > pages.size) } catch (_: Exception) {}
         val expandedSize = expandedPages.size
         val progress = withContext(Dispatchers.IO) { dao.getProgress(b.id, path) }
         android.util.Log.d("ReaderProgress", "enterReader bookId=${b.id} path=$path pages=${pages.size} progress=${progress?.let { "lastPage=${it.lastPage} completed=${it.completed} updatedAt=${it.updatedAt}" } ?: "null"}")

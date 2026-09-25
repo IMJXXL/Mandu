@@ -218,6 +218,24 @@ class ArchiveEngine(private val ctx: Context) {
     private val sharedBitmapCache = object : android.util.LruCache<String, Bitmap>(64 * 1024 * 1024) {
         override fun sizeOf(key: String, value: Bitmap): Int = if (value.isRecycled) 0 else value.byteCount
     }
+
+    // ★ B1（2026-09-25）：分割书段位图单张 ~20MB，64MB 只缓存 3 张、回滚即重渲染。
+    //   分割实际生效时把共享位图缓存提升到 128MB（约 6 段）；仅大内存设备启用
+    //   （非 isLowRamDevice 且总内存 ≥4GB），墨水屏等低内存机维持 64MB。
+    //   引擎随书创建、退出即释放，无需回落逻辑；只升不降避免热切换抖动。
+    private var segmentBoostEvaluated = false
+    fun setSegmentCacheBoost(active: Boolean) {
+        if (!active || segmentBoostEvaluated) return
+        segmentBoostEvaluated = true
+        try {
+            val am = ctx.getSystemService(android.content.Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+            val mi = android.app.ActivityManager.MemoryInfo().also { am.getMemoryInfo(it) }
+            if (!am.isLowRamDevice && mi.totalMem >= 4L * 1024 * 1024 * 1024) {
+                sharedBitmapCache.resize(128 * 1024 * 1024)
+                Log.i(TAG, "segment cache boost: sharedBitmapCache 64MB -> 128MB")
+            }
+        } catch (_: Exception) {}
+    }
     private val renderSlotLocks = arrayOf(Any(), Any())
     private val renderSlotRenderer = arrayOfNulls<android.graphics.pdf.PdfRenderer>(2)
     private val renderSlotPfd = arrayOfNulls<android.os.ParcelFileDescriptor>(2)
