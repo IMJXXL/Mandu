@@ -167,11 +167,12 @@ fun KomgaSeriesVolumesScreen(
                                 Modifier.fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
                                 contentAlignment = Alignment.Center,
                             ) {
-                                if (b.coverPath != null) {
+                                val displayCover = b.displayCoverPath
+                                if (displayCover != null) {
                                     AsyncImage(
-                                        model = remember(b.coverPath) {
+                                        model = remember(displayCover) {
                                             ImageRequest.Builder(ctx)
-                                                .data(CoverData(b.coverPath, dynOn = false))
+                                                .data(CoverData(displayCover, dynOn = false))
                                                 .decoderFactory(CoverAnimGateDecoder)
                                                 .build()
                                         },

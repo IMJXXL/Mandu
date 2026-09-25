@@ -336,6 +336,52 @@ class ArchiveEngine(private val ctx: Context) {
         File(coverDir, "$hash.thumb").delete()
     }
 
+    // ★ 自定义封面（2026-09-26）：私有文件按书路径 MD5 确定性寻址（重设覆盖不堆积），
+    //   与默认缩略图同目录同套生命周期（签名降级清 covers 后由 Library 孤儿自愈回退默认封面）。
+    fun customCoverFileName(bookPath: String): String = "custom_${md5(bookPath)}.jpg"
+
+    fun customCoverFile(bookPath: String): File = File(coverDir, customCoverFileName(bookPath))
+
+    /** 裁剪结果落盘（JPEG 90），返回 customCoverPath 值（"custom:<fileName>"） */
+    fun saveCustomCoverBitmap(bmp: Bitmap, bookPath: String): String? {
+        return try {
+            if (!coverDir.exists()) coverDir.mkdirs()
+            val f = customCoverFile(bookPath)
+            f.outputStream().use { bmp.compress(Bitmap.CompressFormat.JPEG, 90, it) }
+            "custom:${f.name}"
+        } catch (e: Exception) {
+            Log.e(TAG, "saveCustomCoverBitmap: ${e.message}")
+            null
+        }
+    }
+
+    fun deleteCustomCoverByPath(customCoverPath: String) {
+        try { File(coverDir, customCoverPath.removePrefix("custom:")).delete() } catch (_: Exception) {}
+    }
+
+    /** 选图网格缩略图：字节 → inSampleSize 解码到 ~targetPx（缓存由调用方管理） */
+    fun decodeThumbnail(data: ByteArray, targetPx: Int): Bitmap? {
+        return try {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(data, 0, data.size, bounds)
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+            var sample = 1
+            while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= targetPx) sample *= 2
+            BitmapFactory.decodeByteArray(data, 0, data.size, BitmapFactory.Options().apply { inSampleSize = sample })
+        } catch (oom: OutOfMemoryError) {
+            System.gc(); null
+        } catch (_: Exception) { null }
+    }
+
+    /** ★ 封面选图（2026-09-26）：dir 树内任意文件项的字节（封面内容浏览器用） */
+    fun loadDirItemBytes(item: Item): ByteArray? {
+        return try {
+            val tree = makeTree(item.auth, item.tree)
+            val docUri = DocumentsContract.buildDocumentUriUsingTree(tree, item.doc)
+            ctx.contentResolver.openInputStream(docUri)?.use { it.readBytes() }
+        } catch (_: Exception) { null }
+    }
+
     private fun md5(input: String): String {
         val bytes = MessageDigest.getInstance("MD5").digest(input.toByteArray())
         return bytes.joinToString("") { "%02x".format(it) }

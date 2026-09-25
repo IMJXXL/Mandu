@@ -32,6 +32,10 @@ data class Book(
     val filePath: String,
     val fileType: String = "",
     val coverPath: String? = null,
+    /** ★ 自定义封面（2026-09-26）：用户手动设置的封面，"custom:<fileName>" 指向 filesDir/covers 私有文件。
+     *  与 coverPath 分离的理由：Scanner 重扫会重写 coverPath（默认封面指针），custom 独立字段天然免疫；
+     *  显示时 displayCoverPath 优先；null=未自定义（恢复默认=置 null+删文件） */
+    val customCoverPath: String? = null,
     val totalPages: Int = 0,
     val readPages: Int = 0,
     val lastReadAt: Long? = null,
@@ -46,7 +50,10 @@ data class Book(
     val sourceSizeBytes: Long = 0,
     val seriesId: String? = null,
     val seriesName: String? = null,
-)
+) {
+    /** ★ 显示用封面：自定义优先；自定义文件丢失的孤儿由 Library 启动自愈置回 null */
+    val displayCoverPath: String? get() = customCoverPath ?: coverPath
+}
 
 @Entity(tableName = "imported_folders")
 data class Folder(
@@ -287,6 +294,14 @@ interface MangaDao {
     /** ★ 下载完成后更新封面路径为本地 SAF 封面路径，使封面可从本地提取 */
     @Query("UPDATE manga_books SET coverPath = :coverPath WHERE id = :id")
     suspend fun updateBookCoverPath(id: Long, coverPath: String)
+
+    /** ★ 自定义封面：设置（"custom:<fileName>"）/ 恢复默认（null） */
+    @Query("UPDATE manga_books SET customCoverPath = :path WHERE id = :id")
+    suspend fun updateBookCustomCoverPath(id: Long, path: String?)
+
+    /** ★ 孤儿自愈扫描：自定义封面文件被清（签名降级清 covers 等）后置回默认 */
+    @Query("SELECT * FROM manga_books WHERE customCoverPath IS NOT NULL")
+    suspend fun booksWithCustomCover(): List<Book>
 
     /** ★ 清除本地缓存路径记录（缓存文件被删时） */
     @Query("UPDATE manga_books SET originalPath = NULL WHERE id = :id")
@@ -1217,7 +1232,7 @@ data class KomgaProgressSyncQueueEntity(
 
 @Database(
     entities = [Book::class, Folder::class, ReadingHistory::class, Bookshelf::class, BookshelfItem::class, Tag::class, TagLink::class, ReadingProgress::class, Bookmark::class, com.ehviewer.core.database.model.SmbSourceEntity::class, com.ehviewer.core.database.model.LibraryRootEntity::class, com.ehviewer.core.database.model.LocalGalleryEntity::class, com.ehviewer.core.database.model.WebDavSourceEntity::class, DownloadTaskEntity::class, KomgaSeriesCacheEntity::class, KomgaBookMemoEntity::class, KomgaProgressSyncQueueEntity::class],
-    version = 19,
+    version = 20,
     exportSchema = false
 )
 abstract class MangaDatabase : com.ehviewer.core.database.LocalLibraryDatabase() {
@@ -1483,13 +1498,20 @@ abstract class MangaDatabase : com.ehviewer.core.database.LocalLibraryDatabase()
             }
         }
 
+        private val MIGRATION_19_20 = object : androidx.room.migration.Migration(19, 20) {
+            override fun migrate(database: androidx.sqlite.db.SupportSQLiteDatabase) {
+                // ★ 自定义封面字段（默认 null=未自定义，恢复默认=置 null）
+                database.execSQL("ALTER TABLE manga_books ADD COLUMN customCoverPath TEXT")
+            }
+        }
+
         fun getDatabase(context: Context): MangaDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
                     context.applicationContext,
                     MangaDatabase::class.java,
                     "manga_reader_db"
-                ).addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19)
+                ).addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20)
                 .fallbackToDestructiveMigrationOnDowngrade()
                 .build()
                 INSTANCE = instance

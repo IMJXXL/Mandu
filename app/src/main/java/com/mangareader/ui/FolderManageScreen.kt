@@ -211,7 +211,7 @@ fun FolderManageScreen(onBack: () -> Unit) {
     if (showDeleteFolder != null) {
         val f = showDeleteFolder!!
         AlertDialog(onDismissRequest = { showDeleteFolder = null }, title = { Text("删除文件夹") },
-            text = { Text("删除「${f.displayName}」及该文件夹下所有漫画记录？原始文件不受影响。") },
+            text = { Text("删除「${f.displayName}」及该文件夹下所有漫画记录？原始文件不受影响。已设置的自定义封面将一并删除。") },
             confirmButton = {
                 TextButton(onClick = {
                     scope.launch {
@@ -230,6 +230,10 @@ fun FolderManageScreen(onBack: () -> Unit) {
                                     val md = java.security.MessageDigest.getInstance("MD5").digest(cp.toByteArray())
                                     val hash = md.joinToString("") { "%02x".format(it) }
                                     java.io.File(coverDir, "$hash.thumb").delete()
+                                }
+                                // 自定义封面文件一并删除
+                                b.customCoverPath?.let { ccp ->
+                                    java.io.File(coverDir, ccp.removePrefix("custom:")).delete()
                                 }
                             }
                             dao.deleteBooksByFolderParams(aPrefix, dPrefix, zPrefix)

@@ -42,7 +42,22 @@ class CoverFetcher(
         val coverPath = data.path
         // ★ 修复（2026-09-06 实测）：守卫必须放行 z: —— 原写法 `!startsWith("cv:")` 位于 z: 分支之前，
         //   子文件夹封面请求在进入 z: 分支前就被抛 IllegalArgumentException（空白且无日志）。
-        if (!coverPath.startsWith("cv:") && !coverPath.startsWith("z:")) throw IllegalArgumentException("Not a cover request: $coverPath")
+        //   2026-09-26 放行 custom:（自定义封面）。
+        if (!coverPath.startsWith("cv:") && !coverPath.startsWith("z:") && !coverPath.startsWith("custom:")) throw IllegalArgumentException("Not a cover request: $coverPath")
+
+        // ★ 自定义封面（2026-09-26）：custom:<fileName> → filesDir/covers 私有文件直读。
+        //   文件缺失（签名降级清 covers/异常）→ 抛错走 Coil 占位；Library 启动孤儿自愈会把
+        //   孤儿 customCoverPath 置回 null，随后的请求即走默认封面链路。
+        if (coverPath.startsWith("custom:")) {
+            val f = java.io.File(engine.customCoverFile("").parentFile, coverPath.removePrefix("custom:"))
+            if (!f.exists()) throw java.io.FileNotFoundException("custom cover missing: $coverPath")
+            val bytes = withContext(Dispatchers.IO) { f.readBytes() }
+            return SourceFetchResult(
+                source = ImageSource(source = Buffer().write(bytes), fileSystem = options.fileSystem),
+                mimeType = "image/jpeg",
+                dataSource = DataSource.DISK,
+            )
+        }
 
         if (coverPath.startsWith("cv:") && !coverPath.startsWith("cv:smb:") && !coverPath.startsWith("cv:webdav:") && !coverPath.startsWith("cv:komga:") && !coverPath.startsWith("cv:opds:")) {
             // ★ 2026-09-19 封面动图封存：恢复 JPEG 缩略图优先（快、静态、无变形）；
