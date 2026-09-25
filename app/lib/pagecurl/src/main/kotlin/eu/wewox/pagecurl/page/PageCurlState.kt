@@ -14,6 +14,7 @@ import androidx.compose.animation.core.VisibilityThreshold
 import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -367,7 +368,14 @@ public class PageCurlState(
         )
     }
 
-    internal inner class InternalState(
+        // ★ @Stable（2026-09-25 R8 闪退实锤修复）：R8 的 Compose 稳定性优化会删除所有类的
+        //   $stable 字段并改写读取，但对本类的一处读取（PageCurl$lambda$0 捕获传参检查）
+        //   漏改未删 → release 运行时 NoSuchFieldError 闪退（keep 规则拦不住该优化）。
+        //   标注 @Stable 后编译器把稳定性当编译期事实，不再生成运行时 $stable 读取，
+        //   从根源消除该指令。语义成立：本类的可见变化全部经由 Animatable 内部快照状态
+        //   传播（与 MutableState 自身被标 @Stable 同理），持有者身份不变。
+        @Stable
+        internal inner class InternalState(
         val constraints: Constraints,
         val leftEdge: Edge,
         val rightEdge: Edge,
