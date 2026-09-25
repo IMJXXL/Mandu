@@ -926,7 +926,8 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             (mode == Mode.VERT || mode == Mode.WEBTOON_GAP)) {
             val sm = maxOf(ctx.resources.displayMetrics.widthPixels, ctx.resources.displayMetrics.heightPixels)
             val sw = ctx.resources.displayMetrics.widthPixels
-            try { com.mangareader.engine.pdf.VirtualPageExpander.expand(pages, true, true, sm, sw, engine, path) }
+            // ★ B3：展开（PDF 元数据查询 / 长图头部探测）全程 IO，主线程零阻塞
+            try { withContext(Dispatchers.IO) { com.mangareader.engine.pdf.VirtualPageExpander.expand(pages, true, true, sm, sw, engine, path) } }
             catch (_: Exception) { pages }
         } else pages
         pageList = expandedPages

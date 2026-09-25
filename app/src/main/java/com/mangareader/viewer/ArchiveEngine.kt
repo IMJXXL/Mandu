@@ -745,6 +745,78 @@ class ArchiveEngine(private val ctx: Context) {
         return if (opts.outWidth > 0 && opts.outHeight > 0) intArrayOf(opts.outWidth, opts.outHeight) else null
     }
 
+    // ★ 长图分割 §2 探测层（2026-09-25）：只读头部 64KB 判定尺寸/动图，压缩包不解压全量。
+    //   与 loadPageSize 的区别：①返回含动图标记（动图页强制不拆，w/h 归零）②zip 有 realFile+spine
+    //   名单时走 java ZipFile 按【条目名】前缀读（spine 即 listPages 的排序权威，按名取不复制排序
+    //   逻辑）③rar/7z/tar 与无 spine/realFile 的 zip 回退 loadPageRaw 全量字节 bounds（一次性成本，
+    //   配合 PageSizeCacheStore 尺寸表二开免探）。
+    data class PageBounds(val width: Int, val height: Int, val animated: Boolean)
+
+    fun loadPageBounds(meta: PageMeta, treeStr: String): PageBounds? {
+        requireNotRemote(treeStr)
+        if (meta.source == "pdf") return null  // PDF 走 loadPageSize 的 pdfGetPageSize 分支，无需头部探测
+        val head = try { loadPageHeadBytes(meta, treeStr) } catch (_: Exception) { null } ?: return null
+        if (head.isEmpty()) return null
+        if (isAnimatedBytes(head)) return PageBounds(0, 0, true)
+        return try {
+            val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(head, 0, head.size, opts)
+            if (opts.outWidth > 0 && opts.outHeight > 0) PageBounds(opts.outWidth, opts.outHeight, false) else null
+        } catch (_: Exception) { null }
+    }
+
+    private fun readUpTo(input: java.io.InputStream, maxLen: Int): ByteArray {
+        val buf = java.io.ByteArrayOutputStream(maxLen)
+        val chunk = ByteArray(16 * 1024)
+        var total = 0
+        while (total < maxLen) {
+            val r = input.read(chunk, 0, minOf(chunk.size, maxLen - total))
+            if (r < 0) break
+            buf.write(chunk, 0, r)
+            total += r
+        }
+        return buf.toByteArray()
+    }
+
+    private fun loadPageHeadBytes(meta: PageMeta, treeStr: String): ByteArray? {
+        val maxLen = 64 * 1024
+        // 一、dir：真实文件 FileInputStream（零解压），SAF 流兜底
+        if (meta.source == "dir") {
+            getRealFileForPage(treeStr, meta)?.let { f ->
+                if (f.exists() && f.length() > 0) return java.io.FileInputStream(f).use { readUpTo(it, maxLen) }
+            }
+            val p = parsePath(treeStr) ?: return null
+            val tree = makeTree(p.auth, p.tree)
+            val uri = DocumentsContract.buildDocumentUriUsingTree(tree, meta.ext)
+            return ctx.contentResolver.openInputStream(uri)?.use { readUpTo(it, maxLen) }
+        }
+        // 二、zip（非 z: 树）：realFile + spine 名单 → java ZipFile 按条目名前缀读
+        if (meta.source == "zip" && !treeStr.startsWith("z:")) {
+            try {
+                val p = parsePath(treeStr)
+                if (p != null) {
+                    val tree = makeTree(p.auth, p.tree)
+                    val uri = DocumentsContract.buildDocumentUriUsingTree(tree, p.doc)
+                    val cacheKey = uri.toString()
+                    val spine = synchronized(sortedImageNamesCache) { sortedImageNamesCache[cacheKey] }
+                    if (spine != null && meta.localIdx in spine.indices) {
+                        val realFile = getRealFile(uri)
+                        if (realFile != null) {
+                            java.util.zip.ZipFile(realFile).use { zf ->
+                                val name = spine[meta.localIdx]
+                                val entry = zf.getEntry(name) ?: zf.getEntry(name.substringAfterLast("/"))
+                                if (entry != null) return zf.getInputStream(entry).use { readUpTo(it, maxLen) }
+                            }
+                        }
+                    }
+                }
+            } catch (_: Exception) {}
+            // 快路径不可用（无 spine/realFile/z: 树）→ 落到下方 loadPageRaw 全量
+        }
+        // 三、压缩包族兜底（rar/7z/tar/z:树/无快路径 zip）：loadPageRaw 全量字节（一次性，尺寸表缓存消化）
+        return loadPageRaw(meta, treeStr)
+    }
+
     /** §24 P3 dir 分支：loadDirPage 返回 Bitmap，这里补一个返回 ByteArray 的同款函数（直接读图字节） */
     private fun loadDirPageRaw(tree: Uri, meta: PageMeta, treeStr: String): ByteArray? {
         // ★ 真实路径快速路径：FileInputStream 跳过 SAF Binder IPC
