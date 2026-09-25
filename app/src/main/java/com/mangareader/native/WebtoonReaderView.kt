@@ -252,14 +252,28 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
     var gapEnabled: Boolean = false
         set(value) {
             field = value
-            val gapPx = if (value) (15 * context.resources.displayMetrics.density).toInt() else 0
             for (i in 0 until (recycler.adapter?.itemCount ?: 0)) {
                 val vh = recycler.findViewHolderForAdapterPosition(i) ?: continue
                 val lp = vh.itemView.layoutParams as? RecyclerView.LayoutParams ?: continue
-                lp.bottomMargin = gapPx
+                lp.bottomMargin = gapPxFor(i)
                 vh.itemView.layoutParams = lp
             }
         }
+
+    // ★ C1 段间无隙（2026-09-25）：WEBTOON_GAP 的 15dp 页隙只应插在「页与页」之间——
+    //   同一原图拆出的相邻段（segmentIndex>0 且 originalPageIdx 相同）之间不插隙，
+    //   避免长页内部出现假页界
+    private val gapPxBase: Int
+        get() = if (gapEnabled) (15 * context.resources.displayMetrics.density).toInt() else 0
+
+    private fun gapPxFor(pos: Int): Int {
+        if (!gapEnabled) return 0
+        if (pos < 0) return gapPxBase
+        val m = pageList.getOrNull(pos) ?: return gapPxBase
+        val next = pageList.getOrNull(pos + 1)
+        if (m.segmentIndex > 0 && next != null && next.segmentIndex > 0 && next.originalPageIdx == m.originalPageIdx) return 0
+        return gapPxBase
+    }
 
     override var onPageChanged: ((Int) -> Unit)? = null
     override var onPageCountChanged: ((Int) -> Unit)? = null
@@ -850,10 +864,10 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
     inner class PageAdapter : RecyclerView.Adapter<PageVH>() {
         override fun getItemCount() = pageList.size
         override fun onCreateViewHolder(parent: android.view.ViewGroup, vt: Int): PageVH {
-            val gapPx = if (gapEnabled) (15 * parent.context.resources.displayMetrics.density).toInt() else 0
             val frame = android.widget.FrameLayout(parent.context).apply {
+                // 初值给基础页隙；per-position 的段关系间隙在 onBindViewHolder 修正
                 layoutParams = RecyclerView.LayoutParams(RecyclerView.LayoutParams.MATCH_PARENT, RecyclerView.LayoutParams.WRAP_CONTENT).apply {
-                    bottomMargin = gapPx
+                    bottomMargin = gapPxBase
                 }
             }
             if (tileModeEnabled) {
@@ -925,6 +939,14 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
             h.hasImage = false
             h.isBound = true
             h.boundPosition = pos
+            // ★ C1：VH 回收复用跨位置时按段关系修正页隙（创建时的初值不一定适配新位置）
+            val gap = gapPxFor(pos)
+            (h.itemView.layoutParams as? RecyclerView.LayoutParams)?.let { lp ->
+                if (lp.bottomMargin != gap) {
+                    lp.bottomMargin = gap
+                    h.itemView.layoutParams = lp
+                }
+            }
 
             val tileFile = tileFileCache[pos]
             if (tileFile != null && tileFile.exists()) {
