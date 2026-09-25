@@ -2984,6 +2984,43 @@ class ArchiveEngine(private val ctx: Context) {
         }
     }
 
+    // ★ 长图分割 §4：图片族分段解码入口（镜像 loadPdfPageSegment：段缓存 + inflight 去重 + 整图兜底）
+    fun loadImagePageSegment(meta: PageMeta, treeStr: String, segmentIndex: Int): Bitmap? {
+        try {
+            requireNotRemote(treeStr)
+            val p = parsePath(treeStr) ?: return null
+            val pageKey = "img:${p.doc}|${meta.localIdx}|${meta.source}"
+            val screenWidth0 = ctx.resources.displayMetrics.widthPixels
+            val screenMax0 = maxOf(screenWidth0, ctx.resources.displayMetrics.heightPixels)
+            val segKey = com.mangareader.engine.img.ImageSegmentRenderer.segmentCacheKey(pageKey, segmentIndex, screenWidth0, screenMax0)
+            getCachedBitmap(segKey)?.let { return it }
+            inflightSegments[segKey]?.let { f -> try { return f.get() } catch (_: Exception) {} }
+            val future = java.util.concurrent.CompletableFuture<Bitmap?>()
+            val prev = inflightSegments.putIfAbsent(segKey, future)
+            if (prev != null) { try { return prev.get() } catch (_: Exception) {} }
+            try {
+                val bmp = try {
+                    com.mangareader.engine.img.ImageSegmentRenderer.decode(this, meta, treeStr, segmentIndex, screenWidth0, screenMax0)
+                } catch (oom: OutOfMemoryError) {
+                    Log.w(TAG, "loadImagePageSegment OOM seg=$segmentIndex")
+                    null
+                }
+                if (bmp != null) {
+                    Log.d(TAG, "loadImagePageSegment idx=${meta.localIdx} seg=$segmentIndex ${bmp.width}x${bmp.height} cache=miss")
+                    putCachedBitmap(segKey, bmp)
+                    future.complete(bmp)
+                    return bmp
+                }
+                Log.w(TAG, "loadImagePageSegment render null seg=$segmentIndex, fallback whole page")
+                future.complete(null)
+                return loadPage(meta, treeStr)
+            } finally { if (!future.isDone) future.complete(null); inflightSegments.remove(segKey, future) }
+        } catch (e: Exception) {
+            Log.e(TAG, "loadImagePageSegment: ${e.message}", e)
+            return null
+        }
+    }
+
     private fun loadPdfPageSegmentViaRenderer(uri: Uri, pageIndex: Int, rect: com.mangareader.engine.pdf.PdfTallSplitCalculator.SplitRect, pageWidth: Float, pageHeight: Float, segW: Int, segH: Int): Bitmap? {
         val slot = (renderSlotCounter.getAndIncrement() and 0x7fffffff) % renderSlotLocks.size
         synchronized(renderSlotLocks[slot]) {

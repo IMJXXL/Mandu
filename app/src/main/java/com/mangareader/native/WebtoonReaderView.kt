@@ -602,7 +602,7 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
             inflightLoads[idx] = nowTs
             myPitTs = nowTs
         }
-        if (meta.source == "pdf" && treePath.isNotEmpty()) {
+        if (meta.source == "pdf" && treePath.isNotEmpty() && meta.segmentIndex <= 0) {
             try {
                 val sharedKey = engine?.getPdfSharedKey(treePath, meta.index)
                 if (sharedKey != null) {
@@ -617,7 +617,8 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
         val sm = maxOf(width, height).coerceAtLeast(1)
         loadScope.launch {
             try {
-            if (tileModeEnabled) {
+            // ★ 段页不走 tile：tile 按「整图文件+区域」渲染，不认识 segmentIndex，会显示错误区域
+            if (tileModeEnabled && meta.segmentIndex <= 0) {
                 val tileFile = obtainTileFile(idx)
                 if (tileFile != null) {
                     ArchiveEngine.d("WebtoonRV", "tile OK idx=$idx file=${tileFile.length()}B")
@@ -640,8 +641,10 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
                     result = if (supply != null) supply.loadBitmap(idx)
                     else {
                         val m = pageList[idx]
-                        if (m.source == "pdf" && m.segmentIndex > 0) engine?.loadPdfPageSegment(m, treePath, m.segmentIndex)
-                        else engine?.loadPage(m, treePath)
+                        if (m.segmentIndex > 0) {
+                            if (m.source == "pdf") engine?.loadPdfPageSegment(m, treePath, m.segmentIndex)
+                            else engine?.loadImagePageSegment(m, treePath, m.segmentIndex)
+                        } else engine?.loadPage(m, treePath)
                     }
                 }
                 result
@@ -736,8 +739,10 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
                             result = if (supply != null) supply.loadBitmap(idx)
                             else {
                                 val m = pageList[idx]
-                                if (m.source == "pdf" && m.segmentIndex > 0) engine?.loadPdfPageSegment(m, treePath, m.segmentIndex)
-                                else engine?.loadPage(m, treePath)
+                                if (m.segmentIndex > 0) {
+                                    if (m.source == "pdf") engine?.loadPdfPageSegment(m, treePath, m.segmentIndex)
+                                    else engine?.loadImagePageSegment(m, treePath, m.segmentIndex)
+                                } else engine?.loadPage(m, treePath)
                             }
                         }
                     } catch (_: Exception) {}
