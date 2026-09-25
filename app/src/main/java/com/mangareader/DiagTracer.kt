@@ -89,7 +89,10 @@ object DiagTracer {
                 try {
                     val wall = java.text.SimpleDateFormat("HH:mm:ss.SSS", java.util.Locale.getDefault())
                         .format(java.util.Date())
-                    file.writeText("$wall\n")
+                    val rt = Runtime.getRuntime()
+                    val usedMb = (rt.totalMemory() - rt.freeMemory()) / 1048576
+                    val maxMb = rt.maxMemory() / 1048576
+                    file.writeText("$wall heapUsed=${usedMb}MB heapMax=${maxMb}MB\n")
                 } catch (_: Throwable) {}
                 handler.postDelayed(this, 1000L)
             }

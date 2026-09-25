@@ -67,6 +67,21 @@ object DiagExporter {
                 sb.appendLine(f.readText())
             } else sb.appendLine("[sig_check] 无校验失败记录（如闪退但无此文件，说明非签名路径）")
         }
+        // ★ app 内 logcat 抓取：普通应用可读自己 UID 的日志（native 崩溃前的 libc/ART 输出、
+        //   引擎日志等）。native crash 的 tombstone 属系统 crash_dump 进程读不到，但 app 进程
+        //   死前最后输出有诊断价值。
+        runCatching {
+            val proc = ProcessBuilder("logcat", "-d", "-v", "time").redirectErrorStream(true).start()
+            val out = proc.inputStream.bufferedReader().use { it.readText() }
+            val interesting = out.lineSequence()
+                .filter { it.contains("FATAL", true) || it.contains("Fatal signal", true) || it.contains("SIGSEGV") || it.contains("SIGABRT") || it.contains("SIGBUS") || it.contains("DEBUG", true) || it.contains("mangareader", true) }
+                .toList()
+                .takeLast(400)
+                .toList()
+            sb.appendLine("----- logcat（本应用相关，末 400 行）-----")
+            if (interesting.isEmpty()) sb.appendLine("<无可读行>")
+            else interesting.forEach { sb.appendLine(it) }
+        }.onFailure { sb.appendLine("[logcat] 抓取失败: ${it.message}") }
 
         val text = sb.toString()
         val name = "漫读_诊断日志_$ts.txt"

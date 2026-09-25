@@ -318,6 +318,8 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
             }
         }
         flow.distinctUntilChanged().collect {
+            // ★ 取证：书架数据加载完成（死亡若发生在 books 加载前后可由 stages 定位）
+            com.mangareader.DiagTracer.mark(ctx, "library: books loaded n=${it.size}")
             val canAggregate = debouncedQuery.isEmpty() && selectedShelfId == null && filter == FilterMode.ALL
             if (canAggregate) {
                 val aggregated = withContext(Dispatchers.IO) { sortShelfItems(aggregateKomgaSeries(it), sort) }
