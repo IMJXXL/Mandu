@@ -863,14 +863,21 @@ class ArchiveEngine(private val ctx: Context) {
     fun loadPageBounds(meta: PageMeta, treeStr: String): PageBounds? {
         requireNotRemote(treeStr)
         if (meta.source == "pdf") return null  // PDF 走 loadPageSize 的 pdfGetPageSize 分支，无需头部探测
-        val head = try { loadPageHeadBytes(meta, treeStr) } catch (_: Exception) { null } ?: return null
-        if (head.isEmpty()) return null
-        if (isAnimatedBytes(head)) return PageBounds(0, 0, true)
-        return try {
-            val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            BitmapFactory.decodeByteArray(head, 0, head.size, opts)
-            if (opts.outWidth > 0 && opts.outHeight > 0) PageBounds(opts.outWidth, opts.outHeight, false) else null
-        } catch (_: Exception) { null }
+        // ★ 失败重试一次：首次冷缓存 zip/SAF 流抖动会让头部探测偶发失败 → 该页被 expand 整页
+        //   透传，页列表混杂段页与整页（观感=第一页清晰后面乱且糊，第二次进入才正常）
+        repeat(2) { attempt ->
+            val head: ByteArray? = try { loadPageHeadBytes(meta, treeStr) } catch (_: Exception) { null }
+            if (head != null && head.isNotEmpty()) {
+                if (isAnimatedBytes(head)) return PageBounds(0, 0, true)
+                try {
+                    val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    BitmapFactory.decodeByteArray(head, 0, head.size, opts)
+                    if (opts.outWidth > 0 && opts.outHeight > 0) return PageBounds(opts.outWidth, opts.outHeight, false)
+                } catch (_: Exception) {}
+            }
+            if (attempt == 0) try { Thread.sleep(120) } catch (_: InterruptedException) { return null }
+        }
+        return null
     }
 
     /** ★ 长图分割 §2：尺寸表缓存入口（PageSizeCacheStore 包装，供 VirtualPageExpander 使用） */

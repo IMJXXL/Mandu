@@ -215,7 +215,9 @@ interface MangaDao {
     @Query("SELECT * FROM manga_books WHERE isHidden = 0 ORDER BY lastReadAt DESC")
     fun getVisibleBooks(): Flow<List<Book>>
 
-    @Query("SELECT p.* FROM reading_progress p INNER JOIN manga_books b ON b.id = p.bookId WHERE b.isHidden = 0 AND (p.lastPage > 0 OR p.completed = 1) ORDER BY p.updatedAt DESC LIMIT 1")
+    // ★ 继续阅读 FAB（2026-09-26 实测反馈）：去掉 lastPage>0/completed 限制——停在第一页的合法
+    //   进度（lastPage=0）与脏数据自愈写的 (0,false) 都会让 FAB 闪没；语义改为「最近打开过的卷」
+    @Query("SELECT p.* FROM reading_progress p INNER JOIN manga_books b ON b.id = p.bookId WHERE b.isHidden = 0 ORDER BY p.updatedAt DESC LIMIT 1")
     fun getLastReading(): Flow<ReadingProgress?>
 
     @Query("SELECT * FROM manga_books WHERE isHidden = 1 ORDER BY lastReadAt DESC")

@@ -44,8 +44,14 @@ object ImageSegmentRenderer {
         screenWidth: Int,
         screenMax: Int,
     ): Bitmap? {
-        val raw = try { engine.loadPageRaw(meta, treePath) } catch (_: Exception) { return null } ?: return null
-        if (raw.isEmpty()) return null
+        // ★ 原始字节读取失败重试一次：首次冷缓存/并发抖动下 zip 条目流偶发失败 → 段渲染 null
+        //   走整图兜底（用户实测=第一页清晰后面全是降采样糊图），重试通常即成
+        var raw = try { engine.loadPageRaw(meta, treePath) } catch (_: Exception) { null }
+        if (raw == null || raw.isEmpty()) {
+            try { Thread.sleep(120) } catch (_: InterruptedException) { return null }
+            raw = try { engine.loadPageRaw(meta, treePath) } catch (_: Exception) { null }
+        }
+        if (raw == null || raw.isEmpty()) return null
         val dec = try { BitmapRegionDecoder.newInstance(raw, 0, raw.size, false) } catch (_: Exception) { null } ?: return null
         try {
             val imgW = dec.width
