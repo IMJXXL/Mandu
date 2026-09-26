@@ -678,6 +678,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         this.trimWhiteBorder = trim
         this.trimThreshold = threshold
         this.trimWhiteRatio = whiteRatio
+        clearTileFileCache()
         // ★ 修复白屏：不清除全部缓存+notifyDataSetChanged（会白屏），
         //   逐页 remove+loadPageAsync，旧 bitmap 在 SSIV 中保留显示直到新 bitmap 加载完成
         val cur = currentPage
@@ -946,7 +947,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             if (remotePageSupply == null) ensureNativeArchive()
 
             val supply = remotePageSupply
-            if (tileModeEnabled && !doublePageMode && pageAnimFlags.none { it.pageIdx == idx && it.kind != AnimKind.NONE }) {
+            if (tileModeEnabled && !trimWhiteBorder && !doublePageMode && pageAnimFlags.none { it.pageIdx == idx && it.kind != AnimKind.NONE }) {
                 val tileFile = obtainTileFile(idx, supply)
                 if (tileFile != null) {
                     tileFileCache[idx] = tileFile
