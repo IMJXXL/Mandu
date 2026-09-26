@@ -243,6 +243,8 @@ class ArchiveEngine(private val ctx: Context) {
     private val renderSlotCounter = java.util.concurrent.atomic.AtomicInteger()
     private val inflightSegments = java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.CompletableFuture<Bitmap?>>()
     private val segFallbackMarked = java.util.Collections.newSetFromMap(java.util.concurrent.ConcurrentHashMap<String, Boolean>())
+    /** PDF 文档按 docKey 的打开互斥（防首屏并发段请求竞争重复 pdfOpen） */
+    private val pdfOpenLocks = java.util.concurrent.ConcurrentHashMap<String, Any>()
     private val epubSpineCache = object : LinkedHashMap<String, List<Int>>(10, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<Int>>?): Boolean = size > 10
     }
@@ -3048,25 +3050,31 @@ class ArchiveEngine(private val ctx: Context) {
             val screenMax0 = maxOf(screenWidth0, ctx.resources.displayMetrics.heightPixels)
             val segKey = com.mangareader.engine.pdf.PdfSegmentRenderer.segmentCacheKey(sharedKey, pageIndex, segmentIndex, screenWidth0, screenMax0)
             getCachedBitmap(segKey)?.let { return it }
-            inflightSegments[segKey]?.let { f -> try { return f.get() } catch (_: Exception) {} }
+            inflightSegments[segKey]?.let { f -> try { return f.get(20, java.util.concurrent.TimeUnit.SECONDS) } catch (_: Exception) {} }
             val future = java.util.concurrent.CompletableFuture<Bitmap?>()
             val prev = inflightSegments.putIfAbsent(segKey, future)
-            if (prev != null) { try { return prev.get() } catch (_: Exception) {} }
+            if (prev != null) { try { return prev.get(20, java.util.concurrent.TimeUnit.SECONDS) } catch (_: Exception) {} }
             try {
                 val docKey = uri.toString()
-                if (!com.mangareader.native.NativeEngine.pdfIsOpen(docKey)) {
-                    val pfd = ctx.contentResolver.openFileDescriptor(uri, "r")
-                    if (pfd != null) {
-                        try {
-                            val fd = pfd.detachFd()
+                // ★ pdfOpen 按 docKey 互斥（2026-09-26 实测反馈）：首屏并发段请求同时发现"未 open"
+                //   会各自 openFileDescriptor+pdfOpen 同一文档——竞争下部分请求拿到未就绪状态，
+                //   观感=页码不动+整页糊、拖进度条触发重载才恢复。双检锁保证只开一次、其余等待。
+                val openLock = pdfOpenLocks.computeIfAbsent(docKey) { Any() }
+                synchronized(openLock) {
+                    if (!com.mangareader.native.NativeEngine.pdfIsOpen(docKey)) {
+                        val pfd = ctx.contentResolver.openFileDescriptor(uri, "r")
+                        if (pfd != null) {
                             try {
-                                com.mangareader.native.NativeEngine.pdfOpen(docKey, fd)
-                            } catch (e: Exception) {
-                                Log.e(TAG, "loadPdfPageSegment pdfOpen failed: ${e.message}", e)
-                                // ★ A2：pdfOpen 失败 = native 未接管 fd，必须手动关闭防泄漏
-                                try { android.os.ParcelFileDescriptor.adoptFd(fd).close() } catch (_: Exception) {}
-                            }
-                        } finally { try { pfd.close() } catch (_: Exception) {} }
+                                val fd = pfd.detachFd()
+                                try {
+                                    com.mangareader.native.NativeEngine.pdfOpen(docKey, fd)
+                                } catch (e: Exception) {
+                                    Log.e(TAG, "loadPdfPageSegment pdfOpen failed: ${e.message}", e)
+                                    // ★ A2：pdfOpen 失败 = native 未接管 fd，必须手动关闭防泄漏
+                                    try { android.os.ParcelFileDescriptor.adoptFd(fd).close() } catch (_: Exception) {}
+                                }
+                            } finally { try { pfd.close() } catch (_: Exception) {} }
+                        }
                     }
                 }
                 val pageSize = com.mangareader.native.NativeEngine.pdfGetPageSize(docKey, pageIndex)
@@ -3091,6 +3099,10 @@ class ArchiveEngine(private val ctx: Context) {
                     return bmp
                 }
                 Log.w(TAG, "loadPdfPageSegment render null seg=$segmentIndex, fallback whole page")
+                val mk = "pdf|$docKey|$pageIndex#$segmentIndex"
+                if (segFallbackMarked.add(mk)) {
+                    try { com.mangareader.DiagTracer.mark(ctx, "tallSplit pdfSegFallback idx=$pageIndex seg=$segmentIndex") } catch (_: Exception) {}
+                }
                 future.complete(null)
                 return loadPdfPage(uri, pageIndex)
             } finally { if (!future.isDone) future.complete(null); inflightSegments.remove(segKey, future) }
@@ -3110,10 +3122,10 @@ class ArchiveEngine(private val ctx: Context) {
             val screenMax0 = maxOf(screenWidth0, ctx.resources.displayMetrics.heightPixels)
             val segKey = com.mangareader.engine.img.ImageSegmentRenderer.segmentCacheKey(pageKey, segmentIndex, screenWidth0, screenMax0)
             getCachedBitmap(segKey)?.let { return it }
-            inflightSegments[segKey]?.let { f -> try { return f.get() } catch (_: Exception) {} }
+            inflightSegments[segKey]?.let { f -> try { return f.get(20, java.util.concurrent.TimeUnit.SECONDS) } catch (_: Exception) {} }
             val future = java.util.concurrent.CompletableFuture<Bitmap?>()
             val prev = inflightSegments.putIfAbsent(segKey, future)
-            if (prev != null) { try { return prev.get() } catch (_: Exception) {} }
+            if (prev != null) { try { return prev.get(20, java.util.concurrent.TimeUnit.SECONDS) } catch (_: Exception) {} }
             try {
                 val bmp = try {
                     com.mangareader.engine.img.ImageSegmentRenderer.decode(this, meta, treeStr, segmentIndex, screenWidth0, screenMax0)
