@@ -23,6 +23,8 @@ import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -816,8 +818,10 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
         val lm = recycler.layoutManager as? LinearLayoutManager ?: return
         val firstVisible = lm.findFirstVisibleItemPosition()
         val lastVisible = lm.findLastVisibleItemPosition()
-        val forwardPages = if (jump) 1 else 3
-        val backwardPages = if (jump) 1 else 3
+        // ★ 预载距离 ±3 项：段高 ×2（一段≈一页≈2 屏）时即 ±6 屏，与最初完工版覆盖一致；
+        //   jump（进卷恢复/跳页）±2 项。配合分批并行+4 渲染槽，窗口填满速度远超原串行 2 槽。
+        val forwardPages = if (jump) 2 else 3
+        val backwardPages = if (jump) 2 else 3
         val loadList = mutableListOf<Int>()
         val currentCached = synchronized(bitmapCache) { bitmapCache[currentPage] }
         if (currentCached == null) loadList.add(currentPage)
@@ -833,40 +837,55 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
             if (bwd in pageList.indices && bwd !in loadList) loadList.add(bwd)
         }
         loadScope.launch {
-            for (idx in loadList) {
-                val cached = synchronized(bitmapCache) { bitmapCache[idx] }
-                if (cached != null) continue
-                val bmp = withContext(Dispatchers.IO) {
-                    var result: Bitmap? = null
-                    val meta = pageList[idx]
-                    try {
-                        if (meta.source in listOf("mobi", "azw", "azw3", "pdb", "prc")) {
-                            result = loadMobiPageAsync(meta)
-                        }
-                        // 所有格式统一走 Java BitmapFactory（正确处理 CMYK/ICC 色彩空间）
-                        if (result == null) {
-                            // ★ SMB/WebDAV 页面供给抽象：远程会话优先，null 时不回退 engine
-                            val supply = remotePageSupply
-                            result = if (supply != null) supply.loadBitmap(idx)
-                            else {
-                                val m = pageList[idx]
-                                if (m.segmentIndex > 0) {
-                                    if (m.source == "pdf") engine?.loadPdfPageSegment(m, treePath, m.segmentIndex)
-                                    else engine?.loadImagePageSegment(m, treePath, m.segmentIndex)
-                                } else engine?.loadPage(m, treePath)
-                            }
-                        }
-                    } catch (_: Exception) {}
-                    result
-                }
-                if (bmp != null) {
-                    val processed = processBitmap(bmp)
-                    synchronized(bitmapCache) { bitmapCache.put(idx, processed ?: bmp) }
-                    recycler.post { adapter?.notifyItemChanged(idx, "ld") }
-                } else {
-                    ArchiveEngine.w("WebtoonRV", "preload FAIL idx=$idx src=${pageList.getOrNull(idx)?.source}")
+            // ★ 分批并发（2026-09-26）：串行解码 ±6 项窗口需 3s+，滑动永远追不上。
+            //   按渲染槽数分批并行（ArchiveEngine renderSlot=4），段窗口 <1s 填满；
+            //   引擎层 inflightSegments 去重防重复渲染。
+            kotlinx.coroutines.coroutineScope {
+                for (batch in loadList.chunked(4)) {
+                    batch.map { idx -> async { preloadOne(idx) } }.awaitAll()
                 }
             }
+        }
+    }
+
+    /** 预载单项：缓存 miss 才解码，成功回填位图缓存并通知刷新（慢载 >500ms 进诊断日志取证） */
+    private suspend fun preloadOne(idx: Int) {
+        val meta0 = pageList.getOrNull(idx) ?: return
+        val cached = synchronized(bitmapCache) { bitmapCache[idx] }
+        if (cached != null) return
+        val startMs = android.os.SystemClock.uptimeMillis()
+        val bmp = withContext(Dispatchers.IO) {
+            var result: Bitmap? = null
+            val meta = meta0
+            try {
+                if (meta.source in listOf("mobi", "azw", "azw3", "pdb", "prc")) {
+                    result = loadMobiPageAsync(meta)
+                }
+                // 所有格式统一走 Java BitmapFactory（正确处理 CMYK/ICC 色彩空间）
+                if (result == null) {
+                    // ★ SMB/WebDAV 页面供给抽象：远程会话优先，null 时不回退 engine
+                    val supply = remotePageSupply
+                    result = if (supply != null) supply.loadBitmap(idx)
+                    else {
+                        val m = pageList[idx]
+                        if (m.segmentIndex > 0) {
+                            if (m.source == "pdf") engine?.loadPdfPageSegment(m, treePath, m.segmentIndex)
+                            else engine?.loadImagePageSegment(m, treePath, m.segmentIndex)
+                        } else engine?.loadPage(m, treePath)
+                    }
+                }
+            } catch (_: Exception) {}
+            result
+        }
+        if (bmp != null) {
+            val processed = processBitmap(bmp)
+            synchronized(bitmapCache) { bitmapCache.put(idx, processed ?: bmp) }
+            recycler.post { adapter?.notifyItemChanged(idx, "ld") }
+            val cost = android.os.SystemClock.uptimeMillis() - startMs
+            // ★ 慢载取证：>500ms 说明预载跟不上滑动/渲染槽打满（用户侧观感=往后全是没加载的）
+            if (cost > 500) diagMark("slow-load idx=$idx ${cost}ms ${bmp.width}x${bmp.height} src=${meta0.source}")
+        } else {
+            ArchiveEngine.w("WebtoonRV", "preload FAIL idx=$idx src=${pageList.getOrNull(idx)?.source}")
         }
     }
 

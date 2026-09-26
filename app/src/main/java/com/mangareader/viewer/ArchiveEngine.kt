@@ -236,10 +236,13 @@ class ArchiveEngine(private val ctx: Context) {
             }
         } catch (_: Exception) {}
     }
-    private val renderSlotLocks = arrayOf(Any(), Any())
-    private val renderSlotRenderer = arrayOfNulls<android.graphics.pdf.PdfRenderer>(2)
-    private val renderSlotPfd = arrayOfNulls<android.os.ParcelFileDescriptor>(2)
-    private val renderSlotUri = arrayOfNulls<Uri>(2)
+    // ★ 渲染槽 2→4（2026-09-26）：段渲染（PdfRenderer 矩阵裁剪）单次 100-300ms，2 槽是
+    //   预载吞吐瓶颈（±6 段窗口 3s+ 才填满，滑动追不上=「往后全是没加载的」）。4 槽并行
+    //   配合 Webtoon 预载分批(4)，段窗口 <1s 填满。每槽独立 PdfRenderer/fd，互不竞争。
+    private val renderSlotLocks = arrayOf(Any(), Any(), Any(), Any())
+    private val renderSlotRenderer = arrayOfNulls<android.graphics.pdf.PdfRenderer>(4)
+    private val renderSlotPfd = arrayOfNulls<android.os.ParcelFileDescriptor>(4)
+    private val renderSlotUri = arrayOfNulls<Uri>(4)
     private val renderSlotCounter = java.util.concurrent.atomic.AtomicInteger()
     private val inflightSegments = java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.CompletableFuture<Bitmap?>>()
     private val segFallbackMarked = java.util.Collections.newSetFromMap(java.util.concurrent.ConcurrentHashMap<String, Boolean>())

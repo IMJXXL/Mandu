@@ -97,11 +97,12 @@ class PdfTallSplitCalculatorTest {
 
     @Test
     fun `splitHeightPdf 与屏幕联动`() {
-        // ★ 每段=一屏高（2026-09-26）：×2 会让段位图达 2 屏高（~23MB/张）挤爆位图缓存
-        assertEquals(2400f, PdfTallSplitCalculator.splitHeightPdf(2400, 1080, 1080f), 0.01f)
+        // ★ 段高=2 屏（2026-09-26 回退）：×2 时一段≈一个原漫画页（01.pdf 实测 35 段=真实页数）；
+        //   889a49d 的 ×1 把每页切两半（页数翻倍、预载屏覆盖减半）已撤销
+        assertEquals(4800f, PdfTallSplitCalculator.splitHeightPdf(2400, 1080, 1080f), 0.01f)
         assertEquals(4096f, PdfTallSplitCalculator.optimalSplitHeightPx(0), 0.01f)
-        // screenWidth 非法时回退 optimalSplitHeightPx(screenMax) = 2400（不是 4096 默认值）
-        assertEquals(2400f, PdfTallSplitCalculator.splitHeightPdf(2400, 0, 1080f), 0.01f)
+        // screenWidth 非法时回退 optimalSplitHeightPx(screenMax)×2 = 4800（不是 4096 默认值）
+        assertEquals(4800f, PdfTallSplitCalculator.splitHeightPdf(2400, 0, 1080f), 0.01f)
     }
 
     @Test

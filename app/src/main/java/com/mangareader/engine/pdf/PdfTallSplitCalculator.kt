@@ -21,8 +21,15 @@ object PdfTallSplitCalculator {
         val height: Float get() = bottom - top
     }
 
+    /**
+     * ★ 段高 = 2 屏（2026-09-26 回退 889a49d 的 ×1）：×2 时一段≈一个原漫画页（实测 01.pdf
+     *   expand 出 35 段=真实页数；×1 会把每页切成两半→69 页，页数语义错误且预载屏覆盖减半）。
+     *   889a49d 的「渲染端几何错位」诊断有误——expand 与渲染端 n 实际一致（15:13/15:27 日志
+     *   pdfSegOK 尺寸反推证实），页码回跳/恢复位丢失的真根因在显示层（updatePage 边界规则/
+     *   锚点登记竞争），已由中心线判定+锚点落位确认独立修复，与段高无关。
+     */
     fun optimalSplitHeightPx(screenMax: Int): Float =
-        if (screenMax <= 0) 4096f else screenMax.toFloat()
+        if (screenMax <= 0) 4096f else screenMax * 2f
 
     fun splitHeightPdf(screenMax: Int, screenWidth: Int, pageWidth: Float): Float {
         if (screenWidth <= 0 || pageWidth <= 0f) return optimalSplitHeightPx(screenMax)
