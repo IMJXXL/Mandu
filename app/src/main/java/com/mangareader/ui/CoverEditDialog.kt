@@ -101,6 +101,12 @@ import okio.Path.Companion.toPath
 private val IMAGE_EXTS = setOf("jpg", "jpeg", "png", "webp", "bmp", "gif", "heic", "heif", "avif")
 private val ARCHIVE_EXTS = setOf("zip", "cbz", "rar", "cbr", "7z", "cb7", "tar", "epub", "pdf", "mobi", "azw", "azw3", "pdb", "prc")
 
+/** 按字节计费的位图 LruCache（byteCount 计重，超限 LRU 淘汰） */
+private fun <K> bitmapLru(maxBytes: Int): android.util.LruCache<K, Bitmap> =
+    object : android.util.LruCache<K, Bitmap>(maxBytes) {
+        override fun sizeOf(key: K, value: Bitmap): Int = value.byteCount
+    }
+
 private fun extOf(name: String): String = name.substringAfterLast('.', "").lowercase()
 private fun decodeCap(ctx: android.content.Context): Int = try {
     val am = ctx.getSystemService(android.content.Context.ACTIVITY_SERVICE) as ActivityManager
@@ -140,9 +146,10 @@ internal fun CoverEditDialog(
 ) {
     val scope = rememberCoroutineScope()
     val cap = remember { decodeCap(ctx) }
-    // ★ LruCache(96)（≈35MB 上限）：原 ConcurrentHashMap 无上限，几千页大书滚动全存内存有 OOM 风险
-    val thumbCache = remember { android.util.LruCache<String, Bitmap>(96) }
-    val remoteThumbCache = remember { android.util.LruCache<Int, Bitmap>(96) }
+    // ★ LruCache 按字节封顶 32MB：条目数上限挡不住大位图（全尺寸首页 thumb 解码一张 10MB+），
+    //   几格就把整个缓存挤掉 → 滚动回来 miss 重解 → 封面"先有后无"（2026-09-26 实测反馈）
+    val thumbCache = remember { bitmapLru<String>(32 * 1024 * 1024) }
+    val remoteThumbCache = remember { bitmapLru<Int>(32 * 1024 * 1024) }
     // ★ 阶段导航栈（2026-09-26 体验反馈）：左上角返回与系统返回手势统一=回上一阶段——
     //   内容浏览器下钻多层可逐层回退、裁剪页返回即回到选图网格（重选另一张）；
     //   只有回到来源选择页时系统返回才关闭整个编辑器（符合直觉）。
@@ -804,11 +811,18 @@ private fun CropStage(src: Bitmap, onConfirm: (Bitmap) -> Unit, onCancel: () -> 
                     if (v.width <= 0) { confirming = false; return@IconButton }
                     val frame = frameRect(Size(v.width.toFloat(), v.height.toFloat()), COVER_FRAME_RATIO)
                     val fit = fitRect(src, v)
-                    // 视图坐标 → 源位图坐标
-                    val sx = (frame.left - fit.left) / scale / fit.width * src.width
-                    val sy = (frame.top - fit.top) / scale / fit.height * src.height
-                    val sw = frame.width / scale / fit.width * src.width
-                    val sh = frame.height / scale / fit.height * src.height
+                    // 视图坐标 → 源位图坐标。★ graphicsLayer 以视图中心为原点缩放：
+                    // 显示矩形左上 = (V/2)(1-scale) + fit.left*scale + offset——直接拿 fit.left 当
+                    // 显示左上会漏缩放中心与平移两项（缩放/平移过就裁偏，2026-09-26 实测反馈）
+                    val vw = v.width.toFloat(); val vh = v.height.toFloat()
+                    val dLeft = (vw / 2f) * (1f - scale) + fit.left * scale + offset.x
+                    val dTop = (vh / 2f) * (1f - scale) + fit.top * scale + offset.y
+                    val dW = fit.width * scale
+                    val dH = fit.height * scale
+                    val sx = (frame.left - dLeft) / dW * src.width
+                    val sy = (frame.top - dTop) / dH * src.height
+                    val sw = frame.width / dW * src.width
+                    val sh = frame.height / dH * src.height
                     val x = sx.toInt().coerceIn(0, src.width - 1)
                     val y = sy.toInt().coerceIn(0, src.height - 1)
                     val w = sw.toInt().coerceIn(1, src.width - x)

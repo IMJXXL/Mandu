@@ -365,10 +365,20 @@ class ArchiveEngine(private val ctx: Context) {
      * Reader 卷级缩略图直读（covers/<md5(chPath)>.thumb，enterReader 后台生成的那份）：
      * 封面编辑器浏览分卷时，打开过的卷命中即零解析显示，不再走 loadCoverForItem 的
      * item: 前缀缓存重新递归（两套 key 不同导致白查，2026-09-26 用户实测反馈）。
+     * ★ 解码钳制 ~256px 长边：thumb 文件是全尺寸首页 JPEG（原尺寸解码一张 10MB+ 位图，
+     *   几格就把缩略图 LruCache 挤爆 → 滚动回来缓存 miss 重解 → 封面"先有后无"）。
      */
     fun loadVolThumbByPath(chPath: String): Bitmap? = try {
         val f = File(coverDir, "${md5(chPath)}.thumb")
-        if (f.exists() && f.length() > 0L) BitmapFactory.decodeFile(f.absolutePath) else null
+        if (!f.exists() || f.length() <= 0L) null else {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(f.absolutePath, bounds)
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) null else {
+                var s = 1
+                while (maxOf(bounds.outWidth, bounds.outHeight) / (s * 2) >= 256) s *= 2
+                BitmapFactory.decodeFile(f.absolutePath, BitmapFactory.Options().apply { inSampleSize = s })
+            }
+        }
     } catch (_: Exception) { null }
 
     /**
