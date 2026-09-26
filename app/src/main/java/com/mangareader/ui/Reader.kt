@@ -2217,7 +2217,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                             }
                         }
                         var lastSkipMarkAt by remember { mutableLongStateOf(0L) }
-                        try { com.mangareader.DiagTracer.mark(ctx, "readerView mode=$mode vert=$vertical pages=${displayPages.size} start=$safeCur") } catch (_: Exception) {}
+                        try { com.mangareader.DiagTracer.mark(ctx, "readerView mode=$mode vert=$vertical pages=${displayPages.size} start=$safeCur trim=${config.isTrimWhiteBorder} tile=${config.tileModeEnabled}") } catch (_: Exception) {}
                         com.mangareader.native.NativeReaderScreen(
                             engine = engine,
                             treePath = navStack.lastOrNull() ?: book?.filePath ?: "",

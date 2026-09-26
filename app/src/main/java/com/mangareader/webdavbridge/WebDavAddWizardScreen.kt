@@ -9,6 +9,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -21,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ehviewer.core.database.model.WebDavSourceEntity
 import com.hippo.ehviewer.library.BrowseEntryRemote
+import com.hippo.ehviewer.library.isZipArchiveFileName
 import com.hippo.ehviewer.webdav.WebDavClient
 import com.hippo.ehviewer.webdav.WebDavGateway
 import com.hippo.ehviewer.webdav.WebDavRepository
@@ -228,7 +230,7 @@ fun WebDavAddWizardScreen(onBack: () -> Unit, onSaved: () -> Unit, initial: WebD
                     }
                     LazyColumn(Modifier.weight(1f)) {
                         items(dirEntries) { e ->
-                            if (e is BrowseEntryRemote.Directory) {
+                            if (e is BrowseEntryRemote.Directory && !isZipArchiveFileName(e.name)) {
                                 Row(
                                     Modifier.fillMaxWidth().clickable {
                                         val next = if (dir.isEmpty()) e.relativeName else "$dir/${e.relativeName}"
@@ -240,6 +242,12 @@ fun WebDavAddWizardScreen(onBack: () -> Unit, onSaved: () -> Unit, initial: WebD
                                     Icon(Icons.Default.Folder, null, tint = Color(0xFF8FB8E8))
                                     Spacer(Modifier.width(12.dp))
                                     Text(e.name, fontSize = 15.sp)
+                                }
+                            } else if (e is BrowseEntryRemote.Directory) {
+                                Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.MenuBook, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                                    Spacer(Modifier.width(12.dp))
+                                    Text(e.name, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
                                 }
                             } else {
                                 Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {

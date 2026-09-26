@@ -674,6 +674,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
 
 
     fun setTrimWhiteBorder(trim: Boolean, threshold: Int = trimThreshold, whiteRatio: Float = trimWhiteRatio) {
+        com.mangareader.viewer.ArchiveEngine.d("PagerView", "setTrim trim=$trim threshold=$threshold ratio=$whiteRatio prev=$trimWhiteBorder")
         if (trimWhiteBorder == trim && trimThreshold == threshold && trimWhiteRatio == whiteRatio) return
         this.trimWhiteBorder = trim
         this.trimThreshold = threshold
@@ -950,6 +951,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             if (tileModeEnabled && !trimWhiteBorder && !doublePageMode && pageAnimFlags.none { it.pageIdx == idx && it.kind != AnimKind.NONE }) {
                 val tileFile = obtainTileFile(idx, supply)
                 if (tileFile != null) {
+                    com.mangareader.viewer.ArchiveEngine.d("PagerView", "tileHit idx=$idx tileOn=$tileModeEnabled trimOn=$trimWhiteBorder")
                     tileFileCache[idx] = tileFile
                     withContext(Dispatchers.Main) {
                         val adapterPos = positionOf(idx)
@@ -1006,16 +1008,18 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 }
                 // ② 静图：engine.loadPage（原生下采样，防 OOM）
                 var bmp = withContext(Dispatchers.IO) { engine?.loadPage(meta, treePath) }
-                com.mangareader.viewer.ArchiveEngine.d("PagerView", "loaded idx=$idx bmp=${bmp?.width}x${bmp?.height} source=${meta.source}")
+                com.mangareader.viewer.ArchiveEngine.d("PagerView", "loaded idx=$idx bmp=${bmp?.width}x${bmp?.height} source=${meta.source} trimOn=$trimWhiteBorder tileOn=$tileModeEnabled")
                 if (bmp == null || bmp.isRecycled) {
                     bitmapCache.remove(idx)
                     inflightLoads.remove(idx) // ★ 允许立即重试（失败/取消场景不留 5s 去重窗口）
                     return@launch
                 }
                 if (trimWhiteBorder && bmp.width > 10 && bmp.height > 10) {
+                    val w0 = bmp.width; val h0 = bmp.height
                     try {
                         val trim = com.mangareader.viewer.ImageTrimmer.trimWhiteBorders(bmp, threshold = trimThreshold, whiteRatio = trimWhiteRatio, factor = 0.15f)
                         bmp = com.mangareader.viewer.ImageTrimmer.applyTrim(bmp, trim)
+                        com.mangareader.viewer.ArchiveEngine.d("PagerView", "trimL idx=$idx ${w0}x${h0}->${bmp.width}x${bmp.height}")
                     } catch (_: Exception) {}
                 }
                 try {
@@ -1066,11 +1070,13 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             } else if (image is coil3.BitmapImage) {
                 // 静图：提取 Bitmap → 超分 → bitmapCache → SSIV
                 var bmp = image.bitmap
-                com.mangareader.viewer.ArchiveEngine.d("PagerView", "loaded idx=$idx bmp=${bmp.width}x${bmp.height} source=${meta.source}")
+                com.mangareader.viewer.ArchiveEngine.d("PagerView", "loaded idx=$idx bmp=${bmp.width}x${bmp.height} source=${meta.source} trimOn=$trimWhiteBorder tileOn=$tileModeEnabled")
                 if (trimWhiteBorder && bmp.width > 10 && bmp.height > 10) {
+                    val w0 = bmp.width; val h0 = bmp.height
                     try {
                         val trim = com.mangareader.viewer.ImageTrimmer.trimWhiteBorders(bmp, threshold = trimThreshold, whiteRatio = trimWhiteRatio, factor = 0.15f)
                         bmp = com.mangareader.viewer.ImageTrimmer.applyTrim(bmp, trim)
+                        com.mangareader.viewer.ArchiveEngine.d("PagerView", "trimR idx=$idx ${w0}x${h0}->${bmp.width}x${bmp.height}")
                     } catch (_: Exception) {}
                 }
                 try {
