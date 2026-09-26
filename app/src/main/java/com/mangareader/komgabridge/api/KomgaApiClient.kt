@@ -153,6 +153,10 @@ class KomgaApiClient(
         return if (isPdf) "$base?convert=jpeg" else base
     }
 
+    /** 页缩略图（约 320px，封面编辑网格取材用，流量约为原图 1/10）；端点不可用时由调用方回退 pageImageUrl */
+    fun pageThumbnailUrl(bookId: String, pageNumber: Int): String =
+        "${connection.baseUrl}/api/v1/books/$bookId/pages/$pageNumber/thumbnail"
+
     fun seriesThumbnailUrl(seriesId: String): String =
         "${connection.baseUrl}/api/v1/series/$seriesId/thumbnail"
 

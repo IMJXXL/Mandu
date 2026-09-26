@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -39,6 +40,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -66,9 +68,21 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.mangareader.viewer.ArchiveEngine
+import com.mangareader.smbbridge.SmbBookRouter
+import com.mangareader.webdavbridge.WebDavBookRouter
+import com.mangareader.komgabridge.reader.KomgaBookRouter
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.cancel
+import okio.Path.Companion.toPath
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -79,8 +93,9 @@ import java.util.concurrent.ConcurrentHashMap
  * （双指缩放+平移，框比例固定为书架封面卡 0.72）→ JPEG 90 落盘
  * covers/custom_{md5}.jpg → onResult("custom:<fileName>") 由调用方写 DB + 清缓存。
  *
- * 安全：所有解码 inSampleSize 钳制（低内存机 2048 / 其余 4096）防 OOM；网格缩略图 32MB
- * LRU；任何失败仅 Toast 不崩溃；远程书内容选择禁用（走相册），文案注明。
+ * 安全：所有解码 inSampleSize 钳制（低内存机 2048 / 其余 4096）防 OOM；网格缩略图缓存，
+ * 远程网格 Semaphore(3) 限流 + 单格超时重试；任何失败仅 Toast 不崩溃；远程书走各自
+ * Router 会话供给（SMB/WebDAV/Komga），OPDS 仅限本地已缓存（下载制，不静默下载整本）。
  */
 private val IMAGE_EXTS = setOf("jpg", "jpeg", "png", "webp", "bmp", "gif", "heic", "heif", "avif")
 private val ARCHIVE_EXTS = setOf("zip", "cbz", "rar", "cbr", "7z", "cb7", "tar", "epub", "pdf", "mobi", "azw", "azw3", "pdb", "prc")
@@ -102,13 +117,17 @@ private fun decodeBmpCapped(bytes: ByteArray, cap: Int): Bitmap? {
     } catch (oom: OutOfMemoryError) { System.gc(); null } catch (_: Exception) { null }
 }
 
-/** 编辑器阶段：来源选择 / 目录树浏览（dir 书）/ 页网格（档案书）/ 裁剪 */
+/** 编辑器阶段：来源选择 / 目录树浏览（dir 书）/ 页网格（档案书）/ 远程页网格 / 裁剪 */
 private sealed class CoverStage {
     object Source : CoverStage()
     data class Browser(val path: String, val title: String) : CoverStage()
     data class Pages(val path: String, val title: String) : CoverStage()
+    object RemotePages : CoverStage()
     data class Crop(val bmp: Bitmap) : CoverStage()
 }
+
+/** 支持卷内页面选图的远程来源（走各自 Router 会话供给；OPDS 仅限本地已缓存） */
+private val REMOTE_COVER_SOURCES = setOf("smb", "webdav", "komga", "opds")
 
 @Composable
 internal fun CoverEditDialog(
@@ -141,6 +160,121 @@ internal fun CoverEditDialog(
         }
     }
 
+    // ★ 远程页会话（2026-09-26）：SMB/WebDAV/Komga 走各自 Router 的现成阅读会话供给
+    //   （RemotePageSupply，与阅读器同构，不触碰 ArchiveEngine 的 requireNotRemote 红线）；
+    //   OPDS 为整本下载制——只查本地缓存，未缓存提示先阅读一次，绝不静默下载整本。
+    //   会话随对话框关闭（DisposableEffect onDispose）释放，NAS 连接不泄漏。
+    var remoteSupply by remember { mutableStateOf<com.mangareader.native.RemotePageSupply?>(null) }
+    var remotePageCount by remember { mutableIntStateOf(0) }
+    var remoteOpening by remember { mutableStateOf(false) }
+    var remoteOpenErr by remember { mutableStateOf<String?>(null) }
+    val remoteThumbCache = remember { ConcurrentHashMap<Int, Bitmap>() }
+    DisposableEffect(Unit) {
+        onDispose {
+            val s = remoteSupply
+            remoteSupply = null
+            if (s != null) scope.launch(Dispatchers.IO) { runCatching { s.close() } }
+        }
+    }
+
+    // Komga 页缩略图加载器（约 320px 小图，网格流量约为原图 1/10）；服务器/路径不可用为 null
+    val komgaThumbLoader: (suspend (Int) -> ByteArray?)? = remember(book.filePath) {
+        if (book.source != "komga") return@remember null
+        val ref = com.mangareader.komgabridge.reader.KomgaPaths.parseBookPath(book.filePath)
+        val conn = ref?.let {
+            com.mangareader.komgabridge.data.KomgaConnectionStore(com.mangareader.komgabridge.KomgaBridges.context).getConnection(it.serverId)
+        }
+        if (ref == null || conn == null) return@remember null
+        val client = com.mangareader.komgabridge.api.KomgaHttpClient.client(conn.allowSelfSignedCert)
+        val api = com.mangareader.komgabridge.api.KomgaApiClient(conn, client)
+        ({ idx: Int -> runCatching { api.downloadBytes(api.pageThumbnailUrl(ref.bookId, idx + 1)) }.getOrNull() })
+    }
+
+    fun openRemoteSession() {
+        if (remoteOpening || remoteSupply != null) return
+        remoteOpening = true
+        remoteOpenErr = null
+        scope.launch {
+            fun fail(msg: String) { remoteOpenErr = msg; remoteOpening = false }
+            try {
+                when (book.source) {
+                    "smb" -> when (val r = SmbBookRouter.openSmbBook(book.filePath, 0, null)) {
+                        is SmbBookRouter.OpenResult.Supported -> {
+                            remotePageCount = r.supply.pageCount
+                            r.supply.onPageCountGrow += { remotePageCount = it }
+                            remoteSupply = r.supply
+                        }
+                        is SmbBookRouter.OpenResult.Unsupported -> fail("该格式暂不支持在线选图")
+                        is SmbBookRouter.OpenResult.Failed -> fail(r.message)
+                    }
+                    "webdav" -> when (val r = WebDavBookRouter.openWebDavBook(book.filePath, 0, null)) {
+                        is WebDavBookRouter.OpenResult.Supported -> {
+                            remotePageCount = r.supply.pageCount
+                            r.supply.onPageCountGrow += { remotePageCount = it }
+                            remoteSupply = r.supply
+                        }
+                        is WebDavBookRouter.OpenResult.Unsupported -> fail("该格式暂不支持在线选图")
+                        is WebDavBookRouter.OpenResult.Failed -> fail(r.message)
+                    }
+                    "komga" -> when (val r = KomgaBookRouter.openKomgaBook(book.filePath, 0)) {
+                        is KomgaBookRouter.OpenResult.Supported -> {
+                            remotePageCount = r.supply.pageCount
+                            remoteSupply = r.supply
+                        }
+                        is KomgaBookRouter.OpenResult.Unsupported -> fail("该格式暂不支持在线选图")
+                        is KomgaBookRouter.OpenResult.Failed -> fail(r.message)
+                    }
+                    "opds" -> {
+                        val cached = withContext(Dispatchers.IO) { com.mangareader.opdsbridge.reader.OpdsBookRouter.cachedLocalPath(book.filePath) }
+                        if (cached == null) {
+                            fail("本书内容未缓存，请先在线阅读一次后再选图")
+                        } else {
+                            // 本地缓存档案 → SmbPageAdapter 供给（与 Reader.enterLocalArchiveReader 同构）
+                            val adapter = com.mangareader.smbbridge.SmbPageAdapter()
+                            val sessionScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+                            sessionScope.launch {
+                                try {
+                                    // 编辑器无密码对话框：空密码直试（未加密档案不会触发 provider）；
+                                    // 加密档案试空密码失败 → 抛错 → 打开失败提示，用户先在阅读器中打开过即可记住密码
+                                    com.hippo.ehviewer.gallery.useArchivePageLoader(
+                                        file = cached.toPath(),
+                                        info = null,
+                                        startPage = 0,
+                                        passwdProvider = passwdProvider@ { invalidator ->
+                                            if (invalidator("")) "" else throw IllegalStateException("该压缩包需要密码，请先在阅读器中打开一次")
+                                        },
+                                    ) { loader ->
+                                        adapter.attach(loader, null)
+                                        adapter.awaitClose()
+                                    }
+                                } catch (e: CancellationException) {
+                                    throw e
+                                } catch (t: Throwable) {
+                                    adapter.failAsync(t)
+                                } finally {
+                                    sessionScope.cancel()
+                                }
+                            }
+                            try {
+                                withTimeout(45_000L) { adapter.awaitReady() }
+                                remotePageCount = adapter.pageCount
+                                adapter.onPageCountGrow += { remotePageCount = it }
+                                remoteSupply = adapter
+                            } catch (e: TimeoutCancellationException) {
+                                adapter.close()
+                                fail("打开超时")
+                            }
+                        }
+                    }
+                    else -> fail("该来源暂不支持在线选图")
+                }
+            } catch (t: Throwable) {
+                fail(t.message?.take(80) ?: "打开失败")
+            }
+            remoteOpening = false
+        }
+    }
+
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             when (val s = stage) {
@@ -161,10 +295,15 @@ internal fun CoverEditDialog(
                         ) {
                             stage = if (isTreeBook) CoverStage.Browser(book.filePath, book.title) else CoverStage.Pages(book.filePath, book.title)
                         }
+                    } else if (book.source in REMOTE_COVER_SOURCES) {
+                        SourceCard("从本卷页面选择", "浏览本书页面，任意一张图设为封面") {
+                            stage = CoverStage.RemotePages
+                            openRemoteSession()
+                        }
                     } else {
                         Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(10.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
                             Text(
-                                "远程书暂不支持从内容中选择，请使用本地图片",
+                                "该来源暂不支持从内容中选择，请使用本地图片",
                                 fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(14.dp),
                             )
                         }
@@ -205,6 +344,55 @@ internal fun CoverEditDialog(
                     },
                     onBack = { stage = CoverStage.Source },
                 )
+
+                is CoverStage.RemotePages -> {
+                    val sup = remoteSupply
+                    when {
+                        sup != null -> RemotePageGridStage(
+                            supply = sup,
+                            pageCount = remotePageCount,
+                            komgaThumb = komgaThumbLoader,
+                            title = book.title,
+                            thumbCache = remoteThumbCache,
+                            cap = cap,
+                            onPick = { idx ->
+                                scope.launch {
+                                    val bmp = withContext(Dispatchers.IO) {
+                                        runCatching { withTimeout(30_000) { sup.loadPageRaw(idx) } }.getOrNull()
+                                            ?.takeIf { it.isNotEmpty() }?.let { decodeBmpCapped(it, cap) }
+                                    }
+                                    if (bmp != null) stage = CoverStage.Crop(bmp) else toastMsg = "页面读取失败"
+                                }
+                            },
+                            onBack = { stage = CoverStage.Source },
+                        )
+                        remoteOpening -> Column(
+                            Modifier.fillMaxSize(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center,
+                        ) {
+                            CircularProgressIndicator()
+                            Spacer(Modifier.height(12.dp))
+                            Text("正在连接…", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        else -> Column(
+                            Modifier.fillMaxSize(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center,
+                        ) {
+                            Text(
+                                remoteOpenErr ?: "打开失败",
+                                fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 32.dp),
+                            )
+                            Spacer(Modifier.height(16.dp))
+                            Row {
+                                TextButton(onClick = { openRemoteSession() }) { Text("重试") }
+                                TextButton(onClick = { stage = CoverStage.Source }) { Text("返回") }
+                            }
+                        }
+                    }
+                }
 
                 is CoverStage.Crop -> CropStage(
                     s.bmp,
@@ -368,6 +556,74 @@ private fun PageGridStage(
                     Box(Modifier.fillMaxWidth().aspectRatio(1f).background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp)).clickableNoRipple { onPick(meta) }, contentAlignment = Alignment.Center) {
                         bmp?.let { Image(it.asImageBitmap(), null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
                             ?: Text("${meta.index + 1}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 远程页网格（2026-09-26）：数据源 RemotePageSupply（SMB/WebDAV/Komga 会话、OPDS 本地缓存）。
+ * 与本地 PageGridStage 的差异：Semaphore(3) 并发限流（远程不能按可见格数放开拉网），
+ * 单格超时+点按重试，Komga 优先走页缩略图端点（异常/非图片字节自动回退原图字节），页数渐进增长。
+ */
+@Composable
+private fun RemotePageGridStage(
+    supply: com.mangareader.native.RemotePageSupply,
+    pageCount: Int,
+    komgaThumb: (suspend (Int) -> ByteArray?)?,
+    title: String,
+    thumbCache: ConcurrentHashMap<Int, Bitmap>,
+    cap: Int,
+    onPick: (Int) -> Unit,
+    onBack: () -> Unit,
+) {
+    val sem = remember { Semaphore(3) }
+    Column(Modifier.fillMaxSize()) {
+        StageTopBar(title = title.ifEmpty { "选择页面" }, onBack = onBack)
+        if (pageCount <= 0) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text("加载中…", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        } else {
+            LazyVerticalGrid(columns = GridCells.Fixed(3), modifier = Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(pageCount) { idx ->
+                    var bmp by remember(idx) { mutableStateOf<Bitmap?>(thumbCache[idx]) }
+                    var failed by remember(idx) { mutableStateOf(false) }
+                    var attempt by remember(idx) { mutableIntStateOf(0) }
+                    LaunchedEffect(idx, attempt) {
+                        if (bmp != null || failed) return@LaunchedEffect
+                        val decoded = withContext(Dispatchers.IO) {
+                            sem.withPermit {
+                                try { komgaThumb?.let { withTimeout(15_000) { it(idx) } }?.let { decodeBmpCapped(it, cap) } } catch (_: Exception) { null }
+                                    ?: runCatching { withTimeout(20_000) { supply.loadPageRaw(idx) } }.getOrNull()?.let { decodeBmpCapped(it, cap) }
+                            }
+                        }
+                        val thumb = decoded?.let { big ->
+                            if (big.width > 256) {
+                                val h = big.height * 256 / big.width
+                                try { Bitmap.createScaledBitmap(big, 256, h.coerceAtLeast(1), true) } catch (_: Exception) { big }
+                            } else big
+                        }
+                        if (thumb != null) { thumbCache[idx] = thumb; bmp = thumb } else failed = true
+                    }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Box(Modifier.fillMaxWidth().aspectRatio(0.72f).background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp)).clickableNoRipple {
+                            when {
+                                bmp != null -> onPick(idx)
+                                failed -> { failed = false; attempt++ }
+                            }
+                        }, contentAlignment = Alignment.Center) {
+                            bmp?.let { Image(it.asImageBitmap(), null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
+                                ?: if (failed) {
+                                    Text("加载失败\n点按重试", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                                } else {
+                                    CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+                                }
+                        }
+                        Spacer(Modifier.height(2.dp))
+                        Text("第 ${idx + 1} 页", fontSize = 11.sp, maxLines = 1, color = MaterialTheme.colorScheme.onSurface)
                     }
                 }
             }

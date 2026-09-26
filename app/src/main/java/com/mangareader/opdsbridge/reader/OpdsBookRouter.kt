@@ -73,6 +73,21 @@ object OpdsBookRouter {
         }
     }
 
+    /**
+     * 只查本地缓存、绝不触发下载（封面编辑"卷内选图"取材用，2026-09-26）：
+     * 命中返回缓存文件路径（与阅读器共用同一份缓存），未命中/路径无效返回 null。
+     * 格式选择与 openOpdsBook 走同一 selectAcquisitionLink → 同一 ext → 同一缓存路径。
+     */
+    suspend fun cachedLocalPath(filePath: String): String? {
+        val ref = OpdsPaths.parseBookPath(filePath) ?: return null
+        val entry = OpdsEntryLinkCache.get(ref.serverId, ref.entryId) ?: return null
+        val link = selectAcquisitionLink(entry.acquisitionLinks) ?: return null
+        val cachePath = com.mangareader.opdsbridge.cache.OpdsCache.cachePathFor(
+            ref.serverId, ref.entryId, OpdsDownloader.extForMimeType(link.mimeType),
+        )
+        return if (com.mangareader.opdsbridge.cache.OpdsCache.isCachedOnDisk(cachePath)) cachePath.absolutePath else null
+    }
+
     private suspend fun upsertBook(ref: OpdsBookRef, title: String, cachePath: File): Long {
         val dao = OpdsBridges.database.mangaDao()
         val coverPath = "${OpdsConstants.COVER_SCHEME}${ref.serverId}:${ref.entryId}"
