@@ -83,6 +83,22 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
     //   （"滑动不会返回"铁律；落位纠偏仅保留给"用户从未碰屏幕"的纯恢复场景）。
     @Volatile private var sawUserScroll = false
 
+    // ★ 锚点落位确认（2026-09-26 实测修复）：setup 登记位可能被 notifyDataSetChanged 同帧
+    //   竞争丢弃（P0-B4 已知 race）→ 视觉停在 item 0。此时任何"接受视觉位置"的逻辑都会把
+    //   恢复位冲掉（15:27 日志实锤：sp=1 → user-takeover f=0 → cur=0 进度写成 0，用户侧
+    //   表现=「每次打开都在第一页/必须重新打开第二次才正常」）。只有确认过 f==sp 之后，
+    //   视觉位置才允许被当作"用户意图"接受。
+    @Volatile private var anchorLanded = false
+
+    /** 分割段页模式：段≈一屏，item 偏 1 = 页偏 1，落位容差必须为 0（整页模式一屏内漂移可容忍） */
+    private val segmentMode: Boolean get() = pageList.any { it.segmentIndex > 0 }
+
+    /** 锚点未落位且视觉仍在锚点附近 → 不算用户接管，应重锚回恢复位 */
+    private fun anchorNotLandedNearSp(f: Int): Boolean =
+        !anchorLanded && f != RecyclerView.NO_POSITION && f in pageList.indices &&
+            pendingAnchorSp in pageList.indices && f != pendingAnchorSp &&
+            kotlin.math.abs(f - pendingAnchorSp) <= 2
+
     /** 诊断取证：状态翻转进诊断日志（关于页可导出），异常静默 */
     private fun diagMark(msg: String) = try {
         com.mangareader.DiagTracer.mark(context, "webtoon: $msg")
@@ -103,6 +119,15 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
             if (sawUserScroll) {
                 val lm = recycler.layoutManager as? LinearLayoutManager
                 val f = lm?.findFirstVisibleItemPosition() ?: RecyclerView.NO_POSITION
+                // ★ 锚点未落位保护：视觉仍在锚点附近且从未确认落位 → 不接受、也不中断正在
+                //   进行中的手势，顺延窗口；手势自然结束由 IDLE 收窗分支重锚回恢复位。
+                if (anchorNotLandedNearSp(f) && settleRetries < 3) {
+                    settleRetries++
+                    diagMark("deferred guard f=$f sp=$pendingAnchorSp not-landed -> wait idle")
+                    startSettleWindow()
+                    return@Runnable
+                }
+                anchorLanded = true
                 if (f != RecyclerView.NO_POSITION) pendingAnchorSp = f
                 isSettleWindowActive = false
                 updatePage()
@@ -118,10 +143,26 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
         val sp = pendingAnchorSp
         val f = (recycler.layoutManager as? LinearLayoutManager)?.findFirstVisibleItemPosition()
             ?: RecyclerView.NO_POSITION
-        if (sp in pageList.indices && (f == RecyclerView.NO_POSITION || kotlin.math.abs(f - sp) > 2)) {
+        // ★ 段页模式落位容差 0：段≈一屏，f 偏 1 = 显示的整页偏 1（整页模式沿用 ±2 屏容忍）
+        val landedTol = if (segmentMode) 0 else 2
+        if (sp in pageList.indices && (f == RecyclerView.NO_POSITION || kotlin.math.abs(f - sp) > landedTol)) {
             if (sawUserScroll) {
                 // ★ P0-B6：用户滚动过 → 视觉即真相。漂移可能是用户滑动/误触输入所致，
                 //   强拉回锚点=夺走用户位置（实机三轮回跳事故元凶）。所见即所得放行。
+                //   ★ 但锚点从未落位且视觉仍在锚点附近时例外：此刻的"视觉"是登记位被
+                //   丢弃的产物而非用户意图（15:27 日志 sp=1 → f=0 → cur=0 实锤），
+                //   重锚回恢复位再给一次窗口；重试耗尽才接受，防极端场景死循环。
+                if (anchorNotLandedNearSp(f) && settleRetries < 3) {
+                    settleRetries++
+                    android.util.Log.d("WebtoonRV", "drift guard f=$f sp=$sp not-landed -> re-anchor")
+                    diagMark("drift guard f=$f sp=$sp not-landed -> re-anchor")
+                    currentPage = sp
+                    (recycler.layoutManager as? LinearLayoutManager)?.scrollToPositionWithOffset(sp, 0)
+                    recycler.post { recycler.requestLayout() }
+                    startSettleWindow()
+                    return@Runnable
+                }
+                anchorLanded = true
                 android.util.Log.d("WebtoonRV", "settle drift f=$f sp=$sp but USER-SCROLLED -> accept visual pos")
                 updatePage()
                 return@Runnable
@@ -138,10 +179,12 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
             }
             android.util.Log.d("WebtoonRV", "settle give-up: lock sp=$sp, wait real scroll")
                 diagMark("give-up lock sp=$sp")
+            anchorLanded = true
             currentPage = sp
         } else {
             android.util.Log.d("WebtoonRV", "settleWindow END landed f=$f -> calibrate updatePage")
             diagMark("window-end landed f=$f")
+            anchorLanded = true
             updatePage()
         }
     }
@@ -322,6 +365,17 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
                     if (isSettleWindowActive && !isSetupScrollPending) {
                         val lm = rv.layoutManager as? LinearLayoutManager
                         val f = lm?.findFirstVisibleItemPosition() ?: RecyclerView.NO_POSITION
+                        // ★ 锚点未落位保护（2026-09-26 实测）：恢复位登记被同帧竞争丢弃 → 视觉停在
+                        //   锚点附近，此刻的"用户位置"其实是锚点失败的产物——重锚回恢复位而非接受
+                        //   （15:27 日志实锤：sp=1 → takeover f=0 → cur=0，恢复进度被冲成第 1 页）。
+                        if (anchorNotLandedNearSp(f) && settleRetries < 3) {
+                            settleRetries++
+                            diagMark("takeover guard f=$f sp=$pendingAnchorSp not-landed -> re-anchor")
+                            lm?.scrollToPositionWithOffset(pendingAnchorSp, 0)
+                            rv.requestLayout()
+                            return
+                        }
+                        anchorLanded = true
                         if (f != RecyclerView.NO_POSITION) pendingAnchorSp = f
                         android.util.Log.d("WebtoonRV", "settleWindow USER-TAKEOVER f=$f -> calibrate updatePage")
                         diagMark("user-takeover f=$f")
@@ -367,10 +421,21 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
         val f = lm.findFirstVisibleItemPosition()
         val l = lm.findLastVisibleItemPosition()
         if (f == RecyclerView.NO_POSITION) return
+        // ★ 主规则=视口中心线命中的 item（2026-09-26）：旧规则（自底向上找 bottom<=height 或
+        //   top<0 的项）在段高≈屏高的分割模式下边界态报上一页——当前段底部未过屏底时
+        //   bottom<=height 不成立，落回 top<0 的上一段（15:13 日志实锤：cur=1 后 7 秒无翻页、
+        //   又自行跳回 0）。中心线语义=「正在看的那页」，段/整页模式通用。
         var best = RecyclerView.NO_POSITION
-        for (i in l downTo f) {
+        for (i in f..l) {
             val v = lm.findViewByPosition(i) ?: continue
-            if (v.bottom <= height || v.top < 0) { best = i; break }
+            if (v.top <= height / 2 && v.bottom > height / 2) { best = i; break }
+        }
+        if (best == RecyclerView.NO_POSITION) {
+            // 中心线落在页隙/缺口：回退旧规则
+            for (i in l downTo f) {
+                val v = lm.findViewByPosition(i) ?: continue
+                if (v.bottom <= height || v.top < 0) { best = i; break }
+            }
         }
         if (best == RecyclerView.NO_POSITION) best = l
         if (best in pageList.indices && best != currentPage) {
@@ -450,6 +515,7 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
         android.util.Log.d("WebtoonRV", "doScrollAndFinalize sp=$sp total=${pageList.size}")
         pendingAnchorSp = sp
         settleRetries = 0
+        anchorLanded = false  // ★ 锚点落位确认：新一轮恢复重置（15:27 日志 sp=1→takeover f=0 实锤）
         sawUserScroll = false  // ★ P0-B6：新一轮恢复重置用户滚动标志
         currentPage = sp  // ★ 显式设上（mihon 模式），万一 onScrolled 还未跑也能立刻读到正确 currentPage
         (recycler.layoutManager as? LinearLayoutManager)?.scrollToPositionWithOffset(sp, 0)
@@ -467,10 +533,15 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
             if (!isSetupScrollPending) return@post
             val lm0 = recycler.layoutManager as? LinearLayoutManager ?: return@post
             val f0 = lm0.findFirstVisibleItemPosition()
-            if (f0 == RecyclerView.NO_POSITION || kotlin.math.abs(f0 - sp) > 2) {
+            // ★ 段页模式容差 0（f 偏 1 = 整页偏 1）；整页模式保留 ±2 屏容忍
+            val firstTol = if (segmentMode) 0 else 2
+            if (f0 == RecyclerView.NO_POSITION || kotlin.math.abs(f0 - sp) > firstTol) {
                 android.util.Log.d("WebtoonRV", "first-frame re-anchor f=$f0 sp=$sp")
+                diagMark("first-frame f=$f0 sp=$sp re-anchor")
                 lm0.scrollToPositionWithOffset(sp, 0)
                 recycler.requestLayout()
+            } else {
+                anchorLanded = true
             }
         }
         preloadAround(sp, jump = sp != 0)
@@ -498,6 +569,7 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
                         android.util.Log.d("WebtoonRV", "IDLE release KEEP sp=$sp")
                         currentPage = sp
                     }
+                    anchorLanded = true  // ★ 两个出口都视为锚点阶段结束（settleWindow 接管后续校准）
                     startSettleWindow()
                 }
             }
