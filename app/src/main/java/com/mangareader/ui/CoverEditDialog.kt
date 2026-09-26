@@ -516,10 +516,12 @@ private fun ContentBrowserStage(
                     }) {
                         Box(Modifier.fillMaxWidth().aspectRatio(1f).background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp)), contentAlignment = Alignment.Center) {
                             when {
-                                // ★ 文件夹（分卷）也显示封面：优先直读 Reader 卷缩略图缓存（打开过即有），
-                                //   miss 才 loadCoverForItem 现场递归取首图并写回
+                                // ★ 卷项（文件夹 / 压缩包子卷）都显示封面：优先直读 Reader 卷缩略图缓存
+                                //   （打开过即有），miss 才 loadCoverForItem 现场取首图并写回。
+                                //   压缩包必须走封面链路——loadDirItemBytes 对 zip 读的是整包字节，解码必败
                                 isDir -> ItemThumbBmp(engine, item, thumbCache, isDir = true, currentPath = path)
                                 isImg -> ItemThumbBmp(engine, item, thumbCache)
+                                isArc -> ItemThumbBmp(engine, item, thumbCache, isArchive = true, currentPath = path)
                                 else -> Text(ext.uppercase(), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
@@ -534,9 +536,12 @@ private fun ContentBrowserStage(
 
 /** 浏览器内 dir 项的 Reader 卷路径（与 openItem/tocItemChPath 同款推导），用于命中卷缩略图缓存 */
 private fun browserItemChPath(currentPath: String, item: ArchiveEngine.Item): String? {
-    if (!item.dir) return null
-    return if (currentPath.startsWith("z:")) composeChildPath(currentPath, item)
-           else "d:${item.auth}|${item.tree}|${item.doc}"
+    // 卷项 = 文件夹 或 压缩包子卷（非 dir 的 zip/cbz 等）——两者都能以 Reader 卷身份打开
+    if (currentPath.startsWith("z:")) {
+        return if (item.dir) composeChildPath(currentPath, item) else null
+    }
+    return if (item.dir) "d:${item.auth}|${item.tree}|${item.doc}"
+           else "a:${item.auth}|${item.tree}|${item.doc}|${item.name.substringAfterLast('.').lowercase()}"
 }
 
 /** 分卷封面现场生成限流（SAF 递归取首图开销大，可见格数级并发会拖慢整屏） */
@@ -548,18 +553,19 @@ private fun ItemThumbBmp(
     item: ArchiveEngine.Item,
     cache: android.util.LruCache<String, Bitmap>,
     isDir: Boolean = false,
+    isArchive: Boolean = false,
     currentPath: String = "",
 ) {
-    val key = "item|" + (item.subPath.ifEmpty { item.doc }) + if (isDir) "|dir" else ""
+    val key = "item|" + (item.subPath.ifEmpty { item.doc }) + if (isDir || isArchive) "|vol" else ""
     var bmp by remember(key) { mutableStateOf<Bitmap?>(cache.get(key)) }
     var loading by remember(key) { mutableStateOf(bmp == null) }
     LaunchedEffect(key) {
         if (bmp == null) {
             val t = withContext(Dispatchers.IO) {
                 cache.get(key)?.let { return@withContext it }
-                if (isDir) {
-                    // ★ 先直读 Reader 卷缩略图缓存（covers/<md5(chPath)>.thumb，打开过的卷零解析秒出），
-                    //   miss 才经 loadCoverForItem 现场递归取首图（限流），生成后写回 item: 缓存
+                if (isDir || isArchive) {
+                    // ★ 卷项（文件夹/压缩包）：先直读 Reader 卷缩略图缓存（打开过的卷零解析秒出），
+                    //   miss 才经 loadCoverForItem 现场取封面（限流；zip 走 loadFromZip 解首图）并写回
                     val chPath = browserItemChPath(currentPath, item)
                     (chPath?.let { engine.loadVolThumbByPath(it) }
                         ?: DirCoverSemaphore.withPermit { engine.loadCoverForItem(item) })
@@ -574,7 +580,7 @@ private fun ItemThumbBmp(
     val shown = bmp
     when {
         shown != null -> Image(shown.asImageBitmap(), null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-        loading && isDir -> CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+        loading && (isDir || isArchive) -> CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
     }
 }
 
