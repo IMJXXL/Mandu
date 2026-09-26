@@ -946,6 +946,8 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             catch (_: Exception) { pages }
         } else pages
         pageList = expandedPages
+        // ★ 分割诊断取证：入口展开统计进诊断日志（unprobed>0 = 有页探测失败被整页透传）
+        try { com.mangareader.DiagTracer.mark(ctx, "tallSplit expand ${com.mangareader.engine.pdf.VirtualPageExpander.lastStats} path=$path") } catch (_: Exception) {}
         // ★ B1：分割实际生效（存在展开段）时提升共享位图缓存额度（仅大内存设备）
         try { engine.setSegmentCacheBoost(expandedPages.size > pages.size) } catch (_: Exception) {}
         val expandedSize = expandedPages.size

@@ -20,6 +20,11 @@ object VirtualPageExpander {
 
     private val SPLIT_SOURCES = setOf("pdf", "dir", "zip", "rar", "7z", "tar")
 
+    /** 最近一次 expand 统计（诊断取证）：入口页数/输出页数/探测失败整页透传数 */
+    @Volatile
+    var lastStats: String = ""
+        private set
+
     fun expand(
         pages: List<ArchiveEngine.PageMeta>,
         tallSplitEnabled: Boolean,
@@ -43,6 +48,7 @@ object VirtualPageExpander {
             return storeSizes
         }
         val result = mutableListOf<ArchiveEngine.PageMeta>()
+        var unprobedCount = 0
         for ((origIdx, meta) in pages.withIndex()) {
             if (meta.segmentIndex > 0 || meta.source !in SPLIT_SOURCES) {
                 result.add(meta)
@@ -71,6 +77,7 @@ object VirtualPageExpander {
             val ph = size?.get(1)?.toFloat() ?: 0f
             if (pw <= 0f || ph <= 0f) {
                 // 动图（0,0）/探测失败/未知 → 原样透传，永不阻塞
+                if (meta.source in SPLIT_SOURCES) unprobedCount++
                 result.add(meta)
                 continue
             }
@@ -92,6 +99,7 @@ object VirtualPageExpander {
             merged.putAll(pending)
             engine.savePageSizeCache(treePath, storeStamp ?: sizeStamp(pages), merged)
         }
+        lastStats = "in=${pages.size} out=${result.size} unprobed=$unprobedCount"
         return result
     }
 

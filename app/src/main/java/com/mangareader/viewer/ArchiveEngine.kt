@@ -242,6 +242,7 @@ class ArchiveEngine(private val ctx: Context) {
     private val renderSlotUri = arrayOfNulls<Uri>(2)
     private val renderSlotCounter = java.util.concurrent.atomic.AtomicInteger()
     private val inflightSegments = java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.CompletableFuture<Bitmap?>>()
+    private val segFallbackMarked = java.util.Collections.newSetFromMap(java.util.concurrent.ConcurrentHashMap<String, Boolean>())
     private val epubSpineCache = object : LinkedHashMap<String, List<Int>>(10, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<Int>>?): Boolean = size > 10
     }
@@ -3127,6 +3128,11 @@ class ArchiveEngine(private val ctx: Context) {
                     return bmp
                 }
                 Log.w(TAG, "loadImagePageSegment render null seg=$segmentIndex, fallback whole page")
+                // ★ 诊断取证：段渲染失败回退整图（用户实测=后面全是糊图），每 (doc,idx,seg) 只记一次
+                val mk = "${p.doc}|${meta.localIdx}#$segmentIndex"
+                if (segFallbackMarked.add(mk)) {
+                    try { com.mangareader.DiagTracer.mark(ctx, "tallSplit segFallback idx=${meta.localIdx} seg=$segmentIndex src=${meta.source}") } catch (_: Exception) {}
+                }
                 future.complete(null)
                 return loadPage(meta, treeStr)
             } finally { if (!future.isDone) future.complete(null); inflightSegments.remove(segKey, future) }
