@@ -22,7 +22,7 @@ object PdfTallSplitCalculator {
     }
 
     fun optimalSplitHeightPx(screenMax: Int): Float =
-        if (screenMax <= 0) 4096f else screenMax * 2f
+        if (screenMax <= 0) 4096f else screenMax.toFloat()
 
     fun splitHeightPdf(screenMax: Int, screenWidth: Int, pageWidth: Float): Float {
         if (screenWidth <= 0 || pageWidth <= 0f) return optimalSplitHeightPx(screenMax)
@@ -46,6 +46,18 @@ object PdfTallSplitCalculator {
      */
     fun segmentRect(pageWidth: Float, pageHeight: Float, splitHeightPdf: Float, segmentIndex: Int): SplitRect {
         val n = segmentCount(pageHeight, splitHeightPdf)
+        return segmentRectByCount(pageWidth, pageHeight, n, segmentIndex)
+    }
+
+    /**
+     * ★ 按段数直接均分（2026-09-26）：渲染端不再自行重算 splitH/n——expand 规划段数时
+     *   用的 screenMax/screenWidth 与渲染端任一时刻的 displayMetrics 可能不同（Pad 分屏/
+     *   任务栏/多窗口），重算会得到不同的 n → 渲染切出的段与 expand 规划的段错位（段边界
+     *   内容重复/缺失=「乱」，段位图超高挤爆位图缓存=「糊」）。段页 meta.segmentTotal 就是
+     *   expand 的权威 n，渲染端直接用它均分——单一事实来源。
+     */
+    fun segmentRectByCount(pageWidth: Float, pageHeight: Float, segmentTotal: Int, segmentIndex: Int): SplitRect {
+        val n = segmentTotal.coerceIn(1, MAX_SEGMENTS)
         val i = segmentIndex.coerceIn(1, n)
         val y0 = pageHeight * (i - 1) / n
         val y1 = pageHeight * i / n

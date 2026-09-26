@@ -97,9 +97,23 @@ class PdfTallSplitCalculatorTest {
 
     @Test
     fun `splitHeightPdf 与屏幕联动`() {
-        assertEquals(4800f, PdfTallSplitCalculator.splitHeightPdf(2400, 1080, 1080f), 0.01f)
+        // ★ 每段=一屏高（2026-09-26）：×2 会让段位图达 2 屏高（~23MB/张）挤爆位图缓存
+        assertEquals(2400f, PdfTallSplitCalculator.splitHeightPdf(2400, 1080, 1080f), 0.01f)
         assertEquals(4096f, PdfTallSplitCalculator.optimalSplitHeightPx(0), 0.01f)
-        // screenWidth 非法时回退 optimalSplitHeightPx(screenMax) = 4800（不是 4096 默认值）
-        assertEquals(4800f, PdfTallSplitCalculator.splitHeightPdf(2400, 0, 1080f), 0.01f)
+        // screenWidth 非法时回退 optimalSplitHeightPx(screenMax) = 2400（不是 4096 默认值）
+        assertEquals(2400f, PdfTallSplitCalculator.splitHeightPdf(2400, 0, 1080f), 0.01f)
+    }
+
+    @Test
+    fun `segmentRectByCount 与均分语义一致`() {
+        // 渲染端按 expand 的权威段数（segmentTotal）直接均分——与 segmentRect 同构
+        val n = PdfTallSplitCalculator.segmentCount(42901f, 1226f)
+        val viaSplitH = PdfTallSplitCalculator.segmentRect(595f, 42901f, 1226f, 2)
+        val viaCount = PdfTallSplitCalculator.segmentRectByCount(595f, 42901f, n, 2)
+        assertEquals(viaSplitH.top, viaCount.top, 1e-4f)
+        assertEquals(viaSplitH.bottom, viaCount.bottom, 1e-4f)
+        // 段索引越界钳制同样生效
+        val over = PdfTallSplitCalculator.segmentRectByCount(595f, 42901f, n, 999)
+        assertEquals(42901f, over.bottom, 1e-4f)
     }
 }

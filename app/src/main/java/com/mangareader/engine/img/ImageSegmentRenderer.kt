@@ -57,10 +57,11 @@ object ImageSegmentRenderer {
             val imgW = dec.width
             val imgH = dec.height
             if (imgW <= 0 || imgH <= 0) return null
-            val splitH = PdfTallSplitCalculator.splitHeightPdf(screenMax, screenWidth, imgW.toFloat())
-            // ★ 展开几何复核：图被替换/尺寸表过期导致已不是长图 → null 走整图兜底，绝不错切错位
-            if (!PdfTallSplitCalculator.isTallPage(imgW.toFloat(), imgH.toFloat(), splitH)) return null
-            val rect = PdfTallSplitCalculator.segmentRect(imgW.toFloat(), imgH.toFloat(), splitH, segmentIndex)
+            // ★ 展开几何复核：图被替换/尺寸表过期导致已不是长图 → null 走整图兜底，绝不错切错位。
+            //   长图判定只依赖宽高比（阈值 3），不再本地重算 splitH——渲染矩形直接按 expand 的
+            //   权威段数（segmentTotal）均分，与展开器几何严格一致（见 segmentRectByCount 注释）。
+            if (imgH.toFloat() / imgW <= PdfTallSplitCalculator.TALL_RATIO_THRESHOLD) return null
+            val rect = PdfTallSplitCalculator.segmentRectByCount(imgW.toFloat(), imgH.toFloat(), meta.segmentTotal, segmentIndex)
             val r0 = rect.top.toInt().coerceIn(0, imgH - 1)
             val r1 = rect.bottom.toInt().coerceIn(r0 + 1, imgH)
             val region = Rect(0, r0, imgW, r1)

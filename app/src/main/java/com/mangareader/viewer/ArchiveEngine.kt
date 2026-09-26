@@ -3084,7 +3084,9 @@ class ArchiveEngine(private val ctx: Context) {
                 val screenMax = screenMax0
                 val screenWidth = screenWidth0
                 val splitH = com.mangareader.engine.pdf.PdfTallSplitCalculator.splitHeightPdf(screenMax, screenWidth, pageWidth)
-                val rect = com.mangareader.engine.pdf.PdfTallSplitCalculator.segmentRect(pageWidth, pageHeight, splitH, segmentIndex)
+                // ★ 渲染几何直接复用 expand 的权威段数（segmentTotal）均分——本地重算 splitH/n 会因
+                //   displayMetrics 时机差异得到不同的 n，切出的段与 expand 规划错位（乱/糊，2026-09-26 实测）
+                val rect = com.mangareader.engine.pdf.PdfTallSplitCalculator.segmentRectByCount(pageWidth, pageHeight, meta.segmentTotal, segmentIndex)
                 val segW = screenWidth.coerceAtLeast(1)
                 val segH = (segW.toFloat() * rect.height / pageWidth).toInt().coerceAtLeast(1)
                 val bmp = try {
