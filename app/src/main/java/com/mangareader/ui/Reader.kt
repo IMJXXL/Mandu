@@ -2216,6 +2216,8 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
 
                             }
                         }
+                        var lastSkipMarkAt by remember { mutableLongStateOf(0L) }
+                        try { com.mangareader.DiagTracer.mark(ctx, "readerView mode=$mode vert=$vertical pages=${displayPages.size} start=$safeCur") } catch (_: Exception) {}
                         com.mangareader.native.NativeReaderScreen(
                             engine = engine,
                             treePath = navStack.lastOrNull() ?: book?.filePath ?: "",
@@ -2268,14 +2270,24 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                                 val skip = isVert && (wv == null || wv.isSetupScrollPending || wv.isSettleWindowActive)
                                 if (skip) {
                                     android.util.Log.d("ReaderProgress", "onPageChanged SKIP newCur=$newCur isVert=$isVert pend=${wv?.isSetupScrollPending} win=${wv?.isSettleWindowActive}")
+                                    // ★ 诊断取证：SKIP 状态翻转时记录（连续 SKIP 节流 5s）
+                                    val nowMs = System.currentTimeMillis()
+                                    if (nowMs - lastSkipMarkAt > 5000) {
+                                        lastSkipMarkAt = nowMs
+                                        try { com.mangareader.DiagTracer.mark(ctx, "pageCb SKIP newCur=$newCur pend=${wv?.isSetupScrollPending} win=${wv?.isSettleWindowActive}") } catch (_: Exception) {}
+                                    }
                                 } else {
                                     android.util.Log.d("ReaderProgress", "onPageChanged EXEC newCur=$newCur isVert=$isVert")
+                                    try { com.mangareader.DiagTracer.mark(ctx, "pageCb EXEC cur=$newCur") } catch (_: Exception) {}
                                     cur = newCur; save()
                                 }
                             },
                             onToggleUi = ::toggleUi,
                             onChapterEnd = handleChapterEnd,
-                            onPageCountChanged = { count -> expandedPageCount = count },
+                            onPageCountChanged = { count ->
+                                expandedPageCount = count
+                                try { com.mangareader.DiagTracer.mark(ctx, "pageCount=$count") } catch (_: Exception) {}
+                            },
 
                             onViewReady = { w, p ->
                                 webtoonViewRef = w; pagerViewRef = p

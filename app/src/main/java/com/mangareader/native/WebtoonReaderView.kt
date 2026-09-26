@@ -82,6 +82,12 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
     //   一旦置位，settleWindow 到期一律以视觉位置放行、绝不 re-anchor 拉回锚点
     //   （"滑动不会返回"铁律；落位纠偏仅保留给"用户从未碰屏幕"的纯恢复场景）。
     @Volatile private var sawUserScroll = false
+
+    /** 诊断取证：状态翻转进诊断日志（关于页可导出），异常静默 */
+    private fun diagMark(msg: String) = try {
+        com.mangareader.DiagTracer.mark(context, "webtoon: $msg")
+    } catch (_: Exception) {}
+
     private val settleWindowRunnable = Runnable {
         // ★ v1.11 P0-B5（实机回归修复）：窗口到期时用户仍在触摸/惯性滚动中 → 顺延校验。
         //   实机日志实锤（17:04 会话）：进卷守卫期内用户长距 fling（0→950），1.5s timeout 抢跑
@@ -109,6 +115,7 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
             if (settleRetries < 3) {
                 settleRetries++
                 android.util.Log.d("WebtoonRV", "settle NOT-LANDED f=$f sp=$sp retry=$settleRetries -> re-anchor")
+                diagMark("not-landed f=$f sp=$sp retry=$settleRetries re-anchor")
                 currentPage = sp
                 (recycler.layoutManager as? LinearLayoutManager)?.scrollToPositionWithOffset(sp, 0)
                 recycler.post { recycler.requestLayout() }
@@ -116,9 +123,11 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
                 return@Runnable
             }
             android.util.Log.d("WebtoonRV", "settle give-up: lock sp=$sp, wait real scroll")
+                diagMark("give-up lock sp=$sp")
             currentPage = sp
         } else {
             android.util.Log.d("WebtoonRV", "settleWindow END landed f=$f -> calibrate updatePage")
+            diagMark("window-end landed f=$f")
             updatePage()
         }
     }
@@ -301,6 +310,7 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
                         val f = lm?.findFirstVisibleItemPosition() ?: RecyclerView.NO_POSITION
                         if (f != RecyclerView.NO_POSITION) pendingAnchorSp = f
                         android.util.Log.d("WebtoonRV", "settleWindow USER-TAKEOVER f=$f -> calibrate updatePage")
+                        diagMark("user-takeover f=$f")
                         recycler.removeCallbacks(settleWindowRunnable)
                         isSettleWindowActive = false
                         updatePage()
@@ -400,6 +410,7 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
         // ★ v1.11 P0-A2：切卷/重入前清掉上一卷遗留的 settleWindow 与 pending 释放机制（防跨卷串扰/幽灵 listener）
         cancelPendingRelease()
         isSetupScrollPending = true
+        diagMark("setup pages=${pages.size} sp=$startPage pending=true")
         doScrollAndFinalize(startPage)
     }
 
