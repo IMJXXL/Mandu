@@ -21,7 +21,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ehviewer.core.database.model.SmbSourceEntity
 import com.hippo.ehviewer.library.BrowseEntryRemote
-import com.hippo.ehviewer.library.BrowseSession
 import com.hippo.ehviewer.smb.SmbGateway
 import com.hippo.ehviewer.smb.SmbRepository
 import kotlinx.coroutines.Dispatchers
@@ -230,8 +229,8 @@ fun SmbAddWizardScreen(onBack: () -> Unit, onSaved: () -> Unit, initial: SmbSour
                                     .clickable {
                                         pickedShare = share
                                         tempSource = tempSource?.copy(share = share)
+                                        // ★ 任务2：等 loadDirs 完成后再切 step3，避免空白目录列表
                                         scope.launch {
-                                            com.hippo.ehviewer.library.BrowseSession.invalidateSmbListing(tempSource?.id ?: 0, "")
                                             loadDirs("")
                                             step = 3
                                         }
