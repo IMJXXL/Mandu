@@ -15,7 +15,9 @@ import android.widget.FrameLayout
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -200,6 +202,12 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     var subVolCoverMap by remember { mutableStateOf<Map<String, Pair<String, Long>>>(emptyMap()) }
     var subVolMenu by remember { mutableStateOf<Pair<ArchiveEngine.Item, String>?>(null) }
     var subVolEdit by remember { mutableStateOf<Pair<ArchiveEngine.Item, String>?>(null) }
+    // 满屏子项网格（ItemGrid）与目录面板（ReaderTocSheet）共用的 dir 子项长按入口
+    val onSubItemLongPress: (ArchiveEngine.Item) -> Unit = { itm ->
+        if (book?.source == "local") {
+            tocItemChPath(navStack, itm)?.let { cp -> subVolMenu = itm to cp }
+        }
+    }
     // ★ v1.13 C-2 无感切换遮罩：提交 mode 前同步 view.draw 截当前画面，盖住
     //   "旧 delegate release → 新 delegate 全量重建+解码"的占位空窗；500ms 兜底撤除。
     //   动图弹窗路径（useAnimPager 直设）不经 onModeChange，一期无遮罩降级（C-1 已保不白屏）
@@ -2396,7 +2404,11 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                     }
                 }
                 items.isNotEmpty() -> {
-                    ItemGrid(items, engine, bgColor, progressForToc, { openItem(it) }, Modifier.fillMaxSize().background(bgColor))
+                    ItemGrid(items, engine, bgColor, progressForToc, { openItem(it) }, Modifier.fillMaxSize().background(bgColor),
+                        navStack = navStack,
+                        subVolCovers = subVolCoverMap,
+                        onItemLongPress = onSubItemLongPress,
+                    )
                 }
                 else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("没有内容") }
                 }
@@ -2655,13 +2667,17 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         )
     }
 
-    // ★ 子卷自定义封面批量查询（IO 一次列 covers/ 目录算完，防每卷一次 listFiles 的 O(n²)）
-    LaunchedEffect(showToc, navStack, subCoverRev, items, tocItems) {
+    // ★ 子卷自定义封面批量查询（IO 一次列 covers/ 目录算完，防每卷一次 listFiles 的 O(n²)）。
+    //   不绑定 showToc：打开父书的首屏满屏网格（ItemGrid）同样要显示覆盖封面。
+    LaunchedEffect(navStack, subCoverRev, items, tocItems) {
         val bk = book
-        if (!showToc || bk == null || bk.source != "local") {
+        if (bk == null || bk.source != "local") {
             subVolCoverMap = emptyMap(); return@LaunchedEffect
         }
         val src = if (viewing && tocItems.isNotEmpty()) tocItems else items
+        if (src.isEmpty()) {
+            subVolCoverMap = emptyMap(); return@LaunchedEffect
+        }
         subVolCoverMap = withContext(Dispatchers.IO) {
             engine.subVolCoverDataBatch(src.mapNotNull { tocItemChPath(navStack, it) })
         }
@@ -2888,7 +2904,18 @@ private fun computeInBookContinueTarget(currentPath: String?, rows: List<com.man
 }
 
 @Composable
-private fun ItemGrid(items: List<ArchiveEngine.Item>, engine: ArchiveEngine, bgColor: Color, progress: List<ReadingProgress>, tap: (ArchiveEngine.Item) -> Unit, mod: Modifier) {
+@OptIn(ExperimentalFoundationApi::class)
+private fun ItemGrid(
+    items: List<ArchiveEngine.Item>,
+    engine: ArchiveEngine,
+    bgColor: Color,
+    progress: List<ReadingProgress>,
+    tap: (ArchiveEngine.Item) -> Unit,
+    mod: Modifier,
+    navStack: List<String> = emptyList(),
+    subVolCovers: Map<String, Pair<String, Long>> = emptyMap(),
+    onItemLongPress: (ArchiveEngine.Item) -> Unit = {},
+) {
     val ctx = LocalContext.current
     val configuration = LocalConfiguration.current
     var sortAsc by remember { mutableStateOf(true) }
@@ -2910,20 +2937,47 @@ private fun ItemGrid(items: List<ArchiveEngine.Item>, engine: ArchiveEngine, bgC
             }
         }
         LazyVerticalGrid(columns = gridCols, contentPadding = PaddingValues(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.weight(1f)) {
-            itemsIndexed(sorted, key = { i, e -> "${e.auth}|${e.doc}_$i" }) { _, e -> ItemCard(e, engine, bgColor, progress, { tap(e) }) }
+            itemsIndexed(sorted, key = { i, e -> "${e.auth}|${e.doc}_$i" }) { _, e ->
+                ItemCard(e, engine, bgColor, progress, { tap(e) }, navStack, subVolCovers) { onItemLongPress(e) }
+            }
         }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ItemCard(item: ArchiveEngine.Item, engine: ArchiveEngine, bgColor: Color, progress: List<ReadingProgress>, tap: () -> Unit) {
-
+private fun ItemCard(
+    item: ArchiveEngine.Item,
+    engine: ArchiveEngine,
+    bgColor: Color,
+    progress: List<ReadingProgress>,
+    tap: () -> Unit,
+    navStack: List<String>,
+    subVolCovers: Map<String, Pair<String, Long>>,
+    onLongPress: () -> Unit,
+) {
+    val ctx = LocalContext.current
     val status = remember(progress, item.name) { com.mangareader.ui.statusForItem(item, progress) }
-    Column(Modifier.clip(RoundedCornerShape(12.dp)).clickable(onClick = tap).shadow(4.dp, RoundedCornerShape(12.dp))) {
+    // ★ 子卷自定义封面覆盖（与 ReaderTocSheet 目录 Tab 同款）：有覆盖走 CoverFetcher custom: 分支，
+    //   lastModified 注入缓存 key（同名覆盖写后旧缓存不命中）
+    val chPath = if (item.dir) tocItemChPath(navStack, item) else null
+    val subCover = chPath?.let { subVolCovers[it] }
+    val coverModel = remember(item.auth, item.tree, item.doc, item.subPath, subCover) {
+        coil3.request.ImageRequest.Builder(ctx)
+            .data(if (subCover != null) com.mangareader.viewer.CoverData(subCover.first, dynOn = false) else item)
+            .apply {
+                if (subCover != null) {
+                    memoryCacheKey("${subCover.first}|${subCover.second}")
+                    diskCacheKey("${subCover.first}|${subCover.second}")
+                }
+            }
+            .build()
+    }
+    Column(Modifier.clip(RoundedCornerShape(12.dp)).combinedClickable(onClick = tap, onLongClick = onLongPress).shadow(4.dp, RoundedCornerShape(12.dp))) {
         Box(Modifier.fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)).background(bgColor.copy(alpha = 0.8f)), contentAlignment = Alignment.Center) {
 
             coil3.compose.AsyncImage(
-                model = item,
+                model = coverModel,
                 contentDescription = item.name,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop,

@@ -54,6 +54,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -669,9 +670,13 @@ private fun CropStage(src: Bitmap, onConfirm: (Bitmap) -> Unit, onCancel: () -> 
     var viewSize by remember { mutableStateOf(IntSize.Zero) }
     var confirming by remember { mutableStateOf(false) }
     var initFit by remember { mutableStateOf(false) }
-    // 背景与前景跟随主题背景色（用户反馈：不应硬编码黑色）；遮罩保留黑色压暗语义
+    // 背景与前景跟随主题背景色（用户反馈：不应硬编码黑色）；
+    // ★ 遮罩明暗随主题自适应：固定 60% 黑会把浅色主题的浅背景压成一片黑、
+    //   且黑色前景画在深灰遮罩上看不见（2026-09-26 实测反馈）。浅色压 38%（四周中灰、
+    //   深色前景清晰），深色压 50%（黑底裁剪惯例、白色前景清晰）。
     val bg = MaterialTheme.colorScheme.background
     val fg = MaterialTheme.colorScheme.onBackground
+    val scrimAlpha = if (bg.luminance() > 0.5f) 0.38f else 0.50f
 
     Box(Modifier.fillMaxSize().background(bg).onSizeChanged { v ->
         viewSize = v
@@ -715,7 +720,7 @@ private fun CropStage(src: Bitmap, onConfirm: (Bitmap) -> Unit, onCancel: () -> 
             if (v.width > 0 && v.height > 0) {
                 val frame = frameRect(v, COVER_FRAME_RATIO)
                 // 四周压暗
-                val dim = Color.Black.copy(alpha = 0.6f)
+                val dim = Color.Black.copy(alpha = scrimAlpha)
                 drawRect(dim, Offset(0f, 0f), Size(v.width, frame.top))
                 drawRect(dim, Offset(0f, frame.bottom), Size(v.width, v.height - frame.bottom))
                 drawRect(dim, Offset(0f, frame.top), Size(frame.left, frame.height))
