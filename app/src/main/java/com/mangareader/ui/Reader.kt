@@ -194,6 +194,12 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     var renameInput by remember { mutableStateOf("") }
     var showSrQueue by remember { mutableStateOf(false) }
     var srReadyTick by remember { mutableStateOf(0) }
+    // ★ 子卷自定义封面（2026-09-26）：目录面板 dir 子项（A→a1→aa1 的中间层文件夹）长按换封面。
+    //   封面文件 covers/custom_<md5(chPath)>_*.jpg（无 DB 字段，文件存在即生效），rev 变更触发重查。
+    var subCoverRev by remember { mutableIntStateOf(0) }
+    var subVolCoverMap by remember { mutableStateOf<Map<String, Pair<String, Long>>>(emptyMap()) }
+    var subVolMenu by remember { mutableStateOf<Pair<ArchiveEngine.Item, String>?>(null) }
+    var subVolEdit by remember { mutableStateOf<Pair<ArchiveEngine.Item, String>?>(null) }
     // ★ v1.13 C-2 无感切换遮罩：提交 mode 前同步 view.draw 截当前画面，盖住
     //   "旧 delegate release → 新 delegate 全量重建+解码"的占位空窗；500ms 兜底撤除。
     //   动图弹窗路径（useAnimPager 直设）不经 onModeChange，一期无遮罩降级（C-1 已保不白屏）
@@ -2649,6 +2655,21 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         )
     }
 
+    // ★ 子卷自定义封面批量查询（IO 一次算完，目录 Tab 卡片直接取用）
+    LaunchedEffect(showToc, navStack, subCoverRev, items, tocItems) {
+        val bk = book
+        if (!showToc || bk == null || bk.source != "local") {
+            subVolCoverMap = emptyMap(); return@LaunchedEffect
+        }
+        val src = if (viewing && tocItems.isNotEmpty()) tocItems else items
+        subVolCoverMap = withContext(Dispatchers.IO) {
+            src.mapNotNull { itm ->
+                val cp = tocItemChPath(navStack, itm) ?: return@mapNotNull null
+                engine.subVolCoverData(cp)?.let { cp to it }
+            }.toMap()
+        }
+    }
+
     if (showToc) {
         val displayItems = if (viewing && tocItems.isNotEmpty()) tocItems else items
         ReaderTocSheet(
@@ -2701,9 +2722,65 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                     } else null
                 }
             } else null,
+            subVolCovers = subVolCoverMap,
+            onItemLongPress = { itm ->
+                if (book?.source == "local") {
+                    tocItemChPath(navStack, itm)?.let { cp -> subVolMenu = itm to cp }
+                }
+            },
         )
     }
 
+    // ★ 子卷封面长按菜单（更换 / 恢复默认）
+    subVolMenu?.let { (itm, cp) ->
+        val hasCustom = subVolCoverMap[cp] != null
+        AlertDialog(
+            onDismissRequest = { subVolMenu = null },
+            title = { Text(itm.name) },
+            text = { Text("为该章节设置自定义封面？封面会显示在目录列表中，原始文件不受影响。") },
+            confirmButton = {
+                TextButton(onClick = { subVolEdit = subVolMenu; subVolMenu = null }) { Text("更换封面") }
+            },
+            dismissButton = {
+                Row {
+                    if (hasCustom) {
+                        TextButton(onClick = {
+                            scope.launch {
+                                withContext(Dispatchers.IO) { subVolCoverMap[cp]?.let { engine.deleteCustomCoverByPath(it.first) } }
+                                coil3.SingletonImageLoader.get(ctx).memoryCache?.clear()
+                                subCoverRev++
+                                subVolMenu = null
+                                android.widget.Toast.makeText(ctx, "已恢复默认封面", android.widget.Toast.LENGTH_SHORT).show()
+                            }
+                        }) { Text("恢复默认封面", color = MaterialTheme.colorScheme.error) }
+                    }
+                    TextButton(onClick = { subVolMenu = null }) { Text("取消") }
+                }
+            },
+        )
+    }
+
+    // ★ 子卷封面编辑器：复用 CoverEditDialog，book 仅用 title/source/filePath——
+    //   伪 Book 以 chPath 为 filePath，编辑器内 children(chPath) 下钻选图、
+    //   saveCustomCoverBitmap(chPath) 落盘为 custom_<md5(chPath)>_<ts>.jpg，与 subVolCoverData 枚举一致
+    subVolEdit?.let { (itm, cp) ->
+        val bk = book
+        if (bk != null) {
+            CoverEditDialog(
+                book = bk.copy(title = itm.name, filePath = cp),
+                engine = engine, ctx = ctx,
+                onResult = { newPath ->
+                    scope.launch {
+                        coil3.SingletonImageLoader.get(ctx).memoryCache?.clear()
+                        android.widget.Toast.makeText(ctx, if (newPath != null) "封面已更新" else "封面保存失败", android.widget.Toast.LENGTH_SHORT).show()
+                        subCoverRev++
+                        subVolEdit = null
+                    }
+                },
+                onDismiss = { subVolEdit = null },
+            )
+        }
+    }
 
     if (showBookmarkNoteDialog) {
         val b = book
