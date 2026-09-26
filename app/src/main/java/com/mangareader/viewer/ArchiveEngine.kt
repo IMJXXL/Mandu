@@ -342,11 +342,13 @@ class ArchiveEngine(private val ctx: Context) {
 
     fun customCoverFile(bookPath: String): File = File(coverDir, customCoverFileName(bookPath))
 
-    /** 裁剪结果落盘（JPEG 90），返回 customCoverPath 值（"custom:<fileName>"） */
+    /** 裁剪结果落盘（JPEG 90），返回 customCoverPath 值（"custom:<fileName>"）。
+     *  文件名带时间戳：每次换封面 DB 值变化 → BookCard/弹窗的 memory/disk key 随之变化，
+     *  否则同名覆盖写会让 Coil 磁盘缓存永远命中旧字节（换封面后显示旧图）。旧文件由宿主删。 */
     fun saveCustomCoverBitmap(bmp: Bitmap, bookPath: String): String? {
         return try {
             if (!coverDir.exists()) coverDir.mkdirs()
-            val f = customCoverFile(bookPath)
+            val f = File(coverDir, "custom_${md5(bookPath)}_${System.currentTimeMillis()}.jpg")
             f.outputStream().use { bmp.compress(Bitmap.CompressFormat.JPEG, 90, it) }
             "custom:${f.name}"
         } catch (e: Exception) {
@@ -357,6 +359,25 @@ class ArchiveEngine(private val ctx: Context) {
 
     fun deleteCustomCoverByPath(customCoverPath: String) {
         try { File(coverDir, customCoverPath.removePrefix("custom:")).delete() } catch (_: Exception) {}
+    }
+
+    /**
+     * 目录面板子卷（dir 型文件夹卡，如 A→a1→aa1）的自定义封面查询（2026-09-26）。
+     * 存储复用 covers/ 目录，确定性前缀 custom_<md5(chPath)>_*.jpg（chPath 唯一标识子卷，
+     * 重扫后同路径同名 → 用户设置自动复用）；无 DB 字段，文件存在即生效。
+     * 返回 ("custom:<fileName>", lastModified)：lastModified 供调用方注入缓存 key，
+     * 同名覆盖写后旧缓存不再命中。
+     */
+    fun subVolCoverData(chPath: String): Pair<String, Long>? {
+        return try {
+            val base = "custom_${md5(chPath)}"
+            val f = coverDir.listFiles()
+                ?.filter { it.name == "$base.jpg" || it.name.startsWith("${base}_") }
+                ?.maxByOrNull { it.lastModified() }
+                ?: return null
+            if (f.length() <= 0L) return null
+            "custom:${f.name}" to f.lastModified()
+        } catch (_: Exception) { null }
     }
 
     /** 选图网格缩略图：字节 → inSampleSize 解码到 ~targetPx（缓存由调用方管理） */

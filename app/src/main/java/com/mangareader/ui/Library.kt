@@ -633,6 +633,8 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
             book = b, engine = engine, ctx = ctx,
             onResult = { newPath ->
                 scope.launch(Dispatchers.IO) {
+                    // 新封面文件名带新时间戳（缓存 key 随之更新），旧文件在此清理
+                    b.customCoverPath?.let { engine.deleteCustomCoverByPath(it) }
                     dao.updateBookCustomCoverPath(b.id, newPath)
                     withContext(Dispatchers.Main) {
                         coil3.SingletonImageLoader.get(ctx).memoryCache?.clear()
