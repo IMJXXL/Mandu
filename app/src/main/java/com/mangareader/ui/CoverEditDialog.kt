@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -501,7 +502,9 @@ private fun ContentBrowserStage(
                     }) {
                         Box(Modifier.fillMaxWidth().aspectRatio(1f).background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp)), contentAlignment = Alignment.Center) {
                             when {
-                                isDir -> Icon(Icons.Default.Folder, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(36.dp))
+                                // ★ 文件夹（分卷）也显示封面：loadCoverForItem 先查 covers/<md5>.thumb
+                                //   磁盘缓存（Reader 打开过该卷即有 → 命中零解析直读），miss 才递归取首图并写回
+                                isDir -> ItemThumbBmp(engine, item, thumbCache, isDir = true)
                                 isImg -> ItemThumbBmp(engine, item, thumbCache)
                                 else -> Text(ext.uppercase(), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
@@ -516,15 +519,23 @@ private fun ContentBrowserStage(
 }
 
 @Composable
-private fun ItemThumbBmp(engine: ArchiveEngine, item: ArchiveEngine.Item, cache: android.util.LruCache<String, Bitmap>) {
-    val key = item.subPath.ifEmpty { item.doc }
+private fun ItemThumbBmp(
+    engine: ArchiveEngine,
+    item: ArchiveEngine.Item,
+    cache: android.util.LruCache<String, Bitmap>,
+    isDir: Boolean = false,
+) {
+    val key = "item|" + (item.subPath.ifEmpty { item.doc }) + if (isDir) "|dir" else ""
     var bmp by remember(key) { mutableStateOf<Bitmap?>(cache.get(key)) }
     LaunchedEffect(key) {
         if (bmp == null) {
             val t = withContext(Dispatchers.IO) {
                 cache.get(key)?.let { return@withContext it }
-                val bytes = engine.loadDirItemBytes(item) ?: return@withContext null
-                engine.decodeThumbnail(bytes, 256)?.also { cache.put(key, it) }
+                // 文件夹：loadCoverForItem 先查 covers/<md5>.thumb（Reader 打开过即有 → 命中零解析直读），
+                // miss 才递归取首图并写回缓存；图片项：直读字节解码缩略图
+                val bmp = if (isDir) engine.loadCoverForItem(item)
+                          else engine.loadDirItemBytes(item)?.let { engine.decodeThumbnail(it, 256) }
+                bmp?.also { cache.put(key, it) }
             }
             if (bmp == null && t != null) bmp = t
         }
@@ -670,13 +681,10 @@ private fun CropStage(src: Bitmap, onConfirm: (Bitmap) -> Unit, onCancel: () -> 
     var viewSize by remember { mutableStateOf(IntSize.Zero) }
     var confirming by remember { mutableStateOf(false) }
     var initFit by remember { mutableStateOf(false) }
-    // 背景与前景跟随主题背景色（用户反馈：不应硬编码黑色）；
-    // ★ 遮罩明暗随主题自适应：固定 60% 黑会把浅色主题的浅背景压成一片黑、
-    //   且黑色前景画在深灰遮罩上看不见（2026-09-26 实测反馈）。浅色压 38%（四周中灰、
-    //   深色前景清晰），深色压 50%（黑底裁剪惯例、白色前景清晰）。
+    // 背景随主题；遮罩明暗自适应（浅色压 45% 呈中灰不糊死，深色 55% 保持黑底裁剪惯例）。
+    // 取景标线不随主题：白主体+黑描边双层在任何背景/图片内容上都清晰（2026-09-26 二次反馈优化）
     val bg = MaterialTheme.colorScheme.background
-    val fg = MaterialTheme.colorScheme.onBackground
-    val scrimAlpha = if (bg.luminance() > 0.5f) 0.38f else 0.50f
+    val scrimAlpha = if (bg.luminance() > 0.5f) 0.45f else 0.55f
 
     Box(Modifier.fillMaxSize().background(bg).onSizeChanged { v ->
         viewSize = v
@@ -725,23 +733,42 @@ private fun CropStage(src: Bitmap, onConfirm: (Bitmap) -> Unit, onCancel: () -> 
                 drawRect(dim, Offset(0f, frame.bottom), Size(v.width, v.height - frame.bottom))
                 drawRect(dim, Offset(0f, frame.top), Size(frame.left, frame.height))
                 drawRect(dim, Offset(frame.right, frame.top), Size(v.width - frame.right, frame.height))
-                // 白框 + 三分线（前景色随主题，浅色背景下深色框可见）
-                drawRect(fg, frame.topLeft, frame.size, style = Stroke(2.dp.toPx()))
+                // ★ 四角 L 角标（相机取景器风格）：白主体 + 黑描边双层，浅灰遮罩/深色遮罩/任何图片上都醒目
+                val corner = 26.dp.toPx()
+                val armW = 5.dp.toPx()
+                val outlineW = armW + 3.dp.toPx()
+                val (l, t, r, b) = listOf(frame.left, frame.top, frame.right, frame.bottom)
+                val segs = listOf(
+                    Offset(l, t) to Offset(l + corner, t), Offset(l, t) to Offset(l, t + corner),
+                    Offset(r, t) to Offset(r - corner, t), Offset(r, t) to Offset(r, t + corner),
+                    Offset(l, b) to Offset(l + corner, b), Offset(l, b) to Offset(l, b - corner),
+                    Offset(r, b) to Offset(r - corner, b), Offset(r, b) to Offset(r, b - corner),
+                )
+                segs.forEach { seg ->
+                    drawLine(Color.Black, seg.first, seg.second, strokeWidth = outlineW)
+                    drawLine(Color.White, seg.first, seg.second, strokeWidth = armW)
+                }
+                // 细框连线 + 三分线（白色半透明，衬托角标）
+                drawRect(Color.White.copy(alpha = 0.55f), frame.topLeft, frame.size, style = Stroke(1.5.dp.toPx()))
                 val c1 = frame.left + frame.width / 3f
                 val c2 = frame.left + frame.width * 2f / 3f
-                drawLine(fg.copy(alpha = 0.4f), Offset(c1, frame.top), Offset(c1, frame.bottom), 1.dp.toPx())
-                drawLine(fg.copy(alpha = 0.4f), Offset(c2, frame.top), Offset(c2, frame.bottom), 1.dp.toPx())
+                drawLine(Color.White.copy(alpha = 0.3f), Offset(c1, frame.top), Offset(c1, frame.bottom), 1.dp.toPx())
+                drawLine(Color.White.copy(alpha = 0.3f), Offset(c2, frame.top), Offset(c2, frame.bottom), 1.dp.toPx())
                 val r1 = frame.top + frame.height / 3f
                 val r2 = frame.top + frame.height * 2f / 3f
-                drawLine(fg.copy(alpha = 0.4f), Offset(frame.left, r1), Offset(frame.right, r1), 1.dp.toPx())
-                drawLine(fg.copy(alpha = 0.4f), Offset(frame.left, r2), Offset(frame.right, r2), 1.dp.toPx())
+                drawLine(Color.White.copy(alpha = 0.3f), Offset(frame.left, r1), Offset(frame.right, r1), 1.dp.toPx())
+                drawLine(Color.White.copy(alpha = 0.3f), Offset(frame.left, r2), Offset(frame.right, r2), 1.dp.toPx())
             }
         }
-        // 顶部工具条
+        // 顶部工具条（圆形半透明黑底 + 白图标：与主题无关，任何背景上都清晰）
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onCancel) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回", tint = fg) }
+            IconButton(
+                onClick = onCancel,
+                modifier = Modifier.background(Color.Black.copy(alpha = 0.45f), CircleShape),
+            ) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回", tint = Color.White) }
             Spacer(Modifier.weight(1f))
             IconButton(
+                modifier = Modifier.background(Color.Black.copy(alpha = 0.45f), CircleShape),
                 onClick = {
                     if (confirming) return@IconButton
                     confirming = true
@@ -767,7 +794,7 @@ private fun CropStage(src: Bitmap, onConfirm: (Bitmap) -> Unit, onCancel: () -> 
                     } else cropped
                     onConfirm(out)
                 },
-            ) { Icon(Icons.Default.Check, "确认", tint = fg) }
+            ) { Icon(Icons.Default.Check, "确认", tint = Color.White) }
         }
     }
 }
