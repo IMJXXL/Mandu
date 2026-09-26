@@ -362,6 +362,16 @@ class ArchiveEngine(private val ctx: Context) {
     }
 
     /**
+     * Reader 卷级缩略图直读（covers/<md5(chPath)>.thumb，enterReader 后台生成的那份）：
+     * 封面编辑器浏览分卷时，打开过的卷命中即零解析显示，不再走 loadCoverForItem 的
+     * item: 前缀缓存重新递归（两套 key 不同导致白查，2026-09-26 用户实测反馈）。
+     */
+    fun loadVolThumbByPath(chPath: String): Bitmap? = try {
+        val f = File(coverDir, "${md5(chPath)}.thumb")
+        if (f.exists() && f.length() > 0L) BitmapFactory.decodeFile(f.absolutePath) else null
+    } catch (_: Exception) { null }
+
+    /**
      * 目录面板子卷（dir 型文件夹卡，如 A→a1→aa1）的自定义封面批量查询（2026-09-26）。
      * 存储复用 covers/ 目录，确定性前缀 custom_<md5(chPath)>_*.jpg（chPath 唯一标识子卷，
      * 重扫后同路径同名 → 用户设置自动复用）；无 DB 字段，文件存在即生效。

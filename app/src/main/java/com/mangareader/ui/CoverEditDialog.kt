@@ -143,7 +143,14 @@ internal fun CoverEditDialog(
     // ★ LruCache(96)（≈35MB 上限）：原 ConcurrentHashMap 无上限，几千页大书滚动全存内存有 OOM 风险
     val thumbCache = remember { android.util.LruCache<String, Bitmap>(96) }
     val remoteThumbCache = remember { android.util.LruCache<Int, Bitmap>(96) }
-    var stage by remember { mutableStateOf<CoverStage>(CoverStage.Source) }
+    // ★ 阶段导航栈（2026-09-26 体验反馈）：左上角返回与系统返回手势统一=回上一阶段——
+    //   内容浏览器下钻多层可逐层回退、裁剪页返回即回到选图网格（重选另一张）；
+    //   只有回到来源选择页时系统返回才关闭整个编辑器（符合直觉）。
+    var stageStack by remember { mutableStateOf(listOf<CoverStage>(CoverStage.Source)) }
+    val stage: CoverStage by androidx.compose.runtime.derivedStateOf { stageStack.last() }
+    fun pushStage(s: CoverStage) { stageStack = stageStack + s }
+    fun popStage() { if (stageStack.size > 1) stageStack = stageStack.dropLast(1) }
+    androidx.activity.compose.BackHandler(enabled = stageStack.size > 1) { popStage() }
     var toastMsg by remember { mutableStateOf<String?>(null) }
     toastMsg?.let { m ->
         LaunchedEffect(m) { android.widget.Toast.makeText(ctx, m, android.widget.Toast.LENGTH_SHORT).show(); toastMsg = null }
@@ -159,7 +166,7 @@ internal fun CoverEditDialog(
                 try { ctx.contentResolver.openInputStream(uri)?.use { it.readBytes() } } catch (_: Exception) { null }
                     ?.let { decodeBmpCapped(it, cap) }
             }
-            if (bmp != null) stage = CoverStage.Crop(bmp) else toastMsg = "图片读取失败"
+            if (bmp != null) pushStage(CoverStage.Crop(bmp)) else toastMsg = "图片读取失败"
         }
     }
 
@@ -296,11 +303,11 @@ internal fun CoverEditDialog(
                             if (isTreeBook) "从本卷内容选择（可进入子文件夹/压缩包）" else "从本卷页面选择",
                             "浏览本书内容，任意一张图设为封面",
                         ) {
-                            stage = if (isTreeBook) CoverStage.Browser(book.filePath, book.title) else CoverStage.Pages(book.filePath, book.title)
+                            pushStage(if (isTreeBook) CoverStage.Browser(book.filePath, book.title) else CoverStage.Pages(book.filePath, book.title))
                         }
                     } else if (book.source in REMOTE_COVER_SOURCES) {
                         SourceCard("从本卷页面选择", "浏览本书页面，任意一张图设为封面") {
-                            stage = CoverStage.RemotePages
+                            pushStage(CoverStage.RemotePages)
                             openRemoteSession()
                         }
                     } else {
@@ -318,19 +325,19 @@ internal fun CoverEditDialog(
 
                 is CoverStage.Browser -> ContentBrowserStage(
                     engine, s.path, s.title, thumbCache,
-                    onDescend = { item -> stage = CoverStage.Browser(item.subPath.ifEmpty { composeChildPath(s.path, item) }, item.name) },
+                    onDescend = { item -> pushStage(CoverStage.Browser(item.subPath.ifEmpty { composeChildPath(s.path, item) }, item.name)) },
                     onPickImage = { item ->
                         scope.launch {
                             val bytes = withContext(Dispatchers.IO) { engine.loadDirItemBytes(item) }
                             val bmp = bytes?.let { decodeBmpCapped(it, cap) }
-                            if (bmp != null) stage = CoverStage.Crop(bmp) else toastMsg = "图片读取失败"
+                            if (bmp != null) pushStage(CoverStage.Crop(bmp)) else toastMsg = "图片读取失败"
                         }
                     },
                     onOpenArchive = { item ->
                         val p = item.subPath.ifEmpty { composeChildPath(s.path, item) }
-                        stage = CoverStage.Pages(p, item.name)
+                        pushStage(CoverStage.Pages(p, item.name))
                     },
-                    onBack = { stage = CoverStage.Source },
+                    onBack = { popStage() },
                 )
 
                 is CoverStage.Pages -> PageGridStage(
@@ -342,10 +349,10 @@ internal fun CoverEditDialog(
                                 if (raw != null && raw.isNotEmpty()) decodeBmpCapped(raw, cap)
                                 else try { engine.loadPage(meta, s.path) } catch (_: Exception) { null }
                             }
-                            if (bmp != null) stage = CoverStage.Crop(bmp) else toastMsg = "页面读取失败"
+                            if (bmp != null) pushStage(CoverStage.Crop(bmp)) else toastMsg = "页面读取失败"
                         }
                     },
-                    onBack = { stage = CoverStage.Source },
+                    onBack = { popStage() },
                 )
 
                 is CoverStage.RemotePages -> {
@@ -368,14 +375,14 @@ internal fun CoverEditDialog(
                                                     runCatching { withTimeout(30_000) { sup.loadPageRaw(idx) } }.getOrNull()
                                                         ?.takeIf { it.isNotEmpty() }?.let { decodeBmpCapped(it, cap) }
                                                 }
-                                                if (bmp != null) stage = CoverStage.Crop(bmp) else toastMsg = "页面读取失败"
+                                                if (bmp != null) pushStage(CoverStage.Crop(bmp)) else toastMsg = "页面读取失败"
                                             } finally {
                                                 remotePicking = false
                                             }
                                         }
                                     }
                                 },
-                                onBack = { stage = CoverStage.Source },
+                                onBack = { popStage() },
                             )
                             if (remotePicking) {
                                 Box(
@@ -406,7 +413,7 @@ internal fun CoverEditDialog(
                             Spacer(Modifier.height(16.dp))
                             Row {
                                 TextButton(onClick = { openRemoteSession() }) { Text("重试") }
-                                TextButton(onClick = { stage = CoverStage.Source }) { Text("返回") }
+                                TextButton(onClick = { popStage() }) { Text("返回") }
                             }
                         }
                     }
@@ -420,7 +427,7 @@ internal fun CoverEditDialog(
                             if (saved != null) onResult(saved) else toastMsg = "封面保存失败"
                         }
                     },
-                    onCancel = { stage = CoverStage.Source },
+                    onCancel = { popStage() },
                 )
             }
         }
@@ -502,9 +509,9 @@ private fun ContentBrowserStage(
                     }) {
                         Box(Modifier.fillMaxWidth().aspectRatio(1f).background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp)), contentAlignment = Alignment.Center) {
                             when {
-                                // ★ 文件夹（分卷）也显示封面：loadCoverForItem 先查 covers/<md5>.thumb
-                                //   磁盘缓存（Reader 打开过该卷即有 → 命中零解析直读），miss 才递归取首图并写回
-                                isDir -> ItemThumbBmp(engine, item, thumbCache, isDir = true)
+                                // ★ 文件夹（分卷）也显示封面：优先直读 Reader 卷缩略图缓存（打开过即有），
+                                //   miss 才 loadCoverForItem 现场递归取首图并写回
+                                isDir -> ItemThumbBmp(engine, item, thumbCache, isDir = true, currentPath = path)
                                 isImg -> ItemThumbBmp(engine, item, thumbCache)
                                 else -> Text(ext.uppercase(), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
@@ -518,29 +525,50 @@ private fun ContentBrowserStage(
     }
 }
 
+/** 浏览器内 dir 项的 Reader 卷路径（与 openItem/tocItemChPath 同款推导），用于命中卷缩略图缓存 */
+private fun browserItemChPath(currentPath: String, item: ArchiveEngine.Item): String? {
+    if (!item.dir) return null
+    return if (currentPath.startsWith("z:")) composeChildPath(currentPath, item)
+           else "d:${item.auth}|${item.tree}|${item.doc}"
+}
+
+/** 分卷封面现场生成限流（SAF 递归取首图开销大，可见格数级并发会拖慢整屏） */
+private val DirCoverSemaphore = Semaphore(3)
+
 @Composable
 private fun ItemThumbBmp(
     engine: ArchiveEngine,
     item: ArchiveEngine.Item,
     cache: android.util.LruCache<String, Bitmap>,
     isDir: Boolean = false,
+    currentPath: String = "",
 ) {
     val key = "item|" + (item.subPath.ifEmpty { item.doc }) + if (isDir) "|dir" else ""
     var bmp by remember(key) { mutableStateOf<Bitmap?>(cache.get(key)) }
+    var loading by remember(key) { mutableStateOf(bmp == null) }
     LaunchedEffect(key) {
         if (bmp == null) {
             val t = withContext(Dispatchers.IO) {
                 cache.get(key)?.let { return@withContext it }
-                // 文件夹：loadCoverForItem 先查 covers/<md5>.thumb（Reader 打开过即有 → 命中零解析直读），
-                // miss 才递归取首图并写回缓存；图片项：直读字节解码缩略图
-                val bmp = if (isDir) engine.loadCoverForItem(item)
-                          else engine.loadDirItemBytes(item)?.let { engine.decodeThumbnail(it, 256) }
-                bmp?.also { cache.put(key, it) }
+                if (isDir) {
+                    // ★ 先直读 Reader 卷缩略图缓存（covers/<md5(chPath)>.thumb，打开过的卷零解析秒出），
+                    //   miss 才经 loadCoverForItem 现场递归取首图（限流），生成后写回 item: 缓存
+                    val chPath = browserItemChPath(currentPath, item)
+                    (chPath?.let { engine.loadVolThumbByPath(it) }
+                        ?: DirCoverSemaphore.withPermit { engine.loadCoverForItem(item) })
+                } else {
+                    engine.loadDirItemBytes(item)?.let { engine.decodeThumbnail(it, 256) }
+                }?.also { cache.put(key, it) }
             }
-            if (bmp == null && t != null) bmp = t
+            loading = false
+            if (t != null) bmp = t
         }
     }
-    bmp?.let { Image(it.asImageBitmap(), null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
+    val shown = bmp
+    when {
+        shown != null -> Image(shown.asImageBitmap(), null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+        loading && isDir -> CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+    }
 }
 
 @Composable
