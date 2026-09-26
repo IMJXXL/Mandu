@@ -21,7 +21,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ehviewer.core.database.model.WebDavSourceEntity
 import com.hippo.ehviewer.library.BrowseEntryRemote
-import com.hippo.ehviewer.library.isZipArchiveFileName
+
 import com.hippo.ehviewer.webdav.WebDavClient
 import com.hippo.ehviewer.webdav.WebDavGateway
 import com.hippo.ehviewer.webdav.WebDavRepository
@@ -101,9 +101,7 @@ fun WebDavAddWizardScreen(onBack: () -> Unit, onSaved: () -> Unit, initial: WebD
         val src = tempSource ?: return
         busy = true
         dirEntries = withContext(Dispatchers.IO) {
-            runCatching { WebDavGateway.listDirectory(src, password, d, useCache = false) }
-                .getOrDefault(emptyList())
-                .map { e -> if (e is BrowseEntryRemote.Directory && isZipArchiveFileName(e.name)) BrowseEntryRemote.RegularFile(e.name) else e }
+            runCatching { WebDavGateway.listDirectory(src, password, d, useCache = false) }.getOrDefault(emptyList())
         }
         busy = false
     }

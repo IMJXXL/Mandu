@@ -1049,6 +1049,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             //   ★ SMB/WebDAV 页面供给抽象：smb:/webdav: 路径被 ArchiveEngine 守卫拦截，严禁回退 engine
             val raw = withContext(Dispatchers.IO) { supply.loadPageRaw(idx) }
             if (raw == null) {
+                try { com.mangareader.DiagTracer.mark(context, "rawNull idx=$idx") } catch (_: Exception) {}
                 bitmapCache.remove(idx)
                 inflightLoads.remove(idx) // ★ 让位/失败允许立即重试（新焦点页接管后翻回可重载）
                 return@launch
@@ -1058,7 +1059,9 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 loader.execute(coil3.request.ImageRequest.Builder(context).data(raw).build())
             }
             val image = result.image
+            if (image == null) { try { com.mangareader.DiagTracer.mark(context, "* imgNull idx=$idx") } catch (_: Exception) {} }
             if (image is coil3.DrawableImage) {
+                try { com.mangareader.DiagTracer.mark(context, "animImg idx=$idx") } catch (_: Exception) {}
                 // 动图：Coil3 decoders 自动识别 → DrawableImage
                 val drawable = image.drawable
                 synchronized(pageAnimDrawables) { pageAnimDrawables[idx] = drawable }
