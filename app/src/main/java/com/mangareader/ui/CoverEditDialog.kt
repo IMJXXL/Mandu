@@ -397,8 +397,11 @@ private fun CropStage(src: Bitmap, onConfirm: (Bitmap) -> Unit, onCancel: () -> 
     var viewSize by remember { mutableStateOf(IntSize.Zero) }
     var confirming by remember { mutableStateOf(false) }
     var initFit by remember { mutableStateOf(false) }
+    // 背景与前景跟随主题背景色（用户反馈：不应硬编码黑色）；遮罩保留黑色压暗语义
+    val bg = MaterialTheme.colorScheme.background
+    val fg = MaterialTheme.colorScheme.onBackground
 
-    Box(Modifier.fillMaxSize().background(Color.Black).onSizeChanged { v ->
+    Box(Modifier.fillMaxSize().background(bg).onSizeChanged { v ->
         viewSize = v
         // 首次得知视图尺寸：预缩放到恰好覆盖取景框（横图/方图初始也满框，否则映射裁剪区会缺内容）
         if (!initFit && v.width > 0 && v.height > 0) {
@@ -445,21 +448,21 @@ private fun CropStage(src: Bitmap, onConfirm: (Bitmap) -> Unit, onCancel: () -> 
                 drawRect(dim, Offset(0f, frame.bottom), Size(v.width, v.height - frame.bottom))
                 drawRect(dim, Offset(0f, frame.top), Size(frame.left, frame.height))
                 drawRect(dim, Offset(frame.right, frame.top), Size(v.width - frame.right, frame.height))
-                // 白框 + 三分线
-                drawRect(Color.White, frame.topLeft, frame.size, style = Stroke(2.dp.toPx()))
+                // 白框 + 三分线（前景色随主题，浅色背景下深色框可见）
+                drawRect(fg, frame.topLeft, frame.size, style = Stroke(2.dp.toPx()))
                 val c1 = frame.left + frame.width / 3f
                 val c2 = frame.left + frame.width * 2f / 3f
-                drawLine(Color.White.copy(alpha = 0.4f), Offset(c1, frame.top), Offset(c1, frame.bottom), 1.dp.toPx())
-                drawLine(Color.White.copy(alpha = 0.4f), Offset(c2, frame.top), Offset(c2, frame.bottom), 1.dp.toPx())
+                drawLine(fg.copy(alpha = 0.4f), Offset(c1, frame.top), Offset(c1, frame.bottom), 1.dp.toPx())
+                drawLine(fg.copy(alpha = 0.4f), Offset(c2, frame.top), Offset(c2, frame.bottom), 1.dp.toPx())
                 val r1 = frame.top + frame.height / 3f
                 val r2 = frame.top + frame.height * 2f / 3f
-                drawLine(Color.White.copy(alpha = 0.4f), Offset(frame.left, r1), Offset(frame.right, r1), 1.dp.toPx())
-                drawLine(Color.White.copy(alpha = 0.4f), Offset(frame.left, r2), Offset(frame.right, r2), 1.dp.toPx())
+                drawLine(fg.copy(alpha = 0.4f), Offset(frame.left, r1), Offset(frame.right, r1), 1.dp.toPx())
+                drawLine(fg.copy(alpha = 0.4f), Offset(frame.left, r2), Offset(frame.right, r2), 1.dp.toPx())
             }
         }
         // 顶部工具条
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onCancel) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回", tint = Color.White) }
+            IconButton(onClick = onCancel) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回", tint = fg) }
             Spacer(Modifier.weight(1f))
             IconButton(
                 onClick = {
@@ -487,7 +490,7 @@ private fun CropStage(src: Bitmap, onConfirm: (Bitmap) -> Unit, onCancel: () -> 
                     } else cropped
                     onConfirm(out)
                 },
-            ) { Icon(Icons.Default.Check, "确认", tint = Color.White) }
+            ) { Icon(Icons.Default.Check, "确认", tint = fg) }
         }
     }
 }
