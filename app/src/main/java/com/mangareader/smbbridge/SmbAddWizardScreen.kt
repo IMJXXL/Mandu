@@ -109,6 +109,9 @@ fun SmbAddWizardScreen(onBack: () -> Unit, onSaved: () -> Unit, initial: SmbSour
         dirEntries = withContext(Dispatchers.IO) {
             runCatching { SmbGateway.listDirectory(src, password, d, useCache = false) }.getOrDefault(emptyList())
         }
+        android.util.Log.i("SmbWizard", "loadDirs d='$d' share='${src.share}' entries=${dirEntries.size} types=${dirEntries.map { it.javaClass.simpleName }.distinct()}")
+        dirEntries.take(3).forEach { android.util.Log.i("SmbWizard", "  entry: ${it.javaClass.simpleName} name='${it.name}'") }
+        try { com.mangareader.DiagTracer.mark(ctx, "loadDirs d='$d' share='${src.share}' n=${dirEntries.size} types=${dirEntries.map { it.javaClass.simpleName }.take(3).joinToString(",")} first=${dirEntries.firstOrNull()?.name}") } catch (_: Exception) {}
         busy = false
     }
 

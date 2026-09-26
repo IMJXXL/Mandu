@@ -942,6 +942,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         inflightLoads[idx] = nowTs
         if (remotePageSupply != null && idx == currentPage) remotePageSupply?.onFocus(idx)
         val job = loadScope.launch {
+            try { com.mangareader.DiagTracer.mark(context, "loadStart idx=$idx supply=${remotePageSupply != null} trim=$trimWhiteBorder") } catch (_: Exception) {}
             var acquired = false
             if (isPreload) { preloadSemaphore.acquire(); acquired = true }
             try {
