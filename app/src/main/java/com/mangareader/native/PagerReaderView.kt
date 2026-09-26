@@ -675,6 +675,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
 
     fun setTrimWhiteBorder(trim: Boolean, threshold: Int = trimThreshold, whiteRatio: Float = trimWhiteRatio) {
         com.mangareader.viewer.ArchiveEngine.d("PagerView", "setTrim trim=$trim threshold=$threshold ratio=$whiteRatio prev=$trimWhiteBorder")
+        try { com.mangareader.DiagTracer.mark(context, "setTrim trim=$trim prev=$trimWhiteBorder") } catch (_: Exception) {}
         if (trimWhiteBorder == trim && trimThreshold == threshold && trimWhiteRatio == whiteRatio) return
         this.trimWhiteBorder = trim
         this.trimThreshold = threshold
@@ -952,6 +953,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 val tileFile = obtainTileFile(idx, supply)
                 if (tileFile != null) {
                     com.mangareader.viewer.ArchiveEngine.d("PagerView", "tileHit idx=$idx tileOn=$tileModeEnabled trimOn=$trimWhiteBorder")
+                    try { com.mangareader.DiagTracer.mark(context, "tileHit idx=$idx trimOn=$trimWhiteBorder") } catch (_: Exception) {}
                     tileFileCache[idx] = tileFile
                     withContext(Dispatchers.Main) {
                         val adapterPos = positionOf(idx)
@@ -1020,6 +1022,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                         val trim = com.mangareader.viewer.ImageTrimmer.trimWhiteBorders(bmp, threshold = trimThreshold, whiteRatio = trimWhiteRatio, factor = 0.15f)
                         bmp = com.mangareader.viewer.ImageTrimmer.applyTrim(bmp, trim)
                         com.mangareader.viewer.ArchiveEngine.d("PagerView", "trimL idx=$idx ${w0}x${h0}->${bmp.width}x${bmp.height}")
+                        try { com.mangareader.DiagTracer.mark(context, "trimL idx=$idx ${w0}x${h0}->${bmp.width}x${bmp.height}") } catch (_: Exception) {}
                     } catch (_: Exception) {}
                 }
                 try {
@@ -1077,6 +1080,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                         val trim = com.mangareader.viewer.ImageTrimmer.trimWhiteBorders(bmp, threshold = trimThreshold, whiteRatio = trimWhiteRatio, factor = 0.15f)
                         bmp = com.mangareader.viewer.ImageTrimmer.applyTrim(bmp, trim)
                         com.mangareader.viewer.ArchiveEngine.d("PagerView", "trimR idx=$idx ${w0}x${h0}->${bmp.width}x${bmp.height}")
+                        try { com.mangareader.DiagTracer.mark(context, "trimR idx=$idx ${w0}x${h0}->${bmp.width}x${bmp.height}") } catch (_: Exception) {}
                     } catch (_: Exception) {}
                 }
                 try {

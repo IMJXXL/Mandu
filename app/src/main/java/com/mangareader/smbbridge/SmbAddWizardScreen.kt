@@ -21,6 +21,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ehviewer.core.database.model.SmbSourceEntity
 import com.hippo.ehviewer.library.BrowseEntryRemote
+import com.hippo.ehviewer.library.isZipArchiveFileName
 import com.hippo.ehviewer.smb.SmbGateway
 import com.hippo.ehviewer.smb.SmbRepository
 import kotlinx.coroutines.Dispatchers
@@ -107,7 +108,9 @@ fun SmbAddWizardScreen(onBack: () -> Unit, onSaved: () -> Unit, initial: SmbSour
         val src = tempSource ?: return
         busy = true
         dirEntries = withContext(Dispatchers.IO) {
-            runCatching { SmbGateway.listDirectory(src, password, d, useCache = false) }.getOrDefault(emptyList())
+            runCatching { SmbGateway.listDirectory(src, password, d, useCache = false) }
+                .getOrDefault(emptyList())
+                .map { e -> if (e is BrowseEntryRemote.Directory && isZipArchiveFileName(e.name)) BrowseEntryRemote.RegularFile(e.name) else e }
         }
         busy = false
     }
