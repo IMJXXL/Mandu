@@ -2655,7 +2655,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         )
     }
 
-    // ★ 子卷自定义封面批量查询（IO 一次算完，目录 Tab 卡片直接取用）
+    // ★ 子卷自定义封面批量查询（IO 一次列 covers/ 目录算完，防每卷一次 listFiles 的 O(n²)）
     LaunchedEffect(showToc, navStack, subCoverRev, items, tocItems) {
         val bk = book
         if (!showToc || bk == null || bk.source != "local") {
@@ -2663,10 +2663,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         }
         val src = if (viewing && tocItems.isNotEmpty()) tocItems else items
         subVolCoverMap = withContext(Dispatchers.IO) {
-            src.mapNotNull { itm ->
-                val cp = tocItemChPath(navStack, itm) ?: return@mapNotNull null
-                engine.subVolCoverData(cp)?.let { cp to it }
-            }.toMap()
+            engine.subVolCoverDataBatch(src.mapNotNull { tocItemChPath(navStack, it) })
         }
     }
 
@@ -2762,7 +2759,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
 
     // ★ 子卷封面编辑器：复用 CoverEditDialog，book 仅用 title/source/filePath——
     //   伪 Book 以 chPath 为 filePath，编辑器内 children(chPath) 下钻选图、
-    //   saveCustomCoverBitmap(chPath) 落盘为 custom_<md5(chPath)>_<ts>.jpg，与 subVolCoverData 枚举一致
+    //   saveCustomCoverBitmap(chPath) 落盘为 custom_<md5(chPath)>_<ts>.jpg，与 subVolCoverDataBatch 枚举一致
     subVolEdit?.let { (itm, cp) ->
         val bk = book
         if (bk != null) {

@@ -83,7 +83,6 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.cancel
 import okio.Path.Companion.toPath
-import java.util.concurrent.ConcurrentHashMap
 
 /**
  * 封面编辑全屏对话框（2026-09-26）。
@@ -139,7 +138,9 @@ internal fun CoverEditDialog(
 ) {
     val scope = rememberCoroutineScope()
     val cap = remember { decodeCap(ctx) }
-    val thumbCache = remember { ConcurrentHashMap<String, Bitmap>() }
+    // ★ LruCache(96)（≈35MB 上限）：原 ConcurrentHashMap 无上限，几千页大书滚动全存内存有 OOM 风险
+    val thumbCache = remember { android.util.LruCache<String, Bitmap>(96) }
+    val remoteThumbCache = remember { android.util.LruCache<Int, Bitmap>(96) }
     var stage by remember { mutableStateOf<CoverStage>(CoverStage.Source) }
     var toastMsg by remember { mutableStateOf<String?>(null) }
     toastMsg?.let { m ->
@@ -168,7 +169,7 @@ internal fun CoverEditDialog(
     var remotePageCount by remember { mutableIntStateOf(0) }
     var remoteOpening by remember { mutableStateOf(false) }
     var remoteOpenErr by remember { mutableStateOf<String?>(null) }
-    val remoteThumbCache = remember { ConcurrentHashMap<Int, Bitmap>() }
+    var remotePicking by remember { mutableStateOf(false) } // 点选页面后取原图期间的遮罩（远程拉图可能数秒）
     DisposableEffect(Unit) {
         onDispose {
             val s = remoteSupply
@@ -348,24 +349,39 @@ internal fun CoverEditDialog(
                 is CoverStage.RemotePages -> {
                     val sup = remoteSupply
                     when {
-                        sup != null -> RemotePageGridStage(
-                            supply = sup,
-                            pageCount = remotePageCount,
-                            komgaThumb = komgaThumbLoader,
-                            title = book.title,
-                            thumbCache = remoteThumbCache,
-                            cap = cap,
-                            onPick = { idx ->
-                                scope.launch {
-                                    val bmp = withContext(Dispatchers.IO) {
-                                        runCatching { withTimeout(30_000) { sup.loadPageRaw(idx) } }.getOrNull()
-                                            ?.takeIf { it.isNotEmpty() }?.let { decodeBmpCapped(it, cap) }
+                        sup != null -> Box {
+                            RemotePageGridStage(
+                                supply = sup,
+                                pageCount = remotePageCount,
+                                komgaThumb = komgaThumbLoader,
+                                title = book.title,
+                                thumbCache = remoteThumbCache,
+                                cap = cap,
+                                onPick = { idx ->
+                                    if (!remotePicking) {
+                                        remotePicking = true
+                                        scope.launch {
+                                            try {
+                                                val bmp = withContext(Dispatchers.IO) {
+                                                    runCatching { withTimeout(30_000) { sup.loadPageRaw(idx) } }.getOrNull()
+                                                        ?.takeIf { it.isNotEmpty() }?.let { decodeBmpCapped(it, cap) }
+                                                }
+                                                if (bmp != null) stage = CoverStage.Crop(bmp) else toastMsg = "页面读取失败"
+                                            } finally {
+                                                remotePicking = false
+                                            }
+                                        }
                                     }
-                                    if (bmp != null) stage = CoverStage.Crop(bmp) else toastMsg = "页面读取失败"
-                                }
-                            },
-                            onBack = { stage = CoverStage.Source },
-                        )
+                                },
+                                onBack = { stage = CoverStage.Source },
+                            )
+                            if (remotePicking) {
+                                Box(
+                                    Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.4f)),
+                                    contentAlignment = Alignment.Center,
+                                ) { CircularProgressIndicator() }
+                            }
+                        }
                         remoteOpening -> Column(
                             Modifier.fillMaxSize(),
                             horizontalAlignment = Alignment.CenterHorizontally,
@@ -452,7 +468,7 @@ private fun ContentBrowserStage(
     engine: ArchiveEngine,
     path: String,
     title: String,
-    thumbCache: ConcurrentHashMap<String, Bitmap>,
+    thumbCache: android.util.LruCache<String, Bitmap>,
     onDescend: (ArchiveEngine.Item) -> Unit,
     onPickImage: (ArchiveEngine.Item) -> Unit,
     onOpenArchive: (ArchiveEngine.Item) -> Unit,
@@ -499,15 +515,15 @@ private fun ContentBrowserStage(
 }
 
 @Composable
-private fun ItemThumbBmp(engine: ArchiveEngine, item: ArchiveEngine.Item, cache: ConcurrentHashMap<String, Bitmap>) {
+private fun ItemThumbBmp(engine: ArchiveEngine, item: ArchiveEngine.Item, cache: android.util.LruCache<String, Bitmap>) {
     val key = item.subPath.ifEmpty { item.doc }
-    var bmp by remember(key) { mutableStateOf<Bitmap?>(cache[key]) }
+    var bmp by remember(key) { mutableStateOf<Bitmap?>(cache.get(key)) }
     LaunchedEffect(key) {
         if (bmp == null) {
             val t = withContext(Dispatchers.IO) {
-                cache[key]?.let { return@withContext it }
+                cache.get(key)?.let { return@withContext it }
                 val bytes = engine.loadDirItemBytes(item) ?: return@withContext null
-                engine.decodeThumbnail(bytes, 256)?.also { cache[key] = it }
+                engine.decodeThumbnail(bytes, 256)?.also { cache.put(key, it) }
             }
             if (bmp == null && t != null) bmp = t
         }
@@ -520,7 +536,7 @@ private fun PageGridStage(
     engine: ArchiveEngine,
     path: String,
     title: String,
-    thumbCache: ConcurrentHashMap<String, Bitmap>,
+    thumbCache: android.util.LruCache<String, Bitmap>,
     cap: Int,
     onPick: (ArchiveEngine.PageMeta) -> Unit,
     onBack: () -> Unit,
@@ -537,11 +553,11 @@ private fun PageGridStage(
             list.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("没有可用页面", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             else -> LazyVerticalGrid(columns = GridCells.Fixed(3), modifier = Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(list, key = { "${it.localIdx}|${it.index}" }) { meta ->
-                    var bmp by remember(meta.index) { mutableStateOf<Bitmap?>(thumbCache["p:$path|${meta.index}"]) }
+                    var bmp by remember(meta.index) { mutableStateOf<Bitmap?>(thumbCache.get("p:$path|${meta.index}")) }
                     LaunchedEffect(meta.index) {
                         if (bmp == null) {
                             val t = withContext(Dispatchers.IO) {
-                                thumbCache["p:$path|${meta.index}"]?.let { return@withContext it }
+                                thumbCache.get("p:$path|${meta.index}")?.let { return@withContext it }
                                 val raw = try { engine.loadPageRaw(meta, path) } catch (_: Exception) { null }
                                 val full = if (raw != null && raw.isNotEmpty()) decodeBmpCapped(raw, cap) else try { engine.loadPage(meta, path) } catch (_: Exception) { null }
                                 full?.let { big ->
@@ -550,7 +566,7 @@ private fun PageGridStage(
                                     try { Bitmap.createScaledBitmap(big, w, h.coerceAtLeast(1), true) } catch (_: Exception) { big }
                                 }
                             }
-                            t?.let { thumbCache["p:$path|${meta.index}"] = it; bmp = it }
+                            t?.let { thumbCache.put("p:$path|${meta.index}", it); bmp = it }
                         }
                     }
                     Box(Modifier.fillMaxWidth().aspectRatio(1f).background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp)).clickableNoRipple { onPick(meta) }, contentAlignment = Alignment.Center) {
@@ -574,7 +590,7 @@ private fun RemotePageGridStage(
     pageCount: Int,
     komgaThumb: (suspend (Int) -> ByteArray?)?,
     title: String,
-    thumbCache: ConcurrentHashMap<Int, Bitmap>,
+    thumbCache: android.util.LruCache<Int, Bitmap>,
     cap: Int,
     onPick: (Int) -> Unit,
     onBack: () -> Unit,
@@ -589,7 +605,7 @@ private fun RemotePageGridStage(
         } else {
             LazyVerticalGrid(columns = GridCells.Fixed(3), modifier = Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(pageCount) { idx ->
-                    var bmp by remember(idx) { mutableStateOf<Bitmap?>(thumbCache[idx]) }
+                    var bmp by remember(idx) { mutableStateOf<Bitmap?>(thumbCache.get(idx)) }
                     var failed by remember(idx) { mutableStateOf(false) }
                     var attempt by remember(idx) { mutableIntStateOf(0) }
                     LaunchedEffect(idx, attempt) {
@@ -606,7 +622,7 @@ private fun RemotePageGridStage(
                                 try { Bitmap.createScaledBitmap(big, 256, h.coerceAtLeast(1), true) } catch (_: Exception) { big }
                             } else big
                         }
-                        if (thumb != null) { thumbCache[idx] = thumb; bmp = thumb } else failed = true
+                        if (thumb != null) { thumbCache.put(idx, thumb); bmp = thumb } else failed = true
                     }
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Box(Modifier.fillMaxWidth().aspectRatio(0.72f).background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp)).clickableNoRipple {

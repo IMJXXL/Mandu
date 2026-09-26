@@ -362,22 +362,25 @@ class ArchiveEngine(private val ctx: Context) {
     }
 
     /**
-     * 目录面板子卷（dir 型文件夹卡，如 A→a1→aa1）的自定义封面查询（2026-09-26）。
+     * 目录面板子卷（dir 型文件夹卡，如 A→a1→aa1）的自定义封面批量查询（2026-09-26）。
      * 存储复用 covers/ 目录，确定性前缀 custom_<md5(chPath)>_*.jpg（chPath 唯一标识子卷，
      * 重扫后同路径同名 → 用户设置自动复用）；无 DB 字段，文件存在即生效。
-     * 返回 ("custom:<fileName>", lastModified)：lastModified 供调用方注入缓存 key，
-     * 同名覆盖写后旧缓存不再命中。
+     * 返回 chPath → ("custom:<fileName>", lastModified)：lastModified 供调用方注入缓存 key，
+     * 同名覆盖写后旧缓存不再命中。一次列 covers/ 目录匹配全部前缀（防每卷一次 listFiles 的 O(n²)）。
      */
-    fun subVolCoverData(chPath: String): Pair<String, Long>? {
+    fun subVolCoverDataBatch(chPaths: List<String>): Map<String, Pair<String, Long>> {
+        if (chPaths.isEmpty()) return emptyMap()
         return try {
-            val base = "custom_${md5(chPath)}"
-            val f = coverDir.listFiles()
-                ?.filter { it.name == "$base.jpg" || it.name.startsWith("${base}_") }
-                ?.maxByOrNull { it.lastModified() }
-                ?: return null
-            if (f.length() <= 0L) return null
-            "custom:${f.name}" to f.lastModified()
-        } catch (_: Exception) { null }
+            val files = coverDir.listFiles() ?: return emptyMap()
+            val out = HashMap<String, Pair<String, Long>>()
+            for (cp in chPaths) {
+                val base = "custom_${md5(cp)}"
+                val f = files.filter { it.name == "$base.jpg" || it.name.startsWith("${base}_") }
+                    .maxByOrNull { it.lastModified() } ?: continue
+                if (f.length() > 0L) out[cp] = "custom:${f.name}" to f.lastModified()
+            }
+            out
+        } catch (_: Exception) { emptyMap() }
     }
 
     /** 选图网格缩略图：字节 → inSampleSize 解码到 ~targetPx（缓存由调用方管理） */

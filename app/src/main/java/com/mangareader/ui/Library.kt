@@ -546,14 +546,25 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
             text = {
                 Column {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        coil3.compose.AsyncImage(
-                            model = coil3.request.ImageRequest.Builder(ctx)
-                                .data(com.mangareader.viewer.CoverData(b.displayCoverPath ?: "", dynOn = false))
-                                .build(),
-                            contentDescription = null,
-                            modifier = Modifier.size(width = 96.dp, height = 128.dp).clip(RoundedCornerShape(8.dp)),
-                            contentScale = ContentScale.Crop,
-                        )
+                        // displayCoverPath 为空（书无任何封面来源）时给占位图，空串 CoverData 会让 Coil 找不到 Fetcher 显示空白
+                        if (b.displayCoverPath != null) {
+                            coil3.compose.AsyncImage(
+                                model = coil3.request.ImageRequest.Builder(ctx)
+                                    .data(com.mangareader.viewer.CoverData(b.displayCoverPath!!, dynOn = false))
+                                    .build(),
+                                contentDescription = null,
+                                modifier = Modifier.size(width = 96.dp, height = 128.dp).clip(RoundedCornerShape(8.dp)),
+                                contentScale = ContentScale.Crop,
+                            )
+                        } else {
+                            Box(
+                                Modifier.size(width = 96.dp, height = 128.dp).clip(RoundedCornerShape(8.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(Icons.Default.PhotoLibrary, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(28.dp))
+                            }
+                        }
                         Spacer(Modifier.width(12.dp))
                         Column {
                             TextButton(onClick = { coverEditBook = b; showBookInfo = null }) { Text("更换封面") }
@@ -633,9 +644,10 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
             book = b, engine = engine, ctx = ctx,
             onResult = { newPath ->
                 scope.launch(Dispatchers.IO) {
-                    // 新封面文件名带新时间戳（缓存 key 随之更新），旧文件在此清理
-                    b.customCoverPath?.let { engine.deleteCustomCoverByPath(it) }
+                    // 先写 DB 再删旧文件：孤儿自愈按"DB 路径+文件存在性"判定，反序会在
+                    // "旧文件已删、DB 未更新"的窗口被自愈误清（新文件名≠旧名，晚删不影响显示）
                     dao.updateBookCustomCoverPath(b.id, newPath)
+                    b.customCoverPath?.let { engine.deleteCustomCoverByPath(it) }
                     withContext(Dispatchers.Main) {
                         coil3.SingletonImageLoader.get(ctx).memoryCache?.clear()
                         Toast.makeText(ctx, if (newPath != null) "封面已更新" else "封面保存失败", Toast.LENGTH_SHORT).show()
