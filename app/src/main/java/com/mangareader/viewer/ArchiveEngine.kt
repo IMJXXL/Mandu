@@ -245,6 +245,7 @@ class ArchiveEngine(private val ctx: Context) {
     private val segFallbackMarked = java.util.Collections.newSetFromMap(java.util.concurrent.ConcurrentHashMap<String, Boolean>())
     /** PDF 文档按 docKey 的打开互斥（防首屏并发段请求竞争重复 pdfOpen） */
     private val pdfOpenLocks = java.util.concurrent.ConcurrentHashMap<String, Any>()
+    private val pdfSegOkMarked = java.util.Collections.newSetFromMap(java.util.concurrent.ConcurrentHashMap<String, Boolean>())
     private val epubSpineCache = object : LinkedHashMap<String, List<Int>>(10, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<Int>>?): Boolean = size > 10
     }
@@ -3094,6 +3095,10 @@ class ArchiveEngine(private val ctx: Context) {
                 }
                 if (bmp != null) {
                     Log.d(TAG, "loadPdfPageSegment idx=$pageIndex seg=$segmentIndex cache=miss ${segW}x${segH} rect=[${rect.left},${rect.top},${rect.right},${rect.bottom}] pageWH=${pageWidth}x${pageHeight} splitH=$splitH")
+                    // ★ 诊断取证：每文档首段的成功渲染尺寸（模糊物证——位图小=渲染参数错，位图大=显示端拉伸）
+                    if (pdfSegOkMarked.add(docKey)) {
+                        try { com.mangareader.DiagTracer.mark(ctx, "tallSplit pdfSegOK idx=$pageIndex seg=$segmentIndex ${bmp.width}x${bmp.height} segW=$segW pageWH=${pageWidth}x${pageHeight}") } catch (_: Exception) {}
+                    }
                     putCachedBitmap(segKey, bmp)
                     future.complete(bmp)
                     return bmp

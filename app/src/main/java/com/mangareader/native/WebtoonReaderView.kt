@@ -97,6 +97,20 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
         //   （DRAGGING/SETTLING）非 IDLE——不会误顺延。用户停手后的 IDLE 由主 listener 收窗分支接管。
         if (recycler.scrollState != RecyclerView.SCROLL_STATE_IDLE) {
             android.util.Log.d("WebtoonRV", "settle deferred: user still scrolling (state=${recycler.scrollState})")
+            // ★ 用户主动滑动中（2026-09-26 实测反馈）：sawUserScroll=用户已接管 → 守卫使命结束，
+            //   立即收窗放行（同 IDLE 收窗语义）——页码实时跟随+预载持续。原实现无条件顺延窗口，
+            //   用户连续滑动期间页码冻结数秒、预载停摆（滑动只见未加载占位=糊）。
+            if (sawUserScroll) {
+                val lm = recycler.layoutManager as? LinearLayoutManager
+                val f = lm?.findFirstVisibleItemPosition() ?: RecyclerView.NO_POSITION
+                if (f != RecyclerView.NO_POSITION) pendingAnchorSp = f
+                isSettleWindowActive = false
+                updatePage()
+                loadScope.coroutineContext.cancelChildren()
+                preloadAround(currentPage, jump = false)
+                diagMark("deferred user-takeover f=$f")
+                return@Runnable
+            }
             startSettleWindow()
             return@Runnable
         }
