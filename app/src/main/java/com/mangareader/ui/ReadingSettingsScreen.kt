@@ -304,11 +304,40 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
                         Spacer(Modifier.height(8.dp))
                         Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
-                                Text("灰阶抖动（256级模拟）", fontSize = 14.sp)
-                                Text("误差扩散抖动模拟256级灰阶，纯白/纯黑不抖。开启后阅读内设置的滤镜tab出现算法/档位面板（改动即时生效）", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("灰阶抖动", fontSize = 14.sp)
+                                Text("让墨水屏显示更多灰阶层次，纯白/纯黑不抖", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             Switch(checked = config.isEinkDither, onCheckedChange = { config = config.copy(isEinkDither = it); config.save(ctx) })
                         }
+                        if (config.isEinkDither) {
+                            Text("抖动算法", fontSize = 14.sp)
+                            Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                listOf("细腻" to 0, "胶片颗粒" to 1, "柔和" to 2, "规则纹理" to 3).forEach { (label, value) ->
+                                    Surface(
+                                        modifier = Modifier.weight(1f).clickable { config = config.copy(einkDitherAlgorithm = value); config.save(ctx) },
+                                        shape = MaterialTheme.shapes.medium,
+                                        color = if (config.einkDitherAlgorithm == value) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                        tonalElevation = if (config.einkDitherAlgorithm == value) 4.dp else 0.dp,
+                                    ) {
+                                        Text(label, fontSize = 13.sp, modifier = Modifier.padding(12.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center, color = if (config.einkDitherAlgorithm == value) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface)
+                                    }
+                                }
+                            }
+                            Text("灰阶档位（数字越大过渡越平滑）", fontSize = 14.sp)
+                            Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                listOf("16" to 16, "32" to 32, "64" to 64).forEach { (label, value) ->
+                                    Surface(
+                                        modifier = Modifier.weight(1f).clickable { config = config.copy(einkDitherLevels = value); config.save(ctx) },
+                                        shape = MaterialTheme.shapes.medium,
+                                        color = if (config.einkDitherLevels == value) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                        tonalElevation = if (config.einkDitherLevels == value) 4.dp else 0.dp,
+                                    ) {
+                                        Text(label, fontSize = 13.sp, modifier = Modifier.padding(12.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center, color = if (config.einkDitherLevels == value) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface)
+                                    }
+                                }
+                            }
+                        }
+
 
                         Spacer(Modifier.height(12.dp))
                         Text("解码分辨率", fontSize = 16.sp, fontWeight = FontWeight.Medium)

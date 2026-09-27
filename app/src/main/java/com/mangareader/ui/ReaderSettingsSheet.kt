@@ -365,32 +365,32 @@ private fun GeneralTab(config: ReaderConfig, onConfigChange: (ReaderConfig) -> U
 private fun FilterTab(config: ReaderConfig, onConfigChange: (ReaderConfig) -> Unit) {
     CheckboxItem("灰度模式", config.isGrayscale) { onConfigChange(config.copy(isGrayscale = it)) }
     CheckboxItem("反色", config.isInvertColors) { onConfigChange(config.copy(isInvertColors = it)) }
-    // ★ 墨水屏灰阶抖动（256级模拟）：画面观感类设置归入滤镜 tab；算法名以中文特性描述呈现，
-    //   存值仍为 0/1/2/3；阅读设置→墨水屏的开关与本开关同写全局键；改动经 NES 即时重载生效
-    CheckboxItem("灰阶抖动·256级模拟（墨水屏设备，改动即时生效）", config.isEinkDither) { onConfigChange(config.copy(isEinkDither = it)) }
-    if (config.isEinkDither) {
-        SettingsChipRow("抖动算法") {
-            listOf("细腻（默认）" to 0, "胶片颗粒" to 1, "柔和" to 2, "规则纹理" to 3).forEach { (label, value) ->
-                FilterChip(
-                    selected = value == config.einkDitherAlgorithm,
-                    onClick = { onConfigChange(config.copy(einkDitherAlgorithm = value)) },
-                    label = { Text(label, fontSize = 13.sp) },
-                )
+    if (config.isEinkMode) {
+        CheckboxItem("灰阶抖动（让墨水屏显示更多灰阶层次）", config.isEinkDither) { onConfigChange(config.copy(isEinkDither = it)) }
+        if (config.isEinkDither) {
+            SettingsChipRow("抖动算法") {
+                listOf("细腻（默认）" to 0, "胶片颗粒" to 1, "柔和" to 2, "规则纹理" to 3).forEach { (label, value) ->
+                    FilterChip(
+                        selected = value == config.einkDitherAlgorithm,
+                        onClick = { onConfigChange(config.copy(einkDitherAlgorithm = value)) },
+                        label = { Text(label, fontSize = 13.sp) },
+                    )
+                }
             }
-        }
-        SettingsChipRow("灰阶档位（面板实际灰度数）") {
-            listOf("16（默认）" to 16, "32" to 32, "64" to 64).forEach { (label, value) ->
-                FilterChip(
-                    selected = value == config.einkDitherLevels,
-                    onClick = { onConfigChange(config.copy(einkDitherLevels = value)) },
-                    label = { Text(label, fontSize = 13.sp) },
-                )
+            SettingsChipRow("灰阶档位（数字越大过渡越平滑）") {
+                listOf("16（默认）" to 16, "32" to 32, "64" to 64).forEach { (label, value) ->
+                    FilterChip(
+                        selected = value == config.einkDitherLevels,
+                        onClick = { onConfigChange(config.copy(einkDitherLevels = value)) },
+                        label = { Text(label, fontSize = 13.sp) },
+                    )
+                }
             }
+            Text(
+                "把画面抖动出更多灰阶层次，纯白/纯黑不参与抖动。建议在系统里把本应用的刷新模式设为标准或质量，快速模式下效果不明显。",
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f), fontSize = 11.sp,
+                modifier = Modifier.padding(start = 4.dp, bottom = 4.dp)
+            )
         }
-        Text(
-            "把画面抖动模拟出256级灰阶，纯白/纯黑不参与抖动。需在系统将本应用的刷新模式设为标准/质量（GC16）；快速/A2模式只渲染黑白，抖动会呈现为噪点。",
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f), fontSize = 11.sp,
-            modifier = Modifier.padding(start = 4.dp, bottom = 4.dp)
-        )
     }
 }
