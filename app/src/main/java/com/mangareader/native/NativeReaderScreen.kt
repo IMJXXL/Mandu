@@ -256,6 +256,8 @@ fun NativeReaderScreen(
         if (delegate is WebtoonReaderView) delegate.remotePageSupply = remoteSupply
         if (delegate is PagerReaderView) delegate.setTileModeEnabled(tileModeEnabled)
         if (delegate is WebtoonReaderView) delegate.setTileModeEnabled(tileModeEnabled)
+        if (delegate is com.mangareader.native.curl.CurlReaderView) delegate.remotePageSupply = remoteSupply
+        if (delegate is com.mangareader.native.curl.CurlDoublePageView) delegate.remotePageSupply = remoteSupply
         // ★ §34.3：verticalPager 传给 pagerView.setup（webtoon 走默认 false 无影响）
         delegate.setup(engine, treePath, pages, savedPage, isVertical, 0, isRtl, verticalPager)
         // Apply new config parameters to the delegate
@@ -280,7 +282,6 @@ fun NativeReaderScreen(
         }
         if (delegate is com.mangareader.native.curl.CurlReaderView) {
             delegate.pageBgColor = pageBgColor
-            delegate.remotePageSupply = remoteSupply
             delegate.landscapeZoom = landscapeZoom
             delegate.fitScreen = fitScreen
             delegate.setTrimWhiteBorder(trimWhiteBorder, trimThreshold, trimWhiteRatio)
@@ -290,7 +291,6 @@ fun NativeReaderScreen(
         }
         if (delegate is com.mangareader.native.curl.CurlDoublePageView) {
             delegate.pageBgColor = pageBgColor
-            delegate.remotePageSupply = remoteSupply
             delegate.landscapeZoom = landscapeZoom
             delegate.fitScreen = fitScreen
             delegate.curlContentAreaOnly = curlContentAreaOnly
