@@ -1695,7 +1695,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             viewing = false; pageList = emptyList()
             items = tocItems
             if (navStack.size > 1) navStack = navStack.dropLast(1)
-        } else if (navStack.size > 1 && navStack.last() != effectiveRootPath) {
+        } else if (navStack.size > 1) {
             // 有上一级 → 回到上一级目录
             viewing = false; pageList = emptyList()
             navStack = navStack.dropLast(1)
