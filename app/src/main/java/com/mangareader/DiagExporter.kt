@@ -48,10 +48,8 @@ object DiagExporter {
         runCatching {
             val f = java.io.File(ctx.filesDir, "diag_stages.txt")
             if (f.exists()) {
-                sb.appendLine("----- diag_stages.txt（末尾 4KB，最后一行即最后到达的阶段）-----")
-                val bytes = f.readBytes()
-                val start = if (bytes.size > 4096) bytes.size - 4096 else 0
-                sb.appendLine(String(bytes, start, bytes.size - start))
+                sb.appendLine("----- diag_stages.txt（全量）-----")
+                sb.appendLine(f.readText())
             } else sb.appendLine("[diag_stages] 无（未到达任何启动标记点 = 崩溃极早期）")
         }
 
