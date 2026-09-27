@@ -86,6 +86,7 @@ class CurlPageLoader(
             if (isPreload) { preloadSemaphore.acquire(); acquired = true }
             try {
                 val supply = remoteSupply
+
                 if (supply == null) {
                     var bmp = withContext(Dispatchers.IO) { engine?.loadPage(meta, treePath) }
                     if (bmp == null || bmp.isRecycled) {
@@ -96,6 +97,7 @@ class CurlPageLoader(
 
                     if (trimWhiteBorder && bmp.width > 10 && bmp.height > 10) {
                         try {
+                            bmp = com.mangareader.viewer.ImageTrimmer.ensurePixelReadable(bmp)
                             val trim = com.mangareader.viewer.ImageTrimmer.trimWhiteBorders(
                                 bmp, threshold = trimThreshold, whiteRatio = trimWhiteRatio, factor = 0.15f
                             )
@@ -129,6 +131,7 @@ class CurlPageLoader(
                         var bmp = image.bitmap
                         if (trimWhiteBorder && bmp.width > 10 && bmp.height > 10) {
                             try {
+                                bmp = com.mangareader.viewer.ImageTrimmer.ensurePixelReadable(bmp)
                                 val trim = com.mangareader.viewer.ImageTrimmer.trimWhiteBorders(
                                     bmp, threshold = trimThreshold, whiteRatio = trimWhiteRatio, factor = 0.15f
                                 )

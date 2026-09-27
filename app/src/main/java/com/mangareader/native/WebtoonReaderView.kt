@@ -291,6 +291,7 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
         var result = bmp
         if (trimWhiteBorder) {
             try {
+                result = com.mangareader.viewer.ImageTrimmer.ensurePixelReadable(result!!)
                 val trim = com.mangareader.viewer.ImageTrimmer.trimWhiteBorders(result!!, threshold = trimThreshold, whiteRatio = trimWhiteRatio, factor = 0.15f)
                 result = com.mangareader.viewer.ImageTrimmer.applyTrim(result!!, trim)
             } catch (_: Exception) {}

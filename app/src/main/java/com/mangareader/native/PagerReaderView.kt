@@ -675,7 +675,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
 
     fun setTrimWhiteBorder(trim: Boolean, threshold: Int = trimThreshold, whiteRatio: Float = trimWhiteRatio) {
         com.mangareader.viewer.ArchiveEngine.d("PagerView", "setTrim trim=$trim threshold=$threshold ratio=$whiteRatio prev=$trimWhiteBorder")
-        try { com.mangareader.DiagTracer.mark(context, "setTrim trim=$trim prev=$trimWhiteBorder") } catch (_: Exception) {}
+
         if (trimWhiteBorder == trim && trimThreshold == threshold && trimWhiteRatio == whiteRatio) return
         this.trimWhiteBorder = trim
         this.trimThreshold = threshold
@@ -942,7 +942,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         inflightLoads[idx] = nowTs
         if (remotePageSupply != null && idx == currentPage) remotePageSupply?.onFocus(idx)
         val job = loadScope.launch {
-            try { com.mangareader.DiagTracer.mark(context, "loadStart idx=$idx supply=${remotePageSupply != null} trim=$trimWhiteBorder") } catch (_: Exception) {}
+
             var acquired = false
             if (isPreload) { preloadSemaphore.acquire(); acquired = true }
             try {
@@ -954,7 +954,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 val tileFile = obtainTileFile(idx, supply)
                 if (tileFile != null) {
                     com.mangareader.viewer.ArchiveEngine.d("PagerView", "tileHit idx=$idx tileOn=$tileModeEnabled trimOn=$trimWhiteBorder")
-                    try { com.mangareader.DiagTracer.mark(context, "tileHit idx=$idx trimOn=$trimWhiteBorder") } catch (_: Exception) {}
+
                     tileFileCache[idx] = tileFile
                     withContext(Dispatchers.Main) {
                         val adapterPos = positionOf(idx)
@@ -1020,10 +1020,10 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 if (trimWhiteBorder && bmp.width > 10 && bmp.height > 10) {
                     val w0 = bmp.width; val h0 = bmp.height
                     try {
+                        bmp = com.mangareader.viewer.ImageTrimmer.ensurePixelReadable(bmp)
                         val trim = com.mangareader.viewer.ImageTrimmer.trimWhiteBorders(bmp, threshold = trimThreshold, whiteRatio = trimWhiteRatio, factor = 0.15f)
                         bmp = com.mangareader.viewer.ImageTrimmer.applyTrim(bmp, trim)
                         com.mangareader.viewer.ArchiveEngine.d("PagerView", "trimL idx=$idx ${w0}x${h0}->${bmp.width}x${bmp.height}")
-                        try { com.mangareader.DiagTracer.mark(context, "trimL idx=$idx ${w0}x${h0}->${bmp.width}x${bmp.height}") } catch (_: Exception) {}
                     } catch (_: Exception) {}
                 }
                 try {
@@ -1050,7 +1050,6 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             //   ★ SMB/WebDAV 页面供给抽象：smb:/webdav: 路径被 ArchiveEngine 守卫拦截，严禁回退 engine
             val raw = withContext(Dispatchers.IO) { supply.loadPageRaw(idx) }
             if (raw == null) {
-                try { com.mangareader.DiagTracer.mark(context, "rawNull idx=$idx") } catch (_: Exception) {}
                 bitmapCache.remove(idx)
                 inflightLoads.remove(idx) // ★ 让位/失败允许立即重试（新焦点页接管后翻回可重载）
                 return@launch
@@ -1060,9 +1059,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 loader.execute(coil3.request.ImageRequest.Builder(context).data(raw).build())
             }
             val image = result.image
-            if (image == null) { try { com.mangareader.DiagTracer.mark(context, "* imgNull idx=$idx") } catch (_: Exception) {} }
             if (image is coil3.DrawableImage) {
-                try { com.mangareader.DiagTracer.mark(context, "animImg idx=$idx") } catch (_: Exception) {}
                 // 动图：Coil3 decoders 自动识别 → DrawableImage
                 val drawable = image.drawable
                 synchronized(pageAnimDrawables) { pageAnimDrawables[idx] = drawable }
@@ -1081,11 +1078,13 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 if (trimWhiteBorder && bmp.width > 10 && bmp.height > 10) {
                     val w0 = bmp.width; val h0 = bmp.height
                     try {
+                        bmp = com.mangareader.viewer.ImageTrimmer.ensurePixelReadable(bmp)
                         val trim = com.mangareader.viewer.ImageTrimmer.trimWhiteBorders(bmp, threshold = trimThreshold, whiteRatio = trimWhiteRatio, factor = 0.15f)
                         bmp = com.mangareader.viewer.ImageTrimmer.applyTrim(bmp, trim)
                         com.mangareader.viewer.ArchiveEngine.d("PagerView", "trimR idx=$idx ${w0}x${h0}->${bmp.width}x${bmp.height}")
-                        try { com.mangareader.DiagTracer.mark(context, "trimR idx=$idx ${w0}x${h0}->${bmp.width}x${bmp.height}") } catch (_: Exception) {}
-                    } catch (_: Exception) {}
+                    } catch (e: Exception) {
+                        try { com.mangareader.DiagTracer.mark(context, "trimEx idx=$idx ${e.javaClass.simpleName}: ${e.message}") } catch (_: Exception) {}
+                    }
                 }
                 try {
                     val srHit = com.mangareader.sr.SrPipeline.attachOrSchedule(idx, bmp)
