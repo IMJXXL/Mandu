@@ -3,11 +3,9 @@ package com.mangareader.ui
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.LruCache
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -188,27 +186,7 @@ private fun bookmarkChapterLabel(path: String): String {
     } catch (_: Exception) { path.takeLast(24) }
 }
 
-/**
- * 目录面板 dir 子项的 chPath（2026-09-26 子卷自定义封面）：与长按菜单 / onChapterNavigate
- * 的推导规则一致——d: 树子夹 chPath 即其自身 doc 的 "d:auth|tree|doc"；z: 树为
- * "z:archivePath//subPath/"。非 dir 子项返回 null（叶子文件不支持子卷封面）。
- */
-fun tocItemChPath(currentNavStack: List<String>, item: ArchiveEngine.Item): String? {
-    if (!item.dir) return null
-    val currentPath = currentNavStack.firstOrNull() ?: ""
-    return if (currentPath.startsWith("z:")) {
-        val inner = currentPath.removePrefix("z:")
-        val sepIdx = inner.indexOf("//")
-        if (sepIdx < 0) return null
-        var archivePath = inner.substring(0, sepIdx)
-        if (!archivePath.startsWith("a:")) archivePath = "a:$archivePath"
-        "z:${archivePath}//${item.subPath}"
-    } else if (currentPath.startsWith("d:")) {
-        "d:${item.auth}|${item.tree}|${item.doc}"
-    } else null
-}
-
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ReaderTocSheet(
     displayItems: List<ArchiveEngine.Item>,
@@ -216,21 +194,22 @@ fun ReaderTocSheet(
     viewing: Boolean,
     progress: List<ReadingProgress>,
     bookId: Long,
-    onDismiss: () -> Unit,
-    onChapterNavigate: (chapterPath: String) -> Unit,
-    onItemOpen: (ArchiveEngine.Item) -> Unit,
-    bookmarks: List<Bookmark> = emptyList(),
-    onPageBookmarkClick: (Bookmark) -> Unit = {},
-    onPageBookmarkDelete: (Bookmark) -> Unit = {},
-    pageCount: Int = 0,
-    currentPage: Int = 0,
-    onPageClick: (Int) -> Unit = {},
-    thumbLoader: (suspend (Int) -> Bitmap?)? = null,
-    // ★ 子卷自定义封面（2026-09-26）：chPath → ("custom:<file>", lastModified)，由宿主异步查询传入
-    subVolCovers: Map<String, Pair<String, Long>> = emptyMap(),
-    // dir 子项长按（更换封面菜单）；仅对返回非空 chPath 的 item 触发
-    onItemLongPress: (ArchiveEngine.Item) -> Unit = {},
-) {
+    val currentPath = currentNavStack.firstOrNull() ?: ""
+    return if (currentPath.startsWith("z:")) {
+        if (!item.dir) return null
+        val inner = currentPath.removePrefix("z:")
+        val sepIdx = inner.indexOf("//")
+        if (sepIdx < 0) return null
+        var archivePath = inner.substring(0, sepIdx)
+        if (!archivePath.startsWith("a:")) archivePath = "a:$archivePath"
+        "z:${archivePath}//${item.subPath}"
+    } else if (currentPath.startsWith("d:")) {
+        if (item.dir) {
+            "d:${item.auth}|${item.tree}|${item.doc}"
+        } else {
+            val ext = item.name.substringAfterLast(".").lowercase()
+            if (ext.isEmpty()) null else "a:${item.auth}|${item.tree}|${item.doc}|$ext"
+        }
     var tocSortAsc by remember { mutableStateOf(true) }
     var tocTab by remember { mutableIntStateOf(if (displayItems.size > 1) 0 else 1) }
     val dateFormat = remember { java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.getDefault()) }
@@ -327,47 +306,34 @@ fun ReaderTocSheet(
                             val cur = currentNavStack.lastOrNull() ?: ""
                             val isCurrent = viewing && item.subPath.isNotEmpty() && (cur.endsWith(item.subPath) && (cur.length == item.subPath.length || cur[cur.length - item.subPath.length - 1] == '/' || cur[cur.length - item.subPath.length - 1] == '\\'))
                             val status = remember(progress, item.name) { statusForItem(item, progress) }
-                            // ★ 子卷自定义封面（2026-09-26）：有覆盖时走 CoverFetcher custom: 分支，
-                            //   并把 lastModified 注入缓存 key（同名覆盖写后旧缓存不命中）
-                            val chPath = if (item.dir) tocItemChPath(currentNavStack, item) else null
-                            val subCover = chPath?.let { subVolCovers[it] }
-                            val coverModel = remember(item.auth, item.tree, item.doc, item.subPath, subCover) {
+                            val coverModel = remember(item.auth, item.tree, item.doc, item.subPath) {
                                 ImageRequest.Builder(ctx)
-                                    .data(if (subCover != null) com.mangareader.viewer.CoverData(subCover.first, dynOn = false) else item)
+                                    .data(item)
                                     .decoderFactory(com.mangareader.coil.CoverAnimGateDecoder)
-                                    .apply {
-                                        if (subCover != null) {
-                                            memoryCacheKey("${subCover.first}|${subCover.second}")
-                                            diskCacheKey("${subCover.first}|${subCover.second}")
-                                        }
-                                    }
                                     .build()
                             }
                             Column(
                                 Modifier.clip(RoundedCornerShape(8.dp))
-                                    .combinedClickable(
-                                        onClick = {
-                                            if (item.dir && item.subPath.isNotEmpty()) {
-                                                val currentPath = currentNavStack.firstOrNull() ?: ""
-                                                if (currentPath.startsWith("z:")) {
-                                                    val inner = currentPath.removePrefix("z:")
-                                                    val sepIdx = inner.indexOf("//")
-                                                    if (sepIdx >= 0) {
-                                                        var archivePath = inner.substring(0, sepIdx)
-                                                        if (!archivePath.startsWith("a:")) archivePath = "a:$archivePath"
-                                                        val chapterPath = "z:${archivePath}//${item.subPath}"
-                                                        onChapterNavigate(chapterPath)
-                                                    }
-                                                } else if (currentPath.startsWith("d:")) {
-                                                    onChapterNavigate("d:${item.auth}|${item.tree}|${item.doc}")
+                                    .clickable {
+                                        if (item.dir && item.subPath.isNotEmpty()) {
+                                            val currentPath = currentNavStack.firstOrNull() ?: ""
+                                            if (currentPath.startsWith("z:")) {
+                                                val inner = currentPath.removePrefix("z:")
+                                                val sepIdx = inner.indexOf("//")
+                                                if (sepIdx >= 0) {
+                                                    var archivePath = inner.substring(0, sepIdx)
+                                                    if (!archivePath.startsWith("a:")) archivePath = "a:$archivePath"
+                                                    val chapterPath = "z:${archivePath}//${item.subPath}"
+                                                    onChapterNavigate(chapterPath)
                                                 }
-                                            } else if (!item.dir) {
-                                                onItemOpen(item)
+                                            } else if (currentPath.startsWith("d:")) {
+                                                onChapterNavigate("d:${item.auth}|${item.tree}|${item.doc}")
                                             }
-                                            onDismiss()
-                                        },
-                                        onLongClick = { if (chPath != null) onItemLongPress(item) },
-                                    ),
+                                        } else if (!item.dir) {
+                                            onItemOpen(item)
+                                        }
+                                        onDismiss()
+                                    },
                                 horizontalAlignment = Alignment.CenterHorizontally
                             ) {
                                 Box(

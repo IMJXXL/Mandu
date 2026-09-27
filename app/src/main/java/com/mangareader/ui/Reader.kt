@@ -2974,7 +2974,7 @@ private fun ItemCard(
     val status = remember(progress, item.name) { com.mangareader.ui.statusForItem(item, progress) }
     // ★ 子卷自定义封面覆盖（与 ReaderTocSheet 目录 Tab 同款）：有覆盖走 CoverFetcher custom: 分支，
     //   lastModified 注入缓存 key（同名覆盖写后旧缓存不命中）
-    val chPath = if (item.dir) tocItemChPath(navStack, item) else null
+    val chPath = tocItemChPath(navStack, item)
     val subCover = chPath?.let { subVolCovers[it] }
     val coverModel = remember(item.auth, item.tree, item.doc, item.subPath, subCover) {
         coil3.request.ImageRequest.Builder(ctx)
