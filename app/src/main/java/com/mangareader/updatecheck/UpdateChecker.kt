@@ -25,7 +25,7 @@ object UpdateConstants {
     val MIRRORS: List<Pair<String, String>> = listOf(
         "" to "官方线路",
         "https://ghfast.top/" to "加速线路1",
-        "https://gh.llkk.cc/" to "加速线路2",
+        "https://ghproxy.net/" to "加速线路2",
     )
 }
 

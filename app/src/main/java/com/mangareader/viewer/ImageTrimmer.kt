@@ -7,7 +7,7 @@ object ImageTrimmer {
     data class TrimResult(val left: Int, val top: Int, val right: Int, val bottom: Int)
 
     fun ensurePixelReadable(bmp: Bitmap): Bitmap =
-        if (bmp.config == Bitmap.Config.HARDWARE) bmp.copy(Bitmap.Config.ARGB_8888, false) else bmp
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O && bmp.config == Bitmap.Config.HARDWARE) bmp.copy(Bitmap.Config.ARGB_8888, false) else bmp
 
     fun trimWhiteBorders(bitmap: Bitmap, threshold: Int = 220, whiteRatio: Float = 0.90f, factor: Float = 0.15f): TrimResult {
         val w = bitmap.width

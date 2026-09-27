@@ -22,7 +22,7 @@ class LanczosProcessor(
     ): Bitmap {
         if (!isReady) return input
         if (input.isRecycled) return input
-        if (input.config == Bitmap.Config.HARDWARE) return input
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O && input.config == Bitmap.Config.HARDWARE) return input
 
         val argb = ensureArgb(input) ?: return input
         val out = nativeLanczosProcess(argb, scale.toFloat())

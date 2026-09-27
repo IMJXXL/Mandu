@@ -1230,8 +1230,8 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     }
 
     private fun mergeBitmaps(left: Bitmap, right: Bitmap, gapPx: Int = 0): Bitmap {
-        val leftSw = if (left.config == Bitmap.Config.HARDWARE) left.copy(Bitmap.Config.ARGB_8888, false) else left
-        val rightSw = if (right.config == Bitmap.Config.HARDWARE) right.copy(Bitmap.Config.ARGB_8888, false) else right
+        val leftSw = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O && left.config == Bitmap.Config.HARDWARE) left.copy(Bitmap.Config.ARGB_8888, false) else left
+        val rightSw = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O && right.config == Bitmap.Config.HARDWARE) right.copy(Bitmap.Config.ARGB_8888, false) else right
         val w = leftSw.width + rightSw.width + gapPx
         val h = maxOf(leftSw.height, rightSw.height)
         val merged = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)

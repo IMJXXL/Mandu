@@ -32,8 +32,8 @@ object SpreadMapping {
 
     fun mergeBitmaps(left: Bitmap, right: Bitmap?, gapPx: Int = 0, bgColor: Int = android.graphics.Color.WHITE): Bitmap {
         if (right == null || right.isRecycled) return left
-        val leftSw = if (left.config == Bitmap.Config.HARDWARE) left.copy(Bitmap.Config.ARGB_8888, false) else left
-        val rightSw = if (right.config == Bitmap.Config.HARDWARE) right.copy(Bitmap.Config.ARGB_8888, false) else right
+        val leftSw = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O && left.config == Bitmap.Config.HARDWARE) left.copy(Bitmap.Config.ARGB_8888, false) else left
+        val rightSw = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O && right.config == Bitmap.Config.HARDWARE) right.copy(Bitmap.Config.ARGB_8888, false) else right
         val w = leftSw.width + rightSw.width + gapPx
         val h = maxOf(leftSw.height, rightSw.height)
         val merged = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
@@ -44,12 +44,9 @@ object SpreadMapping {
         return merged
     }
 
-    /** 当前 spread±2 的全部页索引：双页预加载+trim保护集共用。
-     *  ±1 时空闲缓冲只有前 1 个 spread，连续快翻第二个 turn 的背面会与解码赛跑；
-     *  ±2 最多 10 页，CurlBitmapCache(12) 装得下。 */
     fun protectSpreadPages(spread: Int, totalPages: Int, shift: Boolean): Set<Int> {
         val pages = mutableSetOf<Int>()
-        for (s in (spread - 2)..(spread + 2)) {
+        for (s in (spread - 1)..(spread + 1)) {
             if (s >= 0 && s < spreadCount(totalPages, shift)) {
                 pages.add(leftPage(s, totalPages, shift))
                 val r = rightPage(s, totalPages, shift)
