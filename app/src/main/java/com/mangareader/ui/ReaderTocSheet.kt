@@ -186,14 +186,7 @@ private fun bookmarkChapterLabel(path: String): String {
     } catch (_: Exception) { path.takeLast(24) }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun ReaderTocSheet(
-    displayItems: List<ArchiveEngine.Item>,
-    currentNavStack: List<String>,
-    viewing: Boolean,
-    progress: List<ReadingProgress>,
-    bookId: Long,
+fun tocItemChPath(currentNavStack: List<String>, item: ArchiveEngine.Item): String? {
     val currentPath = currentNavStack.firstOrNull() ?: ""
     return if (currentPath.startsWith("z:")) {
         if (!item.dir) return null
@@ -210,6 +203,17 @@ fun ReaderTocSheet(
             val ext = item.name.substringAfterLast(".").lowercase()
             if (ext.isEmpty()) null else "a:${item.auth}|${item.tree}|${item.doc}|$ext"
         }
+    } else null
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ReaderTocSheet(
+    displayItems: List<ArchiveEngine.Item>,
+    currentNavStack: List<String>,
+    viewing: Boolean,
+    progress: List<ReadingProgress>,
+    bookId: Long,
     var tocSortAsc by remember { mutableStateOf(true) }
     var tocTab by remember { mutableIntStateOf(if (displayItems.size > 1) 0 else 1) }
     val dateFormat = remember { java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.getDefault()) }
