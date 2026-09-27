@@ -245,8 +245,14 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
     var showCreateShelf by remember { mutableStateOf(false) }
     var newShelfName by remember { mutableStateOf("") }
 
-    var selectedShelfId by remember { mutableStateOf<Long?>(null) }
+    var selectedShelfId by remember { mutableStateOf<Long?>(prefs.getLong("selected_shelf_id", -1L).takeIf { it >= 0 }) }
     var selectedShelfName by remember { mutableStateOf("") }
+    LaunchedEffect(selectedShelfId) {
+        prefs.edit().putLong("selected_shelf_id", selectedShelfId ?: -1L).apply()
+    }
+    LaunchedEffect(bookshelves, selectedShelfId) {
+        selectedShelfName = bookshelves.find { it.id == selectedShelfId }?.name ?: ""
+    }
 
     var lastReading by remember { mutableStateOf<ReadingProgress?>(null) }
 
