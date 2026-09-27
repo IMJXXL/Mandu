@@ -57,32 +57,40 @@ object EinkDither {
     fun apply(pixels: IntArray, width: Int, height: Int, algorithm: Int, levels: Int) {
         if (width <= 0 || height <= 0 || pixels.size < width * height || levels < 2) return
         val maxIdx = levels - 1
-        if (algorithm == ALGO_BAYER_4X4) {
-            for (y in 0 until height) {
-                val rowBase = (y and 3) shl 2
-                var i = y * width
-                for (x in 0 until width) {
-                    val g = grayscalize(pixels[i])
-                    pixels[i] = if (g >= 255) 255 else if (g <= 0) 0 else {
-                        // idx = floor(v·(L-1)/255 + (b+0.5)/16)，通分 32·255 后纯整数 floorDiv；
-                        // t=(b+0.5)/16 在 (0,1) 近似均匀分布，区域均值无偏
-                        val b = BAYER_4[rowBase or (x and 3)]
-                        (32 * g * maxIdx + (2 * b + 1) * 255).floorDiv(32 * 255)
-                            .coerceIn(0, maxIdx) * 255 / maxIdx
-                    }
-                    i++
-                }
+        val n = width * height
+
+        val quantTbl = IntArray(256) { v ->
+            val idx = (v * maxIdx + 127) / 255
+            (if (idx > maxIdx) maxIdx else idx) * 255 / maxIdx
+        }
+
+        var midtoneCount = 0
+        for (i in 0 until n) {
+            val g = grayscalize(pixels[i])
+            pixels[i] = g
+            if (g >= 32 && g <= 223) midtoneCount++
+        }
+
+        if (midtoneCount * 100 < n * 5) {
+            for (i in 0 until n) {
+                val q = quantTbl[pixels[i]]
+                pixels[i] = -0x1000000 or (q shl 16) or (q shl 8) or q
             }
+            return
+        }
+
+        if (algorithm == ALGO_BAYER_4X4) {
+            bayerDither(pixels, width, height, maxIdx)
         } else {
             val kernel = when (algorithm) {
                 ALGO_ATKINSON -> ATKINSON
                 ALGO_STUCKI -> STUCKI
                 else -> FS
             }
-            errorDiffusion(pixels, width, height, maxIdx, kernel)
+            errorDiffusion(pixels, width, height, maxIdx, kernel, quantTbl)
         }
+
         // 打包：灰度值 → 同值 RGB（不透明）
-        val n = width * height
         for (i in 0 until n) {
             val g = pixels[i]
             pixels[i] = -0x1000000 or (g shl 16) or (g shl 8) or g
@@ -93,11 +101,39 @@ object EinkDither {
     private inline fun grayscalize(p: Int): Int =
         ((p ushr 16 and 0xFF) * 77 + (p ushr 8 and 0xFF) * 150 + (p and 0xFF) * 29) ushr 8
 
+    private fun bayerDither(pixels: IntArray, width: Int, height: Int, maxIdx: Int) {
+        for (y in 0 until height) {
+            val rowBase = (y and 3) shl 2
+            var i = y * width
+            for (x in 0 until width) {
+                val g = pixels[i]
+                pixels[i] = if (g >= 255) 255 else if (g <= 0) 0 else {
+                    val b = BAYER_4[rowBase or (x and 3)]
+                    (32 * g * maxIdx + (2 * b + 1) * 255).floorDiv(32 * 255)
+                        .coerceIn(0, maxIdx) * 255 / maxIdx
+                }
+                i++
+            }
+        }
+    }
+
     /**
      * 误差扩散（FS/Atkinson/Stucki 共用），蛇形扫描：偶数行左→右，奇数行右→左（dx 镜像）。
      * 累计误差存独立两行缓冲（当前行/下一行），不污染未处理的原始像素。
      */
-    private fun errorDiffusion(pixels: IntArray, width: Int, height: Int, maxIdx: Int, kernel: Array<IntArray>) {
+    private fun errorDiffusion(pixels: IntArray, width: Int, height: Int, maxIdx: Int, kernel: Array<IntArray>, quantTbl: IntArray) {
+        val errMin = -1024
+        val errMax = 1024
+        val errRange = errMax - errMin + 1
+        val errTbl = Array(kernel.size) { IntArray(errRange) }
+        for (k in kernel.indices) {
+            val num = kernel[k][2]
+            val den = kernel[k][3]
+            for (e in 0 until errRange) {
+                errTbl[k][e] = (e + errMin) * num / den
+            }
+        }
+
         var cur = IntArray(width)
         var next = IntArray(width)
         for (y in 0 until height) {
@@ -107,25 +143,23 @@ object EinkDither {
             val xEnd = if (ltr) width else -1
             val step = if (ltr) 1 else -1
             while (x != xEnd) {
-                val v = grayscalize(pixels[rowBase + x]) + cur[x]
+                val v = pixels[rowBase + x] + cur[x]
                 val out: Int
                 val err: Int
                 if (v >= 255) { out = 255; err = 0 }       // 端点直通：纯白不抖
                 else if (v <= 0) { out = 0; err = 0 }      // 端点直通：纯黑不抖
                 else {
-                    var idx = (v * maxIdx + 127) / 255
-                    if (idx > maxIdx) idx = maxIdx
-                    out = idx * 255 / maxIdx
+                    out = quantTbl[v]
                     err = v - out
                 }
                 pixels[rowBase + x] = out
                 if (err != 0) {
-                    for (k in kernel) {
-                        val nx = x + if (ltr) k[0] else -k[0]
+                    for (k in kernel.indices) {
+                        val nx = x + if (ltr) kernel[k][0] else -kernel[k][0]
                         if (nx < 0 || nx >= width) continue
-                        val ny = y + k[1]
+                        val ny = y + kernel[k][1]
                         if (ny >= height) continue
-                        val e = err * k[2] / k[3]
+                        val e = if (err >= errMin && err <= errMax) errTbl[k][err - errMin] else err * kernel[k][2] / kernel[k][3]
                         if (ny == y) cur[nx] += e else next[nx] += e
                     }
                 }

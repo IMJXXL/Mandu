@@ -7,6 +7,7 @@ fun Bitmap.applyEinkDither(algorithm: Int, levels: Int): Bitmap {
     val soft = if (config == Bitmap.Config.HARDWARE) {
         copy(Bitmap.Config.ARGB_8888, false) ?: return this
     } else this
+    if (EinkDitherNative.nativeDither(soft, algorithm, levels)) return soft
     val pixels = IntArray(soft.width * soft.height)
     soft.getPixels(pixels, 0, soft.width, 0, 0, soft.width, soft.height)
     EinkDither.apply(pixels, soft.width, soft.height, algorithm, levels)

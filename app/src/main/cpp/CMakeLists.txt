@@ -114,3 +114,5 @@ target_link_libraries(archive_stream
 add_library(lanczos_engine SHARED sr/lanczos3.cpp)
 target_compile_features(lanczos_engine PRIVATE cxx_std_17)
 target_link_libraries(lanczos_engine android log jnigraphics)
+add_library(eink_dither SHARED eink_dither.cpp)
+target_link_libraries(eink_dither android log jnigraphics)
