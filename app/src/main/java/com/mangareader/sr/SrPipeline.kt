@@ -232,9 +232,8 @@ object SrPipeline {
         return h
     }
 
-    /** 该页是否适合超分（动图/PDF 跳过） */
+    /** 该页是否适合超分（动图跳过） */
     fun isApplicable(meta: ArchiveEngine.PageMeta): Boolean {
-        if (meta.source == "pdf") return false
         return when (meta.ext.lowercase()) {
             "gif", "apng" -> false
             else -> true
