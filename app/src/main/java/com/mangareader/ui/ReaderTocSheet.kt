@@ -325,34 +325,45 @@ fun ReaderTocSheet(
                             val cur = currentNavStack.lastOrNull() ?: ""
                             val isCurrent = viewing && item.subPath.isNotEmpty() && (cur.endsWith(item.subPath) && (cur.length == item.subPath.length || cur[cur.length - item.subPath.length - 1] == '/' || cur[cur.length - item.subPath.length - 1] == '\\'))
                             val status = remember(progress, item.name) { statusForItem(item, progress) }
-                            val coverModel = remember(item.auth, item.tree, item.doc, item.subPath) {
+                            val chPath = tocItemChPath(currentNavStack, item)
+                            val subCover = chPath?.let { subVolCovers[it] }
+                            val coverModel = remember(item.auth, item.tree, item.doc, item.subPath, subCover) {
                                 ImageRequest.Builder(ctx)
-                                    .data(item)
+                                    .data(if (subCover != null) com.mangareader.viewer.CoverData(subCover.first, dynOn = false) else item)
                                     .decoderFactory(com.mangareader.coil.CoverAnimGateDecoder)
+                                    .apply {
+                                        if (subCover != null) {
+                                            memoryCacheKey("${subCover.first}|${subCover.second}")
+                                            diskCacheKey("${subCover.first}|${subCover.second}")
+                                        }
+                                    }
                                     .build()
                             }
                             Column(
                                 Modifier.clip(RoundedCornerShape(8.dp))
-                                    .clickable {
-                                        if (item.dir && item.subPath.isNotEmpty()) {
-                                            val currentPath = currentNavStack.firstOrNull() ?: ""
-                                            if (currentPath.startsWith("z:")) {
-                                                val inner = currentPath.removePrefix("z:")
-                                                val sepIdx = inner.indexOf("//")
-                                                if (sepIdx >= 0) {
-                                                    var archivePath = inner.substring(0, sepIdx)
-                                                    if (!archivePath.startsWith("a:")) archivePath = "a:$archivePath"
-                                                    val chapterPath = "z:${archivePath}//${item.subPath}"
-                                                    onChapterNavigate(chapterPath)
+                                    .combinedClickable(
+                                        onClick = {
+                                            if (item.dir && item.subPath.isNotEmpty()) {
+                                                val currentPath = currentNavStack.firstOrNull() ?: ""
+                                                if (currentPath.startsWith("z:")) {
+                                                    val inner = currentPath.removePrefix("z:")
+                                                    val sepIdx = inner.indexOf("//")
+                                                    if (sepIdx >= 0) {
+                                                        var archivePath = inner.substring(0, sepIdx)
+                                                        if (!archivePath.startsWith("a:")) archivePath = "a:$archivePath"
+                                                        val chapterPath = "z:${archivePath}//${item.subPath}"
+                                                        onChapterNavigate(chapterPath)
+                                                    }
+                                                } else if (currentPath.startsWith("d:")) {
+                                                    onChapterNavigate("d:${item.auth}|${item.tree}|${item.doc}")
                                                 }
-                                            } else if (currentPath.startsWith("d:")) {
-                                                onChapterNavigate("d:${item.auth}|${item.tree}|${item.doc}")
+                                            } else if (!item.dir) {
+                                                onItemOpen(item)
                                             }
-                                        } else if (!item.dir) {
-                                            onItemOpen(item)
-                                        }
-                                        onDismiss()
-                                    },
+                                            onDismiss()
+                                        },
+                                        onLongClick = { if (chPath != null) onItemLongPress(item) },
+                                    ),
                                 horizontalAlignment = Alignment.CenterHorizontally
                             ) {
                                 Box(
