@@ -1,5 +1,6 @@
 package com.hippo.ehviewer.smb
 
+
 import android.net.TrafficStats
 import com.ehviewer.core.database.model.SmbSourceEntity
 import com.ehviewer.core.util.logcat
@@ -184,6 +185,7 @@ object SmbGateway {
     private const val IDLE_RELEASE_MS = 90_000L
     private const val MIN_WARM_DATA_SESSIONS = 1
     private const val ACQUIRE_WAIT_MS = 12_000L
+
 
 
     /** Socket-level SO timeout; 30s is enough for LAN comic transfers and fails fast on dead NAS. */
@@ -1667,6 +1669,9 @@ object SmbGateway {
         )
     }
 
+    suspend fun listShares(source: SmbSourceEntity, password: String): List<String> =
+        listShareRootEntries(source, password).map { it.name }
+
     private suspend fun listShareRootEntries(
         source: SmbSourceEntity,
         password: String,
@@ -2162,6 +2167,7 @@ object SmbGateway {
 
         val t0 = System.nanoTime()
         val children = listChildrenForRelativeDir(source, password, relativeDir)
+
         val dirName = relativeDir.substringAfterLast('/').substringAfterLast('\\')
             .ifEmpty { source.displayName }
         // No peeks: dirs are Empty shells; files/archives/videos by basename; current-dir
@@ -2258,6 +2264,7 @@ object SmbGateway {
                     "SMB deep classify source=${source.id} dir=$relativeDir " +
                         "entries=${stored.size} ms=${(System.nanoTime() - t1) / 1_000_000}"
                 }
+
                 stored
             }
         } catch (e: CancellationException) {
