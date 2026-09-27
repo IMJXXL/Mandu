@@ -5,7 +5,9 @@ import android.graphics.BitmapFactory
 import android.util.LruCache
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -206,7 +208,7 @@ fun tocItemChPath(currentNavStack: List<String>, item: ArchiveEngine.Item): Stri
     } else null
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun ReaderTocSheet(
     displayItems: List<ArchiveEngine.Item>,
@@ -214,6 +216,19 @@ fun ReaderTocSheet(
     viewing: Boolean,
     progress: List<ReadingProgress>,
     bookId: Long,
+    onDismiss: () -> Unit,
+    onChapterNavigate: (chapterPath: String) -> Unit,
+    onItemOpen: (ArchiveEngine.Item) -> Unit,
+    bookmarks: List<Bookmark> = emptyList(),
+    onPageBookmarkClick: (Bookmark) -> Unit = {},
+    onPageBookmarkDelete: (Bookmark) -> Unit = {},
+    pageCount: Int = 0,
+    currentPage: Int = 0,
+    onPageClick: (Int) -> Unit = {},
+    thumbLoader: (suspend (Int) -> Bitmap?)? = null,
+    subVolCovers: Map<String, Pair<String, Long>> = emptyMap(),
+    onItemLongPress: (ArchiveEngine.Item) -> Unit = {},
+) {
     var tocSortAsc by remember { mutableStateOf(true) }
     var tocTab by remember { mutableIntStateOf(if (displayItems.size > 1) 0 else 1) }
     val dateFormat = remember { java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.getDefault()) }

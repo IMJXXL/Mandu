@@ -19,6 +19,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.davemorrissey.labs.subscaleview.ImageSource
@@ -205,7 +206,9 @@ fun CurlReaderContent(
             config = config,
         ) { idx ->
             CurlPageContent(
+                idx = idx,
                 bmp = cache.get(idx),
+                isCurrentPage = idx == state.current,
                 isRtl = isRtl,
                 pageBgColor = pageBgColor,
                 landscapeZoom = landscapeZoom,
@@ -213,22 +216,5 @@ fun CurlReaderContent(
             )
         }
     }
-
-    PageCurl(
-        count = totalPages,
-        modifier = curlModifier,
-        state = state,
-        config = config,
-    ) { idx ->
-        CurlPageContent(
-            idx = idx,
-            bmp = cache.get(idx),
-
-            isCurrentPage = idx == state.current,
-            isRtl = isRtl,
-            pageBgColor = pageBgColor,
-            landscapeZoom = landscapeZoom,
-            fitScreen = fitScreen,
-        )
-    }
 }
+
