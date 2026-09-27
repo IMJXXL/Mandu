@@ -2036,7 +2036,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                     title = computeReaderTitle(book, navStack, viewing, hideAllTitles),
                     subtitle = pageSubtitle,
                     viewing = viewing,
-                    bgColor = bgColor,
+                    bgColor = if (viewing) bgColor else MaterialTheme.colorScheme.surface,
                     isFavorite = book?.isFavorite ?: false,
                     isHidden = book?.isHidden ?: false,
                     onBack = ::goBack,
@@ -2101,7 +2101,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                             })
                         }
                         add(BottomBarAction(Icons.Default.Settings, "设置") { showSettings = true })
-                    }, bgColor = bgColor)
+                    }, bgColor = if (viewing) bgColor else MaterialTheme.colorScheme.surface)
                     // 进度条放在底部（横竖都一样）
                     ChapterNavigator(
                         isVertical = false,
@@ -2118,7 +2118,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                         onNextChapter = ::switchToNext,
                         isShowPageNum = config.isShowPageNum,
                         isRtl = isRtl,
-                        bgColor = bgColor,
+                        bgColor = if (viewing) bgColor else MaterialTheme.colorScheme.surface,
                         onPreviewPage = { previewPage ->
                             // ★ 丝滑对齐：拖动时预热目标页（preloadAround 幂等，缓存命中近零开销）
                             val pv = activePagerRef ?: (pagerViewRef as? com.mangareader.native.PagerReaderView)
@@ -2130,7 +2130,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         }
     ) { pad ->
         val shouldApplyPadding = !config.isImmersiveMode || ui || !viewing
-        Box(Modifier.fillMaxSize().background(bgColor)) {
+        Box(Modifier.fillMaxSize().background(if (viewing) bgColor else MaterialTheme.colorScheme.surface)) {
             // 内容区域（带 padding）
             Box(Modifier.fillMaxSize().then(if (shouldApplyPadding) Modifier.padding(pad) else Modifier)) {
                 when {
@@ -2418,7 +2418,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                     }
                 }
                 items.isNotEmpty() -> {
-                    ItemGrid(items, engine, bgColor, progressForToc, { openItem(it) }, Modifier.fillMaxSize().background(bgColor),
+                    ItemGrid(items, engine, MaterialTheme.colorScheme.surface, progressForToc, { openItem(it) }, Modifier.fillMaxSize(),
                         navStack = navStack,
                         subVolCovers = subVolCoverMap,
                         onItemLongPress = onSubItemLongPress,
