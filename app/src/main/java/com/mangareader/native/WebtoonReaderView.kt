@@ -440,6 +440,10 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
             val v = lm.findViewByPosition(i) ?: continue
             if (v.top <= height / 2 && v.bottom > height / 2) { best = i; break }
         }
+        if (best != RecyclerView.NO_POSITION && l == pageList.size - 1) {
+            val lastV = lm.findViewByPosition(l)
+            if (lastV != null && lastV.bottom <= height) best = l
+        }
         if (best == RecyclerView.NO_POSITION) {
             // 中心线落在页隙/缺口：回退旧规则
             for (i in l downTo f) {
