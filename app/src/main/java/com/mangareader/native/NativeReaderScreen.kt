@@ -284,6 +284,7 @@ fun NativeReaderScreen(
             delegate.pageBgColor = pageBgColor
             delegate.landscapeZoom = landscapeZoom
             delegate.fitScreen = fitScreen
+            delegate.curlContentAreaOnly = curlContentAreaOnly
             delegate.setTrimWhiteBorder(trimWhiteBorder, trimThreshold, trimWhiteRatio)
             delegate.setPanNavigation(panNavigation)
             delegate.setEinkDither(einkDither, einkDitherAlgorithm, einkDitherLevels)

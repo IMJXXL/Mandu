@@ -9,6 +9,7 @@ import android.view.ViewGroup
 import android.widget.FrameLayout
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.platform.ComposeView
 import com.mangareader.viewer.ArchiveEngine
 import com.mangareader.native.ReaderViewDelegate
@@ -44,6 +45,10 @@ class CurlReaderView(context: Context) : FrameLayout(context), ReaderViewDelegat
     var pageBgColor: Int = android.graphics.Color.parseColor("#FFFFFF")
     var landscapeZoom: Boolean = false
     var fitScreen: Boolean = false
+    private val curlContentAreaOnlyState = mutableStateOf(false)
+    var curlContentAreaOnly: Boolean
+        get() = curlContentAreaOnlyState.value
+        set(value) { curlContentAreaOnlyState.value = value }
     // 翻页阴影浓度用 Compose 状态承载（NES 侧经 SideEffect 同步，拖滑块即重组生效）
     private val curlShadowAlphaState = mutableFloatStateOf(0.2f)
     var curlShadowAlpha: Float
@@ -166,7 +171,7 @@ class CurlReaderView(context: Context) : FrameLayout(context), ReaderViewDelegat
                     if (newPage == 0) onChapterEnd?.invoke(false)
                     onPageChanged?.invoke(newPage)
                 },
-
+                curlContentAreaOnly = curlContentAreaOnly,
             )
         }
     }

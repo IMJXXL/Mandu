@@ -4,7 +4,9 @@ import android.graphics.Bitmap
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableIntState
@@ -16,8 +18,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.unit.DpOffset
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import com.davemorrissey.labs.subscaleview.ImageSource
+import com.mangareader.native.PagerSSIV
 import eu.wewox.pagecurl.ExperimentalPageCurlApi
 import eu.wewox.pagecurl.config.PageCurlConfig
 import eu.wewox.pagecurl.page.PageCurl
@@ -26,37 +31,53 @@ import eu.wewox.pagecurl.page.rememberPageCurlState
 @OptIn(ExperimentalPageCurlApi::class)
 @Composable
 fun CurlPageContent(
+    idx: Int,
     bmp: Bitmap?,
+    isCurrentPage: Boolean,
     isRtl: Boolean,
     pageBgColor: Int,
     landscapeZoom: Boolean,
     fitScreen: Boolean,
 ) {
-    // 缩放语义与双页 SpreadImage / pager applyScale 对齐：fitScreen（漫画完整显示）=contain；
-    // 否则贴满宽度；landscapeZoom（自动放大横向图片，仅 fitScreen 关闭时插手）宽图贴满高度。
-    // 全部页面统一 Image 常驻：曾对当前页用 SSIV（可双指缩放）其余页用 Image，翻页落地
-    // 瞬间 AndroidView↔Image 组件类型切换产生空白帧（b12d1e4/bc54d52 双页同类问题的
-    // 单页残留），统一 Image 消除切换；代价是单页仿真模式放弃双指缩放（与双页取舍一致）。
-    val wide = bmp != null && !bmp.isRecycled && bmp.width > bmp.height
-    val contentScale = when {
-        fitScreen -> ContentScale.Fit
-        landscapeZoom && wide -> ContentScale.FillHeight
-        else -> ContentScale.FillWidth
-    }
     val mirror = if (isRtl) Modifier.graphicsLayer { scaleX = -1f } else Modifier
-    val baseModifier = Modifier.fillMaxSize().clipToBounds().then(mirror)
+    val baseModifier = Modifier.fillMaxSize().then(mirror)
 
     if (bmp == null || bmp.isRecycled) {
-        Box(modifier = Modifier.fillMaxSize().background(Color(pageBgColor)))
+        Box(modifier = baseModifier.background(Color(pageBgColor)))
         return
     }
 
-    Image(
-        bitmap = bmp.asImageBitmap(),
-        contentDescription = null,
-        modifier = baseModifier.background(Color(pageBgColor)),
-        contentScale = contentScale,
-    )
+    if (isCurrentPage) {
+        AndroidView(
+            factory = { ctx ->
+                PagerSSIV(ctx).apply {
+                    isZoomEnabled = true
+                    isPanEnabled = true
+                    isQuickScaleEnabled = true
+                    setMaxScale(5f)
+                    setMaxTileSize(512)
+                    setMinimumTileDpi(160)
+                    setMinimumScaleType(1)
+                    setDoubleTapZoomDuration(300)
+                    visibility = android.view.View.VISIBLE
+                    setImage(ImageSource.cachedBitmap(bmp))
+                }
+            },
+            update = { ssiv ->
+                if (ssiv.visibility != android.view.View.VISIBLE) {
+                    ssiv.visibility = android.view.View.VISIBLE
+                }
+            },
+            modifier = baseModifier,
+        )
+    } else {
+        Image(
+            bitmap = bmp.asImageBitmap(),
+            contentDescription = null,
+            modifier = baseModifier,
+            contentScale = ContentScale.Fit,
+        )
+    }
 }
 
 @OptIn(ExperimentalPageCurlApi::class)
@@ -75,6 +96,7 @@ fun CurlReaderContent(
     tapForwardTrigger: MutableIntState,
     tapBackwardTrigger: MutableIntState,
     onPageChanged: (Int) -> Unit,
+    curlContentAreaOnly: Boolean = false,
 ) {
     val state = rememberPageCurlState(initialCurrent = currentPage)
 
@@ -105,9 +127,9 @@ fun CurlReaderContent(
     val config = remember(pageBgColor) {
         PageCurlConfig(
             backPageColor = Color(pageBgColor),
-            backPageContentAlpha = backContentAlpha,
+            backPageContentAlpha = 0.1f,
             shadowColor = Color.Black,
-            shadowAlpha = shadowAlpha,
+            shadowAlpha = 0.2f,
             shadowRadius = 15.dp,
             shadowOffset = DpOffset((-5).dp, 0.dp),
             dragForwardEnabled = true,
@@ -119,14 +141,6 @@ fun CurlReaderContent(
             tapInteraction = tapInteraction,
             onCustomTap = { _, _ -> false },
         )
-    }
-    // 背面透出程度/阴影浓度运行时可调：PageCurlConfig 的字段本身是 mutableStateOf，
-    // 绘制层直接读 state，改值即重绘且不打断进行中的翻页动画，无需重建 config 对象
-    LaunchedEffect(backContentAlpha) {
-        config.backPageContentAlpha = backContentAlpha
-    }
-    LaunchedEffect(shadowAlpha) {
-        config.shadowAlpha = shadowAlpha
     }
 
     LaunchedEffect(state.current) {
@@ -143,10 +157,61 @@ fun CurlReaderContent(
         if (tapBackwardTrigger.intValue > 0) state.prev()
     }
 
-    val curlModifier = if (isRtl) {
-        Modifier.fillMaxSize().graphicsLayer { scaleX = -1f }
-    } else {
-        Modifier.fillMaxSize()
+    BoxWithConstraints(modifier = Modifier.fillMaxSize().background(Color(pageBgColor))) {
+        var insetL = 0.dp
+        var insetT = 0.dp
+        var insetR = 0.dp
+        var insetB = 0.dp
+        if (curlContentAreaOnly) {
+            val bmp = cache.get(state.current)
+            if (bmp != null && !bmp.isRecycled) {
+                val iw = bmp.width.toFloat()
+                val ih = bmp.height.toFloat()
+                val cw = constraints.maxWidth.toFloat()
+                val ch = constraints.maxHeight.toFloat()
+                if (iw > 0f && ih > 0f && cw > 0f && ch > 0f) {
+                    val scale = when {
+                        fitScreen -> minOf(cw / iw, ch / ih)
+                        landscapeZoom && iw > ih -> ch / ih
+                        else -> cw / iw
+                    }
+                    val dispW = (iw * scale).coerceAtMost(cw)
+                    val dispH = (ih * scale).coerceAtMost(ch)
+                    if (dispW < cw || dispH < ch) {
+                        with(LocalDensity.current) {
+                            insetL = ((cw - dispW) / 2f).toDp()
+                            insetR = insetL
+                            insetT = ((ch - dispH) / 2f).toDp()
+                            insetB = insetT
+                        }
+                    }
+                }
+            }
+        }
+
+        val areaModifier = Modifier.fillMaxSize().padding(
+            start = insetL, top = insetT, end = insetR, bottom = insetB,
+        )
+        val curlModifier = if (isRtl) {
+            areaModifier.graphicsLayer { scaleX = -1f }
+        } else {
+            areaModifier
+        }
+
+        PageCurl(
+            count = totalPages,
+            modifier = curlModifier,
+            state = state,
+            config = config,
+        ) { idx ->
+            CurlPageContent(
+                bmp = cache.get(idx),
+                isRtl = isRtl,
+                pageBgColor = pageBgColor,
+                landscapeZoom = landscapeZoom,
+                fitScreen = fitScreen,
+            )
+        }
     }
 
     PageCurl(
@@ -156,7 +221,10 @@ fun CurlReaderContent(
         config = config,
     ) { idx ->
         CurlPageContent(
+            idx = idx,
             bmp = cache.get(idx),
+
+            isCurrentPage = idx == state.current,
             isRtl = isRtl,
             pageBgColor = pageBgColor,
             landscapeZoom = landscapeZoom,
