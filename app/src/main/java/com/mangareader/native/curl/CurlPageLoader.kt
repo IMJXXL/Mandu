@@ -110,7 +110,7 @@ class CurlPageLoader(
                     } catch (_: Exception) {}
                     // ★ 墨水屏灰阶抖动（本地路径）：SR 之后、入缓存之前
                     if (einkDither && !bmp.isRecycled) {
-                        try { bmp.applyEinkDither(einkDitherAlgorithm, einkDitherLevels) } catch (_: Exception) {}
+                        try { bmp = bmp.applyEinkDither(einkDitherAlgorithm, einkDitherLevels) } catch (_: Exception) {}
                     }
                     cache.put(idx, bmp)
                     withContext(Dispatchers.Main) { onLoaded(idx) }
@@ -144,7 +144,7 @@ class CurlPageLoader(
                         } catch (_: Exception) {}
                         // ★ 墨水屏灰阶抖动（远程路径）：SR 之后、入缓存之前
                         if (einkDither && !bmp.isRecycled) {
-                            try { bmp.applyEinkDither(einkDitherAlgorithm, einkDitherLevels) } catch (_: Exception) {}
+                            try { bmp = bmp.applyEinkDither(einkDitherAlgorithm, einkDitherLevels) } catch (_: Exception) {}
                         }
                         cache.put(idx, bmp)
                         withContext(Dispatchers.Main) { onLoaded(idx) }

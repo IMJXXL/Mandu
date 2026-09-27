@@ -2,12 +2,14 @@ package com.mangareader.eink
 
 import android.graphics.Bitmap
 
-/** 墨水屏抖动的 Bitmap 薄封装：批量 getPixels/setPixels（绝不逐像素 API），就地处理。 */
-fun Bitmap.applyEinkDither(algorithm: Int, levels: Int): Boolean {
-    if (isRecycled || width <= 0 || height <= 0) return false
-    val pixels = IntArray(width * height)
-    getPixels(pixels, 0, width, 0, 0, width, height)
-    EinkDither.apply(pixels, width, height, algorithm, levels)
-    setPixels(pixels, 0, width, 0, 0, width, height)
-    return true
+fun Bitmap.applyEinkDither(algorithm: Int, levels: Int): Bitmap {
+    if (isRecycled || width <= 0 || height <= 0) return this
+    val soft = if (config == Bitmap.Config.HARDWARE) {
+        copy(Bitmap.Config.ARGB_8888, false) ?: return this
+    } else this
+    val pixels = IntArray(soft.width * soft.height)
+    soft.getPixels(pixels, 0, soft.width, 0, 0, soft.width, soft.height)
+    EinkDither.apply(pixels, soft.width, soft.height, algorithm, levels)
+    soft.setPixels(pixels, 0, soft.width, 0, 0, soft.width, soft.height)
+    return soft
 }

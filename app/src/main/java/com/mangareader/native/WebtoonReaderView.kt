@@ -305,7 +305,7 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
         }
         // ★ 墨水屏灰阶抖动（256级模拟）：所有现有处理之后、入缓存之前，最终位图一次性处理
         if (result != null && !result.isRecycled && einkDither) {
-            try { result!!.applyEinkDither(einkDitherAlgorithm, einkDitherLevels) } catch (_: Exception) {}
+            try { result = result!!.applyEinkDither(einkDitherAlgorithm, einkDitherLevels) } catch (_: Exception) {}
         }
         return result
     }
@@ -643,11 +643,12 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
 
     fun injectUpscaledBitmap(pageIndex: Int, bitmap: Bitmap) {
         // ★ 墨水屏灰阶抖动：SR 注入的高清图不走 processBitmap，此处补抖动保持同一标准
-        if (einkDither && !bitmap.isRecycled) {
-            try { bitmap.applyEinkDither(einkDitherAlgorithm, einkDitherLevels) } catch (_: Exception) {}
+        var bmp = bitmap
+        if (einkDither && !bmp.isRecycled) {
+            try { bmp = bmp.applyEinkDither(einkDitherAlgorithm, einkDitherLevels) } catch (_: Exception) {}
         }
-        synchronized(bitmapCache) { bitmapCache.put(pageIndex, bitmap) }
-        android.util.Log.i("WebtoonRV", "srInject p=$pageIndex bmp=${bitmap.width}x${bitmap.height}")
+        synchronized(bitmapCache) { bitmapCache.put(pageIndex, bmp) }
+        android.util.Log.i("WebtoonRV", "srInject p=$pageIndex bmp=${bmp.width}x${bmp.height}")
         recycler.post {
             adapter?.notifyItemChanged(pageIndex, "ld")
         }
