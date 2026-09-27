@@ -29,6 +29,7 @@ class ConfigManager(private val context: Context) {
             put("isEinkDither", config.isEinkDither)
             put("einkDitherAlgorithm", config.einkDitherAlgorithm)
             put("einkDitherLevels", config.einkDitherLevels)
+            put("einkEndpointPassthrough", config.einkEndpointPassthrough)
             put("einkDecodeSize", config.einkDecodeSize)
             put("einkUiHideDelay", config.einkUiHideDelay)
             put("pdfQuality", config.pdfQuality.toDouble())
@@ -79,6 +80,7 @@ class ConfigManager(private val context: Context) {
                 isEinkDither = json.optBoolean("isEinkDither", false),
                 einkDitherAlgorithm = json.optInt("einkDitherAlgorithm", 0),
                 einkDitherLevels = json.optInt("einkDitherLevels", 16),
+                einkEndpointPassthrough = json.optInt("einkEndpointPassthrough", 0).coerceIn(0, 8),
                 einkDecodeSize = json.optInt("einkDecodeSize", 1920),
                 einkUiHideDelay = json.optLong("einkUiHideDelay", 6000L),
                 pdfQuality = json.optDouble("pdfQuality", 3.0).toFloat(),

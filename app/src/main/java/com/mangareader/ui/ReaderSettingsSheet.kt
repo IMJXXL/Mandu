@@ -377,6 +377,9 @@ private fun FilterTab(config: ReaderConfig, onConfigChange: (ReaderConfig) -> Un
                     )
                 }
             }
+            SliderItem("白底保护", config.einkEndpointPassthrough.toFloat(), 0f..8f, 7, "档位 ${config.einkEndpointPassthrough}") {
+                onConfigChange(config.copy(einkEndpointPassthrough = it.toInt()))
+            }
             SettingsChipRow("灰阶档位（数字越大过渡越平滑）") {
                 listOf("16（默认）" to 16, "32" to 32, "64" to 64).forEach { (label, value) ->
                     FilterChip(

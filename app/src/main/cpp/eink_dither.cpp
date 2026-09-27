@@ -18,9 +18,15 @@ static inline int grayscalize(uint32_t p) {
 
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_mangareader_eink_EinkDitherNative_nativeDitherImpl(
-    JNIEnv* env, jclass, jobject bitmap, jint algorithm, jint levels) {
+    JNIEnv* env, jclass, jobject bitmap, jint algorithm, jint levels, jint endpointPassthrough) {
 
     if (levels < 2) return JNI_FALSE;
+
+    int ep = endpointPassthrough;
+    if (ep < 0) ep = 0;
+    if (ep > 8) ep = 8;
+    const int whiteThreshold = 255 - ep;
+    const int blackThreshold = ep;
 
     AndroidBitmapInfo info;
     if (AndroidBitmap_getInfo(env, bitmap, &info) != ANDROID_BITMAP_RESULT_SUCCESS)
@@ -67,8 +73,8 @@ Java_com_mangareader_eink_EinkDitherNative_nativeDitherImpl(
             int i = y * width;
             for (int x = 0; x < width; x++) {
                 int g = (int)px[i];
-                if (g >= 255) { px[i] = 255; }
-                else if (g <= 0) { px[i] = 0; }
+                if (g >= whiteThreshold) { px[i] = 255; }
+                else if (g <= blackThreshold) { px[i] = 0; }
                 else {
                     int b = BAYER_4[rowBase | (x & 3)];
                     int idx = (32 * g * maxIdx + (2 * b + 1) * 255) / (32 * 255);
@@ -113,8 +119,8 @@ Java_com_mangareader_eink_EinkDitherNative_nativeDitherImpl(
             for (int x = xStart; x != xEnd; x += step) {
                 int v = (int)px[rowBase + x] + cur[x];
                 int out, err;
-                if (v >= 255) { out = 255; err = 0; }
-                else if (v <= 0) { out = 0; err = 0; }
+                if (v >= whiteThreshold) { out = 255; err = 0; }
+                else if (v <= blackThreshold) { out = 0; err = 0; }
                 else {
                     out = quantTbl[v];
                     err = v - out;

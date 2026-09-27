@@ -7,10 +7,10 @@ object EinkDitherNative {
         System.loadLibrary("eink_dither"); true
     } catch (_: Exception) { false }
 
-    fun nativeDither(bitmap: Bitmap, algorithm: Int, levels: Int): Boolean {
+    fun nativeDither(bitmap: Bitmap, algorithm: Int, levels: Int, endpointPassthrough: Int = 0): Boolean {
         if (!loaded) return false
-        return try { nativeDitherImpl(bitmap, algorithm, levels) } catch (_: Exception) { false }
+        return try { nativeDitherImpl(bitmap, algorithm, levels, endpointPassthrough) } catch (_: Exception) { false }
     }
 
-    private external fun nativeDitherImpl(bitmap: Bitmap, algorithm: Int, levels: Int): Boolean
+    private external fun nativeDitherImpl(bitmap: Bitmap, algorithm: Int, levels: Int, endpointPassthrough: Int): Boolean
 }

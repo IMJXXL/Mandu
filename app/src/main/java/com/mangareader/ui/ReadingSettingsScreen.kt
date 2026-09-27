@@ -323,6 +323,9 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
                                     }
                                 }
                             }
+                            Text("白底保护", fontSize = 14.sp)
+                            Text("档位越高白底越干净但细节可能损失", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Slider(value = config.einkEndpointPassthrough.toFloat(), onValueChange = { config = config.copy(einkEndpointPassthrough = it.toInt()) }, onValueChangeFinished = { config.save(ctx) }, valueRange = 0f..8f, steps = 7, modifier = Modifier.fillMaxWidth())
                             Text("灰阶档位（数字越大过渡越平滑）", fontSize = 14.sp)
                             Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 listOf("16" to 16, "32" to 32, "64" to 64).forEach { (label, value) ->

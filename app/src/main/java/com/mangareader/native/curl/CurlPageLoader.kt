@@ -32,6 +32,7 @@ class CurlPageLoader(
     var einkDither: Boolean = false
     var einkDitherAlgorithm: Int = 0
     var einkDitherLevels: Int = 16
+    var einkEndpointPassthrough: Int = 0
 
     private val inflightLoads = ConcurrentHashMap<Int, Long>()
     private val loadJobs = ConcurrentHashMap<Int, Job>()
@@ -110,7 +111,7 @@ class CurlPageLoader(
                     } catch (_: Exception) {}
                     // ★ 墨水屏灰阶抖动（本地路径）：SR 之后、入缓存之前
                     if (einkDither && !bmp.isRecycled) {
-                        try { bmp = bmp.applyEinkDither(einkDitherAlgorithm, einkDitherLevels) } catch (_: Exception) {}
+                        try { bmp = bmp.applyEinkDither(einkDitherAlgorithm, einkDitherLevels, einkEndpointPassthrough) } catch (_: Exception) {}
                     }
                     cache.put(idx, bmp)
                     withContext(Dispatchers.Main) { onLoaded(idx) }
@@ -144,7 +145,7 @@ class CurlPageLoader(
                         } catch (_: Exception) {}
                         // ★ 墨水屏灰阶抖动（远程路径）：SR 之后、入缓存之前
                         if (einkDither && !bmp.isRecycled) {
-                            try { bmp = bmp.applyEinkDither(einkDitherAlgorithm, einkDitherLevels) } catch (_: Exception) {}
+                            try { bmp = bmp.applyEinkDither(einkDitherAlgorithm, einkDitherLevels, einkEndpointPassthrough) } catch (_: Exception) {}
                         }
                         cache.put(idx, bmp)
                         withContext(Dispatchers.Main) { onLoaded(idx) }

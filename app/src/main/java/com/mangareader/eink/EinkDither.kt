@@ -54,8 +54,11 @@ object EinkDither {
      *
      * @param levels 量化档位（16/32/64），必须 ≥2
      */
-    fun apply(pixels: IntArray, width: Int, height: Int, algorithm: Int, levels: Int) {
+    fun apply(pixels: IntArray, width: Int, height: Int, algorithm: Int, levels: Int, endpointPassthrough: Int = 0) {
         if (width <= 0 || height <= 0 || pixels.size < width * height || levels < 2) return
+        val ep = endpointPassthrough.coerceIn(0, 8)
+        val whiteThreshold = 255 - ep
+        val blackThreshold = ep
         val maxIdx = levels - 1
         val n = width * height
 
@@ -80,14 +83,14 @@ object EinkDither {
         }
 
         if (algorithm == ALGO_BAYER_4X4) {
-            bayerDither(pixels, width, height, maxIdx)
+            bayerDither(pixels, width, height, maxIdx, whiteThreshold, blackThreshold)
         } else {
             val kernel = when (algorithm) {
                 ALGO_ATKINSON -> ATKINSON
                 ALGO_STUCKI -> STUCKI
                 else -> FS
             }
-            errorDiffusion(pixels, width, height, maxIdx, kernel, quantTbl)
+            errorDiffusion(pixels, width, height, maxIdx, kernel, quantTbl, whiteThreshold, blackThreshold)
         }
 
         // 打包：灰度值 → 同值 RGB（不透明）
@@ -101,13 +104,13 @@ object EinkDither {
     private inline fun grayscalize(p: Int): Int =
         ((p ushr 16 and 0xFF) * 77 + (p ushr 8 and 0xFF) * 150 + (p and 0xFF) * 29) ushr 8
 
-    private fun bayerDither(pixels: IntArray, width: Int, height: Int, maxIdx: Int) {
+    private fun bayerDither(pixels: IntArray, width: Int, height: Int, maxIdx: Int, whiteThreshold: Int, blackThreshold: Int) {
         for (y in 0 until height) {
             val rowBase = (y and 3) shl 2
             var i = y * width
             for (x in 0 until width) {
                 val g = pixels[i]
-                pixels[i] = if (g >= 255) 255 else if (g <= 0) 0 else {
+                pixels[i] = if (g >= whiteThreshold) 255 else if (g <= blackThreshold) 0 else {
                     val b = BAYER_4[rowBase or (x and 3)]
                     (32 * g * maxIdx + (2 * b + 1) * 255).floorDiv(32 * 255)
                         .coerceIn(0, maxIdx) * 255 / maxIdx
@@ -121,7 +124,7 @@ object EinkDither {
      * 误差扩散（FS/Atkinson/Stucki 共用），蛇形扫描：偶数行左→右，奇数行右→左（dx 镜像）。
      * 累计误差存独立两行缓冲（当前行/下一行），不污染未处理的原始像素。
      */
-    private fun errorDiffusion(pixels: IntArray, width: Int, height: Int, maxIdx: Int, kernel: Array<IntArray>, quantTbl: IntArray) {
+    private fun errorDiffusion(pixels: IntArray, width: Int, height: Int, maxIdx: Int, kernel: Array<IntArray>, quantTbl: IntArray, whiteThreshold: Int, blackThreshold: Int) {
         val errMin = -1024
         val errMax = 1024
         val errRange = errMax - errMin + 1
@@ -146,8 +149,8 @@ object EinkDither {
                 val v = pixels[rowBase + x] + cur[x]
                 val out: Int
                 val err: Int
-                if (v >= 255) { out = 255; err = 0 }       // 端点直通：纯白不抖
-                else if (v <= 0) { out = 0; err = 0 }      // 端点直通：纯黑不抖
+                if (v >= whiteThreshold) { out = 255; err = 0 }
+                else if (v <= blackThreshold) { out = 0; err = 0 }
                 else {
                     out = quantTbl[v]
                     err = v - out

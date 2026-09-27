@@ -107,7 +107,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     // 监听 SharedPreferences 外部修改，自动触发 config 重读
     DisposableEffect(bookId) {
         val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-            if (key?.startsWith("book_${bookId}_") == true || key in setOf("scrollMode", "readBackground", "autoFlipInterval", "tileModeEnabled", "downsampleTier", "isEinkMode", "isTrimWhiteBorder", "trimThreshold", "trimWhiteRatio", "imageMarginH", "isFlipAnimation", "isPageCurlAnimation", "isCurlContentAreaOnly", "landscapeZoom", "fitScreen", "panNavigation", "doublePageSplit", "doublePageReverse", "pageLayout", "useSSIV", "forceFullDecode", "tallSplitEnabled", "isFlipFlashEnabled", "flipFlashDuration", "flipFlashInterval", "flipFlashColor", "einkDecodeSize", "einkUiHideDelay", "pdfQuality", "isGrayscale", "isInvertColors", "centerGapType", "doublePageShift", "seamlessNextVolume", "isEinkDither", "einkDitherAlgorithm", "einkDitherLevels")) {
+            if (key?.startsWith("book_${bookId}_") == true || key in setOf("scrollMode", "readBackground", "autoFlipInterval", "tileModeEnabled", "downsampleTier", "isEinkMode", "isTrimWhiteBorder", "trimThreshold", "trimWhiteRatio", "imageMarginH", "isFlipAnimation", "isPageCurlAnimation", "isCurlContentAreaOnly", "landscapeZoom", "fitScreen", "panNavigation", "doublePageSplit", "doublePageReverse", "pageLayout", "useSSIV", "forceFullDecode", "tallSplitEnabled", "isFlipFlashEnabled", "flipFlashDuration", "flipFlashInterval", "flipFlashColor", "einkDecodeSize", "einkUiHideDelay", "pdfQuality", "isGrayscale", "isInvertColors", "centerGapType", "doublePageShift", "seamlessNextVolume", "isEinkDither", "einkDitherAlgorithm", "einkDitherLevels", "einkEndpointPassthrough")) {
                 configVersion++
             }
         }
@@ -2252,6 +2252,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                             einkDither = config.isEinkDither,
                             einkDitherAlgorithm = config.einkDitherAlgorithm,
                             einkDitherLevels = config.einkDitherLevels,
+                            einkEndpointPassthrough = config.einkEndpointPassthrough,
 
                             remoteSupply = smbSession,
                             modifier = Modifier.fillMaxSize(),

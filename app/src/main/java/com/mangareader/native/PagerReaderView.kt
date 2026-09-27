@@ -78,15 +78,16 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     private var einkDither = false
     private var einkDitherAlgorithm = 0
     private var einkDitherLevels = 16
-    fun setEinkDither(enabled: Boolean, algorithm: Int, levels: Int) {
-        einkDither = enabled; einkDitherAlgorithm = algorithm; einkDitherLevels = levels
+    private var einkEndpointPassthrough = 0
+    fun setEinkDither(enabled: Boolean, algorithm: Int, levels: Int, endpointPassthrough: Int = 0) {
+        einkDither = enabled; einkDitherAlgorithm = algorithm; einkDitherLevels = levels; einkEndpointPassthrough = endpointPassthrough
     }
 
     /** ★ 抖动参数即时生效：同 setTrimWhiteBorder 的无白屏策略——全缓存失效（显示中的 holder
      *  继续持有旧图直到重绑），当前±窗口立即重载，其余页滑到时 cache miss 按新参数解码 */
-    fun applyEinkDitherNow(enabled: Boolean, algorithm: Int, levels: Int) {
-        if (einkDither == enabled && einkDitherAlgorithm == algorithm && einkDitherLevels == levels) return
-        setEinkDither(enabled, algorithm, levels)
+    fun applyEinkDitherNow(enabled: Boolean, algorithm: Int, levels: Int, endpointPassthrough: Int = 0) {
+        if (einkDither == enabled && einkDitherAlgorithm == algorithm && einkDitherLevels == levels && einkEndpointPassthrough == endpointPassthrough) return
+        setEinkDither(enabled, algorithm, levels, endpointPassthrough)
         bitmapCache.evictAll()
         val cur = currentPage
         (cur - 2..cur + 5).forEach {
@@ -1036,7 +1037,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 } catch (_: Exception) {}
                 // ★ 墨水屏灰阶抖动（本地路径）：SR 之后、入缓存之前
                 if (einkDither && !bmp.isRecycled) {
-                    try { bmp = bmp.applyEinkDither(einkDitherAlgorithm, einkDitherLevels) } catch (_: Exception) {}
+                    try { bmp = bmp.applyEinkDither(einkDitherAlgorithm, einkDitherLevels, einkEndpointPassthrough) } catch (_: Exception) {}
                 }
                 bitmapCache.put(idx, bmp)
                 withContext(Dispatchers.Main) {
@@ -1096,7 +1097,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 } catch (_: Exception) {}
                 // ★ 墨水屏灰阶抖动（远程路径）：SR 之后、入缓存之前
                 if (einkDither && !bmp.isRecycled) {
-                    try { bmp = bmp.applyEinkDither(einkDitherAlgorithm, einkDitherLevels) } catch (_: Exception) {}
+                    try { bmp = bmp.applyEinkDither(einkDitherAlgorithm, einkDitherLevels, einkEndpointPassthrough) } catch (_: Exception) {}
                 }
                 bitmapCache.put(idx, bmp)
                 withContext(Dispatchers.Main) {

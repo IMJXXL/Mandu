@@ -151,6 +151,7 @@ fun NativeReaderScreen(
     einkDither: Boolean = false,
     einkDitherAlgorithm: Int = 0,
     einkDitherLevels: Int = 16,
+    einkEndpointPassthrough: Int = 0,
     /** ★ SMB/WebDAV 页面供给（design.md 2.2.2）：非 null 时阅读页面走远程会话。
      *   以参数形式在 setup() 之前注入 delegate，消除"setup 早于供给挂接"的竞态窗口。 */
     remoteSupply: com.mangareader.native.RemotePageSupply? = null,
@@ -267,7 +268,7 @@ fun NativeReaderScreen(
             delegate.setFitScreen(fitScreen)
             delegate.setTrimWhiteBorder(trimWhiteBorder, trimThreshold, trimWhiteRatio)
             delegate.setPanNavigation(panNavigation)
-            delegate.setEinkDither(einkDither, einkDitherAlgorithm, einkDitherLevels)
+            delegate.setEinkDither(einkDither, einkDitherAlgorithm, einkDitherLevels, einkEndpointPassthrough)
         }
         if (delegate is PagerReaderView) {
             delegate.setDoublePageReverse(doublePageReverse)
@@ -278,7 +279,7 @@ fun NativeReaderScreen(
             delegate.trimWhiteBorder = trimWhiteBorder
             delegate.trimThreshold = trimThreshold
             delegate.trimWhiteRatio = trimWhiteRatio
-            delegate.setEinkDither(einkDither, einkDitherAlgorithm, einkDitherLevels)
+            delegate.setEinkDither(einkDither, einkDitherAlgorithm, einkDitherLevels, einkEndpointPassthrough)
         }
         if (delegate is com.mangareader.native.curl.CurlReaderView) {
             delegate.pageBgColor = pageBgColor
@@ -287,7 +288,7 @@ fun NativeReaderScreen(
             delegate.curlContentAreaOnly = curlContentAreaOnly
             delegate.setTrimWhiteBorder(trimWhiteBorder, trimThreshold, trimWhiteRatio)
             delegate.setPanNavigation(panNavigation)
-            delegate.setEinkDither(einkDither, einkDitherAlgorithm, einkDitherLevels)
+            delegate.setEinkDither(einkDither, einkDitherAlgorithm, einkDitherLevels, einkEndpointPassthrough)
             delegate.onChapterEnd = onChapterEnd
         }
         if (delegate is com.mangareader.native.curl.CurlDoublePageView) {
@@ -297,7 +298,8 @@ fun NativeReaderScreen(
             delegate.curlContentAreaOnly = curlContentAreaOnly
             delegate.setTrimWhiteBorder(trimWhiteBorder, trimThreshold, trimWhiteRatio)
             delegate.setPanNavigation(panNavigation)
-            delegate.setEinkDither(einkDither, einkDitherAlgorithm, einkDitherLevels)
+            delegate.setEinkDither(einkDither, einkDitherAlgorithm, einkDitherLevels, einkEndpointPassthrough)
+
             delegate.setDoublePageModeAndShift(pageLayout == 1 || pageLayout == 2, pageLayout == 2)
             delegate.setDoublePageReverse(doublePageReverse)
             delegate.onChapterEnd = onChapterEnd
@@ -341,16 +343,16 @@ fun NativeReaderScreen(
     // ★ 灰阶抖动参数即时生效：变化即清缓存重载当前页（约 40~90ms/页）。remember 初值取
     //   当前参数，避免首次组合与 DisposableEffect setup 的 setEinkDither 重复触发重载；
     //   抖动不进上面 DisposableEffect 的 key（重启会整跑 setup），走此轻量通道
-    var appliedDither by remember { mutableStateOf(Triple(einkDither, einkDitherAlgorithm, einkDitherLevels)) }
+    var appliedDither by remember { mutableStateOf(listOf(einkDither, einkDitherAlgorithm, einkDitherLevels, einkEndpointPassthrough)) }
     SideEffect {
-        val cur = Triple(einkDither, einkDitherAlgorithm, einkDitherLevels)
+        val cur = listOf(einkDither, einkDitherAlgorithm, einkDitherLevels, einkEndpointPassthrough)
         if (appliedDither != cur) {
             appliedDither = cur
             when (val d = activeDelegate(isVertical)) {
-                is WebtoonReaderView -> d.applyEinkDitherNow(einkDither, einkDitherAlgorithm, einkDitherLevels)
-                is PagerReaderView -> d.applyEinkDitherNow(einkDither, einkDitherAlgorithm, einkDitherLevels)
-                is com.mangareader.native.curl.CurlReaderView -> d.applyEinkDitherNow(einkDither, einkDitherAlgorithm, einkDitherLevels)
-                is com.mangareader.native.curl.CurlDoublePageView -> d.applyEinkDitherNow(einkDither, einkDitherAlgorithm, einkDitherLevels)
+                is WebtoonReaderView -> d.applyEinkDitherNow(einkDither, einkDitherAlgorithm, einkDitherLevels, einkEndpointPassthrough)
+                is PagerReaderView -> d.applyEinkDitherNow(einkDither, einkDitherAlgorithm, einkDitherLevels, einkEndpointPassthrough)
+                is com.mangareader.native.curl.CurlReaderView -> d.applyEinkDitherNow(einkDither, einkDitherAlgorithm, einkDitherLevels, einkEndpointPassthrough)
+                is com.mangareader.native.curl.CurlDoublePageView -> d.applyEinkDitherNow(einkDither, einkDitherAlgorithm, einkDitherLevels, einkEndpointPassthrough)
                 else -> {}
             }
         }

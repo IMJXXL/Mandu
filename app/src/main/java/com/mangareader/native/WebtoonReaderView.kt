@@ -305,7 +305,7 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
         }
         // ★ 墨水屏灰阶抖动（256级模拟）：所有现有处理之后、入缓存之前，最终位图一次性处理
         if (result != null && !result.isRecycled && einkDither) {
-            try { result = result!!.applyEinkDither(einkDitherAlgorithm, einkDitherLevels) } catch (_: Exception) {}
+            try { result = result!!.applyEinkDither(einkDitherAlgorithm, einkDitherLevels, einkEndpointPassthrough) } catch (_: Exception) {}
         }
         return result
     }
@@ -314,14 +314,15 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
     var einkDither = false
     var einkDitherAlgorithm = 0
     var einkDitherLevels = 16
-    fun setEinkDither(enabled: Boolean, algorithm: Int, levels: Int) {
-        einkDither = enabled; einkDitherAlgorithm = algorithm; einkDitherLevels = levels
+    var einkEndpointPassthrough = 0
+    fun setEinkDither(enabled: Boolean, algorithm: Int, levels: Int, endpointPassthrough: Int = 0) {
+        einkDither = enabled; einkDitherAlgorithm = algorithm; einkDitherLevels = levels; einkEndpointPassthrough = endpointPassthrough
     }
 
     /** ★ 抖动参数即时生效：清缓存 + notify 触发可见项重绑按需重载（条漫按需加载，miss 即新参数解码） */
-    fun applyEinkDitherNow(enabled: Boolean, algorithm: Int, levels: Int) {
-        if (einkDither == enabled && einkDitherAlgorithm == algorithm && einkDitherLevels == levels) return
-        setEinkDither(enabled, algorithm, levels)
+    fun applyEinkDitherNow(enabled: Boolean, algorithm: Int, levels: Int, endpointPassthrough: Int = 0) {
+        if (einkDither == enabled && einkDitherAlgorithm == algorithm && einkDitherLevels == levels && einkEndpointPassthrough == endpointPassthrough) return
+        setEinkDither(enabled, algorithm, levels, endpointPassthrough)
         synchronized(bitmapCache) { bitmapCache.evictAll() }
         adapter?.notifyDataSetChanged()
     }
@@ -645,7 +646,7 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
         // ★ 墨水屏灰阶抖动：SR 注入的高清图不走 processBitmap，此处补抖动保持同一标准
         var bmp = bitmap
         if (einkDither && !bmp.isRecycled) {
-            try { bmp = bmp.applyEinkDither(einkDitherAlgorithm, einkDitherLevels) } catch (_: Exception) {}
+            try { bmp = bmp.applyEinkDither(einkDitherAlgorithm, einkDitherLevels, einkEndpointPassthrough) } catch (_: Exception) {}
         }
         synchronized(bitmapCache) { bitmapCache.put(pageIndex, bmp) }
         android.util.Log.i("WebtoonRV", "srInject p=$pageIndex bmp=${bmp.width}x${bmp.height}")

@@ -41,6 +41,7 @@ data class ReaderConfig(
     val einkDitherAlgorithm: Int = 0,
     /** 量化档位：16（主流 4bit 面板）/32/64 */
     val einkDitherLevels: Int = 16,
+    val einkEndpointPassthrough: Int = 0,
     val einkDecodeSize: Int = 1920,
     val einkUiHideDelay: Long = 6000L,
     val pdfQuality: Float = 3.0f,
@@ -109,6 +110,7 @@ data class ReaderConfig(
             putBoolean("isEinkDither", isEinkDither)
             putInt("einkDitherAlgorithm", einkDitherAlgorithm)
             putInt("einkDitherLevels", einkDitherLevels)
+            putInt("einkEndpointPassthrough", einkEndpointPassthrough)
             putInt("einkDecodeSize", einkDecodeSize)
             putLong("einkUiHideDelay", einkUiHideDelay)
             putFloat("pdfQuality", pdfQuality)
@@ -174,6 +176,7 @@ data class ReaderConfig(
                 isEinkDither = prefs.safeGetBoolean("isEinkDither", false),
                 einkDitherAlgorithm = prefs.safeGetInt("einkDitherAlgorithm", 0),
                 einkDitherLevels = prefs.safeGetInt("einkDitherLevels", 16),
+                einkEndpointPassthrough = prefs.safeGetInt("einkEndpointPassthrough", 0).coerceIn(0, 8),
                 einkDecodeSize = prefs.safeGetInt("einkDecodeSize", 1920),
                 einkUiHideDelay = prefs.safeGetLong("einkUiHideDelay", 6000L),
                 pdfQuality = prefs.safeGetFloat("pdfQuality", 3.0f),

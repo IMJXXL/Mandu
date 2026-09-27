@@ -102,18 +102,20 @@ class CurlReaderView(context: Context) : FrameLayout(context), ReaderViewDelegat
     }
 
     /** ★ 墨水屏灰阶抖动透传 loader（单/双页 curl 共用解码管线） */
-    fun setEinkDither(enabled: Boolean, algorithm: Int, levels: Int) {
+    fun setEinkDither(enabled: Boolean, algorithm: Int, levels: Int, endpointPassthrough: Int = 0) {
         loader.einkDither = enabled
         loader.einkDitherAlgorithm = algorithm
         loader.einkDitherLevels = levels
+        loader.einkEndpointPassthrough = endpointPassthrough
     }
 
     /** ★ 抖动参数即时生效：清缓存重载当前页周边（重组短暂白帧后按新参数回显，低频操作可接受） */
-    fun applyEinkDitherNow(enabled: Boolean, algorithm: Int, levels: Int) {
-        if (loader.einkDither == enabled && loader.einkDitherAlgorithm == algorithm && loader.einkDitherLevels == levels) return
+    fun applyEinkDitherNow(enabled: Boolean, algorithm: Int, levels: Int, endpointPassthrough: Int = 0) {
+        if (loader.einkDither == enabled && loader.einkDitherAlgorithm == algorithm && loader.einkDitherLevels == levels && loader.einkEndpointPassthrough == endpointPassthrough) return
         loader.einkDither = enabled
         loader.einkDitherAlgorithm = algorithm
         loader.einkDitherLevels = levels
+        loader.einkEndpointPassthrough = endpointPassthrough
         cache.clear()
         reloadTrigger.intValue++
         loader.preloadAround(currentPage, pageList.size) { reloadTrigger.intValue++ }

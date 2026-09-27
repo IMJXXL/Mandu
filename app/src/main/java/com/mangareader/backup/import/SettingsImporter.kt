@@ -16,7 +16,7 @@ object SettingsImporter {
     )
     private val intKeys = setOf(
         "trimThreshold", "einkDecodeSize", "autoFlipInterval", "flipFlashDuration",
-        "einkDitherAlgorithm", "einkDitherLevels",
+        "einkDitherAlgorithm", "einkDitherLevels", "einkEndpointPassthrough",
         "flipFlashInterval", "flipFlashColor", "orientation", "imageMarginH",
         "doublePageShift", "centerGapType", "default_read_mode", "sr_model",
         "sr_quality", "sr_bw_gray_levels", "sr_bw_density", "sr_preload_override",
