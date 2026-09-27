@@ -2,6 +2,7 @@ package com.mangareader.webdavbridge
 
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import com.hippo.ehviewer.util.LocalNetworkPermissionEffect
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -36,6 +37,7 @@ import kotlinx.coroutines.withContext
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WebDavAddWizardScreen(onBack: () -> Unit, onSaved: () -> Unit, initial: WebDavSourceEntity? = null) {
+    LocalNetworkPermissionEffect()
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val isEdit = initial != null

@@ -3,6 +3,7 @@ package com.mangareader.webdavbridge
 
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import com.hippo.ehviewer.util.LocalNetworkPermissionEffect
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -46,6 +47,7 @@ import kotlinx.coroutines.withContext
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WebDavServersScreen(onBack: () -> Unit, onOpenBook: ((Long, Int) -> Unit)? = null) {
+    LocalNetworkPermissionEffect()
     BackHandler { onBack() }
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
