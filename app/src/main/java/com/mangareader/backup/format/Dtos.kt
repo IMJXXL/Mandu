@@ -77,6 +77,7 @@ data class TagLinkDto(
     val id: Long = 0,
     val tagId: Long,
     val bookId: Long,
+    val source: Int = 1,  // 0=XML自动 1=手动；旧备份无此字段默认按手动（spec.md §五）
 )
 
 @Serializable

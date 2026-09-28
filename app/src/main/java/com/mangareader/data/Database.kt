@@ -113,6 +113,12 @@ data class TagWithCount(
     val bookCount: Int
 )
 
+/** 详情页标签区：书的标签+来源（0=XML 1=手动） */
+data class TagWithSource(
+    @Embedded val tag: Tag,
+    val linkSource: Int
+)
+
 @Entity(tableName = "reading_history",
     indices = [Index("bookId"), Index("timestamp")])
 data class ReadingHistory(
@@ -232,7 +238,7 @@ interface MangaDao {
     @Query("SELECT * FROM manga_books WHERE isHidden = 1 ORDER BY lastReadAt DESC")
     fun getHiddenBooks(): Flow<List<Book>>
 
-    @Query("SELECT * FROM manga_books WHERE isHidden = 0 AND title LIKE '%' || :query || '%' ORDER BY lastReadAt DESC")
+    @Query("SELECT * FROM manga_books WHERE isHidden = 0 AND (title LIKE '%' || :query || '%' OR id IN (SELECT tl.bookId FROM tag_links tl INNER JOIN tags t ON tl.tagId = t.id WHERE t.name LIKE '%' || :query || '%')) ORDER BY lastReadAt DESC")
     fun searchVisibleBooks(query: String): Flow<List<Book>>
 
     @Query("SELECT * FROM manga_books WHERE isHidden = 0 AND isFavorite = 1 AND title LIKE '%' || :query || '%' ORDER BY lastReadAt DESC")
@@ -738,12 +744,19 @@ interface MangaDao {
     @Query("DELETE FROM tag_links WHERE bookId = :bookId AND source = 0")
     suspend fun deleteAutoTagsForBook(bookId: Long)
 
+    @Query("SELECT t.*, tl.source AS linkSource FROM tags t INNER JOIN tag_links tl ON t.id = tl.tagId WHERE tl.bookId = :bookId ORDER BY t.name COLLATE NOCASE ASC")
+    suspend fun getTagsForBookWithSource(bookId: Long): List<TagWithSource>
+
+    @Query("DELETE FROM tag_links WHERE tagId = :tagId AND bookId = :bookId")
+    suspend fun deleteTagLinkByTagAndBook(tagId: Long, bookId: Long)
+
     /** 系列信息写入（本地 ComicInfo 与 Komga 共用；seriesId 本地用 "local:"+名字） */
     @Query("UPDATE manga_books SET seriesId = :seriesId, seriesName = :seriesName WHERE id = :id")
     suspend fun updateSeriesInfo(id: Long, seriesId: String, seriesName: String)
 
     @Query("SELECT * FROM manga_books WHERE isHidden = 0 ORDER BY title ASC")
     suspend fun getAllVisibleBooksList(): List<Book>
+
 
     /** 本地 ComicInfo 系列的可见卷（seriesId="local:"+名字，serverId 路由用 "local" 伪值） */
     @Query("SELECT * FROM manga_books WHERE seriesId = :seriesId AND isHidden = 0 ORDER BY title ASC")

@@ -158,7 +158,7 @@ private fun sortShelfItems(items: List<ShelfItem>, sort: SortMode): List<ShelfIt
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettings: () -> Unit = {}, onOpenHistory: () -> Unit = {}, onOpenKomgaSeries: (String, String) -> Unit = { _, _ -> }) {
     val ctx = LocalContext.current
@@ -201,6 +201,8 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
     var tagLogicAnd by remember { mutableStateOf(prefs.getBoolean("tag_filter_and", true)) }
     var recentTagIds by remember { mutableStateOf(prefs.getString("library_recent_tag_ids", "")?.split(",")?.mapNotNull { it.toLongOrNull() } ?: emptyList()) }
     var showTagPicker by remember { mutableStateOf(false) }
+    var showShelfDrawer by remember { mutableStateOf(false) }
+    var showBatchTagPicker by remember { mutableStateOf(false) }
     val tagsWithCounts by dao.getTagsWithCounts().collectAsState(initial = emptyList())
 
     fun toggleLibraryTag(id: Long) {
@@ -429,6 +431,53 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
         )
     }
 
+    if (showShelfDrawer) {
+        ModalBottomSheet(onDismissRequest = { showShelfDrawer = false }) {
+            Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 24.dp)) {
+                Text("全部书架", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(8.dp))
+                bookshelves.forEach { shelf ->
+                    Row(Modifier.fillMaxWidth().clickable {
+                        selectedShelfId = shelf.id
+                        selectedShelfName = shelf.name
+                        filter = FilterMode.ALL
+                        prefs.edit().putString("library_filter", FilterMode.ALL.name).apply()
+                        showShelfDrawer = false
+                    }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Book, null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(10.dp))
+                        Text(shelf.name, fontSize = 15.sp, color = if (selectedShelfId == shelf.id) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
+                    }
+                }
+            }
+        }
+    }
+    if (showBatchTagPicker) {
+        TagPickerSheet(
+            visible = true,
+            allTags = tagsWithCounts,
+            selectedIds = emptySet(),
+            andLogic = true,
+            addMode = true,
+            onToggle = {},
+            onApply = { ids ->
+                val names = ids.mapNotNull { id -> tagsWithCounts.find { it.tag.id == id }?.tag?.name }
+                if (names.isNotEmpty()) {
+                    scope.launch {
+                        withContext(Dispatchers.IO) {
+                            selectedBooks.forEach { bid -> dao.setBookTags(bid, names, 1) }
+                        }
+                        isMultiSelect = false; selectedBooks = emptySet()
+                    }
+                }
+                showBatchTagPicker = false
+            },
+            onLogicChange = {},
+            onClear = {},
+            onDismiss = { showBatchTagPicker = false },
+        )
+    }
+
     if (showDeleteConfirm) {
         val deleteMode = remember { mutableStateOf("shelf") }
         var countdown by remember { mutableIntStateOf(5) }
@@ -606,6 +655,84 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
         AlertDialog(onDismissRequest = { showBookInfo = null }, title = { Text(b.title) },
             text = {
                 Column {
+                    // 标签区（design.md §七）：元数据/我的两行轻分组 + 移除 + 添加（自动补全）+ 转手动
+                    var bookTags by remember(b.id) { mutableStateOf(listOf<com.mangareader.data.TagWithSource>()) }
+                    var tagInput by remember(b.id) { mutableStateOf("") }
+                    suspend fun refreshBookTags() { withContext(Dispatchers.IO) { bookTags = dao.getTagsForBookWithSource(b.id) } }
+                    LaunchedEffect(b.id) { refreshBookTags() }
+                    Spacer(Modifier.height(10.dp))
+                    Text("标签", fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                    Spacer(Modifier.height(4.dp))
+                    val (xmlTagList, manualTagList) = bookTags.partition { it.linkSource == 0 }
+                    if (bookTags.isEmpty()) Text("暂无标签（导入带 ComicInfo.xml 的书可自动获得，或在下方手动添加）", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (xmlTagList.isNotEmpty()) {
+                        Text("元数据", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(Modifier.height(2.dp))
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            xmlTagList.forEach { tws ->
+                                Surface(shape = RoundedCornerShape(50), color = MaterialTheme.colorScheme.surfaceVariant) {
+                                    Row(Modifier.padding(horizontal = 10.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        TagDot(tws.tag.name, tws.tag.color, size = 8.dp)
+                                        Spacer(Modifier.width(5.dp))
+                                        Text(tws.tag.name, fontSize = 12.sp)
+                                        Spacer(Modifier.width(4.dp))
+                                        Text("×", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.clickable { scope.launch { withContext(Dispatchers.IO) { dao.deleteTagLinkByTagAndBook(tws.tag.id, b.id) }; refreshBookTags() } })
+                                    }
+                                }
+                            }
+                        }
+                        TextButton(onClick = {
+                            scope.launch { withContext(Dispatchers.IO) { xmlTagList.forEach { dao.markTagManual(it.tag.id) } }; refreshBookTags() }
+                        }) { Text("全部转为手动（重扫免疫）", fontSize = 11.sp) }
+                    }
+                    if (manualTagList.isNotEmpty()) {
+                        Text("我的", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(Modifier.height(2.dp))
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            manualTagList.forEach { tws ->
+                                Surface(shape = RoundedCornerShape(50), color = MaterialTheme.colorScheme.secondaryContainer) {
+                                    Row(Modifier.padding(horizontal = 10.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        TagDot(tws.tag.name, tws.tag.color, size = 8.dp)
+                                        Spacer(Modifier.width(5.dp))
+                                        Text(tws.tag.name, fontSize = 12.sp)
+                                        Spacer(Modifier.width(4.dp))
+                                        Text("×", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.clickable { scope.launch { withContext(Dispatchers.IO) { dao.deleteTagLinkByTagAndBook(tws.tag.id, b.id) }; refreshBookTags() } })
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        OutlinedTextField(value = tagInput, onValueChange = { tagInput = it }, placeholder = { Text("添加标签…", fontSize = 12.sp) },
+                            singleLine = true, modifier = Modifier.weight(1f), textStyle = androidx.compose.ui.text.TextStyle(fontSize = 13.sp))
+                        TextButton(onClick = {
+                            val name = tagInput.trim()
+                            if (name.isNotEmpty()) {
+                                scope.launch { withContext(Dispatchers.IO) { dao.setBookTags(b.id, listOf(name), 1) }; refreshBookTags() }
+                                tagInput = ""
+                            }
+                        }) { Text("添加") }
+                    }
+                    val tagSuggestions = tagsWithCounts.filter { it.tag.name.contains(tagInput.trim(), ignoreCase = true) && bookTags.none { b2 -> b2.tag.id == it.tag.id } }.take(6)
+                    if (tagInput.isNotBlank() && tagSuggestions.isNotEmpty()) {
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            tagSuggestions.forEach { tws ->
+                                Surface(shape = RoundedCornerShape(50), color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.clickable {
+                                    scope.launch { withContext(Dispatchers.IO) { dao.setBookTags(b.id, listOf(tws.tag.name), 1) }; refreshBookTags() }
+                                    tagInput = ""
+                                }) {
+                                    Row(Modifier.padding(horizontal = 10.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        TagDot(tws.tag.name, tws.tag.color, size = 8.dp)
+                                        Spacer(Modifier.width(5.dp))
+                                        Text(tws.tag.name, fontSize = 12.sp)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         // displayCoverPath 为空（书无任何封面来源）时给占位图，空串 CoverData 会让 Coil 找不到 Fetcher 显示空白
                         if (b.displayCoverPath != null) {
@@ -836,6 +963,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
             if (isMultiSelect && selectedBooks.isNotEmpty()) Surface(color = MaterialTheme.colorScheme.primaryContainer) {
                 Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
                     TextButton(onClick = { showShelfDialog = true }) { Text("添加到书架", color = MaterialTheme.colorScheme.primary) }
+                        TextButton(onClick = { showBatchTagPicker = true }) { Text("打标签", color = MaterialTheme.colorScheme.primary) }
                     TextButton(onClick = { showRenameBatch = true }) { Text("重命名", color = MaterialTheme.colorScheme.primary) }
                     TextButton(onClick = { showDeleteConfirm = true }) { Text("删除", color = MaterialTheme.colorScheme.error) }
                 }
@@ -890,8 +1018,15 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                         selectedShelfName = ""
                     }, label = { Text(f.label, fontSize = 13.sp) })
                 }
-                items(bookshelves.size) { i ->
-                    val shelf = bookshelves[i]
+                // 书架收纳（design.md §三）：最多 6 个 chip + 更多抽屉；选中的第 7+ 个书架顶替首位移除位
+                val shelfLimit = 6
+                val visibleShelves = if (bookshelves.size <= shelfLimit + 1) bookshelves else run {
+                    val head = bookshelves.take(shelfLimit)
+                    val sel = bookshelves.find { it.id == selectedShelfId }
+                    if (sel != null && sel !in head) listOf(sel) + head.dropLast(1) else head
+                }
+                items(visibleShelves.size) { i ->
+                    val shelf = visibleShelves[i]
                     FilterChip(selected = selectedShelfId == shelf.id, onClick = {
                         if (selectedShelfId == shelf.id) {
                             selectedShelfId = null
@@ -905,6 +1040,12 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                     }, label = { Text(shelf.name, fontSize = 13.sp) },
                         leadingIcon = { Icon(Icons.Default.Book, null, Modifier.size(16.dp)) }
                     )
+                }
+                if (bookshelves.size > shelfLimit + 1) {
+                    item {
+                        FilterChip(selected = false, onClick = { showShelfDrawer = true },
+                            label = { Text("书架 更多>", fontSize = 13.sp) })
+                    }
                 }
             }
             if (selectedShelfId != null) {

@@ -20,7 +20,7 @@ object ShelfExporter {
             TagDto(it.id, it.name, it.color)
         }
         val tagLinks = dao.exportAllTagLinks().map {
-            TagLinkDto(it.id, it.tagId, it.bookId)
+            TagLinkDto(it.id, it.tagId, it.bookId, it.source)
         }
         val shelfFlags = dao.exportAllBooksShelfFlags().map {
             BookShelfFlagsDto(it.id, it.isFavorite, it.isHidden)

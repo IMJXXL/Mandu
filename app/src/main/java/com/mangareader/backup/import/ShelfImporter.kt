@@ -39,7 +39,7 @@ object ShelfImporter {
             count += items.size
         }
         if (payload.tagLinks.isNotEmpty()) {
-            val items = payload.tagLinks.map { TagLink(it.id, it.tagId, it.bookId) }
+            val items = payload.tagLinks.map { TagLink(it.id, it.tagId, it.bookId, it.source) }
             when (strategy) {
                 ConflictStrategy.OVERWRITE -> { dao.clearAllTagLinks(); dao.insertTagLinksReplace(items) }
                 ConflictStrategy.SKIP -> dao.insertTagLinksIgnore(items)

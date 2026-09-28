@@ -50,6 +50,7 @@ fun ShelfManageScreen(onBack: () -> Unit) {
     var selectedShelves by remember { mutableStateOf(setOf<Long>()) }
     var showSettings by remember { mutableStateOf(false) }
     var showMergePicker by remember { mutableStateOf(false) }
+    var manageTab by remember { mutableStateOf(0) }
 
     BackHandler { if (showSettings) showSettings = false else if (isMultiSelect) { isMultiSelect = false; selectedShelves = emptySet() } else onBack() }
 
@@ -98,7 +99,13 @@ fun ShelfManageScreen(onBack: () -> Unit) {
             }
         }
     ) { pad ->
-        Column(Modifier.padding(pad).fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
+        Column(Modifier.padding(pad).fillMaxSize()) {
+            TabRow(selectedTabIndex = manageTab) {
+                Tab(selected = manageTab == 0, onClick = { manageTab = 0 }) { Text("书架", Modifier.padding(vertical = 12.dp), fontSize = 15.sp) }
+                Tab(selected = manageTab == 1, onClick = { manageTab = 1 }) { Text("标签", Modifier.padding(vertical = 12.dp), fontSize = 15.sp) }
+            }
+            if (manageTab == 0) {
+            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
             Text("长按拖动排序", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(8.dp))
             if (bookshelves.isEmpty()) Text("还没有书架", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -167,6 +174,10 @@ fun ShelfManageScreen(onBack: () -> Unit) {
                         }
                     }
                 }
+            }
+            }
+            } else {
+                TagManageList(dao = dao, scope = scope)
             }
         }
     }
