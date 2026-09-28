@@ -69,12 +69,12 @@ data class ReaderConfig(
     val autoWebtoon: Boolean = true,
     val chapterTransition: Boolean = true,
     val centerGapType: Int = 0,
-    // ★ N1：卷末无缝续读（默认关；仅同一本书的分卷之间生效，跨书永不自动跳）
-    val seamlessNextVolume: Boolean = false,
+    // ★ N1：卷末无缝续读（默认开；仅同一本书的分卷之间生效，跨书永不自动跳）
+    val seamlessNextVolume: Boolean = true,
     val forceFullDecode: Boolean = false,
     val tileModeEnabled: Boolean = false,
     val downsampleTier: DownsampleTier = DownsampleTier.STANDARD,
-    val tallSplitEnabled: Boolean = false
+    val tallSplitEnabled: Boolean = true
 ) {
     enum class ScrollMode { VERTICAL, HORIZONTAL_LEFT, HORIZONTAL_RIGHT }
     @Deprecated("Dead code - navigation uses Int field navigationMode instead") enum class ClickFlipType { NO, LEFT_RIGHT, DIAGONAL_LB_RT, DIAGONAL_LT_RB }
@@ -202,10 +202,10 @@ data class ReaderConfig(
                 autoWebtoon = prefs.safeGetBoolean("autoWebtoon", true),
                 chapterTransition = prefs.safeGetBoolean("chapterTransition", true),
                 centerGapType = prefs.safeGetInt("${prefix}centerGapType", 0),
-                seamlessNextVolume = prefs.safeGetBoolean("seamlessNextVolume", false),
+                seamlessNextVolume = prefs.safeGetBoolean("seamlessNextVolume", true),
                 forceFullDecode = prefs.safeGetBoolean("forceFullDecode", false),
                 tileModeEnabled = prefs.safeGetBoolean("tileModeEnabled", false),
-                tallSplitEnabled = prefs.safeGetBoolean("tallSplitEnabled", false),
+                tallSplitEnabled = prefs.safeGetBoolean("tallSplitEnabled", true),
                 downsampleTier = if (prefs.contains("downsampleTier")) {
                     try { DownsampleTier.valueOf(prefs.getString("downsampleTier", "STANDARD")!!) } catch (_: Exception) { DownsampleTier.STANDARD }
                 } else if (prefs.safeGetBoolean("forceFullDecode", false)) DownsampleTier.ORIGINAL else DownsampleTier.STANDARD

@@ -256,9 +256,9 @@ object Settings : DataStorePreferences(null) {
 
     /**
      * Browse ZIP/CBZ like folders (listing / photo-grid / DirectoryListing classify).
-     * Off = always open zip/cbz as archive reader. Default on. Settings → General / browse menu.
+     * Off = always open zip/cbz as archive reader. Default off. Settings → General / browse menu.
      */
-    val browseZipAsDir = boolPref("browse_zip_as_dir", true)
+    val browseZipAsDir = boolPref("browse_zip_as_dir", false)
     /** 封面动图总闸（2026-09-19 封存：默认且建议 false；动图播放链路代码保留但不再激活） */
     val coverAnimated = boolPref("cover_animated", false)
     /** 浏览页列表/网格模式（true=列表，false=网格）——SMB/WebDAV 浏览共用 */
