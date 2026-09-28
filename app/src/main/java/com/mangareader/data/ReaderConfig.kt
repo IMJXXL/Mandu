@@ -74,7 +74,10 @@ data class ReaderConfig(
     val forceFullDecode: Boolean = false,
     val tileModeEnabled: Boolean = false,
     val downsampleTier: DownsampleTier = DownsampleTier.STANDARD,
-    val tallSplitEnabled: Boolean = true
+    val tallSplitEnabled: Boolean = true,
+    val brightness: Int = 0,
+    val contrast: Int = 100,
+    val gamma: Int = 100
 ) {
     enum class ScrollMode { VERTICAL, HORIZONTAL_LEFT, HORIZONTAL_RIGHT }
     @Deprecated("Dead code - navigation uses Int field navigationMode instead") enum class ClickFlipType { NO, LEFT_RIGHT, DIAGONAL_LB_RT, DIAGONAL_LT_RB }
@@ -143,6 +146,9 @@ data class ReaderConfig(
             putBoolean("tileModeEnabled", tileModeEnabled)
             putString("downsampleTier", downsampleTier.name)
             putBoolean("tallSplitEnabled", tallSplitEnabled)
+            putInt("${prefix}brightness", brightness)
+            putInt("${prefix}contrast", contrast)
+            putInt("${prefix}gamma", gamma)
             apply()
         }
     }
@@ -206,6 +212,9 @@ data class ReaderConfig(
                 forceFullDecode = prefs.safeGetBoolean("forceFullDecode", false),
                 tileModeEnabled = prefs.safeGetBoolean("tileModeEnabled", false),
                 tallSplitEnabled = prefs.safeGetBoolean("tallSplitEnabled", true),
+                brightness = prefs.safeGetInt("${prefix}brightness", 0).coerceIn(-100, 100),
+                contrast = prefs.safeGetInt("${prefix}contrast", 100).coerceIn(0, 200),
+                gamma = prefs.safeGetInt("${prefix}gamma", 100).coerceIn(50, 200),
                 downsampleTier = if (prefs.contains("downsampleTier")) {
                     try { DownsampleTier.valueOf(prefs.getString("downsampleTier", "STANDARD")!!) } catch (_: Exception) { DownsampleTier.STANDARD }
                 } else if (prefs.safeGetBoolean("forceFullDecode", false)) DownsampleTier.ORIGINAL else DownsampleTier.STANDARD

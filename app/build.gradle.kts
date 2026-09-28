@@ -15,7 +15,7 @@ android {
 
     defaultConfig {
         applicationId = "com.mangareader"
-        minSdk = 21
+        minSdk = 24
         targetSdk = 37
 versionCode = 34
 versionName = "1.3"

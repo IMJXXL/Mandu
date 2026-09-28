@@ -69,7 +69,8 @@ data class Bookshelf(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
     val createdAt: Long = System.currentTimeMillis(),
-    val sortOrder: Int = 0
+    val sortOrder: Int = 0,
+    val isHidden: Boolean = false
 )
 
 @Entity(
@@ -535,6 +536,33 @@ interface MangaDao {
 
     @Query("SELECT * FROM bookshelves ORDER BY sortOrder ASC, createdAt DESC")
     suspend fun getAllBookshelvesList(): List<Bookshelf>
+
+    @Query("SELECT * FROM bookshelves WHERE isHidden = 0 ORDER BY sortOrder ASC, createdAt DESC")
+    fun getVisibleBookshelves(): Flow<List<Bookshelf>>
+
+    @Query("SELECT * FROM bookshelves WHERE isHidden = 0 ORDER BY sortOrder ASC, createdAt DESC")
+    suspend fun getVisibleBookshelvesList(): List<Bookshelf>
+
+    @Query("UPDATE bookshelves SET isHidden = :hidden WHERE id = :id")
+    suspend fun setBookshelfHidden(id: Long, hidden: Boolean)
+
+    @Query("UPDATE bookshelf_items SET bookshelfId = :targetId WHERE bookshelfId IN (:sourceIds) AND bookId NOT IN (SELECT bookId FROM bookshelf_items WHERE bookshelfId = :targetId)")
+    suspend fun moveItemsToShelf(targetId: Long, sourceIds: List<Long>)
+
+    @Query("DELETE FROM bookshelf_items WHERE bookshelfId IN (:sourceIds)")
+    suspend fun deleteItemsInShelves(sourceIds: List<Long>)
+
+    @Query("DELETE FROM bookshelves WHERE id IN (:ids)")
+    suspend fun deleteBookshelvesByIds(ids: List<Long>)
+
+    @Transaction
+    suspend fun mergeBookshelves(targetId: Long, sourceIds: List<Long>) {
+        val validSources = sourceIds.filter { it != targetId }
+        if (validSources.isEmpty()) return
+        moveItemsToShelf(targetId, validSources)
+        deleteItemsInShelves(validSources)
+        deleteBookshelvesByIds(validSources)
+    }
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertBookshelfItem(item: BookshelfItem): Long
@@ -1234,7 +1262,7 @@ data class KomgaProgressSyncQueueEntity(
 
 @Database(
     entities = [Book::class, Folder::class, ReadingHistory::class, Bookshelf::class, BookshelfItem::class, Tag::class, TagLink::class, ReadingProgress::class, Bookmark::class, com.ehviewer.core.database.model.SmbSourceEntity::class, com.ehviewer.core.database.model.LibraryRootEntity::class, com.ehviewer.core.database.model.LocalGalleryEntity::class, com.ehviewer.core.database.model.WebDavSourceEntity::class, DownloadTaskEntity::class, KomgaSeriesCacheEntity::class, KomgaBookMemoEntity::class, KomgaProgressSyncQueueEntity::class],
-    version = 20,
+    version = 21,
     exportSchema = false
 )
 abstract class MangaDatabase : com.ehviewer.core.database.LocalLibraryDatabase() {
@@ -1507,13 +1535,19 @@ abstract class MangaDatabase : com.ehviewer.core.database.LocalLibraryDatabase()
             }
         }
 
+        private val MIGRATION_20_21 = object : androidx.room.migration.Migration(20, 21) {
+            override fun migrate(database: androidx.sqlite.db.SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE bookshelves ADD COLUMN isHidden INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         fun getDatabase(context: Context): MangaDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
                     context.applicationContext,
                     MangaDatabase::class.java,
                     "manga_reader_db"
-                ).addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20)
+                ).addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21)
                 .fallbackToDestructiveMigrationOnDowngrade()
                 .build()
                 INSTANCE = instance

@@ -433,6 +433,89 @@ class ArchiveEngine(private val ctx: Context) {
         } catch (_: Exception) { null }
     }
 
+    fun readComicInfoXml(bookPath: String): ByteArray? {
+        return when {
+            bookPath.startsWith("a:") -> readComicInfoFromArchive(bookPath)
+            bookPath.startsWith("d:") -> readComicInfoFromDir(bookPath)
+            bookPath.startsWith("z:") -> readComicInfoFromZipSubDir(bookPath)
+            else -> null
+        }
+    }
+
+    private fun readComicInfoFromArchive(bookPath: String): ByteArray? {
+        val p = parsePath(bookPath) ?: return null
+        val tree = makeTree(p.auth, p.tree)
+        val uri = DocumentsContract.buildDocumentUriUsingTree(tree, p.doc)
+        val cacheKey = uri.toString()
+        if (!com.mangareader.native.NativeEngine.isOpenZip(cacheKey)) {
+            val realFile = getRealFile(uri)
+            val realPath = realFile?.absolutePath ?: ""
+            val pfd = ctx.contentResolver.openFileDescriptor(uri, "r") ?: return null
+            val fd = pfd.detachFd()
+            pfdKeepAlive[cacheKey] = pfd
+            try { com.mangareader.native.NativeEngine.openZipWithFd(cacheKey, fd, realPath) } catch (_: Exception) { return null }
+        }
+        val allNames = try { com.mangareader.native.NativeEngine.getZipEntryNames(cacheKey) } catch (_: Exception) { null }
+            ?: return null
+        val targetName = allNames.find { it.equals("ComicInfo.xml", ignoreCase = true) } ?: return null
+        val entryIndex = try { com.mangareader.native.NativeEngine.findZipEntryByName(cacheKey, targetName) } catch (_: Exception) { -1 }
+        if (entryIndex < 0) return null
+        return try { com.mangareader.native.NativeEngine.readZipEntry(cacheKey, entryIndex) } catch (_: Exception) { null }
+    }
+
+    private fun readComicInfoFromDir(bookPath: String): ByteArray? {
+        val p = parsePath(bookPath) ?: return null
+        val tree = makeTree(p.auth, p.tree)
+        val dirUri = DocumentsContract.buildDocumentUriUsingTree(tree, p.doc)
+        try {
+            val child = DocumentsContract.buildChildDocumentsUriUsingTree(tree, p.doc)
+            ctx.contentResolver.query(child, null, null, null, null)?.use { c ->
+                val ni = c.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+                val ii = c.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+                while (c.moveToNext()) {
+                    val n = c.getString(ni) ?: continue
+                    if (n.equals("ComicInfo.xml", ignoreCase = true)) {
+                        val id = c.getString(ii) ?: continue
+                        val fileUri = DocumentsContract.buildDocumentUriUsingTree(tree, id)
+                        return ctx.contentResolver.openInputStream(fileUri)?.use { it.readBytes() }
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+        return null
+    }
+
+    private fun readComicInfoFromZipSubDir(bookPath: String): ByteArray? {
+        val inner = bookPath.removePrefix("z:")
+        val sepIdx = inner.indexOf("//")
+        if (sepIdx < 0) return null
+        var archivePath = inner.substring(0, sepIdx)
+        if (!archivePath.startsWith("a:") && !archivePath.startsWith("d:")) {
+            archivePath = "a:$archivePath"
+        }
+        val subPath = inner.substring(sepIdx + 2)
+        val p = parsePath(archivePath) ?: return null
+        val tree = makeTree(p.auth, p.tree)
+        val uri = DocumentsContract.buildDocumentUriUsingTree(tree, p.doc)
+        val cacheKey = uri.toString()
+        if (!com.mangareader.native.NativeEngine.isOpenZip(cacheKey)) {
+            val realFile = getRealFile(uri)
+            val realPath = realFile?.absolutePath ?: ""
+            val pfd = ctx.contentResolver.openFileDescriptor(uri, "r") ?: return null
+            val fd = pfd.detachFd()
+            pfdKeepAlive[cacheKey] = pfd
+            try { com.mangareader.native.NativeEngine.openZipWithFd(cacheKey, fd, realPath) } catch (_: Exception) { return null }
+        }
+        val allNames = try { com.mangareader.native.NativeEngine.getZipEntryNames(cacheKey) } catch (_: Exception) { null }
+            ?: return null
+        val prefix = if (subPath.isNotEmpty()) "$subPath/" else ""
+        val target = (prefix + "ComicInfo.xml").lowercase()
+        val targetName = allNames.find { it.lowercase() == target } ?: return null
+        val entryIndex = try { com.mangareader.native.NativeEngine.findZipEntryByName(cacheKey, targetName) } catch (_: Exception) { -1 }
+        if (entryIndex < 0) return null
+        return try { com.mangareader.native.NativeEngine.readZipEntry(cacheKey, entryIndex) } catch (_: Exception) { null }
+    }
+
     private fun md5(input: String): String {
         val bytes = MessageDigest.getInstance("MD5").digest(input.toByteArray())
         return bytes.joinToString("") { "%02x".format(it) }

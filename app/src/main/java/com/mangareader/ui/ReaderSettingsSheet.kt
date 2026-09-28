@@ -365,6 +365,22 @@ private fun GeneralTab(config: ReaderConfig, onConfigChange: (ReaderConfig) -> U
 private fun FilterTab(config: ReaderConfig, onConfigChange: (ReaderConfig) -> Unit) {
     CheckboxItem("灰度模式", config.isGrayscale) { onConfigChange(config.copy(isGrayscale = it)) }
     CheckboxItem("反色", config.isInvertColors) { onConfigChange(config.copy(isInvertColors = it)) }
+    SliderItem("亮度", config.brightness.toFloat(), -100f..100f, 199, "${config.brightness}") {
+        onConfigChange(config.copy(brightness = it.toInt()))
+    }
+    SliderItem("对比度", config.contrast.toFloat(), 0f..200f, 199, "${config.contrast}") {
+        onConfigChange(config.copy(contrast = it.toInt()))
+    }
+    SliderItem("伽马", config.gamma.toFloat(), 50f..200f, 149, "${config.gamma}") {
+        onConfigChange(config.copy(gamma = it.toInt()))
+    }
+    if (android.os.Build.VERSION.SDK_INT < 33) {
+        Text(
+            "低于安卓13伽马调节会有细节丢失",
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f), fontSize = 11.sp,
+            modifier = Modifier.padding(start = 4.dp, bottom = 4.dp)
+        )
+    }
     if (config.isEinkMode) {
         CheckboxItem("灰阶抖动（让墨水屏显示更多灰阶层次）", config.isEinkDither) { onConfigChange(config.copy(isEinkDither = it)) }
         if (config.isEinkDither) {

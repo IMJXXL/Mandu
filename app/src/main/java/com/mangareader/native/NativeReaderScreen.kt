@@ -1,8 +1,6 @@
 package com.mangareader.native
 
-import android.graphics.ColorMatrix
-import android.graphics.ColorMatrixColorFilter
-import android.graphics.Paint
+
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
@@ -96,24 +94,6 @@ object ReaderTrimRegistry {
     }
 }
 
-private fun getCombinedPaint(grayscale: Boolean, invertedColors: Boolean): Paint? {
-    if (!grayscale && !invertedColors) return null
-    return Paint().apply {
-        colorFilter = ColorMatrixColorFilter(
-            ColorMatrix().apply {
-                if (grayscale) setSaturation(0f)
-                if (invertedColors) {
-                    postConcat(ColorMatrix(floatArrayOf(
-                        -1f, 0f, 0f, 0f, 255f,
-                        0f, -1f, 0f, 0f, 255f,
-                        0f, 0f, -1f, 0f, 255f,
-                        0f, 0f, 0f, 1f, 0f,
-                    )))
-                }
-            },
-        )
-    }
-}
 
 @Composable
 fun NativeReaderScreen(
@@ -152,6 +132,9 @@ fun NativeReaderScreen(
     einkDitherAlgorithm: Int = 0,
     einkDitherLevels: Int = 16,
     einkEndpointPassthrough: Int = 0,
+    brightness: Int = 0,
+    contrast: Int = 100,
+    gamma: Int = 100,
     /** ★ SMB/WebDAV 页面供给（design.md 2.2.2）：非 null 时阅读页面走远程会话。
      *   以参数形式在 setup() 之前注入 delegate，消除"setup 早于供给挂接"的竞态窗口。 */
     remoteSupply: com.mangareader.native.RemotePageSupply? = null,
@@ -379,14 +362,22 @@ fun NativeReaderScreen(
         }
     }
 
-    // Apply grayscale/invert via hardware layer paint
-    LaunchedEffect(grayscale, invertColors) {
+    // Apply grayscale/invert/brightness/contrast/gamma via hardware layer paint
+    LaunchedEffect(grayscale, invertColors, brightness, contrast, gamma) {
         containerRef?.let { container ->
-            val paint = getCombinedPaint(grayscale, invertColors)
+            val paint = com.mangareader.filter.GammaShaderProvider.getEffectivePaint(
+                grayscale, invertColors, brightness, contrast, gamma
+            )
             if (paint != null) {
                 container.setLayerType(View.LAYER_TYPE_HARDWARE, paint)
             } else {
                 container.setLayerType(View.LAYER_TYPE_NONE, null)
+            }
+            val renderEffect = com.mangareader.filter.GammaShaderProvider.createGammaRenderEffect(gamma)
+            if (renderEffect != null && android.os.Build.VERSION.SDK_INT >= 31) {
+                container.setRenderEffect(renderEffect)
+            } else if (android.os.Build.VERSION.SDK_INT >= 31) {
+                container.setRenderEffect(null)
             }
         }
     }

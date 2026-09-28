@@ -234,6 +234,9 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
     var isDark by remember { mutableStateOf(false) }
     var deleteTarget by remember { mutableStateOf<Book?>(null) }
     var showBookInfo by remember { mutableStateOf<Book?>(null) }
+    var showComicInfo by remember { mutableStateOf<Book?>(null) }
+    var comicInfoData by remember { mutableStateOf<com.mangareader.metadata.ComicInfo?>(null) }
+    var comicInfoLoading by remember { mutableStateOf(false) }
     var coverEditBook by remember { mutableStateOf<Book?>(null) }
 
     var isMultiSelect by remember { mutableStateOf(false) }
@@ -243,6 +246,9 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
     var showShelfDialog by remember { mutableStateOf(false) }
     var showRenameBatch by remember { mutableStateOf(false) }
     var showCreateShelf by remember { mutableStateOf(false) }
+    var showShelfMgmt by remember { mutableStateOf(false) }
+    var mgmtSelectedShelves by remember { mutableStateOf(setOf<Long>()) }
+    var showAutoCatSettings by remember { mutableStateOf(false) }
     var newShelfName by remember { mutableStateOf("") }
 
     var selectedShelfId by remember { mutableStateOf<Long?>(prefs.getLong("selected_shelf_id", -1L).takeIf { it >= 0 }) }
@@ -273,7 +279,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
     }
 
     LaunchedEffect(Unit) {
-        dao.getAllBookshelves().collect { bookshelves = it }
+        dao.getVisibleBookshelves().collect { bookshelves = it }
     }
 
     // Preload covers for books that don't have disk-cached covers yet
@@ -590,6 +596,16 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                                     }
                                 },
                             ) { Text("恢复默认封面") }
+                            TextButton(onClick = {
+                                showComicInfo = b
+                                comicInfoLoading = true
+                                comicInfoData = null
+                                scope.launch(Dispatchers.IO) {
+                                    val info = com.mangareader.metadata.ComicInfoReader.read(ctx, b.filePath)
+                                    comicInfoData = info
+                                    comicInfoLoading = false
+                                }
+                            }) { Text("详情") }
                         }
                     }
                     Spacer(Modifier.height(10.dp))
@@ -643,6 +659,157 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                     }) { Text("清除缓存", color = MaterialTheme.colorScheme.error) }
                 }
             } else null)
+    }
+
+    showComicInfo?.let { b ->
+        AlertDialog(
+            onDismissRequest = { showComicInfo = null; comicInfoData = null; comicInfoLoading = false },
+            title = { Text("漫画详情") },
+            text = {
+                Column {
+                    if (comicInfoLoading) {
+                        Text("正在读取 ComicInfo.xml...")
+                    } else if (comicInfoData == null || comicInfoData!!.isEmpty()) {
+                        Text("无元数据信息")
+                    } else {
+                        val info = comicInfoData!!
+                        info.series?.let { Text("系列: $it"); Spacer(Modifier.height(6.dp)) }
+                        info.number?.let { Text("卷号: $it"); Spacer(Modifier.height(6.dp)) }
+                        info.volume?.let { Text("卷: $it"); Spacer(Modifier.height(6.dp)) }
+                        info.title?.let { Text("标题: $it"); Spacer(Modifier.height(6.dp)) }
+                        info.writer?.let { Text("作者: $it"); Spacer(Modifier.height(6.dp)) }
+                        info.penciller?.let { Text("线稿: $it"); Spacer(Modifier.height(6.dp)) }
+                        info.summary?.let {
+                            Text("摘要: $it", maxLines = 8, overflow = TextOverflow.Ellipsis)
+                            Spacer(Modifier.height(6.dp))
+                        }
+                        info.genre?.let { Text("类型: $it"); Spacer(Modifier.height(6.dp)) }
+                        info.publisher?.let { Text("出版社: $it"); Spacer(Modifier.height(6.dp)) }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showComicInfo = null; comicInfoData = null; comicInfoLoading = false }) { Text("关闭") } },
+        )
+    }
+
+    if (showShelfMgmt) {
+        var allShelves by remember { mutableStateOf(listOf<Bookshelf>()) }
+        LaunchedEffect(Unit) {
+            dao.getAllBookshelvesList().let { allShelves = it }
+        }
+        AlertDialog(
+            onDismissRequest = { showShelfMgmt = false; mgmtSelectedShelves = emptySet() },
+            title = { Text("管理书架") },
+            text = {
+                Column {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(onClick = { mgmtSelectedShelves = allShelves.map { it.id }.toSet() }) { Text("全选") }
+                        TextButton(onClick = { mgmtSelectedShelves = allShelves.map { it.id }.toSet() - mgmtSelectedShelves }) { Text("反选") }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    if (allShelves.isEmpty()) {
+                        Text("还没有书架")
+                    } else {
+                        allShelves.forEach { shelf ->
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth().clickable {
+                                    mgmtSelectedShelves = if (shelf.id in mgmtSelectedShelves) mgmtSelectedShelves - shelf.id else mgmtSelectedShelves + shelf.id
+                                }.padding(vertical = 4.dp),
+                            ) {
+                                androidx.compose.material3.Checkbox(
+                                    checked = shelf.id in mgmtSelectedShelves,
+                                    onCheckedChange = {
+                                        mgmtSelectedShelves = if (it) mgmtSelectedShelves + shelf.id else mgmtSelectedShelves - shelf.id
+                                    },
+                                )
+                                Text(shelf.name, modifier = Modifier.weight(1f))
+                                if (shelf.isHidden) Text("（隐藏）", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (mgmtSelectedShelves.size >= 2) {
+                            TextButton(onClick = {
+                                val targetId = mgmtSelectedShelves.first()
+                                val sourceIds = mgmtSelectedShelves.drop(1)
+                                scope.launch(Dispatchers.IO) {
+                                    dao.mergeBookshelves(targetId, sourceIds)
+                                    withContext(Dispatchers.Main) {
+                                        Toast.makeText(ctx, "已合并到「${allShelves.find { it.id == targetId }?.name ?: ""}」", Toast.LENGTH_SHORT).show()
+                                        showShelfMgmt = false
+                                        mgmtSelectedShelves = emptySet()
+                                    }
+                                }
+                            }) { Text("合并到首个", color = MaterialTheme.colorScheme.primary) }
+                        }
+                        if (mgmtSelectedShelves.isNotEmpty()) {
+                            TextButton(onClick = {
+                                scope.launch(Dispatchers.IO) {
+                                    mgmtSelectedShelves.forEach { id ->
+                                        val shelf = allShelves.find { it.id == id }
+                                        if (shelf != null) dao.setBookshelfHidden(id, !shelf.isHidden)
+                                    }
+                                    withContext(Dispatchers.Main) {
+                                        Toast.makeText(ctx, "已切换隐藏状态", Toast.LENGTH_SHORT).show()
+                                        showShelfMgmt = false
+                                        mgmtSelectedShelves = emptySet()
+                                    }
+                                }
+                            }) { Text("切换隐藏") }
+                            TextButton(onClick = {
+                                scope.launch(Dispatchers.IO) {
+                                    mgmtSelectedShelves.forEach { id ->
+                                        val shelf = allShelves.find { it.id == id }
+                                        if (shelf != null) dao.deleteBookshelf(shelf)
+                                    }
+                                    withContext(Dispatchers.Main) {
+                                        Toast.makeText(ctx, "已删除 ${mgmtSelectedShelves.size} 个书架", Toast.LENGTH_SHORT).show()
+                                        showShelfMgmt = false
+                                        mgmtSelectedShelves = emptySet()
+                                    }
+                                }
+                            }) { Text("删除", color = MaterialTheme.colorScheme.error) }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showShelfMgmt = false; mgmtSelectedShelves = emptySet() }) { Text("关闭") } },
+        )
+    }
+
+    if (showAutoCatSettings) {
+        var autoCatConfig by remember { mutableStateOf(com.mangareader.autocat.AutoCategorizeConfig.load(ctx)) }
+        AlertDialog(
+            onDismissRequest = { showAutoCatSettings = false },
+            title = { Text("自动归类设置") },
+            text = {
+                Column {
+                    Text("导入新书时根据以下字段自动创建书架并归类：", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.height(8.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        androidx.compose.material3.Checkbox(checked = autoCatConfig.enableSeries, onCheckedChange = { autoCatConfig = autoCatConfig.copy(enableSeries = it); autoCatConfig.save(ctx) })
+                        Text("系列名")
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        androidx.compose.material3.Checkbox(checked = autoCatConfig.enableWriter, onCheckedChange = { autoCatConfig = autoCatConfig.copy(enableWriter = it); autoCatConfig.save(ctx) })
+                        Text("作者")
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        androidx.compose.material3.Checkbox(checked = autoCatConfig.enableGenre, onCheckedChange = { autoCatConfig = autoCatConfig.copy(enableGenre = it); autoCatConfig.save(ctx) })
+                        Text("类型")
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        androidx.compose.material3.Checkbox(checked = autoCatConfig.enablePublisher, onCheckedChange = { autoCatConfig = autoCatConfig.copy(enablePublisher = it); autoCatConfig.save(ctx) })
+                        Text("出版社")
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Text("按系列名 > 作者 > 类型 > 出版社优先级取第一个勾选且非空的字段归类", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+                }
+            },
+            confirmButton = { TextButton(onClick = { showAutoCatSettings = false }) { Text("关闭") } },
+        )
     }
 
     coverEditBook?.let { b ->
@@ -813,6 +980,17 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
             if (selectedShelfId != null) {
                 Text("书架: $selectedShelfName", fontSize = 13.sp, color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp))
+            }
+            Row(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                TextButton(onClick = { showShelfMgmt = true; mgmtSelectedShelves = emptySet() }) {
+                    Text("管理书架", fontSize = 13.sp)
+                }
+                TextButton(onClick = { showAutoCatSettings = true }) {
+                    Text("自动归类", fontSize = 13.sp)
+                }
             }
             if (books == null && shelfItems == null) {
                 Box(Modifier.fillMaxSize())

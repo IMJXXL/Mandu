@@ -2253,6 +2253,9 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                             einkDitherAlgorithm = config.einkDitherAlgorithm,
                             einkDitherLevels = config.einkDitherLevels,
                             einkEndpointPassthrough = config.einkEndpointPassthrough,
+                            brightness = config.brightness,
+                            contrast = config.contrast,
+                            gamma = config.gamma,
 
                             remoteSupply = smbSession,
                             modifier = Modifier.fillMaxSize(),
