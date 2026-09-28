@@ -411,6 +411,7 @@ fun NativeReaderScreen(
 
     DisposableEffect(Unit) {
         onDispose {
+            com.mangareader.filter.BrightnessController.reset()
             val window = (ctx as? android.app.Activity)?.window
             if (window != null) {
                 window.attributes = window.attributes.apply {

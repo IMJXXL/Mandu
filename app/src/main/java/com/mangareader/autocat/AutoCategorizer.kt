@@ -40,12 +40,18 @@ object AutoCategorizer {
         }
         if (config.enableWriter && !info.writer.isNullOrBlank()) names.add(info.writer!!.trim())
         if (config.enableGenre && !info.genre.isNullOrBlank()) {
-            info.genre!!.split(",").firstOrNull()?.trim()?.takeIf { it.isNotEmpty() }?.let { names.add(it) }
+            // 逗号分隔的每个标签都建架（兼容全角逗号），LinkedHashSet 自动去重
+            info.genre!!.split(",", "，")
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+                .forEach { names.add(it) }
         }
         if (config.enablePublisher && !info.publisher.isNullOrBlank()) names.add(info.publisher!!.trim())
         for (fieldName in config.customFieldNames) {
-            if (fieldName !in config.enabledCustomFields) continue
-            info.extraFields[fieldName]?.trim()?.takeIf { it.isNotEmpty() }?.let { names.add(it) }
+            if (config.enabledCustomFields.none { it.equals(fieldName, ignoreCase = true) }) continue
+            // XML 标签名大小写由作者决定（如 Imprint/IMPRINT），匹配一律忽略大小写
+            info.extraFields.entries.firstOrNull { it.key.equals(fieldName, ignoreCase = true) }
+                ?.value?.trim()?.takeIf { it.isNotEmpty() }?.let { names.add(it) }
         }
         return names.toList()
     }
