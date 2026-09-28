@@ -108,10 +108,6 @@ fun TagManageList(dao: MangaDao, scope: kotlinx.coroutines.CoroutineScope) {
                             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                                 DropdownMenuItem(text = { Text("重命名") }, onClick = { menuOpen = false; renameTarget = twc; renameText = twc.tag.name })
                                 DropdownMenuItem(text = { Text("改色") }, onClick = { menuOpen = false; colorTarget = twc })
-                                DropdownMenuItem(text = { Text("转手动（重扫免疫）") }, onClick = {
-                                    menuOpen = false
-                                    scope.launch { withContext(Dispatchers.IO) { dao.markTagManual(id) } }
-                                })
                                 DropdownMenuItem(text = { Text("删除", color = MaterialTheme.colorScheme.error) }, onClick = {
                                     menuOpen = false; deleteTargets = listOf(twc)
                                 })

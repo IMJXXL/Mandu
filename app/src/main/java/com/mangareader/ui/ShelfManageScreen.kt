@@ -17,6 +17,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
@@ -51,6 +52,11 @@ fun ShelfManageScreen(onBack: () -> Unit) {
     var showSettings by remember { mutableStateOf(false) }
     var showMergePicker by remember { mutableStateOf(false) }
     var manageTab by remember { mutableStateOf(0) }
+    var showCreateTag by remember { mutableStateOf(false) }
+    var newTagName by remember { mutableStateOf("") }
+    var createTagColor by remember { mutableStateOf<Long?>(null) }
+    var showTagColorPicker by remember { mutableStateOf(false) }
+    var shelfQuery by remember { mutableStateOf("") }
 
     BackHandler { if (showSettings) showSettings = false else if (isMultiSelect) { isMultiSelect = false; selectedShelves = emptySet() } else onBack() }
 
@@ -71,9 +77,13 @@ fun ShelfManageScreen(onBack: () -> Unit) {
                 title = { Text("书架管理") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") } },
                 actions = {
-                    IconButton(onClick = { isMultiSelect = true }) { Icon(Icons.Default.Edit, "多选") }
-                    IconButton(onClick = { showSettings = true }) { Icon(Icons.Default.Settings, "设置") }
-                    IconButton(onClick = { showCreateShelf = true }) { Icon(Icons.Default.Add, "新建书架") }
+                    if (manageTab == 0) {
+                        IconButton(onClick = { isMultiSelect = true }) { Icon(Icons.Default.Edit, "多选") }
+                        IconButton(onClick = { showSettings = true }) { Icon(Icons.Default.Settings, "设置") }
+                        IconButton(onClick = { showCreateShelf = true }) { Icon(Icons.Default.Add, "新建书架") }
+                    } else {
+                        IconButton(onClick = { showCreateTag = true }) { Icon(Icons.Default.Add, "新建标签") }
+                    }
                 }
             )
         },
@@ -102,14 +112,24 @@ fun ShelfManageScreen(onBack: () -> Unit) {
         Column(Modifier.padding(pad).fillMaxSize()) {
             TabRow(selectedTabIndex = manageTab) {
                 Tab(selected = manageTab == 0, onClick = { manageTab = 0 }) { Text("书架", Modifier.padding(vertical = 12.dp), fontSize = 15.sp) }
-                Tab(selected = manageTab == 1, onClick = { manageTab = 1 }) { Text("标签", Modifier.padding(vertical = 12.dp), fontSize = 15.sp) }
+                Tab(selected = manageTab == 1, onClick = { manageTab = 1; isMultiSelect = false; selectedShelves = emptySet() }) { Text("标签", Modifier.padding(vertical = 12.dp), fontSize = 15.sp) }
             }
             if (manageTab == 0) {
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
-            Text("长按拖动排序", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            OutlinedTextField(
+                value = shelfQuery,
+                onValueChange = { shelfQuery = it },
+                placeholder = { Text("搜索书架…", fontSize = 14.sp) },
+                leadingIcon = { Icon(androidx.compose.material.icons.Icons.Default.Search, null, Modifier.size(18.dp)) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
             Spacer(Modifier.height(8.dp))
-            if (bookshelves.isEmpty()) Text("还没有书架", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            bookshelves.forEachIndexed { index, shelf ->
+            Text(if (shelfQuery.isBlank()) "长按拖动排序" else "搜索中（拖动排序暂停）", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(8.dp))
+            val visibleShelfList = if (shelfQuery.isBlank()) bookshelves else bookshelves.filter { it.name.contains(shelfQuery, ignoreCase = true) }
+            if (visibleShelfList.isEmpty()) Text(if (bookshelves.isEmpty()) "还没有书架" else "没有匹配的书架", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            visibleShelfList.forEachIndexed { index, shelf ->
                 val maxUp = index * shelfItemHeight
                 val maxDown = (bookshelves.size - 1 - index) * shelfItemHeight
                 Surface(
@@ -122,8 +142,8 @@ fun ShelfManageScreen(onBack: () -> Unit) {
                                 shadowElevation = 8f
                             }
                         }
-                        .pointerInput(index, bookshelves.size, isMultiSelect) {
-                            if (!isMultiSelect) {
+                        .pointerInput(index, bookshelves.size, isMultiSelect, shelfQuery) {
+                            if (!isMultiSelect && shelfQuery.isBlank()) {
                                 detectDragGesturesAfterLongPress(
                                 onDragStart = { draggedIndex = index },
                                 onDragEnd = {
@@ -253,5 +273,49 @@ fun ShelfManageScreen(onBack: () -> Unit) {
 
     if (showSettings) {
         ShelfManageSettingsScreen(onBack = { showSettings = false })
+    }
+
+    if (showCreateTag) {
+        AlertDialog(onDismissRequest = { showCreateTag = false; createTagColor = null }, title = { Text("新建标签") },
+            text = {
+                Column {
+                    OutlinedTextField(value = newTagName, onValueChange = { newTagName = it }, label = { Text("标签名称") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    Spacer(Modifier.height(10.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        TagDot(newTagName.ifBlank { "标签" }, createTagColor ?: TagColors.AUTO_SENTINEL, size = 18.dp)
+                        Spacer(Modifier.width(10.dp))
+                        Text(if (createTagColor == null) "颜色：按名字自动配色" else "颜色：自定义", fontSize = 13.sp, modifier = Modifier.weight(1f))
+                        TextButton(onClick = { showTagColorPicker = true }) { Text("选颜色") }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (newTagName.isNotBlank()) {
+                        val color = createTagColor
+                        scope.launch {
+                            withContext(Dispatchers.IO) {
+                                val id = dao.ensureTag(newTagName.trim())
+                                if (id != -1L && color != null) dao.setTagColor(id, color)
+                            }
+                            newTagName = ""
+                            createTagColor = null
+                            showCreateTag = false
+                        }
+                    }
+                }) { Text("创建") }
+            },
+            dismissButton = { TextButton(onClick = { showCreateTag = false; newTagName = ""; createTagColor = null }) { Text("取消") } })
+    }
+
+    if (showTagColorPicker) {
+        TagColorPickerSheet(
+            visible = true,
+            tagName = newTagName.ifBlank { "新标签" },
+            currentColor = createTagColor ?: TagColors.AUTO_SENTINEL,
+            darkTheme = isSystemInDarkTheme(),
+            onPick = { createTagColor = it },
+            onDismiss = { showTagColorPicker = false },
+        )
     }
 }

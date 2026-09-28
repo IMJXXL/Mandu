@@ -72,27 +72,7 @@ fun TagColorPickerSheet(
             }
             Spacer(Modifier.height(14.dp))
 
-            Text("预设色板（点选即用）", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.height(6.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Box(
-                    Modifier.size(40.dp).clip(RoundedCornerShape(12.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                        .border(2.dp, if (currentColor == TagColors.AUTO_SENTINEL) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline, RoundedCornerShape(12.dp))
-                        .clickable { onPick(TagColors.AUTO_SENTINEL) },
-                    contentAlignment = Alignment.Center
-                ) { Text("自", fontSize = 15.sp, fontWeight = FontWeight.Bold) }
-                TagColors.palette(darkTheme).forEach { c ->
-                    Box(
-                        Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).background(Color(c))
-                            .border(2.dp, if (currentColor == c) MaterialTheme.colorScheme.primary else Color.Transparent, RoundedCornerShape(12.dp))
-                            .clickable { onPick(c) }
-                    )
-                }
-            }
-            Spacer(Modifier.height(16.dp))
-
-            Text("自定义颜色", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("自定义颜色（拖动选色或手输 hex）", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(8.dp))
             // SV 方块：底色=当前色相，横向 白→色，纵向 透→黑
             BoxWithConstraints(

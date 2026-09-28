@@ -37,12 +37,6 @@ fun ShelfManageSettingsScreen(onBack: () -> Unit) {
     var rebuildProgress by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     var rebuildJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     val rebuildCancel = remember { java.util.concurrent.atomic.AtomicBoolean(false) }
-    var showMigrateDialog by remember { mutableStateOf(false) }
-    var migratePicked by remember { mutableStateOf(setOf<Long>()) }
-    var allShelvesCache by remember { mutableStateOf(listOf<com.mangareader.data.Bookshelf>()) }
-    LaunchedEffect(Unit) {
-        withContext(Dispatchers.IO) { allShelvesCache = dao.getAllBookshelvesList() }
-    }
 
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) { hiddenShelves = dao.getHiddenBookshelvesList() }
@@ -181,16 +175,6 @@ fun ShelfManageSettingsScreen(onBack: () -> Unit) {
             }
 
             Spacer(Modifier.height(16.dp))
-            Text("迁移工具", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(4.dp))
-            Text("把自动归类时代建出的书架整体转成同名标签（书全部挂上标签后删除书架），书架从此回归人工策展", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.height(6.dp))
-            TextButton(onClick = {
-                migratePicked = emptySet()
-                showMigrateDialog = true
-            }) { Text("自动书架转标签…") }
-
-            Spacer(Modifier.height(16.dp))
             Text("隐藏的书架", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(4.dp))
             if (hiddenShelves.isEmpty()) {
@@ -210,45 +194,5 @@ fun ShelfManageSettingsScreen(onBack: () -> Unit) {
                 }
             }
         }
-    }
-
-    if (showMigrateDialog) {
-        AlertDialog(
-            onDismissRequest = { showMigrateDialog = false },
-            title = { Text("自动书架转标签") },
-            text = {
-                Column {
-                    Text("勾选要转换的书架（转换后书架删除，书全部挂上同名标签，之后可从标签重建书架）：", fontSize = 13.sp)
-                    Spacer(Modifier.height(8.dp))
-                    Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState())) {
-                        allShelvesCache.forEach { shelf ->
-                            Row(Modifier.fillMaxWidth().clickable {
-                                migratePicked = if (shelf.id in migratePicked) migratePicked - shelf.id else migratePicked + shelf.id
-                            }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Checkbox(checked = shelf.id in migratePicked, onCheckedChange = {
-                                    migratePicked = if (it) migratePicked + shelf.id else migratePicked - shelf.id
-                                })
-                                Text(shelf.name, fontSize = 14.sp)
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    val picked = migratePicked.toList()
-                    if (picked.isNotEmpty()) {
-                        showMigrateDialog = false
-                        scope.launch {
-                            withContext(Dispatchers.IO) {
-                                val pairs = picked.mapNotNull { id -> allShelvesCache.find { it.id == id }?.let { it.id to it.name } }
-                                dao.migrateShelvesToTags(pairs)
-                            }
-                        }
-                    }
-                }) { Text("转换 ${migratePicked.size} 个") }
-            },
-            dismissButton = { TextButton(onClick = { showMigrateDialog = false }) { Text("取消") } }
-        )
     }
 }

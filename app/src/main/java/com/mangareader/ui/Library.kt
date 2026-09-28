@@ -682,9 +682,6 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                                 }
                             }
                         }
-                        TextButton(onClick = {
-                            scope.launch { withContext(Dispatchers.IO) { xmlTagList.forEach { dao.markTagManual(it.tag.id) } }; refreshBookTags() }
-                        }) { Text("全部转为手动（重扫免疫）", fontSize = 11.sp) }
                     }
                     if (manualTagList.isNotEmpty()) {
                         Text("我的", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)

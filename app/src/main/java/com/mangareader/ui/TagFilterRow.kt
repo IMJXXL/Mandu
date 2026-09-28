@@ -52,7 +52,8 @@ fun TagFilterRow(
     val byId = remember(allTags) { allTags.associateBy { it.tag.id } }
     val selected = selectedIds.mapNotNull { byId[it] }
     val recent = recentIds.mapNotNull { byId[it] }.filter { it.tag.id !in selectedIds }.take(5)
-    if (selected.isEmpty() && recent.isEmpty()) return
+    // 库里有标签就常显入口（否则首次用户找不到筛选在哪），完全无标签才隐藏整行
+    if (allTags.isEmpty()) return
 
     LazyRow(
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),

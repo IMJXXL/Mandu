@@ -29,6 +29,7 @@ private val colorSchemes: Map<AppTheme, BaseColorScheme> = mapOf(
             secondaryContainer = androidx.compose.ui.graphics.Color(0xFF00695C), onSecondaryContainer = androidx.compose.ui.graphics.Color(0xFFB2DFDB),
             tertiaryContainer = androidx.compose.ui.graphics.Color(0xFF4527A0), onTertiaryContainer = androidx.compose.ui.graphics.Color(0xFFD1C4E9),
             surfaceContainerHigh = androidx.compose.ui.graphics.Color(0xFF2A2A2A), surfaceContainerHighest = androidx.compose.ui.graphics.Color(0xFF353535),
+            surfaceContainerLow = androidx.compose.ui.graphics.Color(0xFF191919), surfaceContainer = androidx.compose.ui.graphics.Color(0xFF242424),
         )
         override val lightScheme = androidx.compose.material3.lightColorScheme(
             primary = androidx.compose.ui.graphics.Color(0xFF1976D2), onPrimary = androidx.compose.ui.graphics.Color.White,
@@ -41,6 +42,7 @@ private val colorSchemes: Map<AppTheme, BaseColorScheme> = mapOf(
             secondaryContainer = androidx.compose.ui.graphics.Color(0xFFBBDEFB), onSecondaryContainer = androidx.compose.ui.graphics.Color(0xFF0D47A1),
             tertiaryContainer = androidx.compose.ui.graphics.Color(0xFFD1C4E9), onTertiaryContainer = androidx.compose.ui.graphics.Color(0xFF311B92),
             surfaceContainerHigh = androidx.compose.ui.graphics.Color(0xFFE8E8E8), surfaceContainerHighest = androidx.compose.ui.graphics.Color(0xFFD0D0D0),
+            surfaceContainerLow = androidx.compose.ui.graphics.Color(0xFFF7F7F7), surfaceContainer = androidx.compose.ui.graphics.Color(0xFFEFEFEF),
         )
     },
     AppTheme.GREEN to object : BaseColorScheme() {
@@ -55,6 +57,7 @@ private val colorSchemes: Map<AppTheme, BaseColorScheme> = mapOf(
             secondaryContainer = androidx.compose.ui.graphics.Color(0xFF2E7D32), onSecondaryContainer = androidx.compose.ui.graphics.Color(0xFFC8E6C9),
             tertiaryContainer = androidx.compose.ui.graphics.Color(0xFF4527A0), onTertiaryContainer = androidx.compose.ui.graphics.Color(0xFFD1C4E9),
             surfaceContainerHigh = androidx.compose.ui.graphics.Color(0xFF2A2A2A), surfaceContainerHighest = androidx.compose.ui.graphics.Color(0xFF353535),
+            surfaceContainerLow = androidx.compose.ui.graphics.Color(0xFF191919), surfaceContainer = androidx.compose.ui.graphics.Color(0xFF242424),
         )
         override val lightScheme = androidx.compose.material3.lightColorScheme(
             primary = androidx.compose.ui.graphics.Color(0xFF388E3C), onPrimary = androidx.compose.ui.graphics.Color.White,
@@ -67,6 +70,7 @@ private val colorSchemes: Map<AppTheme, BaseColorScheme> = mapOf(
             secondaryContainer = androidx.compose.ui.graphics.Color(0xFFC8E6C9), onSecondaryContainer = androidx.compose.ui.graphics.Color(0xFF1B5E20),
             tertiaryContainer = androidx.compose.ui.graphics.Color(0xFFD1C4E9), onTertiaryContainer = androidx.compose.ui.graphics.Color(0xFF311B92),
             surfaceContainerHigh = androidx.compose.ui.graphics.Color(0xFFE8E8E8), surfaceContainerHighest = androidx.compose.ui.graphics.Color(0xFFD0D0D0),
+            surfaceContainerLow = androidx.compose.ui.graphics.Color(0xFFF7F7F7), surfaceContainer = androidx.compose.ui.graphics.Color(0xFFEFEFEF),
         )
     },
     AppTheme.PURPLE to object : BaseColorScheme() {
@@ -81,6 +85,7 @@ private val colorSchemes: Map<AppTheme, BaseColorScheme> = mapOf(
             secondaryContainer = androidx.compose.ui.graphics.Color(0xFF6A1B9A), onSecondaryContainer = androidx.compose.ui.graphics.Color(0xFFF3E5F5),
             tertiaryContainer = androidx.compose.ui.graphics.Color(0xFF4527A0), onTertiaryContainer = androidx.compose.ui.graphics.Color(0xFFD1C4E9),
             surfaceContainerHigh = androidx.compose.ui.graphics.Color(0xFF2A2A2A), surfaceContainerHighest = androidx.compose.ui.graphics.Color(0xFF353535),
+            surfaceContainerLow = androidx.compose.ui.graphics.Color(0xFF191919), surfaceContainer = androidx.compose.ui.graphics.Color(0xFF242424),
         )
         override val lightScheme = androidx.compose.material3.lightColorScheme(
             primary = androidx.compose.ui.graphics.Color(0xFF7B1FA2), onPrimary = androidx.compose.ui.graphics.Color.White,
@@ -93,6 +98,7 @@ private val colorSchemes: Map<AppTheme, BaseColorScheme> = mapOf(
             secondaryContainer = androidx.compose.ui.graphics.Color(0xFFF3E5F5), onSecondaryContainer = androidx.compose.ui.graphics.Color(0xFF4A148C),
             tertiaryContainer = androidx.compose.ui.graphics.Color(0xFFD1C4E9), onTertiaryContainer = androidx.compose.ui.graphics.Color(0xFF311B92),
             surfaceContainerHigh = androidx.compose.ui.graphics.Color(0xFFE8E8E8), surfaceContainerHighest = androidx.compose.ui.graphics.Color(0xFFD0D0D0),
+            surfaceContainerLow = androidx.compose.ui.graphics.Color(0xFFF7F7F7), surfaceContainer = androidx.compose.ui.graphics.Color(0xFFEFEFEF),
         )
     },
     AppTheme.ORANGE to object : BaseColorScheme() {
@@ -107,6 +113,7 @@ private val colorSchemes: Map<AppTheme, BaseColorScheme> = mapOf(
             secondaryContainer = androidx.compose.ui.graphics.Color(0xFFE65100), onSecondaryContainer = androidx.compose.ui.graphics.Color(0xFFFFE0B2),
             tertiaryContainer = androidx.compose.ui.graphics.Color(0xFF4527A0), onTertiaryContainer = androidx.compose.ui.graphics.Color(0xFFD1C4E9),
             surfaceContainerHigh = androidx.compose.ui.graphics.Color(0xFF2A2A2A), surfaceContainerHighest = androidx.compose.ui.graphics.Color(0xFF353535),
+            surfaceContainerLow = androidx.compose.ui.graphics.Color(0xFF191919), surfaceContainer = androidx.compose.ui.graphics.Color(0xFF242424),
         )
         override val lightScheme = androidx.compose.material3.lightColorScheme(
             primary = androidx.compose.ui.graphics.Color(0xFFF57C00), onPrimary = androidx.compose.ui.graphics.Color.White,
@@ -119,6 +126,7 @@ private val colorSchemes: Map<AppTheme, BaseColorScheme> = mapOf(
             secondaryContainer = androidx.compose.ui.graphics.Color(0xFFFFE0B2), onSecondaryContainer = androidx.compose.ui.graphics.Color(0xFFE65100),
             tertiaryContainer = androidx.compose.ui.graphics.Color(0xFFD1C4E9), onTertiaryContainer = androidx.compose.ui.graphics.Color(0xFF311B92),
             surfaceContainerHigh = androidx.compose.ui.graphics.Color(0xFFE8E8E8), surfaceContainerHighest = androidx.compose.ui.graphics.Color(0xFFD0D0D0),
+            surfaceContainerLow = androidx.compose.ui.graphics.Color(0xFFF7F7F7), surfaceContainer = androidx.compose.ui.graphics.Color(0xFFEFEFEF),
         )
     },
     AppTheme.PINK to object : BaseColorScheme() {
@@ -133,6 +141,7 @@ private val colorSchemes: Map<AppTheme, BaseColorScheme> = mapOf(
             secondaryContainer = androidx.compose.ui.graphics.Color(0xFFAD1457), onSecondaryContainer = androidx.compose.ui.graphics.Color(0xFFFCE4EC),
             tertiaryContainer = androidx.compose.ui.graphics.Color(0xFF4527A0), onTertiaryContainer = androidx.compose.ui.graphics.Color(0xFFD1C4E9),
             surfaceContainerHigh = androidx.compose.ui.graphics.Color(0xFF2A2A2A), surfaceContainerHighest = androidx.compose.ui.graphics.Color(0xFF353535),
+            surfaceContainerLow = androidx.compose.ui.graphics.Color(0xFF191919), surfaceContainer = androidx.compose.ui.graphics.Color(0xFF242424),
         )
         override val lightScheme = androidx.compose.material3.lightColorScheme(
             primary = androidx.compose.ui.graphics.Color(0xFFC2185B), onPrimary = androidx.compose.ui.graphics.Color.White,
@@ -145,6 +154,7 @@ private val colorSchemes: Map<AppTheme, BaseColorScheme> = mapOf(
             secondaryContainer = androidx.compose.ui.graphics.Color(0xFFFCE4EC), onSecondaryContainer = androidx.compose.ui.graphics.Color(0xFF880E4F),
             tertiaryContainer = androidx.compose.ui.graphics.Color(0xFFD1C4E9), onTertiaryContainer = androidx.compose.ui.graphics.Color(0xFF311B92),
             surfaceContainerHigh = androidx.compose.ui.graphics.Color(0xFFE8E8E8), surfaceContainerHighest = androidx.compose.ui.graphics.Color(0xFFD0D0D0),
+            surfaceContainerLow = androidx.compose.ui.graphics.Color(0xFFF7F7F7), surfaceContainer = androidx.compose.ui.graphics.Color(0xFFEFEFEF),
         )
     },
     AppTheme.TACHYOMI to TachiyomiColorScheme,

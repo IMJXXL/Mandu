@@ -774,18 +774,6 @@ interface MangaDao {
     @Query("UPDATE tag_links SET source = 1 WHERE tagId = :tagId AND source = 0")
     suspend fun markTagManual(tagId: Long)
 
-    /** 自动书架转标签：书架内全部书挂同名标签(source=0)后删书架，事务保证原子 */
-    @Transaction
-    suspend fun migrateShelvesToTags(shelves: List<Pair<Long, String>>) {
-        for ((shelfId, name) in shelves) {
-            val tagId = ensureTag(name)
-            if (tagId == -1L) continue
-            val items = getBooksInShelfList(shelfId)
-            for (item in items) linkTag(TagLink(tagId = tagId, bookId = item.bookId, source = 0))
-        }
-        deleteItemsInShelves(shelves.map { it.first })
-        deleteBookshelvesByIds(shelves.map { it.first })
-    }
 
     // ==================== §23 阅读记忆 ====================
 
