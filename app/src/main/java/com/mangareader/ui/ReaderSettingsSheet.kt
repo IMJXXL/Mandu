@@ -49,6 +49,7 @@ fun ReaderSettingsSheet(
 ) {
     var visible by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { visible = true }
+    val sheetCtx = androidx.compose.ui.platform.LocalContext.current
 
     // Box overlay — no Dialog, no scrim, reader stays visible underneath
     Box(
@@ -277,6 +278,16 @@ private fun ReadingModeTab(config: ReaderConfig, mode: Mode, onConfigChange: (Re
         if (config.isFlipAnimation) {
             CheckboxItem("仿真翻页Beta（仅静图左右翻页生效，拆分双页/动图等模式下失效）", config.isPageCurlAnimation) { onConfigChange(config.copy(isPageCurlAnimation = it)) }
             if (config.isPageCurlAnimation) {
+                val sheetCtx = androidx.compose.ui.platform.LocalContext.current
+                var curlSoundOn by remember {
+                    mutableStateOf(sheetCtx.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE).getBoolean("page_curl_sound", true))
+                }
+                CheckboxItem("翻页纸声（落页沙沙声，可关）", curlSoundOn) {
+                    curlSoundOn = it
+                    sheetCtx.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE).edit().putBoolean("page_curl_sound", it).apply()
+                }
+            }
+            if (config.isPageCurlAnimation) {
                 CheckboxItem("翻页仅限画面区域（画面外的留边不参与翻页动画）", config.isCurlContentAreaOnly) { onConfigChange(config.copy(isCurlContentAreaOnly = it)) }
                 SliderItem("背面透出程度（翻页背面内容的可见强度，默认10%；双页透出下一页，单页为背面镜像明暗）", config.curlBackContentAlpha, 0f..1f, 19, "${(config.curlBackContentAlpha * 100).toInt()}%") {
                     onConfigChange(config.copy(curlBackContentAlpha = it))
@@ -420,6 +431,15 @@ private fun FilterTab(config: ReaderConfig, onConfigChange: (ReaderConfig) -> Un
         }
         SliderItem("浓度（默认100%）", config.textureConcentration.toFloat(), 0f..100f, 99, "${config.textureConcentration}%") {
             onConfigChange(config.copy(textureConcentration = it.toInt()))
+        }
+        val sheetCtx = androidx.compose.ui.platform.LocalContext.current
+        var textureMultiply by remember {
+            mutableStateOf(sheetCtx.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE).getBoolean("texture_multiply", false))
+        }
+        CheckboxItem("正片叠底合成（像真书·推荐勾选）", textureMultiply) {
+            textureMultiply = it
+            sheetCtx.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE).edit().putBoolean("texture_multiply", it).apply()
+            onConfigChange(config.copy(textureEnabled = config.textureEnabled))
         }
     }
     if (config.isEinkMode) {

@@ -407,6 +407,13 @@ fun NativeReaderScreen(
 
     LaunchedEffect(textureEnabled, texturePresetId, textureAlpha, textureConcentration, textureOverlayRef) {
         textureOverlayRef?.applyState(textureEnabled, texturePresetId, textureAlpha, textureConcentration, ctx)
+        // 正片叠底需要容器硬件层：子视图 Xfermode 才能对已绘页面内容做乘法（全版本通用）
+        containerRef?.setLayerType(
+            if (textureEnabled && ctx.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE)
+                    .getBoolean("texture_multiply", false))
+                View.LAYER_TYPE_HARDWARE else View.LAYER_TYPE_NONE,
+            null
+        )
     }
 
     DisposableEffect(Unit) {

@@ -1,6 +1,7 @@
 package com.mangareader.native.curl
 
 import android.graphics.Bitmap
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -14,6 +15,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
@@ -205,6 +207,25 @@ fun CurlDoublePageContent(
                 landscapeZoom,
                 fitScreen,
             )
+        }
+        // 书脊沟阴影：中缝恒定的低强度暗渐变，模拟装订沟（拟真增强，静态一层渐变零性能成本）
+        Canvas(
+            Modifier.fillMaxSize().padding(start = insetL, top = insetT, end = insetR, bottom = insetB)
+        ) {
+            val w = size.width
+            if (w > 0f) {
+                val cx = w / 2f
+                val half = w * 0.055f
+                drawRect(
+                    brush = Brush.horizontalGradient(
+                        0f to Color.Transparent,
+                        ((cx - half) / w).coerceIn(0f, 1f) to Color.Transparent,
+                        0.5f to Color.Black.copy(alpha = 0.09f),
+                        ((cx + half) / w).coerceIn(0f, 1f) to Color.Transparent,
+                        1f to Color.Transparent,
+                    )
+                )
+            }
         }
     }
 }

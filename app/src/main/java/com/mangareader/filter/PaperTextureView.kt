@@ -51,6 +51,11 @@ class PaperTextureView(context: Context) : View(context) {
         lastBound = key
         Log.d("PaperTexture", "bind ${bitmap.width}x${bitmap.height} preset=$presetId alpha=$alphaPercent conc=$concentration")
         paint.shader = android.graphics.BitmapShader(bitmap, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT)
+        // 正片叠底合成（设置里勾选）：墨不被纸纹洗白，物理正确像真书；父容器需开硬件层配合。
+        // 透明度滑条此时语义=纸感强度（乘法结果向原页插值）。
+        paint.xfermode = if (context.getSharedPreferences("manga_reader", Context.MODE_PRIVATE)
+                .getBoolean("texture_multiply", false))
+            android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.MULTIPLY) else null
         paint.alpha = (alphaPercent * 255 / 100).coerceIn(0, 255)
         val s = concentration / 100f
         paint.colorFilter = ColorMatrixColorFilter(ColorMatrix(floatArrayOf(

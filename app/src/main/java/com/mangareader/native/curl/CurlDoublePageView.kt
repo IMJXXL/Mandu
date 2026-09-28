@@ -85,6 +85,31 @@ class CurlDoublePageView(context: Context) : FrameLayout(context), ReaderViewDel
         }
     })
 
+    private var soundPool: android.media.SoundPool? = null
+    private var flipSoundId = 0
+
+    /** 落页纸声：翻到新 spread 时播放（设置里可关，读实时 pref 免重建视图） */
+    private fun playFlipSound() {
+        val on = context.getSharedPreferences("manga_reader", Context.MODE_PRIVATE)
+            .getBoolean("page_curl_sound", true)
+        if (!on) return
+        val pool = soundPool ?: android.media.SoundPool.Builder()
+            .setMaxStreams(2)
+            .setAudioAttributes(
+                android.media.AudioAttributes.Builder()
+                    .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                    .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build())
+            .build()
+            .also { soundPool = it }
+        if (flipSoundId == 0) {
+            flipSoundId = try {
+                pool.load(context.assets.openFd("sounds/page_flip.wav"), 1)
+            } catch (_: Exception) { 0 }
+        }
+        if (flipSoundId != 0) pool.play(flipSoundId, 0.55f, 0.55f, 1, 0, 1f)
+    }
+
     init {
         addView(composeView)
         isFocusable = true
@@ -195,6 +220,7 @@ class CurlDoublePageView(context: Context) : FrameLayout(context), ReaderViewDel
                 tapBackwardTrigger = tapBackwardTrigger,
                 onSpreadChanged = { newSpread ->
                     val newPage = SpreadMapping.leftPage(newSpread, pageList.size, doublePageShift)
+                    playFlipSound()
                     currentPage = newPage
                     loader.setCurrentPage(newPage)
                     preloadSpread(newPage)
