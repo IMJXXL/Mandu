@@ -21,14 +21,14 @@ import com.mangareader.data.TagWithCount
 
 /** 标签色点（design.md §六：8~9dp 圆点只做身份识别；对比度不足自动描边） */
 @Composable
-fun TagDot(tagName: String, storedColor: Long, size: Dp = 9.dp) {
+fun TagDot(tagName: String, storedColor: Long, size: Dp = 9.dp, alpha: Float = 1f) {
     val dark = isSystemInDarkTheme()
     val color = TagColors.resolve(tagName, storedColor, dark)
     Box(
         Modifier
             .size(size)
             .clip(CircleShape)
-            .background(Color(color))
+            .background(Color(color).copy(alpha = alpha))
             .then(if (TagColors.needsOutline(storedColor, dark)) Modifier.border(1.dp, MaterialTheme.colorScheme.outline, CircleShape) else Modifier)
     )
 }

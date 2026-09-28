@@ -88,7 +88,9 @@ data class BookshelfItem(
 data class Tag(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
-    val color: Long = 0xFF7C8CF8
+    val color: Long = 0xFF7C8CF8,
+    // 隐藏标签：不出现在首页筛选/选择器，管理页可见可恢复（对齐书架 isHidden 模式）
+    val isHidden: Boolean = false
 )
 
 @Entity(
@@ -678,25 +680,35 @@ interface MangaDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun linkTag(link: TagLink): Long
 
-    /** 热门标签 Top N（按挂书量，选择器热门区/首页快捷行共用） */
+    /** 热门标签 Top N（按挂书量，选择器热门区/首页快捷行共用；只出可见标签） */
     @Query(
         """SELECT t.*, (SELECT COUNT(*) FROM tag_links tl WHERE tl.tagId = t.id) AS bookCount
-        FROM tags t ORDER BY bookCount DESC, t.name COLLATE NOCASE ASC LIMIT :limit"""
+        FROM tags t WHERE t.isHidden = 0 ORDER BY bookCount DESC, t.name COLLATE NOCASE ASC LIMIT :limit"""
     )
     fun getTopTags(limit: Int): Flow<List<TagWithCount>>
 
-    /** 管理页全量列表（按名称） */
+    /** 首页/选择器用：只出可见标签（按名称） */
     @Query(
         """SELECT t.*, (SELECT COUNT(*) FROM tag_links tl WHERE tl.tagId = t.id) AS bookCount
-        FROM tags t ORDER BY t.name COLLATE NOCASE ASC"""
+        FROM tags t WHERE t.isHidden = 0 ORDER BY t.name COLLATE NOCASE ASC"""
     )
     fun getTagsWithCounts(): Flow<List<TagWithCount>>
 
+    /** 管理页用：全部标签含隐藏 */
     @Query(
         """SELECT t.*, (SELECT COUNT(*) FROM tag_links tl WHERE tl.tagId = t.id) AS bookCount
-        FROM tags t WHERE t.name LIKE '%' || :q || '%' ORDER BY bookCount DESC, t.name COLLATE NOCASE ASC"""
+        FROM tags t ORDER BY t.isHidden ASC, t.name COLLATE NOCASE ASC"""
+    )
+    fun getAllTagsWithCounts(): Flow<List<TagWithCount>>
+
+    @Query(
+        """SELECT t.*, (SELECT COUNT(*) FROM tag_links tl WHERE tl.tagId = t.id) AS bookCount
+        FROM tags t WHERE t.isHidden = 0 AND t.name LIKE '%' || :q || '%' ORDER BY bookCount DESC, t.name COLLATE NOCASE ASC"""
     )
     suspend fun searchTags(q: String): List<TagWithCount>
+
+    @Query("UPDATE tags SET isHidden = :hidden WHERE id = :id")
+    suspend fun setTagHidden(id: Long, hidden: Boolean)
 
     /** AND 语义：同时带 n 个标签的书（索引查询，spec.md §八） */
     @Query(
@@ -1413,7 +1425,7 @@ data class KomgaProgressSyncQueueEntity(
 
 @Database(
     entities = [Book::class, Folder::class, ReadingHistory::class, Bookshelf::class, BookshelfItem::class, Tag::class, TagLink::class, ReadingProgress::class, Bookmark::class, com.ehviewer.core.database.model.SmbSourceEntity::class, com.ehviewer.core.database.model.LibraryRootEntity::class, com.ehviewer.core.database.model.LocalGalleryEntity::class, com.ehviewer.core.database.model.WebDavSourceEntity::class, DownloadTaskEntity::class, KomgaSeriesCacheEntity::class, KomgaBookMemoEntity::class, KomgaProgressSyncQueueEntity::class],
-    version = 22,
+    version = 23,
     exportSchema = false
 )
 abstract class MangaDatabase : com.ehviewer.core.database.LocalLibraryDatabase() {
@@ -1692,6 +1704,12 @@ abstract class MangaDatabase : com.ehviewer.core.database.LocalLibraryDatabase()
             }
         }
 
+        private val MIGRATION_22_23 = object : androidx.room.migration.Migration(22, 23) {
+            override fun migrate(database: androidx.sqlite.db.SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE tags ADD COLUMN isHidden INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         private val MIGRATION_21_22 = object : androidx.room.migration.Migration(21, 22) {
             override fun migrate(database: androidx.sqlite.db.SupportSQLiteDatabase) {
                 // ① 先去重（存量可能有重复行，不去重直接建联合唯一索引会让迁移崩溃）
@@ -1709,7 +1727,7 @@ abstract class MangaDatabase : com.ehviewer.core.database.LocalLibraryDatabase()
                     context.applicationContext,
                     MangaDatabase::class.java,
                     "manga_reader_db"
-                ).addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22)
+                ).addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23)
                 .fallbackToDestructiveMigrationOnDowngrade()
                 .build()
                 INSTANCE = instance

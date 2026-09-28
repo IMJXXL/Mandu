@@ -57,8 +57,14 @@ fun ShelfManageScreen(onBack: () -> Unit) {
     var createTagColor by remember { mutableStateOf<Long?>(null) }
     var showTagColorPicker by remember { mutableStateOf(false) }
     var shelfQuery by remember { mutableStateOf("") }
+    var tagMultiSelect by remember { mutableStateOf(false) }
 
-    BackHandler { if (showSettings) showSettings = false else if (isMultiSelect) { isMultiSelect = false; selectedShelves = emptySet() } else onBack() }
+    BackHandler {
+        if (showSettings) showSettings = false
+        else if (isMultiSelect) { isMultiSelect = false; selectedShelves = emptySet() }
+        else if (tagMultiSelect) tagMultiSelect = false
+        else onBack()
+    }
 
     LaunchedEffect(Unit) { dao.getAllBookshelves().collect { bookshelves = it } }
 
@@ -82,6 +88,7 @@ fun ShelfManageScreen(onBack: () -> Unit) {
                         IconButton(onClick = { showSettings = true }) { Icon(Icons.Default.Settings, "设置") }
                         IconButton(onClick = { showCreateShelf = true }) { Icon(Icons.Default.Add, "新建书架") }
                     } else {
+                        IconButton(onClick = { tagMultiSelect = true }) { Icon(Icons.Default.Edit, "多选") }
                         IconButton(onClick = { showCreateTag = true }) { Icon(Icons.Default.Add, "新建标签") }
                     }
                 }
@@ -111,7 +118,7 @@ fun ShelfManageScreen(onBack: () -> Unit) {
     ) { pad ->
         Column(Modifier.padding(pad).fillMaxSize()) {
             TabRow(selectedTabIndex = manageTab) {
-                Tab(selected = manageTab == 0, onClick = { manageTab = 0 }) { Text("书架", Modifier.padding(vertical = 12.dp), fontSize = 15.sp) }
+                Tab(selected = manageTab == 0, onClick = { manageTab = 0; tagMultiSelect = false }) { Text("书架", Modifier.padding(vertical = 12.dp), fontSize = 15.sp) }
                 Tab(selected = manageTab == 1, onClick = { manageTab = 1; isMultiSelect = false; selectedShelves = emptySet() }) { Text("标签", Modifier.padding(vertical = 12.dp), fontSize = 15.sp) }
             }
             if (manageTab == 0) {
@@ -197,7 +204,7 @@ fun ShelfManageScreen(onBack: () -> Unit) {
             }
             }
             } else {
-                TagManageList(dao = dao, scope = scope)
+                TagManageList(dao = dao, scope = scope, multiSelect = tagMultiSelect, onMultiSelectChange = { tagMultiSelect = it })
             }
         }
     }

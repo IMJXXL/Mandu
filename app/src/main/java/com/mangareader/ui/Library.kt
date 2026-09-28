@@ -1049,7 +1049,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                 Text("书架: $selectedShelfName", fontSize = 13.sp, color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp))
             }
-            TagFilterRow(
+            if (prefs.getBoolean("tag_filter_row_enabled", true)) TagFilterRow(
                 allTags = tagsWithCounts,
                 selectedIds = selectedTagIds,
                 recentIds = recentTagIds,

@@ -32,13 +32,18 @@ import kotlinx.coroutines.withContext
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun TagManageList(dao: MangaDao, scope: kotlinx.coroutines.CoroutineScope) {
+fun TagManageList(
+    dao: MangaDao,
+    scope: kotlinx.coroutines.CoroutineScope,
+    multiSelect: Boolean,
+    onMultiSelectChange: (Boolean) -> Unit,
+) {
     val ctx = LocalContext.current
     val dark = isSystemInDarkTheme()
     var tags by remember { mutableStateOf(listOf<TagWithCount>()) }
     var sortByName by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
-    var multiMode by remember { mutableStateOf(false) }
+    val multiMode = multiSelect
     var selected by remember { mutableStateOf(setOf<Long>()) }
     var renameTarget by remember { mutableStateOf<TagWithCount?>(null) }
     var renameText by remember { mutableStateOf("") }
@@ -46,14 +51,17 @@ fun TagManageList(dao: MangaDao, scope: kotlinx.coroutines.CoroutineScope) {
     var deleteTargets by remember { mutableStateOf<List<TagWithCount>>(emptyList()) }
     var showMergePicker by remember { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) { dao.getTagsWithCounts().collect { tags = it } }
+    LaunchedEffect(Unit) { dao.getAllTagsWithCounts().collect { tags = it } }
 
     val shown = remember(tags, query, sortByName) {
-        val base = if (query.isBlank()) tags else tags.filter { it.tag.name.contains(query, ignoreCase = true) }
+        val base = tags.filter { !it.tag.isHidden && (query.isBlank() || it.tag.name.contains(query, ignoreCase = true)) }
         if (sortByName) base.sortedBy { it.tag.name.lowercase() } else base.sortedByDescending { it.bookCount }
     }
+    val hiddenShown = remember(tags, query) {
+        tags.filter { it.tag.isHidden && (query.isBlank() || it.tag.name.contains(query, ignoreCase = true)) }
+    }
 
-    fun exitMulti() { multiMode = false; selected = emptySet() }
+    fun exitMulti() { onMultiSelectChange(false); selected = emptySet() }
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
@@ -90,7 +98,7 @@ fun TagManageList(dao: MangaDao, scope: kotlinx.coroutines.CoroutineScope) {
                             onClick = {
                                 if (multiMode) selected = if (id in selected) selected - id else selected + id
                             },
-                            onLongClick = { multiMode = true; selected = selected + id }
+                            onLongClick = { onMultiSelectChange(true); selected = selected + id }
                         )
                 ) {
                     Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -108,10 +116,36 @@ fun TagManageList(dao: MangaDao, scope: kotlinx.coroutines.CoroutineScope) {
                             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                                 DropdownMenuItem(text = { Text("重命名") }, onClick = { menuOpen = false; renameTarget = twc; renameText = twc.tag.name })
                                 DropdownMenuItem(text = { Text("改色") }, onClick = { menuOpen = false; colorTarget = twc })
+                                DropdownMenuItem(text = { Text("隐藏") }, onClick = {
+                                    menuOpen = false
+                                    scope.launch { withContext(Dispatchers.IO) { dao.setTagHidden(id, true) } }
+                                })
                                 DropdownMenuItem(text = { Text("删除", color = MaterialTheme.colorScheme.error) }, onClick = {
                                     menuOpen = false; deleteTargets = listOf(twc)
                                 })
                             }
+                        }
+                    }
+                }
+            }
+            if (hiddenShown.isNotEmpty()) {
+                Spacer(Modifier.height(14.dp))
+                Text("已隐藏的标签", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(4.dp))
+                hiddenShown.forEach { twc ->
+                    val id = twc.tag.id
+                    Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surface,
+                        tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+                        Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                            TagDot(twc.tag.name, twc.tag.color, size = 20.dp, alpha = 0.5f)
+                            Spacer(Modifier.width(12.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(twc.tag.name, fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("${twc.bookCount} 本 · 已隐藏", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            TextButton(onClick = {
+                                scope.launch { withContext(Dispatchers.IO) { dao.setTagHidden(id, false) } }
+                            }) { Text("恢复显示") }
                         }
                     }
                 }
