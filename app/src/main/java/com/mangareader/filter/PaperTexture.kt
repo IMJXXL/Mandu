@@ -29,6 +29,7 @@ object PaperTexture {
         "textures/paper_laid.webp" to "罗纹纸",
         "textures/paper_newsprint.webp" to "新闻纸",
         "textures/paper_oldpage.webp" to "仿旧书页",
+        "textures/paper_real.webp" to "书卷纸",
     )
 
     private val cache = HashMap<Int, Bitmap>()

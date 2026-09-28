@@ -44,6 +44,16 @@ def norm01(a):
     return (a - lo) / (hi - lo + 1e-8)
 
 
+def fft_grad(field):
+    """周期场梯度（FFT 频域求导，严格无缝），返回 (dy, dx)"""
+    fy = np.fft.fftfreq(field.shape[0])[:, None] * field.shape[0]
+    fx = np.fft.fftfreq(field.shape[1])[None, :] * field.shape[1]
+    F = np.fft.fft2(field)
+    dy = np.real(np.fft.ifft2(F * (2j * np.pi * fy)))
+    dx = np.real(np.fft.ifft2(F * (2j * np.pi * fx)))
+    return dy, dx
+
+
 # ---------- 多尺度底噪：octave 真多尺度（σ 按像素翻倍） ----------
 def fbm_noise(size, octaves=5, base_sigma_px=1.0, seed=0, aniso_y=1.0):
     """每 octave：白噪声经 σ=base*2^o 的周期高斯低通。返回 0..1。"""
@@ -207,6 +217,57 @@ def paper_oldpage(size, seed=61):
     return norm01(t)
 
 
+def paper_real(size, seed=71):
+    """书卷纸（拟真旗舰）：五层结构还原真书纸的视觉signature——
+    1) 成形云纹（β=1.7 幂律谱，主导结构）
+    2) 纤维絮聚（纤维密度受云纹软版调制，floc效应）
+    3) 微颗粒（软核模糊，填充料+纤维交叠）
+    4) 表面起伏定向光照（低频高度场FFT梯度Lambert，给纸厚度感）
+    5) 冷暖色斑（与云纹弱相关的黄/蓝偏移，模拟荧光增白不均）
+    亮度结构 / 光照 / 色斑分别进 R/G/B 通道，强度都压在真纸量级"""
+    rng = np.random.default_rng(seed)
+
+    # 1) 成形云纹
+    formation = spectral_noise(size, beta=1.7, seed=seed, f0=2.0, aniso_y=1.35)
+    formation_soft = fft_blur(formation, size / 256.0)
+
+    # 2) 纤维（密度耦合云纹）—— A/B 目检后定版：絮聚更足、颗粒更收敛
+    fibers = fiber_layer(size, seed + 1, n_fibers=int(size * 3.2),
+                         length_range=(size // 32, size // 13), dir_spread=0.35, thickness_blur=0.55)
+    fibers = fibers * (0.45 + 1.1 * formation_soft)
+    fibers = norm01(fibers)
+
+    # 3) 微颗粒
+    grain = norm01(fft_blur(rng.standard_normal((size, size)), 0.6))
+
+    # 4) 表面起伏光照（左上光）
+    height = spectral_noise(size, beta=2.4, seed=seed + 2, f0=1.0, aniso_y=1.2)
+    gy, gx = fft_grad(height)
+    shade = -(gx * 0.7 + gy * 0.7)
+    shade = shade / (shade.std() + 1e-8)
+
+    # 5) 冷暖色斑
+    warm = spectral_noise(size, beta=1.3, seed=seed + 3, f0=2.5) - 0.5
+
+    lum = 0.56 * formation + 0.13 * grain + 0.31 * fibers
+    lum01 = norm01(lum)
+    return lum01, shade, warm
+
+
+def compose_real(size, base_rgb, lum01, shade, warm,
+                 lum_strength=0.080, shade_strength=0.026, warm_strength=0.045):
+    """书卷纸通道合成：亮度结构全通道，光照全通道，冷暖斑按 R+/B- 进色度"""
+    base = np.array(base_rgb, dtype=np.float64) / 255.0
+    mod_lum = (lum01 - 0.5) * 2.0 * lum_strength
+    mod_shade = shade * shade_strength
+    mod_warm = warm * warm_strength
+    r = base[0] * (1.0 + mod_lum + mod_shade + mod_warm * 0.7)
+    g = base[1] * (1.0 + mod_lum + mod_shade + mod_warm * 0.1)
+    b = base[2] * (1.0 + mod_lum + mod_shade - mod_warm * 0.7)
+    rgb = np.clip(np.stack([r, g, b], axis=-1), 0, 1)
+    return np.round(rgb * 255).astype(np.uint8)
+
+
 # =====================================================
 # 输出
 # =====================================================
@@ -233,7 +294,7 @@ if __name__ == "__main__":
         img.save(out, "WEBP", quality=92, method=6)
         print(f"{name}.webp  {os.path.getsize(out) / 1024:.1f} KB  [{label}]")
 
-        # 预览：左半原图，右半叠在模拟漫画上（中灰 50% alpha）方便看效果
+        # 预览：左半原图，右半叠在模拟漫画上（30% alpha）方便看效果
         comic = np.full((SIZE, SIZE, 3), 200, dtype=np.uint8)
         comic[:, : SIZE // 4] = 255          # 白底分镜块
         comic[:, SIZE // 4: SIZE // 2] = 60  # 深色块
@@ -241,7 +302,27 @@ if __name__ == "__main__":
         row = np.concatenate([np.array(img), np.array(overlay)], axis=1)
         previews.append(row)
 
+    # ---- 旗舰拟真书卷纸：1024 高清五层结构 ----
+    FSIZE = 1024
+    lum01, shade, warm = paper_real(FSIZE, seed=71)
+    arr = compose_real(FSIZE, (250, 247, 240), lum01, shade, warm)
+    img = Image.fromarray(arr, "RGB")
+    out = os.path.join(ASSET_DIR, "paper_real.webp")
+    img.save(out, "WEBP", quality=92, method=6)
+    print(f"paper_real.webp  {os.path.getsize(out) / 1024:.1f} KB  [书卷纸]  {FSIZE}px")
+
+    comic = np.full((FSIZE, FSIZE, 3), 200, dtype=np.uint8)
+    comic[:, : FSIZE // 4] = 255
+    comic[:, FSIZE // 4: FSIZE // 2] = 60
+    overlay = Image.blend(Image.fromarray(comic), img, 0.30)
+    row = np.concatenate([np.array(img.resize((512, 512), Image.LANCZOS)),
+                          np.array(overlay.resize((512, 512), Image.LANCZOS))], axis=1)
+    previews.append(row)
+
     grid = np.concatenate(previews, axis=0)
     Image.fromarray(grid).save(os.path.join(PREVIEW_DIR, "preview_grid.png"))
-    print("预览：tools/preview/preview_grid.png")
+    # 旗舰纸中央 384px 区域 1:1 放大 2 倍细看
+    zoom = img.crop((FSIZE // 2 - 192, FSIZE // 2 - 192, FSIZE // 2 + 192, FSIZE // 2 + 192))
+    zoom.resize((768, 768), Image.NEAREST).save(os.path.join(PREVIEW_DIR, "preview_real_zoom.png"))
+    print("预览：tools/preview/preview_grid.png + preview_real_zoom.png")
     print("完成。")
