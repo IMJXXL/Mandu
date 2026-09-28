@@ -9,18 +9,19 @@ import android.graphics.Paint
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffXfermode
 import android.graphics.Shader
+import android.util.Log
 import android.view.View
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 object PaperTexture {
     val PRESETS = arrayOf(
-        "paper_cotton.webp" to "棉纸（细纹）",
-        "paper_cotton2.webp" to "棉纸（粗纹）",
-        "paper_kraft.webp" to "牛皮纸",
-        "paper_kraft2.webp" to "牛皮纸2",
-        "paper_kraft_box.webp" to "牛皮纸盒",
-        "paper_sketch.webp" to "素描纸",
+        "textures/paper_cotton.webp" to "棉纸（细纹）",
+        "textures/paper_cotton2.webp" to "棉纸（粗纹）",
+        "textures/paper_kraft.webp" to "牛皮纸",
+        "textures/paper_kraft2.webp" to "牛皮纸2",
+        "textures/paper_kraft_box.webp" to "牛皮纸盒",
+        "textures/paper_sketch.webp" to "素描纸",
     )
 
     private val cache = HashMap<Int, Bitmap>()
@@ -36,7 +37,8 @@ object PaperTexture {
         executor.execute {
             val bitmap = try {
                 BitmapFactory.decodeStream(context.assets.open(PRESETS[id].first))
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                Log.e("PaperTexture", "decode failed: ${PRESETS[id].first}", e)
                 null
             }
             if (bitmap != null) {
