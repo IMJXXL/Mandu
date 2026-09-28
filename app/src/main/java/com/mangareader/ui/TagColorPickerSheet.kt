@@ -50,7 +50,9 @@ fun TagColorPickerSheet(
     var value by remember(visible) { mutableFloatStateOf(initHsv[2]) }
     var hexText by remember(visible) { mutableStateOf(String.format("#%06X", intOf(initColor) and 0xFFFFFF)) }
 
-    val customArgb = AColor.HSVToColor(floatArrayOf(hue, sat, value)).toLong() or 0xFF000000L
+    // 自定义色避开"自动档"哨兵值（hex 精确输到该值时视觉上 +1，肉眼不可分但语义不同）
+    val customArgbRaw = AColor.HSVToColor(floatArrayOf(hue, sat, value)).toLong() or 0xFF000000L
+    val customArgb = if (customArgbRaw == TagColors.AUTO_SENTINEL) customArgbRaw + 1L else customArgbRaw
 
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
@@ -143,7 +145,8 @@ fun TagColorPickerSheet(
                         hexText = it
                         val clean = it.removePrefix("#")
                         if (clean.length == 6) {
-                            clean.toLongOrNull(16)?.let { rgb ->
+                            clean.toLongOrNull(16)?.let { rgbIn ->
+                                val rgb = if ((rgbIn or 0xFF000000L) == TagColors.AUTO_SENTINEL) rgbIn + 1L else rgbIn
                                 val hsv = floatArrayOf(0f, 0f, 0f)
                                 AColor.colorToHSV(rgb.toInt(), hsv)
                                 hue = hsv[0]; sat = hsv[1]; value = hsv[2]

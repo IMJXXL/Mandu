@@ -6,6 +6,8 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -31,12 +33,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * 标签管理列表（design.md §五，反馈批三次迭代）：
+ * 标签管理列表（design.md §五，反馈批四次迭代）：
  * - 搜索 + 三态排序（按数量/按名称/按手动拖动）
- * - 手动模式长按拖动排序（sortOrder 落库）
- * - 多选带勾选框（外部 TopBar 触发，长按也可进入）→ 底部合并到…/删除
- * - 布局：列表 / 网格（FlowRow 紧凑 chips，由父级布局开关传入）
- * - 隐藏标签分组（⋯菜单隐藏，恢复显示）；0 本孤儿按数量排序自然沉底
+ * - LazyColumn 懒加载（千级标签不卡）；手动模式长按拖动排序（sortOrder 落库）
+ * - 多选带勾选框（外部 TopBar 触发，长按也可进入）→ 底部合并到…/删除（搜索时注明范围）
+ * - 重命名重名防护；隐藏标签分组（⋯菜单隐藏，恢复显示）
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -47,7 +48,6 @@ fun TagManageList(
     onMultiSelectChange: (Boolean) -> Unit,
     layoutGrid: Boolean,
 ) {
-    val ctx = LocalContext.current
     val dark = isSystemInDarkTheme()
     var tags by remember { mutableStateOf(listOf<TagWithCount>()) }
     var sortMode by remember { mutableStateOf(0) } // 0=数量 1=名称 2=手动
@@ -55,6 +55,7 @@ fun TagManageList(
     var selected by remember { mutableStateOf(setOf<Long>()) }
     var renameTarget by remember { mutableStateOf<TagWithCount?>(null) }
     var renameText by remember { mutableStateOf("") }
+    var renameError by remember { mutableStateOf<String?>(null) }
     var colorTarget by remember { mutableStateOf<TagWithCount?>(null) }
     var deleteTargets by remember { mutableStateOf<List<TagWithCount>>(emptyList()) }
     var showMergePicker by remember { mutableStateOf(false) }
@@ -82,71 +83,76 @@ fun TagManageList(
     val dragEnabled = sortMode == 2 && query.isBlank() && !multiMode && !layoutGrid && shown.size > 1
 
     Box(Modifier.fillMaxSize()) {
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = query,
-                    onValueChange = { query = it },
-                    placeholder = { Text("搜索标签…", fontSize = 14.sp) },
-                    leadingIcon = { Icon(androidx.compose.material.icons.Icons.Default.Search, null, Modifier.size(18.dp)) },
-                    singleLine = true,
-                    modifier = Modifier.weight(1f)
-                )
-                TextButton(onClick = { sortMode = (sortMode + 1) % 3 }) {
-                    Text(if (sortMode == 0) "按数量" else if (sortMode == 1) "按名称" else "按手动", fontSize = 13.sp)
+        LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
+            // ===== 头部：搜索 + 排序 + 提示 =====
+            item {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = { query = it },
+                        placeholder = { Text("搜索标签…", fontSize = 14.sp) },
+                        leadingIcon = { Icon(androidx.compose.material.icons.Icons.Default.Search, null, Modifier.size(18.dp)) },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                    TextButton(onClick = { sortMode = (sortMode + 1) % 3 }) {
+                        Text(if (sortMode == 0) "按数量" else if (sortMode == 1) "按名称" else "按手动", fontSize = 13.sp)
+                    }
                 }
-            }
-            Spacer(Modifier.height(8.dp))
-            if (multiMode) {
-                Text("已选 ${selected.size} 个标签，点选勾选，长按可追加", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
-                Spacer(Modifier.height(6.dp))
-            } else if (dragEnabled) {
-                Text("长按拖动排序", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(Modifier.height(6.dp))
-            }
-            if (shown.isEmpty()) {
-                Text(if (tags.isEmpty()) "还没有标签。导入带 ComicInfo.xml 的书，或点右上角新建" else "没有匹配的标签",
-                    fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(8.dp))
+                if (multiMode) {
+                    Text("已选 ${selected.size} 个标签，点选勾选，长按可追加", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.height(6.dp))
+                } else if (dragEnabled) {
+                    Text("长按拖动排序", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.height(6.dp))
+                }
+                if (shown.isEmpty()) {
+                    Text(if (tags.isEmpty()) "还没有标签。导入带 ComicInfo.xml 的书，或点右上角新建" else "没有匹配的标签",
+                        fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
 
             if (layoutGrid) {
                 // ===== 网格：紧凑 chips，点按=多选勾选/动作菜单 =====
-                FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    shown.forEach { twc ->
-                        val id = twc.tag.id
-                        var chipMenu by remember { mutableStateOf(false) }
-                        Box {
-                            FilterChip(
-                                selected = id in selected,
-                                onClick = {
-                                    if (multiMode) selected = if (id in selected) selected - id else selected + id
-                                    else chipMenu = true
-                                },
-                                label = {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        TagDot(twc.tag.name, twc.tag.color)
-                                        Spacer(Modifier.width(6.dp))
-                                        Text(twc.tag.name, fontSize = 13.sp)
+                item {
+                    FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        shown.forEach { twc ->
+                            val id = twc.tag.id
+                            var chipMenu by remember { mutableStateOf(false) }
+                            Box {
+                                FilterChip(
+                                    selected = id in selected,
+                                    onClick = {
+                                        if (multiMode) selected = if (id in selected) selected - id else selected + id
+                                        else chipMenu = true
+                                    },
+                                    label = {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            TagDot(twc.tag.name, twc.tag.color)
+                                            Spacer(Modifier.width(6.dp))
+                                            Text(twc.tag.name, fontSize = 13.sp)
+                                        }
                                     }
+                                )
+                                DropdownMenu(expanded = chipMenu, onDismissRequest = { chipMenu = false }) {
+                                    DropdownMenuItem(text = { Text("重命名") }, onClick = { chipMenu = false; renameTarget = twc; renameText = twc.tag.name; renameError = null })
+                                    DropdownMenuItem(text = { Text("改色") }, onClick = { chipMenu = false; colorTarget = twc })
+                                    DropdownMenuItem(text = { Text("隐藏") }, onClick = {
+                                        chipMenu = false
+                                        scope.launch { withContext(Dispatchers.IO) { dao.setTagHidden(id, true) } }
+                                    })
+                                    DropdownMenuItem(text = { Text("删除", color = MaterialTheme.colorScheme.error) }, onClick = {
+                                        chipMenu = false; deleteTargets = listOf(twc)
+                                    })
                                 }
-                            )
-                            DropdownMenu(expanded = chipMenu, onDismissRequest = { chipMenu = false }) {
-                                DropdownMenuItem(text = { Text("重命名") }, onClick = { chipMenu = false; renameTarget = twc; renameText = twc.tag.name })
-                                DropdownMenuItem(text = { Text("改色") }, onClick = { chipMenu = false; colorTarget = twc })
-                                DropdownMenuItem(text = { Text("隐藏") }, onClick = {
-                                    chipMenu = false
-                                    scope.launch { withContext(Dispatchers.IO) { dao.setTagHidden(id, true) } }
-                                })
-                                DropdownMenuItem(text = { Text("删除", color = MaterialTheme.colorScheme.error) }, onClick = {
-                                    chipMenu = false; deleteTargets = listOf(twc)
-                                })
                             }
                         }
                     }
                 }
             } else {
-                // ===== 列表（手动模式可拖动） =====
-                shown.forEachIndexed { index, twc ->
+                // ===== 列表（手动模式可拖动，懒加载） =====
+                itemsIndexed(shown, key = { _, twc -> twc.tag.id }) { index, twc ->
                     val id = twc.tag.id
                     val maxUp = index * rowHeight
                     val maxDown = (shown.size - 1 - index) * rowHeight
@@ -223,7 +229,7 @@ fun TagManageList(
                                     Icon(Icons.Default.MoreVert, null)
                                 }
                                 DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                                    DropdownMenuItem(text = { Text("重命名") }, onClick = { menuOpen = false; renameTarget = twc; renameText = twc.tag.name })
+                                    DropdownMenuItem(text = { Text("重命名") }, onClick = { menuOpen = false; renameTarget = twc; renameText = twc.tag.name; renameError = null })
                                     DropdownMenuItem(text = { Text("改色") }, onClick = { menuOpen = false; colorTarget = twc })
                                     DropdownMenuItem(text = { Text("隐藏") }, onClick = {
                                         menuOpen = false
@@ -239,11 +245,14 @@ fun TagManageList(
                 }
             }
 
+            // ===== 隐藏分组 =====
             if (hiddenShown.isNotEmpty()) {
-                Spacer(Modifier.height(14.dp))
-                Text("已隐藏的标签", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(Modifier.height(4.dp))
-                hiddenShown.forEach { twc ->
+                item {
+                    Spacer(Modifier.height(14.dp))
+                    Text("已隐藏的标签", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.height(4.dp))
+                }
+                itemsIndexed(hiddenShown, key = { _, twc -> "h${twc.tag.id}" }) { _, twc ->
                     val id = twc.tag.id
                     Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surface,
                         tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
@@ -261,7 +270,7 @@ fun TagManageList(
                     }
                 }
             }
-            Spacer(Modifier.height(72.dp))
+            item { Spacer(Modifier.height(72.dp)) }
         }
 
         if (multiMode && selected.isNotEmpty()) {
@@ -279,28 +288,41 @@ fun TagManageList(
 
     renameTarget?.let { t ->
         AlertDialog(
-            onDismissRequest = { renameTarget = null },
+            onDismissRequest = { renameTarget = null; renameError = null },
             title = { Text("重命名标签") },
-            text = { OutlinedTextField(value = renameText, onValueChange = { renameText = it }, singleLine = true) },
+            text = {
+                Column {
+                    OutlinedTextField(value = renameText, onValueChange = { renameText = it; renameError = null }, singleLine = true)
+                    renameError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
+                }
+            },
             confirmButton = {
                 TextButton(onClick = {
                     val newName = renameText.trim()
-                    if (newName.isNotEmpty()) {
-                        scope.launch { withContext(Dispatchers.IO) { dao.renameTag(t.tag.id, newName) } }
+                    if (newName.isEmpty()) return@TextButton
+                    scope.launch {
+                        val dup = withContext(Dispatchers.IO) { dao.findTagByName(newName) }
+                        if (dup != null && dup.id != t.tag.id) {
+                            renameError = "已有同名标签，换个名字或用合并功能"
+                        } else {
+                            withContext(Dispatchers.IO) { dao.renameTag(t.tag.id, newName) }
+                            renameError = null
+                            renameTarget = null
+                        }
                     }
-                    renameTarget = null
                 }) { Text("确定") }
             },
-            dismissButton = { TextButton(onClick = { renameTarget = null }) { Text("取消") } }
+            dismissButton = { TextButton(onClick = { renameTarget = null; renameError = null }) { Text("取消") } }
         )
     }
 
     if (deleteTargets.isNotEmpty()) {
         val total = deleteTargets.sumOf { it.bookCount }
+        val scopeNote = if (query.isNotBlank()) "（仅当前搜索结果中的标签）" else ""
         AlertDialog(
             onDismissRequest = { deleteTargets = emptyList() },
             title = { Text("删除标签") },
-            text = { Text("确定删除 ${deleteTargets.size} 个标签？$total 本书将移除这些标签（书籍本身不受影响）。") },
+            text = { Text("确定删除${scopeNote} ${deleteTargets.size} 个标签？$total 本书将移除这些标签（书籍本身不受影响）。") },
             confirmButton = {
                 TextButton(onClick = {
                     val ids = deleteTargets.map { it.tag.id }

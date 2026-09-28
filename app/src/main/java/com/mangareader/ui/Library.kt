@@ -224,6 +224,20 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
         prefs.edit().putString("library_tag_ids", "").apply()
     }
 
+    // 已删除/已隐藏的标签自动从选中集剔除，避免"chip 消失了但筛选还在暗中生效"（审查问题2）
+    var tagListLoaded by remember { mutableStateOf(false) }
+    LaunchedEffect(tagsWithCounts) {
+        if (tagsWithCounts.isNotEmpty()) {
+            tagListLoaded = true
+            val valid = tagsWithCounts.map { it.tag.id }.toSet()
+            val pruned = selectedTagIds.filter { it in valid }
+            if (pruned.size != selectedTagIds.size) {
+                selectedTagIds = pruned.toSet()
+                prefs.edit().putString("library_tag_ids", selectedTagIds.joinToString(",")).apply()
+            }
+        }
+    }
+
     val configuration = LocalConfiguration.current
     val isTablet = configuration.smallestScreenWidthDp >= 600
     val autoCols = if (isTablet) {

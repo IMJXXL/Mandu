@@ -92,12 +92,20 @@ fun TagPickerSheet(
                         item {
                             Text(header, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Spacer(Modifier.height(4.dp))
-                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                list.forEach { twc ->
-                                    TagPickChip(twc, twc.tag.id in (if (addMode) pending else selectedIds)) { toggle(twc.tag.id) }
+                        }
+                        // 两列分块行：组内懒加载，大组不再一次组合全部 chips（审查问题4）
+                        list.chunked(2).forEach { pair ->
+                            item {
+                                Row(Modifier.fillMaxWidth()) {
+                                    pair.forEach { twc ->
+                                        Box(Modifier.weight(1f)) {
+                                            TagPickChip(twc, twc.tag.id in (if (addMode) pending else selectedIds)) { toggle(twc.tag.id) }
+                                        }
+                                    }
+                                    if (pair.size == 1) Spacer(Modifier.weight(1f))
                                 }
+                                Spacer(Modifier.height(6.dp))
                             }
-                            Spacer(Modifier.height(10.dp))
                         }
                     }
                 }
