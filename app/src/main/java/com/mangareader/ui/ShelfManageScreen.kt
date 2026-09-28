@@ -1,5 +1,6 @@
 package com.mangareader.ui
 
+import android.content.Context
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
@@ -29,7 +30,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun ShelfManageScreen(onBack: () -> Unit) {
 
@@ -58,6 +59,8 @@ fun ShelfManageScreen(onBack: () -> Unit) {
     var showTagColorPicker by remember { mutableStateOf(false) }
     var shelfQuery by remember { mutableStateOf("") }
     var tagMultiSelect by remember { mutableStateOf(false) }
+    val prefs = remember { ctx.getSharedPreferences("manga_reader", Context.MODE_PRIVATE) }
+    var manageLayout by remember { mutableStateOf(prefs.getInt("manage_layout", 0)) }
 
     BackHandler {
         if (showSettings) showSettings = false
@@ -83,6 +86,10 @@ fun ShelfManageScreen(onBack: () -> Unit) {
                 title = { Text("书架管理") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") } },
                 actions = {
+                    IconButton(onClick = {
+                        manageLayout = 1 - manageLayout
+                        prefs.edit().putInt("manage_layout", manageLayout).apply()
+                    }) { Icon(if (manageLayout == 1) Icons.Default.ViewList else Icons.Default.GridView, if (manageLayout == 1) "列表" else "网格") }
                     if (manageTab == 0) {
                         IconButton(onClick = { isMultiSelect = true }) { Icon(Icons.Default.Edit, "多选") }
                         IconButton(onClick = { showSettings = true }) { Icon(Icons.Default.Settings, "设置") }
@@ -136,7 +143,23 @@ fun ShelfManageScreen(onBack: () -> Unit) {
             Spacer(Modifier.height(8.dp))
             val visibleShelfList = if (shelfQuery.isBlank()) bookshelves else bookshelves.filter { it.name.contains(shelfQuery, ignoreCase = true) }
             if (visibleShelfList.isEmpty()) Text(if (bookshelves.isEmpty()) "还没有书架" else "没有匹配的书架", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            visibleShelfList.forEachIndexed { index, shelf ->
+            if (manageLayout == 1) {
+                FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    visibleShelfList.forEach { shelf ->
+                        var chipMenu by remember { mutableStateOf(false) }
+                        Box {
+                            FilterChip(selected = shelf.id in selectedShelves, onClick = {
+                                if (isMultiSelect) selectedShelves = if (shelf.id in selectedShelves) selectedShelves - shelf.id else selectedShelves + shelf.id
+                                else chipMenu = true
+                            }, label = { Text(shelf.name, fontSize = 13.sp) }, leadingIcon = { Icon(Icons.Default.Book, null, Modifier.size(15.dp)) })
+                            DropdownMenu(expanded = chipMenu, onDismissRequest = { chipMenu = false }) {
+                                DropdownMenuItem(text = { Text("重命名") }, onClick = { chipMenu = false; editShelf = shelf; editShelfName = shelf.name })
+                                DropdownMenuItem(text = { Text("删除", color = MaterialTheme.colorScheme.error) }, onClick = { chipMenu = false; showDeleteShelf = shelf })
+                            }
+                        }
+                    }
+                }
+            } else visibleShelfList.forEachIndexed { index, shelf ->
                 val maxUp = index * shelfItemHeight
                 val maxDown = (bookshelves.size - 1 - index) * shelfItemHeight
                 Surface(
@@ -204,7 +227,7 @@ fun ShelfManageScreen(onBack: () -> Unit) {
             }
             }
             } else {
-                TagManageList(dao = dao, scope = scope, multiSelect = tagMultiSelect, onMultiSelectChange = { tagMultiSelect = it })
+                TagManageList(dao = dao, scope = scope, multiSelect = tagMultiSelect, onMultiSelectChange = { tagMultiSelect = it }, layoutGrid = manageLayout == 1)
             }
         }
     }

@@ -90,7 +90,9 @@ data class Tag(
     val name: String,
     val color: Long = 0xFF7C8CF8,
     // 隐藏标签：不出现在首页筛选/选择器，管理页可见可恢复（对齐书架 isHidden 模式）
-    val isHidden: Boolean = false
+    val isHidden: Boolean = false,
+    // 手动排序位（管理页"按手动"模式拖动排序；迁移时按 id 回填保持创建顺序）
+    val sortOrder: Int = 0
 )
 
 @Entity(
@@ -668,11 +670,21 @@ interface MangaDao {
      * 按名取标签，无则建（大小写不敏感去重）。并发防护：调用方必须包在 withTransaction 内，
      * 即便如此仍处理 IGNORE 撞车（返回 -1 时回查）。
      */
+    @Query("SELECT COALESCE(MAX(sortOrder), 0) FROM tags")
+    suspend fun getMaxTagSort(): Int
+
+    @Query("UPDATE tags SET sortOrder = :sortOrder WHERE id = :id")
+    suspend fun updateTagSort(id: Long, sortOrder: Int)
+
     @Transaction
     suspend fun ensureTag(name: String): Long {
         findTagByName(name)?.let { return it.id }
         val rowId = insertTagIfAbsent(Tag(name = name))
-        if (rowId != -1L) return rowId
+        if (rowId != -1L) {
+            // 新标签排到手动排序末尾
+            updateTagSort(rowId, getMaxTagSort() + 1)
+            return rowId
+        }
         return findTagByName(name)?.id ?: -1L
     }
 
@@ -1425,7 +1437,7 @@ data class KomgaProgressSyncQueueEntity(
 
 @Database(
     entities = [Book::class, Folder::class, ReadingHistory::class, Bookshelf::class, BookshelfItem::class, Tag::class, TagLink::class, ReadingProgress::class, Bookmark::class, com.ehviewer.core.database.model.SmbSourceEntity::class, com.ehviewer.core.database.model.LibraryRootEntity::class, com.ehviewer.core.database.model.LocalGalleryEntity::class, com.ehviewer.core.database.model.WebDavSourceEntity::class, DownloadTaskEntity::class, KomgaSeriesCacheEntity::class, KomgaBookMemoEntity::class, KomgaProgressSyncQueueEntity::class],
-    version = 23,
+    version = 24,
     exportSchema = false
 )
 abstract class MangaDatabase : com.ehviewer.core.database.LocalLibraryDatabase() {
@@ -1704,6 +1716,14 @@ abstract class MangaDatabase : com.ehviewer.core.database.LocalLibraryDatabase()
             }
         }
 
+        private val MIGRATION_23_24 = object : androidx.room.migration.Migration(23, 24) {
+            override fun migrate(database: androidx.sqlite.db.SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE tags ADD COLUMN sortOrder INTEGER NOT NULL DEFAULT 0")
+                // 按 id 回填保持创建顺序
+                database.execSQL("UPDATE tags SET sortOrder = id")
+            }
+        }
+
         private val MIGRATION_22_23 = object : androidx.room.migration.Migration(22, 23) {
             override fun migrate(database: androidx.sqlite.db.SupportSQLiteDatabase) {
                 database.execSQL("ALTER TABLE tags ADD COLUMN isHidden INTEGER NOT NULL DEFAULT 0")
@@ -1727,7 +1747,7 @@ abstract class MangaDatabase : com.ehviewer.core.database.LocalLibraryDatabase()
                     context.applicationContext,
                     MangaDatabase::class.java,
                     "manga_reader_db"
-                ).addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23)
+                ).addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24)
                 .fallbackToDestructiveMigrationOnDowngrade()
                 .build()
                 INSTANCE = instance
