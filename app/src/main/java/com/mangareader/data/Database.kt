@@ -734,6 +734,21 @@ interface MangaDao {
         }
     }
 
+    /** "从 XML 重建"专用：只清自动标签（source=0），手动标签永不动（spec.md §五冲突策略） */
+    @Query("DELETE FROM tag_links WHERE bookId = :bookId AND source = 0")
+    suspend fun deleteAutoTagsForBook(bookId: Long)
+
+    /** 系列信息写入（本地 ComicInfo 与 Komga 共用；seriesId 本地用 "local:"+名字） */
+    @Query("UPDATE manga_books SET seriesId = :seriesId, seriesName = :seriesName WHERE id = :id")
+    suspend fun updateSeriesInfo(id: Long, seriesId: String, seriesName: String)
+
+    @Query("SELECT * FROM manga_books WHERE isHidden = 0 ORDER BY title ASC")
+    suspend fun getAllVisibleBooksList(): List<Book>
+
+    /** 本地 ComicInfo 系列的可见卷（seriesId="local:"+名字，serverId 路由用 "local" 伪值） */
+    @Query("SELECT * FROM manga_books WHERE seriesId = :seriesId AND isHidden = 0 ORDER BY title ASC")
+    suspend fun getLocalSeriesVisibleBooks(seriesId: String): List<Book>
+
     // ==================== §23 阅读记忆 ====================
 
     // ★ §37(14) 父书三态聚合用：一次拉出该书所有 reading_progress 状态做子卷 completed 统计

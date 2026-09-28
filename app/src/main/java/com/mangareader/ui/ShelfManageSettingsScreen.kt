@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mangareader.App
 import com.mangareader.autocat.AutoCategorizeConfig
+import com.mangareader.autocat.AutoTagger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -32,6 +33,9 @@ fun ShelfManageSettingsScreen(onBack: () -> Unit) {
     var hiddenShelves by remember { mutableStateOf(listOf<com.mangareader.data.Bookshelf>()) }
     var newFieldName by remember { mutableStateOf("") }
     var fieldError by remember { mutableStateOf<String?>(null) }
+    var rebuildProgress by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+    var rebuildJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    val rebuildCancel = remember { java.util.concurrent.atomic.AtomicBoolean(false) }
 
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) { hiddenShelves = dao.getHiddenBookshelvesList() }
@@ -46,9 +50,9 @@ fun ShelfManageSettingsScreen(onBack: () -> Unit) {
         }
     ) { pad ->
         Column(Modifier.padding(pad).fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 12.dp)) {
-            Text("自动归类", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text("自动打标签", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(4.dp))
-            Text("勾选后导入的书会按这些字段自动分到对应书架，一本书可以同时进多个书架", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("勾选后导入的书会按这些字段自动打上标签，一本书可以同时有多个标签。\n「系列」写入书籍信息，书架里同系列自动合并显示 N 卷，不再单独建书架", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(6.dp))
             FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 val standardFields = listOf(
@@ -71,6 +75,18 @@ fun ShelfManageSettingsScreen(onBack: () -> Unit) {
                         Text(label, fontSize = 13.sp)
                     }
                 }
+            }
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Switch(
+                    checked = autoCatConfig.useNamespacePrefix,
+                    onCheckedChange = {
+                        autoCatConfig = autoCatConfig.copy(useNamespacePrefix = it)
+                        autoCatConfig.save(ctx)
+                    }
+                )
+                Spacer(Modifier.width(8.dp))
+                Text("标签带来源前缀（如 作者:张三 / 出版:讲谈社）", fontSize = 13.sp)
             }
 
             Spacer(Modifier.height(16.dp))
@@ -133,6 +149,29 @@ fun ShelfManageSettingsScreen(onBack: () -> Unit) {
                 }) { Text("添加") }
             }
             fieldError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
+
+            Spacer(Modifier.height(16.dp))
+            Text("重建标签", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(4.dp))
+            Text("按上方勾选的字段，从每本书的 ComicInfo.xml 重建自动标签（手动标签不受影响）", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(6.dp))
+            if (rebuildProgress == null) {
+                TextButton(onClick = {
+                    rebuildCancel.set(false)
+                    rebuildProgress = 0 to 0
+                    rebuildJob = scope.launch {
+                        AutoTagger.rebuildAll(ctx, { d, t -> rebuildProgress = d to t }, { rebuildCancel.get() })
+                        rebuildProgress = null
+                    }
+                }) { Text("从 XML 重建标签") }
+            } else {
+                val (d, t) = rebuildProgress!!
+                TextButton(onClick = {
+                    rebuildCancel.set(true)
+                    rebuildJob?.cancel()
+                    rebuildProgress = null
+                }) { Text("重建中 $d/$t，点此取消") }
+            }
 
             Spacer(Modifier.height(16.dp))
             Text("隐藏的书架", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)

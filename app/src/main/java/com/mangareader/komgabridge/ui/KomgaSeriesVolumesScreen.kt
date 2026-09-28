@@ -90,7 +90,10 @@ fun KomgaSeriesVolumesScreen(
     LaunchedEffect(serverId, seriesId) {
         try {
             books = withContext(Dispatchers.IO) {
-                KomgaBridges.database.mangaDao().getKomgaSeriesVisibleBooks(serverId, seriesId)
+                val dao = KomgaBridges.database.mangaDao()
+                // serverId="local" 是本地 ComicInfo 系列的伪路由值（AutoTagger 写入 seriesId="local:"+名字）
+                if (serverId == "local") dao.getLocalSeriesVisibleBooks(seriesId)
+                else dao.getKomgaSeriesVisibleBooks(serverId, seriesId)
             }
         } catch (t: Throwable) {
             error = t.message ?: "加载失败"

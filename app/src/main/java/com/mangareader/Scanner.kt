@@ -457,7 +457,7 @@ class Scanner(private val ctx: Context, private val dao: MangaDao) {
             Log.e(TAG, "preinsertProgress batch: ${e.message}")
         }
         coverScope.launch { preloadCovers(books) }
-        coverScope.launch { try { com.mangareader.autocat.AutoCategorizeTrigger.run(books, ctx) } catch (_: Exception) {} }
+        coverScope.launch { try { com.mangareader.autocat.AutoTagger.run(books, ctx) } catch (_: Exception) {} }
     }
 
     /** 导入通用：Phase 1 极速扫元数据（回调进度）→ 立即返回 count；Phase 2 后台火并忘入库+封面。 */

@@ -106,6 +106,9 @@ private fun aggregateKomgaSeries(books: List<Book>): List<ShelfItem> {
         val serverId = if (sid != null) komgaServerIdFromPath(b.filePath) else null
         if (sid != null && serverId != null) {
             seriesBuckets.getOrPut(serverId to sid) { mutableListOf() }.add(b)
+        } else if (sid != null && sid.startsWith("local:")) {
+            // 本地 ComicInfo 系列（AutoTagger 写入），伪 serverId="local" 与卷列表页路由对齐
+            seriesBuckets.getOrPut("local" to sid) { mutableListOf() }.add(b)
         } else {
             singles.add(ShelfItem.Single(b))
         }
