@@ -749,6 +749,31 @@ interface MangaDao {
     @Query("SELECT * FROM manga_books WHERE seriesId = :seriesId AND isHidden = 0 ORDER BY title ASC")
     suspend fun getLocalSeriesVisibleBooks(seriesId: String): List<Book>
 
+    // ---- 标签管理（P3）----
+
+    @Query("UPDATE tags SET name = :name WHERE id = :id")
+    suspend fun renameTag(id: Long, name: String)
+
+    @Query("UPDATE tags SET color = :color WHERE id = :id")
+    suspend fun setTagColor(id: Long, color: Long)
+
+    /** XML 标签转手动（转后重扫免疫） */
+    @Query("UPDATE tag_links SET source = 1 WHERE tagId = :tagId AND source = 0")
+    suspend fun markTagManual(tagId: Long)
+
+    /** 自动书架转标签：书架内全部书挂同名标签(source=0)后删书架，事务保证原子 */
+    @Transaction
+    suspend fun migrateShelvesToTags(shelves: List<Pair<Long, String>>) {
+        for ((shelfId, name) in shelves) {
+            val tagId = ensureTag(name)
+            if (tagId == -1L) continue
+            val items = getBooksInShelfList(shelfId)
+            for (item in items) linkTag(TagLink(tagId = tagId, bookId = item.bookId, source = 0))
+        }
+        deleteItemsInShelves(shelves.map { it.first })
+        deleteBookshelvesByIds(shelves.map { it.first })
+    }
+
     // ==================== §23 阅读记忆 ====================
 
     // ★ §37(14) 父书三态聚合用：一次拉出该书所有 reading_progress 状态做子卷 completed 统计
