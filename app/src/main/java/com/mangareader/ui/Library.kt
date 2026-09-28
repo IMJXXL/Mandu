@@ -432,7 +432,8 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
     }
 
     if (showShelfDrawer) {
-        ModalBottomSheet(onDismissRequest = { showShelfDrawer = false }) {
+        val drawerState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ModalBottomSheet(onDismissRequest = { showShelfDrawer = false }, sheetState = drawerState) {
             Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 24.dp)) {
                 Text("全部书架", fontSize = 18.sp, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(8.dp))

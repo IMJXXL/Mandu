@@ -52,7 +52,8 @@ fun TagColorPickerSheet(
 
     val customArgb = AColor.HSVToColor(floatArrayOf(hue, sat, value)).toLong() or 0xFF000000L
 
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(
             Modifier.padding(horizontal = 20.dp).verticalScroll(rememberScrollState()).padding(bottom = 24.dp)
         ) {
