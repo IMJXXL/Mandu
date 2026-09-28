@@ -41,7 +41,7 @@ object AutoCategorizer {
         if (config.enableWriter && !info.writer.isNullOrBlank()) names.add(info.writer!!.trim())
         if (config.enableGenre && !info.genre.isNullOrBlank()) {
             // 逗号分隔的每个标签都建架（兼容全角逗号），LinkedHashSet 自动去重
-            info.genre!!.split(",", "，")
+            info.genre!!.split(",", "，", "、")
                 .map { it.trim() }
                 .filter { it.isNotEmpty() }
                 .forEach { names.add(it) }

@@ -118,6 +118,7 @@ fun ShelfManageSettingsScreen(onBack: () -> Unit) {
                     val standardTags = setOf("Series", "Number", "Volume", "Title", "Writer", "Penciller", "Summary", "Genre", "Publisher", "ComicInfo")
                     when {
                         name.isBlank() -> fieldError = "不能为空"
+                        name.contains(',') || name.contains('，') -> fieldError = "不能包含逗号"  // 持久化按逗号join/split，含逗号会存取错乱
                         autoCatConfig.customFieldNames.any { it.equals(name, ignoreCase = true) } -> fieldError = "已存在"
                         standardTags.any { it.equals(name, ignoreCase = true) } -> fieldError = "这是标准字段，用上方勾选框启用"
                         else -> {
