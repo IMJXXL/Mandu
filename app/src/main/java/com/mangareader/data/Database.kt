@@ -97,12 +97,20 @@ data class Tag(
         ForeignKey(entity = Tag::class, parentColumns = ["id"], childColumns = ["tagId"], onDelete = ForeignKey.CASCADE),
         ForeignKey(entity = Book::class, parentColumns = ["id"], childColumns = ["bookId"], onDelete = ForeignKey.CASCADE)
     ],
-    indices = [Index("tagId"), Index("bookId")]
+    indices = [Index("tagId"), Index("bookId"), Index(value = ["tagId", "bookId"], unique = true)]
 )
 data class TagLink(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val tagId: Long,
-    val bookId: Long
+    val bookId: Long,
+    // 标签来源：0=XML自动打标 1=用户手动。XML重扫永不删 source=1（spec.md §五冲突策略）
+    val source: Int = 1
+)
+
+/** 标签+挂书数（管理页/热门区/选择器共用） */
+data class TagWithCount(
+    @Embedded val tag: Tag,
+    val bookCount: Int
 )
 
 @Entity(tableName = "reading_history",
@@ -639,6 +647,92 @@ interface MangaDao {
 
     @Query("SELECT COUNT(*) FROM tag_links WHERE tagId = :tagId")
     suspend fun countBooksInTag(tagId: Long): Int
+
+    // ==================== 标签系统 v22（规划：.codeartsdoer/specs/tag_system） ====================
+
+    @Query("SELECT * FROM tags WHERE name = :name COLLATE NOCASE LIMIT 1")
+    suspend fun findTagByName(name: String): Tag?
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertTagIfAbsent(tag: Tag): Long
+
+    /**
+     * 按名取标签，无则建（大小写不敏感去重）。并发防护：调用方必须包在 withTransaction 内，
+     * 即便如此仍处理 IGNORE 撞车（返回 -1 时回查）。
+     */
+    @Transaction
+    suspend fun ensureTag(name: String): Long {
+        findTagByName(name)?.let { return it.id }
+        val rowId = insertTagIfAbsent(Tag(name = name))
+        if (rowId != -1L) return rowId
+        return findTagByName(name)?.id ?: -1L
+    }
+
+    /** 挂标签（联合唯一索引 tagId+bookId 兜底，重复挂静默忽略） */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun linkTag(link: TagLink): Long
+
+    /** 热门标签 Top N（按挂书量，选择器热门区/首页快捷行共用） */
+    @Query(
+        """SELECT t.*, (SELECT COUNT(*) FROM tag_links tl WHERE tl.tagId = t.id) AS bookCount
+        FROM tags t ORDER BY bookCount DESC, t.name COLLATE NOCASE ASC LIMIT :limit"""
+    )
+    fun getTopTags(limit: Int): Flow<List<TagWithCount>>
+
+    /** 管理页全量列表（按名称） */
+    @Query(
+        """SELECT t.*, (SELECT COUNT(*) FROM tag_links tl WHERE tl.tagId = t.id) AS bookCount
+        FROM tags t ORDER BY t.name COLLATE NOCASE ASC"""
+    )
+    fun getTagsWithCounts(): Flow<List<TagWithCount>>
+
+    @Query(
+        """SELECT t.*, (SELECT COUNT(*) FROM tag_links tl WHERE tl.tagId = t.id) AS bookCount
+        FROM tags t WHERE t.name LIKE '%' || :q || '%' ORDER BY bookCount DESC, t.name COLLATE NOCASE ASC"""
+    )
+    suspend fun searchTags(q: String): List<TagWithCount>
+
+    /** AND 语义：同时带 n 个标签的书（索引查询，spec.md §八） */
+    @Query(
+        """SELECT b.* FROM manga_books b
+        INNER JOIN tag_links tl ON b.id = tl.bookId
+        WHERE b.isHidden = 0 AND tl.tagId IN (:tagIds)
+        GROUP BY b.id HAVING COUNT(DISTINCT tl.tagId) = :n"""
+    )
+    suspend fun getBooksByTagsAnd(tagIds: List<Long>, n: Int): List<Book>
+
+    /** OR 语义：带任一标签的书 */
+    @Query(
+        """SELECT DISTINCT b.* FROM manga_books b
+        INNER JOIN tag_links tl ON b.id = tl.bookId
+        WHERE b.isHidden = 0 AND tl.tagId IN (:tagIds)"""
+    )
+    suspend fun getBooksByTagsOr(tagIds: List<Long>): List<Book>
+
+    @Query("SELECT * FROM tag_links WHERE tagId IN (:tagIds)")
+    suspend fun getLinksForTags(tagIds: List<Long>): List<TagLink>
+
+    /** 合并标签：源的 tag_links 全部搬到目标（目标已有的静默忽略），源标签删除（FK CASCADE 连带清 links） */
+    @Transaction
+    suspend fun mergeTags(targetId: Long, sourceIds: List<Long>) {
+        val valid = sourceIds.filter { it != targetId }
+        if (valid.isEmpty()) return
+        val links = getLinksForTags(valid)
+        for (l in links) linkTag(TagLink(tagId = targetId, bookId = l.bookId, source = l.source))
+        deleteTagsByIds(valid)
+    }
+
+    @Query("DELETE FROM tags WHERE id IN (:ids)")
+    suspend fun deleteTagsByIds(ids: List<Long>)
+
+    /** 一本书批量设标签（详情页/批量打标签共用） */
+    @Transaction
+    suspend fun setBookTags(bookId: Long, names: List<String>, source: Int) {
+        for (name in names) {
+            val tagId = ensureTag(name)
+            if (tagId != -1L) linkTag(TagLink(tagId = tagId, bookId = bookId, source = source))
+        }
+    }
 
     // ==================== §23 阅读记忆 ====================
 
@@ -1278,7 +1372,7 @@ data class KomgaProgressSyncQueueEntity(
 
 @Database(
     entities = [Book::class, Folder::class, ReadingHistory::class, Bookshelf::class, BookshelfItem::class, Tag::class, TagLink::class, ReadingProgress::class, Bookmark::class, com.ehviewer.core.database.model.SmbSourceEntity::class, com.ehviewer.core.database.model.LibraryRootEntity::class, com.ehviewer.core.database.model.LocalGalleryEntity::class, com.ehviewer.core.database.model.WebDavSourceEntity::class, DownloadTaskEntity::class, KomgaSeriesCacheEntity::class, KomgaBookMemoEntity::class, KomgaProgressSyncQueueEntity::class],
-    version = 21,
+    version = 22,
     exportSchema = false
 )
 abstract class MangaDatabase : com.ehviewer.core.database.LocalLibraryDatabase() {
@@ -1557,13 +1651,24 @@ abstract class MangaDatabase : com.ehviewer.core.database.LocalLibraryDatabase()
             }
         }
 
+        private val MIGRATION_21_22 = object : androidx.room.migration.Migration(21, 22) {
+            override fun migrate(database: androidx.sqlite.db.SupportSQLiteDatabase) {
+                // ① 先去重（存量可能有重复行，不去重直接建联合唯一索引会让迁移崩溃）
+                database.execSQL("DELETE FROM tag_links WHERE id NOT IN (SELECT MIN(id) FROM tag_links GROUP BY tagId, bookId)")
+                // ② source 列：0=XML自动打标 1=用户手动
+                database.execSQL("ALTER TABLE tag_links ADD COLUMN source INTEGER NOT NULL DEFAULT 1")
+                // ③ 联合唯一索引（防并发/重放写入产生重复挂载）
+                database.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_tag_links_pair ON tag_links(tagId, bookId)")
+            }
+        }
+
         fun getDatabase(context: Context): MangaDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
                     context.applicationContext,
                     MangaDatabase::class.java,
                     "manga_reader_db"
-                ).addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21)
+                ).addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22)
                 .fallbackToDestructiveMigrationOnDowngrade()
                 .build()
                 INSTANCE = instance
