@@ -76,8 +76,12 @@ data class ReaderConfig(
     val downsampleTier: DownsampleTier = DownsampleTier.STANDARD,
     val tallSplitEnabled: Boolean = true,
     val brightness: Int = 0,
+    val screenBrightness: Int = 0,
     val contrast: Int = 100,
-    val gamma: Int = 100
+    val gamma: Int = 100,
+    val textureEnabled: Boolean = false,
+    val texturePresetId: Int = 0,
+    val textureAlpha: Int = 15
 ) {
     enum class ScrollMode { VERTICAL, HORIZONTAL_LEFT, HORIZONTAL_RIGHT }
     @Deprecated("Dead code - navigation uses Int field navigationMode instead") enum class ClickFlipType { NO, LEFT_RIGHT, DIAGONAL_LB_RT, DIAGONAL_LT_RB }
@@ -147,8 +151,12 @@ data class ReaderConfig(
             putString("downsampleTier", downsampleTier.name)
             putBoolean("tallSplitEnabled", tallSplitEnabled)
             putInt("${prefix}brightness", brightness)
+            putInt("${prefix}screenBrightness", screenBrightness)
             putInt("${prefix}contrast", contrast)
             putInt("${prefix}gamma", gamma)
+            putBoolean("${prefix}textureEnabled", textureEnabled)
+            putInt("${prefix}texturePresetId", texturePresetId)
+            putInt("${prefix}textureAlpha", textureAlpha)
             apply()
         }
     }
@@ -213,6 +221,7 @@ data class ReaderConfig(
                 tileModeEnabled = prefs.safeGetBoolean("tileModeEnabled", false),
                 tallSplitEnabled = prefs.safeGetBoolean("tallSplitEnabled", true),
                 brightness = prefs.safeGetInt("${prefix}brightness", 0).coerceIn(-100, 100),
+                screenBrightness = prefs.safeGetInt("${prefix}screenBrightness", 0).coerceIn(-100, 100),
                 contrast = prefs.safeGetInt("${prefix}contrast", 100).coerceIn(0, 200),
                 gamma = prefs.safeGetInt("${prefix}gamma", 100).coerceIn(50, 200),
                 downsampleTier = if (prefs.contains("downsampleTier")) {

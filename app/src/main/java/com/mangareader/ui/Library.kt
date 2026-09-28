@@ -246,9 +246,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
     var showShelfDialog by remember { mutableStateOf(false) }
     var showRenameBatch by remember { mutableStateOf(false) }
     var showCreateShelf by remember { mutableStateOf(false) }
-    var showShelfMgmt by remember { mutableStateOf(false) }
-    var mgmtSelectedShelves by remember { mutableStateOf(setOf<Long>()) }
-    var showAutoCatSettings by remember { mutableStateOf(false) }
+
     var newShelfName by remember { mutableStateOf("") }
 
     var selectedShelfId by remember { mutableStateOf<Long?>(prefs.getLong("selected_shelf_id", -1L).takeIf { it >= 0 }) }
@@ -692,125 +690,6 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
         )
     }
 
-    if (showShelfMgmt) {
-        var allShelves by remember { mutableStateOf(listOf<Bookshelf>()) }
-        LaunchedEffect(Unit) {
-            dao.getAllBookshelvesList().let { allShelves = it }
-        }
-        AlertDialog(
-            onDismissRequest = { showShelfMgmt = false; mgmtSelectedShelves = emptySet() },
-            title = { Text("管理书架") },
-            text = {
-                Column {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        TextButton(onClick = { mgmtSelectedShelves = allShelves.map { it.id }.toSet() }) { Text("全选") }
-                        TextButton(onClick = { mgmtSelectedShelves = allShelves.map { it.id }.toSet() - mgmtSelectedShelves }) { Text("反选") }
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    if (allShelves.isEmpty()) {
-                        Text("还没有书架")
-                    } else {
-                        allShelves.forEach { shelf ->
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.fillMaxWidth().clickable {
-                                    mgmtSelectedShelves = if (shelf.id in mgmtSelectedShelves) mgmtSelectedShelves - shelf.id else mgmtSelectedShelves + shelf.id
-                                }.padding(vertical = 4.dp),
-                            ) {
-                                androidx.compose.material3.Checkbox(
-                                    checked = shelf.id in mgmtSelectedShelves,
-                                    onCheckedChange = {
-                                        mgmtSelectedShelves = if (it) mgmtSelectedShelves + shelf.id else mgmtSelectedShelves - shelf.id
-                                    },
-                                )
-                                Text(shelf.name, modifier = Modifier.weight(1f))
-                                if (shelf.isHidden) Text("（隐藏）", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
-                            }
-                        }
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        if (mgmtSelectedShelves.size >= 2) {
-                            TextButton(onClick = {
-                                val targetId = mgmtSelectedShelves.first()
-                                val sourceIds = mgmtSelectedShelves.drop(1)
-                                scope.launch(Dispatchers.IO) {
-                                    dao.mergeBookshelves(targetId, sourceIds)
-                                    withContext(Dispatchers.Main) {
-                                        Toast.makeText(ctx, "已合并到「${allShelves.find { it.id == targetId }?.name ?: ""}」", Toast.LENGTH_SHORT).show()
-                                        showShelfMgmt = false
-                                        mgmtSelectedShelves = emptySet()
-                                    }
-                                }
-                            }) { Text("合并到首个", color = MaterialTheme.colorScheme.primary) }
-                        }
-                        if (mgmtSelectedShelves.isNotEmpty()) {
-                            TextButton(onClick = {
-                                scope.launch(Dispatchers.IO) {
-                                    mgmtSelectedShelves.forEach { id ->
-                                        val shelf = allShelves.find { it.id == id }
-                                        if (shelf != null) dao.setBookshelfHidden(id, !shelf.isHidden)
-                                    }
-                                    withContext(Dispatchers.Main) {
-                                        Toast.makeText(ctx, "已切换隐藏状态", Toast.LENGTH_SHORT).show()
-                                        showShelfMgmt = false
-                                        mgmtSelectedShelves = emptySet()
-                                    }
-                                }
-                            }) { Text("切换隐藏") }
-                            TextButton(onClick = {
-                                scope.launch(Dispatchers.IO) {
-                                    mgmtSelectedShelves.forEach { id ->
-                                        val shelf = allShelves.find { it.id == id }
-                                        if (shelf != null) dao.deleteBookshelf(shelf)
-                                    }
-                                    withContext(Dispatchers.Main) {
-                                        Toast.makeText(ctx, "已删除 ${mgmtSelectedShelves.size} 个书架", Toast.LENGTH_SHORT).show()
-                                        showShelfMgmt = false
-                                        mgmtSelectedShelves = emptySet()
-                                    }
-                                }
-                            }) { Text("删除", color = MaterialTheme.colorScheme.error) }
-                        }
-                    }
-                }
-            },
-            confirmButton = { TextButton(onClick = { showShelfMgmt = false; mgmtSelectedShelves = emptySet() }) { Text("关闭") } },
-        )
-    }
-
-    if (showAutoCatSettings) {
-        var autoCatConfig by remember { mutableStateOf(com.mangareader.autocat.AutoCategorizeConfig.load(ctx)) }
-        AlertDialog(
-            onDismissRequest = { showAutoCatSettings = false },
-            title = { Text("自动归类设置") },
-            text = {
-                Column {
-                    Text("导入新书时根据以下字段自动创建书架并归类：", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(Modifier.height(8.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        androidx.compose.material3.Checkbox(checked = autoCatConfig.enableSeries, onCheckedChange = { autoCatConfig = autoCatConfig.copy(enableSeries = it); autoCatConfig.save(ctx) })
-                        Text("系列名")
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        androidx.compose.material3.Checkbox(checked = autoCatConfig.enableWriter, onCheckedChange = { autoCatConfig = autoCatConfig.copy(enableWriter = it); autoCatConfig.save(ctx) })
-                        Text("作者")
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        androidx.compose.material3.Checkbox(checked = autoCatConfig.enableGenre, onCheckedChange = { autoCatConfig = autoCatConfig.copy(enableGenre = it); autoCatConfig.save(ctx) })
-                        Text("类型")
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        androidx.compose.material3.Checkbox(checked = autoCatConfig.enablePublisher, onCheckedChange = { autoCatConfig = autoCatConfig.copy(enablePublisher = it); autoCatConfig.save(ctx) })
-                        Text("出版社")
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    Text("按系列名 > 作者 > 类型 > 出版社优先级取第一个勾选且非空的字段归类", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
-                }
-            },
-            confirmButton = { TextButton(onClick = { showAutoCatSettings = false }) { Text("关闭") } },
-        )
-    }
 
     coverEditBook?.let { b ->
         CoverEditDialog(
@@ -981,17 +860,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                 Text("书架: $selectedShelfName", fontSize = 13.sp, color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp))
             }
-            Row(
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                TextButton(onClick = { showShelfMgmt = true; mgmtSelectedShelves = emptySet() }) {
-                    Text("管理书架", fontSize = 13.sp)
-                }
-                TextButton(onClick = { showAutoCatSettings = true }) {
-                    Text("自动归类", fontSize = 13.sp)
-                }
-            }
+
             if (books == null && shelfItems == null) {
                 Box(Modifier.fillMaxSize())
             } else if ((shelfItems ?: books!!.map { ShelfItem.Single(it) }).isEmpty()) {

@@ -44,7 +44,7 @@ object ColorMatrixBuilder {
         }
 
         if (hasBrightness) {
-            val b = brightness * 2.55f
+            val b = brightness * 2.550f
             matrix.postConcat(ColorMatrix(floatArrayOf(
                 1f, 0f, 0f, 0f, b,
                 0f, 1f, 0f, 0f, b,

@@ -3,6 +3,7 @@ package com.mangareader.native
 
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.widget.FrameLayout
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -133,8 +134,12 @@ fun NativeReaderScreen(
     einkDitherLevels: Int = 16,
     einkEndpointPassthrough: Int = 0,
     brightness: Int = 0,
+    screenBrightness: Int = 0,
     contrast: Int = 100,
     gamma: Int = 100,
+    textureEnabled: Boolean = false,
+    texturePresetId: Int = 0,
+    textureAlpha: Int = 15,
     /** ★ SMB/WebDAV 页面供给（design.md 2.2.2）：非 null 时阅读页面走远程会话。
      *   以参数形式在 setup() 之前注入 delegate，消除"setup 早于供给挂接"的竞态窗口。 */
     remoteSupply: com.mangareader.native.RemotePageSupply? = null,
@@ -151,6 +156,9 @@ fun NativeReaderScreen(
     var savedPage by remember { mutableIntStateOf(startPage) }
     var firstComposition by remember { mutableStateOf(true) }
     var containerRef by remember { mutableStateOf<FrameLayout?>(null) }
+    var brightnessOverlayAlpha by remember { mutableStateOf(0f) }
+    var textureOverlayRef by remember { mutableStateOf<com.mangareader.filter.PaperTextureView?>(null) }
+
 
     val webtoonView = remember { WebtoonReaderView(ctx).apply { layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT) } }
     val pagerView = remember { PagerReaderView(ctx).apply { layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT) } }
@@ -382,6 +390,27 @@ fun NativeReaderScreen(
         }
     }
 
+    LaunchedEffect(screenBrightness) {
+        com.mangareader.filter.BrightnessController.applyBrightness(
+            screenBrightness, (ctx as? android.app.Activity)?.window
+        ) { alpha -> brightnessOverlayAlpha = alpha }
+    }
+
+    LaunchedEffect(textureEnabled, texturePresetId, textureAlpha, textureOverlayRef) {
+        textureOverlayRef?.applyState(textureEnabled, texturePresetId, textureAlpha, ctx)
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            val window = (ctx as? android.app.Activity)?.window
+            if (window != null) {
+                window.attributes = window.attributes.apply {
+                    this.screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+                }
+            }
+        }
+    }
+
     AndroidView(
         factory = {
             val container = FrameLayout(ctx).apply { layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT) }
@@ -389,6 +418,19 @@ fun NativeReaderScreen(
             container.addView(pagerView)
             container.addView(curlReaderView)
             container.addView(curlDoublePageView)
+            val brightnessOverlay = View(ctx).apply {
+                layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                setBackgroundColor(android.graphics.Color.BLACK)
+                alpha = 0f
+                visibility = View.GONE
+            }
+            val textureOverlay = com.mangareader.filter.PaperTextureView(ctx).apply {
+                layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                visibility = View.GONE
+            }
+            container.addView(textureOverlay)
+            container.addView(brightnessOverlay)
+            textureOverlayRef = textureOverlay
             fun syncVis() {
                 webtoonView.visibility = if (isVertical) View.VISIBLE else View.GONE
                 pagerView.visibility = if (!isVertical && !effectiveUseCurl) View.VISIBLE else View.GONE
@@ -402,10 +444,11 @@ fun NativeReaderScreen(
             container
         },
         update = { container ->
-            container.getChildAt(0).visibility = if (isVertical) View.VISIBLE else View.GONE
-            container.getChildAt(1).visibility = if (!isVertical && !effectiveUseCurl) View.VISIBLE else View.GONE
-            container.getChildAt(2).visibility = if (!isVertical && effectiveUseCurl && pageLayout == 0) View.VISIBLE else View.GONE
-            container.getChildAt(3).visibility = if (!isVertical && effectiveUseCurl && pageLayout != 0) View.VISIBLE else View.GONE
+            webtoonView.visibility = if (isVertical) View.VISIBLE else View.GONE
+            pagerView.visibility = if (!isVertical && !effectiveUseCurl) View.VISIBLE else View.GONE
+            curlReaderView.visibility = if (!isVertical && effectiveUseCurl && pageLayout == 0) View.VISIBLE else View.GONE
+            curlDoublePageView.visibility = if (!isVertical && effectiveUseCurl && pageLayout != 0) View.VISIBLE else View.GONE
+            textureOverlayRef?.applyState(textureEnabled, texturePresetId, textureAlpha, ctx)
         },
         modifier = modifier
     )

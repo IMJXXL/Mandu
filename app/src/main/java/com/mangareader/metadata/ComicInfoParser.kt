@@ -32,6 +32,7 @@ object ComicInfoParser {
             var summary: String? = null
             var genre: String? = null
             var publisher: String? = null
+            val extraFields = HashMap<String, String>()
 
             var eventType = parser.eventType
             while (eventType != XmlPullParser.END_DOCUMENT) {
@@ -48,12 +49,13 @@ object ComicInfoParser {
                         "Summary" -> summary = text
                         "Genre" -> genre = text
                         "Publisher" -> publisher = text
+                        else -> { if (text != null && tagName != "ComicInfo") extraFields[tagName] = text }
                     }
                 }
                 eventType = parser.next()
             }
 
-            ComicInfo(series, number, volume, title, writer, penciller, summary, genre, publisher)
+            ComicInfo(series, number, volume, title, writer, penciller, summary, genre, publisher, extraFields)
         } catch (_: Exception) {
             null
         }

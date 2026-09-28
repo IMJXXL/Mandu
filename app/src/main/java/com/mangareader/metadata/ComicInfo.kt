@@ -10,8 +10,9 @@ data class ComicInfo(
     val summary: String? = null,
     val genre: String? = null,
     val publisher: String? = null,
+    val extraFields: Map<String, String> = emptyMap(),
 ) {
     fun isEmpty(): Boolean = series == null && number == null && volume == null &&
         title == null && writer == null && penciller == null &&
-        summary == null && genre == null && publisher == null
+        summary == null && genre == null && publisher == null && extraFields.isEmpty()
 }

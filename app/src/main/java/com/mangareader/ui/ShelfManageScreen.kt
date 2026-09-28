@@ -1,6 +1,7 @@
 package com.mangareader.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -30,7 +31,7 @@ import kotlinx.coroutines.withContext
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ShelfManageScreen(onBack: () -> Unit) {
-    BackHandler { onBack() }
+
     val ctx = LocalContext.current
     val app = ctx.applicationContext as App
     val dao = remember { app.db.mangaDao() }
@@ -45,18 +46,56 @@ fun ShelfManageScreen(onBack: () -> Unit) {
     var dragOffset by remember { mutableFloatStateOf(0f) }
     val shelfDensity = LocalDensity.current.density
     val shelfItemHeight = 52f
+    var isMultiSelect by remember { mutableStateOf(false) }
+    var selectedShelves by remember { mutableStateOf(setOf<Long>()) }
+    var showSettings by remember { mutableStateOf(false) }
+    var showMergePicker by remember { mutableStateOf(false) }
+
+    BackHandler { if (showSettings) showSettings = false else if (isMultiSelect) { isMultiSelect = false; selectedShelves = emptySet() } else onBack() }
 
     LaunchedEffect(Unit) { dao.getAllBookshelves().collect { bookshelves = it } }
 
     Scaffold(
         topBar = {
-            TopAppBar(
+            if (isMultiSelect) TopAppBar(
+                title = { Text("已选 ${selectedShelves.size} 个") },
+                navigationIcon = { IconButton(onClick = { isMultiSelect = false; selectedShelves = emptySet() }) { Icon(Icons.Default.Close, "取消选择") } },
+                actions = {
+                    IconButton(onClick = { selectedShelves = if (selectedShelves.isEmpty()) bookshelves.map { it.id }.toSet() else emptySet() }) {
+                        Icon(Icons.Default.SelectAll, if (selectedShelves.isEmpty()) "全选" else "取消全选")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+            ) else TopAppBar(
                 title = { Text("书架管理") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") } },
                 actions = {
+                    IconButton(onClick = { isMultiSelect = true }) { Icon(Icons.Default.Edit, "多选") }
+                    IconButton(onClick = { showSettings = true }) { Icon(Icons.Default.Settings, "设置") }
                     IconButton(onClick = { showCreateShelf = true }) { Icon(Icons.Default.Add, "新建书架") }
                 }
             )
+        },
+        bottomBar = {
+            if (isMultiSelect && selectedShelves.isNotEmpty()) {
+                Surface(tonalElevation = 3.dp) {
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
+                        TextButton(onClick = { showMergePicker = true }, enabled = selectedShelves.size >= 2) { Text("合并") }
+                        TextButton(onClick = {
+                            scope.launch {
+                                withContext(Dispatchers.IO) { dao.setBookshelvesHiddenBatch(selectedShelves.toList(), true) }
+                                isMultiSelect = false; selectedShelves = emptySet()
+                            }
+                        }) { Text("隐藏") }
+                        TextButton(onClick = {
+                            scope.launch {
+                                withContext(Dispatchers.IO) { dao.deleteBookshelvesBatch(selectedShelves.toList()) }
+                                isMultiSelect = false; selectedShelves = emptySet()
+                            }
+                        }) { Text("删除", color = MaterialTheme.colorScheme.error) }
+                    }
+                }
+            }
         }
     ) { pad ->
         Column(Modifier.padding(pad).fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
@@ -76,8 +115,9 @@ fun ShelfManageScreen(onBack: () -> Unit) {
                                 shadowElevation = 8f
                             }
                         }
-                        .pointerInput(index, bookshelves.size) {
-                            detectDragGesturesAfterLongPress(
+                        .pointerInput(index, bookshelves.size, isMultiSelect) {
+                            if (!isMultiSelect) {
+                                detectDragGesturesAfterLongPress(
                                 onDragStart = { draggedIndex = index },
                                 onDragEnd = {
                                     if (draggedIndex >= 0 && draggedIndex < bookshelves.size) {
@@ -104,18 +144,27 @@ fun ShelfManageScreen(onBack: () -> Unit) {
                                     dragOffset = (dragOffset + dragAmount.y).coerceIn(-maxUp2, maxDown2)
                                 }
                             )
+                            }
                         },
                     shape = RoundedCornerShape(8.dp),
                     color = if (draggedIndex == index) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
                 ) {
-                    Row(Modifier.padding(horizontal = 12.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.DragHandle, null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Spacer(Modifier.width(8.dp))
+                    Row(Modifier.padding(horizontal = 12.dp, vertical = 12.dp).clickable { if (isMultiSelect) selectedShelves = if (shelf.id in selectedShelves) selectedShelves - shelf.id else selectedShelves + shelf.id }, verticalAlignment = Alignment.CenterVertically) {
+                        if (isMultiSelect) {
+                            Checkbox(checked = shelf.id in selectedShelves, onCheckedChange = { selectedShelves = if (it) selectedShelves + shelf.id else selectedShelves - shelf.id })
+                            Spacer(Modifier.width(4.dp))
+                        }
+                        if (!isMultiSelect) {
+                            Icon(Icons.Default.DragHandle, null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(Modifier.width(8.dp))
+                        }
                         Icon(Icons.Default.Book, null, modifier = Modifier.size(20.dp))
                         Spacer(Modifier.width(8.dp))
                         Text(shelf.name, fontSize = 14.sp, modifier = Modifier.weight(1f))
-                        IconButton(onClick = { editShelf = shelf; editShelfName = shelf.name }) { Icon(Icons.Default.Edit, "编辑", modifier = Modifier.size(20.dp)) }
-                        IconButton(onClick = { showDeleteShelf = shelf }) { Icon(Icons.Default.Delete, "删除", modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.error) }
+                        if (!isMultiSelect) {
+                            IconButton(onClick = { editShelf = shelf; editShelfName = shelf.name }) { Icon(Icons.Default.Edit, "编辑", modifier = Modifier.size(20.dp)) }
+                            IconButton(onClick = { showDeleteShelf = shelf }) { Icon(Icons.Default.Delete, "删除", modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.error) }
+                        }
                     }
                 }
             }
@@ -165,5 +214,33 @@ fun ShelfManageScreen(onBack: () -> Unit) {
                 }) { Text("创建") }
             },
             dismissButton = { TextButton(onClick = { showCreateShelf = false; newShelfName = "" }) { Text("取消") } })
+    }
+
+    if (showMergePicker) {
+        MergeTargetPickerDialog(
+            allShelves = bookshelves,
+            excludeIds = selectedShelves,
+            onConfirm = { target ->
+                showMergePicker = false
+                scope.launch {
+                    withContext(Dispatchers.IO) {
+                        val targetId = when (target) {
+                            is MergeTarget.Existing -> target.shelfId
+                            is MergeTarget.New -> {
+                                val maxOrder = bookshelves.maxOfOrNull { it.sortOrder } ?: 0
+                                dao.insertBookshelf(Bookshelf(name = target.name, sortOrder = maxOrder + 1))
+                            }
+                        }
+                        dao.mergeBookshelves(targetId, selectedShelves.toList())
+                    }
+                    isMultiSelect = false; selectedShelves = emptySet()
+                }
+            },
+            onDismiss = { showMergePicker = false }
+        )
+    }
+
+    if (showSettings) {
+        ShelfManageSettingsScreen(onBack = { showSettings = false })
     }
 }

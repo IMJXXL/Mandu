@@ -11,7 +11,7 @@ object AutoCategorizeTrigger {
 
     suspend fun run(books: List<Book>, ctx: Context) {
         val config = AutoCategorizeConfig.load(ctx)
-        if (!config.enableSeries && !config.enableWriter && !config.enableGenre && !config.enablePublisher) {
+        if (!config.enableSeries && !config.enableWriter && !config.enableGenre && !config.enablePublisher && config.enabledCustomFields.isEmpty()) {
             return
         }
         for (book in books) {

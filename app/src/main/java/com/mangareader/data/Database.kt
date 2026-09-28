@@ -564,6 +564,19 @@ interface MangaDao {
         deleteBookshelvesByIds(validSources)
     }
 
+    @Transaction
+    suspend fun deleteBookshelvesBatch(ids: List<Long>) {
+        if (ids.isEmpty()) return
+        deleteItemsInShelves(ids)
+        deleteBookshelvesByIds(ids)
+    }
+
+    @Query("UPDATE bookshelves SET isHidden = :hidden WHERE id IN (:ids)")
+    suspend fun setBookshelvesHiddenBatch(ids: List<Long>, hidden: Boolean)
+
+    @Query("SELECT * FROM bookshelves WHERE isHidden = 1 ORDER BY sortOrder ASC, createdAt DESC")
+    suspend fun getHiddenBookshelvesList(): List<Bookshelf>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertBookshelfItem(item: BookshelfItem): Long
 

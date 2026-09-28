@@ -365,13 +365,16 @@ private fun GeneralTab(config: ReaderConfig, onConfigChange: (ReaderConfig) -> U
 private fun FilterTab(config: ReaderConfig, onConfigChange: (ReaderConfig) -> Unit) {
     CheckboxItem("灰度模式", config.isGrayscale) { onConfigChange(config.copy(isGrayscale = it)) }
     CheckboxItem("反色", config.isInvertColors) { onConfigChange(config.copy(isInvertColors = it)) }
-    SliderItem("亮度", config.brightness.toFloat(), -100f..100f, 199, "${config.brightness}") {
+    SliderItem("图片亮度（默认0）", config.brightness.toFloat(), -100f..100f, 199, "${config.brightness}") {
         onConfigChange(config.copy(brightness = it.toInt()))
     }
-    SliderItem("对比度", config.contrast.toFloat(), 0f..200f, 199, "${config.contrast}") {
+    SliderItem("屏幕亮度（默认0）", config.screenBrightness.toFloat(), -100f..100f, 199, "${config.screenBrightness}") {
+        onConfigChange(config.copy(screenBrightness = it.toInt()))
+    }
+    SliderItem("对比度（默认100）", config.contrast.toFloat(), 0f..200f, 199, "${config.contrast}") {
         onConfigChange(config.copy(contrast = it.toInt()))
     }
-    SliderItem("伽马", config.gamma.toFloat(), 50f..200f, 149, "${config.gamma}") {
+    SliderItem("伽马（默认100）", config.gamma.toFloat(), 50f..200f, 149, "${config.gamma}") {
         onConfigChange(config.copy(gamma = it.toInt()))
     }
     if (android.os.Build.VERSION.SDK_INT < 33) {
@@ -380,6 +383,21 @@ private fun FilterTab(config: ReaderConfig, onConfigChange: (ReaderConfig) -> Un
             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f), fontSize = 11.sp,
             modifier = Modifier.padding(start = 4.dp, bottom = 4.dp)
         )
+    }
+    CheckboxItem("纸张纹理", config.textureEnabled) { onConfigChange(config.copy(textureEnabled = it)) }
+    if (config.textureEnabled) {
+        SettingsChipRow("纸张类型") {
+            com.mangareader.filter.PaperTexture.PRESETS.forEachIndexed { index, (_, label) ->
+                FilterChip(
+                    selected = index == config.texturePresetId,
+                    onClick = { onConfigChange(config.copy(texturePresetId = index)) },
+                    label = { Text(label, fontSize = 13.sp) },
+                )
+            }
+        }
+        SliderItem("纹理浓度（默认15%）", config.textureAlpha.toFloat(), 0f..40f, 39, "${config.textureAlpha}%") {
+            onConfigChange(config.copy(textureAlpha = it.toInt()))
+        }
     }
     if (config.isEinkMode) {
         CheckboxItem("灰阶抖动（让墨水屏显示更多灰阶层次）", config.isEinkDither) { onConfigChange(config.copy(isEinkDither = it)) }
