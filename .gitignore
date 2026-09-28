@@ -55,3 +55,4 @@ test*.png
 pdf_*.png
 hs_err_pid*.log
 replay_pid*.log
+tools/preview/

@@ -13,8 +13,11 @@ import android.view.View
 class PaperTextureView(context: Context) : View(context) {
 
     private val paint = Paint()
+    private var lastRequested: String? = null
+    private var lastBound: String? = null
 
     fun hide() {
+        lastBound = null
         visibility = View.GONE
     }
 
@@ -23,22 +26,30 @@ class PaperTextureView(context: Context) : View(context) {
     }
 
     fun applyState(enabled: Boolean, presetId: Int, alphaPercent: Int, concentration: Int, context: Context) {
-        Log.d("PaperTexture", "applyState enabled=$enabled preset=$presetId alpha=$alphaPercent conc=$concentration")
+        val id = presetId.coerceIn(0, PaperTexture.PRESETS.size - 1)
+        val req = "$enabled/$id/$alphaPercent/$concentration"
+        // AndroidView update 每次重组都会调到这里，状态没变直接返回，避免反复重建 Shader/ColorMatrix 和刷日志
+        if (req == lastRequested && visibility == View.VISIBLE) return
+        lastRequested = req
+        Log.d("PaperTexture", "applyState enabled=$enabled preset=$id alpha=$alphaPercent conc=$concentration")
         if (!enabled || alphaPercent <= 0) {
             hide()
             return
         }
-        PaperTexture.peek(presetId)?.let { bind(it, alphaPercent, concentration); return }
+        PaperTexture.peek(id)?.let { bind(it, id, alphaPercent, concentration); return }
         hide()
-        PaperTexture.load(context, presetId) { id, bitmap ->
-            if (enabled && presetId == id && bitmap != null) {
-                post { bind(bitmap, alphaPercent, concentration) }
+        PaperTexture.load(context, id) { bid, bitmap ->
+            if (enabled && id == bid && bitmap != null) {
+                post { bind(bitmap, bid, alphaPercent, concentration) }
             }
         }
     }
 
-    private fun bind(bitmap: Bitmap, alphaPercent: Int, concentration: Int) {
-        Log.d("PaperTexture", "bind ${bitmap.width}x${bitmap.height} alpha=$alphaPercent conc=$concentration")
+    private fun bind(bitmap: Bitmap, presetId: Int, alphaPercent: Int, concentration: Int) {
+        val key = "$presetId/$alphaPercent/$concentration/${System.identityHashCode(bitmap)}"
+        if (key == lastBound && visibility == View.VISIBLE) return
+        lastBound = key
+        Log.d("PaperTexture", "bind ${bitmap.width}x${bitmap.height} preset=$presetId alpha=$alphaPercent conc=$concentration")
         paint.shader = android.graphics.BitmapShader(bitmap, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT)
         paint.alpha = (alphaPercent * 255 / 100).coerceIn(0, 255)
         val s = concentration / 100f
