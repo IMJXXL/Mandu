@@ -21,7 +21,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun ShelfManageSettingsScreen(onBack: () -> Unit) {
     val ctx = LocalContext.current
@@ -50,25 +50,27 @@ fun ShelfManageSettingsScreen(onBack: () -> Unit) {
             Spacer(Modifier.height(4.dp))
             Text("勾选后导入的书会按这些字段自动分到对应书架，一本书可以同时进多个书架", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(6.dp))
-            Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(checked = autoCatConfig.enableSeries, onCheckedChange = { autoCatConfig = autoCatConfig.copy(enableSeries = it); autoCatConfig.save(ctx) })
-                Spacer(Modifier.width(4.dp))
-                Text("系列")
-            }
-            Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(checked = autoCatConfig.enableWriter, onCheckedChange = { autoCatConfig = autoCatConfig.copy(enableWriter = it); autoCatConfig.save(ctx) })
-                Spacer(Modifier.width(4.dp))
-                Text("作者")
-            }
-            Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(checked = autoCatConfig.enableGenre, onCheckedChange = { autoCatConfig = autoCatConfig.copy(enableGenre = it); autoCatConfig.save(ctx) })
-                Spacer(Modifier.width(4.dp))
-                Text("类型")
-            }
-            Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(checked = autoCatConfig.enablePublisher, onCheckedChange = { autoCatConfig = autoCatConfig.copy(enablePublisher = it); autoCatConfig.save(ctx) })
-                Spacer(Modifier.width(4.dp))
-                Text("出版社")
+            FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                val standardFields = listOf(
+                    "系列" to autoCatConfig.enableSeries,
+                    "作者" to autoCatConfig.enableWriter,
+                    "类型" to autoCatConfig.enableGenre,
+                    "出版社" to autoCatConfig.enablePublisher,
+                )
+                standardFields.forEachIndexed { index, (label, checked) ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = checked, onCheckedChange = {
+                            autoCatConfig = when (index) {
+                                0 -> autoCatConfig.copy(enableSeries = it)
+                                1 -> autoCatConfig.copy(enableWriter = it)
+                                2 -> autoCatConfig.copy(enableGenre = it)
+                                else -> autoCatConfig.copy(enablePublisher = it)
+                            }
+                            autoCatConfig.save(ctx)
+                        }, modifier = Modifier.size(40.dp))
+                        Text(label, fontSize = 13.sp)
+                    }
+                }
             }
 
             Spacer(Modifier.height(16.dp))
@@ -76,26 +78,31 @@ fun ShelfManageSettingsScreen(onBack: () -> Unit) {
             Spacer(Modifier.height(4.dp))
             Text("填 ComicInfo.xml 里的标签名，比如 Translator、Inker、Colorist", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(6.dp))
-            autoCatConfig.customFieldNames.forEach { fieldName ->
-                Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(
-                        checked = fieldName in autoCatConfig.enabledCustomFields,
-                        onCheckedChange = {
-                            val newEnabled = if (it) autoCatConfig.enabledCustomFields + fieldName else autoCatConfig.enabledCustomFields - fieldName
-                            autoCatConfig = autoCatConfig.copy(enabledCustomFields = newEnabled)
-                            autoCatConfig.save(ctx)
+            if (autoCatConfig.customFieldNames.isNotEmpty()) {
+                FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    autoCatConfig.customFieldNames.forEach { fieldName ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(
+                                checked = fieldName in autoCatConfig.enabledCustomFields,
+                                onCheckedChange = {
+                                    val newEnabled = if (it) autoCatConfig.enabledCustomFields + fieldName else autoCatConfig.enabledCustomFields - fieldName
+                                    autoCatConfig = autoCatConfig.copy(enabledCustomFields = newEnabled)
+                                    autoCatConfig.save(ctx)
+                                },
+                                modifier = Modifier.size(36.dp)
+                            )
+                            Text(fieldName, fontSize = 13.sp)
+                            IconButton(onClick = {
+                                autoCatConfig = autoCatConfig.copy(
+                                    customFieldNames = autoCatConfig.customFieldNames - fieldName,
+                                    enabledCustomFields = autoCatConfig.enabledCustomFields - fieldName
+                                )
+                                autoCatConfig.save(ctx)
+                            }, modifier = Modifier.size(28.dp)) { Icon(Icons.Default.Close, "删除", modifier = Modifier.size(16.dp)) }
                         }
-                    )
-                    Spacer(Modifier.width(4.dp))
-                    Text(fieldName, modifier = Modifier.weight(1f))
-                    IconButton(onClick = {
-                        autoCatConfig = autoCatConfig.copy(
-                            customFieldNames = autoCatConfig.customFieldNames - fieldName,
-                            enabledCustomFields = autoCatConfig.enabledCustomFields - fieldName
-                        )
-                        autoCatConfig.save(ctx)
-                    }) { Icon(Icons.Default.Close, "删除", modifier = Modifier.size(18.dp)) }
+                    }
                 }
+                Spacer(Modifier.height(6.dp))
             }
             Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                 OutlinedTextField(

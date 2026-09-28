@@ -140,6 +140,7 @@ fun NativeReaderScreen(
     textureEnabled: Boolean = false,
     texturePresetId: Int = 0,
     textureAlpha: Int = 15,
+    textureConcentration: Int = 100,
     /** ★ SMB/WebDAV 页面供给（design.md 2.2.2）：非 null 时阅读页面走远程会话。
      *   以参数形式在 setup() 之前注入 delegate，消除"setup 早于供给挂接"的竞态窗口。 */
     remoteSupply: com.mangareader.native.RemotePageSupply? = null,
@@ -393,7 +394,7 @@ fun NativeReaderScreen(
 
     LaunchedEffect(screenBrightness) {
         com.mangareader.filter.BrightnessController.applyBrightness(
-            screenBrightness, (ctx as? android.app.Activity)?.window
+            screenBrightness, (ctx as? android.app.Activity)?.window, ctx
         ) { alpha -> brightnessOverlayAlpha = alpha }
     }
 
@@ -404,8 +405,8 @@ fun NativeReaderScreen(
         }
     }
 
-    LaunchedEffect(textureEnabled, texturePresetId, textureAlpha, textureOverlayRef) {
-        textureOverlayRef?.applyState(textureEnabled, texturePresetId, textureAlpha, ctx)
+    LaunchedEffect(textureEnabled, texturePresetId, textureAlpha, textureConcentration, textureOverlayRef) {
+        textureOverlayRef?.applyState(textureEnabled, texturePresetId, textureAlpha, textureConcentration, ctx)
     }
 
     DisposableEffect(Unit) {
@@ -457,7 +458,7 @@ fun NativeReaderScreen(
             pagerView.visibility = if (!isVertical && !effectiveUseCurl) View.VISIBLE else View.GONE
             curlReaderView.visibility = if (!isVertical && effectiveUseCurl && pageLayout == 0) View.VISIBLE else View.GONE
             curlDoublePageView.visibility = if (!isVertical && effectiveUseCurl && pageLayout != 0) View.VISIBLE else View.GONE
-            textureOverlayRef?.applyState(textureEnabled, texturePresetId, textureAlpha, ctx)
+            textureOverlayRef?.applyState(textureEnabled, texturePresetId, textureAlpha, textureConcentration, ctx)
         },
         modifier = modifier
     )

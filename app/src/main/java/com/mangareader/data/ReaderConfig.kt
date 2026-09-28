@@ -79,9 +79,14 @@ data class ReaderConfig(
     val screenBrightness: Int = 0,
     val contrast: Int = 100,
     val gamma: Int = 100,
+    val brightnessEnabled: Boolean = false,
+    val screenBrightnessEnabled: Boolean = false,
+    val contrastEnabled: Boolean = false,
+    val gammaEnabled: Boolean = false,
     val textureEnabled: Boolean = false,
     val texturePresetId: Int = 0,
-    val textureAlpha: Int = 15
+    val textureAlpha: Int = 15,
+    val textureConcentration: Int = 100
 ) {
     enum class ScrollMode { VERTICAL, HORIZONTAL_LEFT, HORIZONTAL_RIGHT }
     @Deprecated("Dead code - navigation uses Int field navigationMode instead") enum class ClickFlipType { NO, LEFT_RIGHT, DIAGONAL_LB_RT, DIAGONAL_LT_RB }
@@ -154,9 +159,14 @@ data class ReaderConfig(
             putInt("${prefix}screenBrightness", screenBrightness)
             putInt("${prefix}contrast", contrast)
             putInt("${prefix}gamma", gamma)
+            putBoolean("${prefix}brightnessEnabled", brightnessEnabled)
+            putBoolean("${prefix}screenBrightnessEnabled", screenBrightnessEnabled)
+            putBoolean("${prefix}contrastEnabled", contrastEnabled)
+            putBoolean("${prefix}gammaEnabled", gammaEnabled)
             putBoolean("${prefix}textureEnabled", textureEnabled)
             putInt("${prefix}texturePresetId", texturePresetId)
             putInt("${prefix}textureAlpha", textureAlpha)
+            putInt("${prefix}textureConcentration", textureConcentration)
             apply()
         }
     }
@@ -223,7 +233,15 @@ data class ReaderConfig(
                 brightness = prefs.safeGetInt("${prefix}brightness", 0).coerceIn(-100, 100),
                 screenBrightness = prefs.safeGetInt("${prefix}screenBrightness", 0).coerceIn(-100, 100),
                 contrast = prefs.safeGetInt("${prefix}contrast", 100).coerceIn(0, 200),
-                gamma = prefs.safeGetInt("${prefix}gamma", 100).coerceIn(50, 200),
+                gamma = prefs.safeGetInt("${prefix}gamma", 100).coerceIn(50, 150),
+                brightnessEnabled = if (prefs.contains("${prefix}brightnessEnabled")) prefs.safeGetBoolean("${prefix}brightnessEnabled", false) else (prefs.safeGetInt("${prefix}brightness", 0) != 0),
+                screenBrightnessEnabled = if (prefs.contains("${prefix}screenBrightnessEnabled")) prefs.safeGetBoolean("${prefix}screenBrightnessEnabled", false) else (prefs.safeGetInt("${prefix}screenBrightness", 0) != 0),
+                contrastEnabled = if (prefs.contains("${prefix}contrastEnabled")) prefs.safeGetBoolean("${prefix}contrastEnabled", false) else (prefs.safeGetInt("${prefix}contrast", 100) != 100),
+                gammaEnabled = if (prefs.contains("${prefix}gammaEnabled")) prefs.safeGetBoolean("${prefix}gammaEnabled", false) else (prefs.safeGetInt("${prefix}gamma", 100) != 100),
+                textureEnabled = prefs.safeGetBoolean("${prefix}textureEnabled", false),
+                texturePresetId = prefs.safeGetInt("${prefix}texturePresetId", 0),
+                textureAlpha = prefs.safeGetInt("${prefix}textureAlpha", 15).coerceIn(0, 40),
+                textureConcentration = prefs.safeGetInt("${prefix}textureConcentration", 100).coerceIn(0, 100),
                 downsampleTier = if (prefs.contains("downsampleTier")) {
                     try { DownsampleTier.valueOf(prefs.getString("downsampleTier", "STANDARD")!!) } catch (_: Exception) { DownsampleTier.STANDARD }
                 } else if (prefs.safeGetBoolean("forceFullDecode", false)) DownsampleTier.ORIGINAL else DownsampleTier.STANDARD

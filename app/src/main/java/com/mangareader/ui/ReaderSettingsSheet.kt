@@ -365,17 +365,37 @@ private fun GeneralTab(config: ReaderConfig, onConfigChange: (ReaderConfig) -> U
 private fun FilterTab(config: ReaderConfig, onConfigChange: (ReaderConfig) -> Unit) {
     CheckboxItem("灰度模式", config.isGrayscale) { onConfigChange(config.copy(isGrayscale = it)) }
     CheckboxItem("反色", config.isInvertColors) { onConfigChange(config.copy(isInvertColors = it)) }
-    SliderItem("图片亮度（默认0）", config.brightness.toFloat(), -100f..100f, 199, "${config.brightness}") {
-        onConfigChange(config.copy(brightness = it.toInt()))
+    CheckboxItem("图片亮度", config.brightnessEnabled) {
+        onConfigChange(config.copy(brightnessEnabled = it, brightness = if (it) config.brightness else 0))
     }
-    SliderItem("屏幕亮度（默认0）", config.screenBrightness.toFloat(), -100f..100f, 199, "${config.screenBrightness}") {
-        onConfigChange(config.copy(screenBrightness = it.toInt()))
+    if (config.brightnessEnabled) {
+        SliderItem("图片亮度（默认0）", config.brightness.toFloat(), -100f..100f, 199, "${config.brightness}") {
+            onConfigChange(config.copy(brightness = it.toInt()))
+        }
     }
-    SliderItem("对比度（默认100）", config.contrast.toFloat(), 0f..200f, 199, "${config.contrast}") {
-        onConfigChange(config.copy(contrast = it.toInt()))
+    CheckboxItem("屏幕亮度", config.screenBrightnessEnabled) {
+        onConfigChange(config.copy(screenBrightnessEnabled = it, screenBrightness = if (it) config.screenBrightness else 0))
     }
-    SliderItem("伽马（默认100）", config.gamma.toFloat(), 50f..200f, 149, "${config.gamma}") {
-        onConfigChange(config.copy(gamma = it.toInt()))
+    if (config.screenBrightnessEnabled) {
+        SliderItem("屏幕亮度（默认0）", config.screenBrightness.toFloat(), -100f..100f, 199, "${config.screenBrightness}") {
+            onConfigChange(config.copy(screenBrightness = it.toInt()))
+        }
+    }
+    CheckboxItem("对比度", config.contrastEnabled) {
+        onConfigChange(config.copy(contrastEnabled = it, contrast = if (it) config.contrast else 100))
+    }
+    if (config.contrastEnabled) {
+        SliderItem("对比度（默认100）", config.contrast.toFloat(), 0f..200f, 199, "${config.contrast}") {
+            onConfigChange(config.copy(contrast = it.toInt()))
+        }
+    }
+    CheckboxItem("伽马", config.gammaEnabled) {
+        onConfigChange(config.copy(gammaEnabled = it, gamma = if (it) config.gamma else 100))
+    }
+    if (config.gammaEnabled) {
+        SliderItem("伽马（默认100）", config.gamma.toFloat(), 50f..150f, 99, "${config.gamma}") {
+            onConfigChange(config.copy(gamma = it.toInt()))
+        }
     }
     if (android.os.Build.VERSION.SDK_INT < 33) {
         Text(
@@ -395,8 +415,11 @@ private fun FilterTab(config: ReaderConfig, onConfigChange: (ReaderConfig) -> Un
                 )
             }
         }
-        SliderItem("纹理浓度（默认15%）", config.textureAlpha.toFloat(), 0f..40f, 39, "${config.textureAlpha}%") {
+        SliderItem("透明度（默认15%）", config.textureAlpha.toFloat(), 0f..40f, 39, "${config.textureAlpha}%") {
             onConfigChange(config.copy(textureAlpha = it.toInt()))
+        }
+        SliderItem("浓度（默认100%）", config.textureConcentration.toFloat(), 0f..100f, 99, "${config.textureConcentration}%") {
+            onConfigChange(config.copy(textureConcentration = it.toInt()))
         }
     }
     if (config.isEinkMode) {
