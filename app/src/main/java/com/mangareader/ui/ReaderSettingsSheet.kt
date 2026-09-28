@@ -426,20 +426,21 @@ private fun FilterTab(config: ReaderConfig, onConfigChange: (ReaderConfig) -> Un
                 )
             }
         }
-        SliderItem("透明度（默认15%）", config.textureAlpha.toFloat(), 0f..40f, 39, "${config.textureAlpha}%") {
-            onConfigChange(config.copy(textureAlpha = it.toInt()))
+        if (config.textureMultiply) {
+            // 正片叠底下纹理以全强度乘进页面，浓度=纸纹调制深度；透明度滑条此时无意义不显示
+            SliderItem("纸感浓度（默认100%=真实纸感）", config.textureConcentration.toFloat(), 0f..100f, 99, "${config.textureConcentration}%") {
+                onConfigChange(config.copy(textureConcentration = it.toInt()))
+            }
+        } else {
+            SliderItem("透明度（默认15%）", config.textureAlpha.toFloat(), 0f..40f, 39, "${config.textureAlpha}%") {
+                onConfigChange(config.copy(textureAlpha = it.toInt()))
+            }
+            SliderItem("浓度（默认100%）", config.textureConcentration.toFloat(), 0f..100f, 99, "${config.textureConcentration}%") {
+                onConfigChange(config.copy(textureConcentration = it.toInt()))
+            }
         }
-        SliderItem("浓度（默认100%）", config.textureConcentration.toFloat(), 0f..100f, 99, "${config.textureConcentration}%") {
-            onConfigChange(config.copy(textureConcentration = it.toInt()))
-        }
-        val sheetCtx = androidx.compose.ui.platform.LocalContext.current
-        var textureMultiply by remember {
-            mutableStateOf(sheetCtx.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE).getBoolean("texture_multiply", false))
-        }
-        CheckboxItem("正片叠底合成（像真书·推荐勾选）", textureMultiply) {
-            textureMultiply = it
-            sheetCtx.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE).edit().putBoolean("texture_multiply", it).apply()
-            onConfigChange(config.copy(textureEnabled = config.textureEnabled))
+        CheckboxItem("正片叠底合成（墨色不被纸纹洗灰·推荐）", config.textureMultiply) {
+            onConfigChange(config.copy(textureMultiply = it))
         }
     }
     if (config.isEinkMode) {

@@ -2261,6 +2261,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                             texturePresetId = config.texturePresetId,
                             textureAlpha = config.textureAlpha,
                             textureConcentration = config.textureConcentration,
+                            textureMultiply = config.textureMultiply,
 
                             remoteSupply = smbSession,
                             modifier = Modifier.fillMaxSize(),

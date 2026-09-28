@@ -1,25 +1,27 @@
 # -*- coding: utf-8 -*-
 """
-漫读纸张纹理生成器 v2（纯 numpy + Pillow，无 scipy 依赖）
+漫读纸张纹理生成器 v3（纯 numpy + Pillow，无 scipy 依赖）
 
-对比桌面旧版 生成脚本.txt 的修复与增强：
-1. 修 fbm 全通 bug：旧版 exp(-2π²σ²r²) 的 σ 传的是 0.004~0.03（像素单位下等于不滤波），
-   所有 octave 都是白噪声，多尺度云纹从未出现。本版 octave 的 σ 按像素 1→16 递增，真多尺度。
-2. 1/f^β 谱合成：纸张"成形云纹"（formation mottling）用幂律谱直接生成，比 octave 叠加更像纸。
-3. 方向性纤维：真纸纤维沿造纸机方向（横向）取向，旧版是各向同性随机方向。
-4. 新增罗纹（laid）帘纹：传统纸的细密竖帘线 + 稀疏横向挂链线。
-5. 全部滤波用 FFT 周期卷积（mode wrap 语义），保证严格无缝平铺；无 scipy。
+v3 核心变化：资产语义从"装饰图"改为"反射率图"。
+阅读端正片叠底合成（MULTIPLY）直接拿资产当反射率乘页面：out = dst × asset/255，
+墨(0)乘任何纸纹仍是纯黑。因此资产必须：
+1. 亮度均值归一到 247（整页只变暗 ~3%，无感）；
+2. 纸张底色作为色度烘焙（牛皮纸=棕、米白纸=暖白），不再靠叠加 alpha；
+3. 调制深度按真纸反射率量级烘焙（细颗粒/纤维/云纹峰值 ±7~12%，σ≈2~3.5%）。
+CC0 实拍照片同样归一化：除掉打光晕影（高通），只留编织/纤维纹理，色度保留。
 
-输出：app/src/main/assets/textures/paper_*.webp（512×512，与现有 6 张 CC0 图同尺寸）
-预览：tools/preview/preview_grid.png（供人工检查，不入库）
+v2 保留：FFT 周期卷积严格无缝、1/f^β 谱合成、方向性纤维、罗纹帘线。
 """
 import os
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageFilter
 
 SIZE = 512
 ASSET_DIR = os.path.join(os.path.dirname(__file__), "..", "app", "src", "main", "assets", "textures")
 PREVIEW_DIR = os.path.join(os.path.dirname(__file__), "preview")
+
+LUM_W = np.array([0.299, 0.587, 0.114])
+TARGET_MEAN = 247.0  # 反射率均值：整页变暗 ~3%，观感即"纸白"
 
 
 # ---------- 基础：FFT 周期高斯模糊（严格无缝，等价 gaussian_filter(mode='wrap')） ----------
@@ -54,9 +56,8 @@ def fft_grad(field):
     return dy, dx
 
 
-# ---------- 多尺度底噪：octave 真多尺度（σ 按像素翻倍） ----------
+# ---------- 多尺度底噪 ----------
 def fbm_noise(size, octaves=5, base_sigma_px=1.0, seed=0, aniso_y=1.0):
-    """每 octave：白噪声经 σ=base*2^o 的周期高斯低通。返回 0..1。"""
     rng = np.random.default_rng(seed)
     result = np.zeros((size, size), dtype=np.float64)
     total = 0.0
@@ -77,13 +78,12 @@ def fbm_noise(size, octaves=5, base_sigma_px=1.0, seed=0, aniso_y=1.0):
 
 # ---------- 1/f^β 谱噪声：纸张成形云纹 ----------
 def spectral_noise(size, beta=1.3, seed=0, f0=1.5, aniso_y=1.0):
-    """功率谱 ∝ 1/f^β 的周期噪声。f0 防低频发散，aniso_y>1 让云纹沿横向拉长。"""
     rng = np.random.default_rng(seed)
     white = rng.standard_normal((size, size))
-    fy = np.fft.fftfreq(size)[:, None] * size  # 周期/像素
+    fy = np.fft.fftfreq(size)[:, None] * size
     fx = np.fft.fftfreq(size)[None, :] * size
     r = np.sqrt(fx ** 2 + (fy * aniso_y) ** 2)
-    r[0, 0] = np.inf  # 去直流
+    r[0, 0] = np.inf
     spec = np.fft.fft2(white) / (r ** (beta / 2.0))
     spec[r <= f0] = 0
     spec[0, 0] = 0
@@ -98,7 +98,7 @@ def fiber_layer(size, seed, n_fibers, length_range=(15, 90), dir_spread=0.45, th
     for _ in range(n_fibers):
         y0 = int(rng.integers(0, size))
         x0 = int(rng.integers(0, size))
-        theta = rng.normal(0.0, dir_spread)  # 0 = 横向（造纸机方向）
+        theta = rng.normal(0.0, dir_spread)
         length = int(rng.integers(*length_range))
         vy, vx = np.sin(theta), np.cos(theta)
         cy, cx = 0.0, 0.0
@@ -116,19 +116,18 @@ def fiber_layer(size, seed, n_fibers, length_range=(15, 90), dir_spread=0.45, th
     return norm01(fibers)
 
 
-# ---------- 罗纹帘线：细密竖线 + 稀疏横链线 ----------
+# ---------- 罗纹帘线 ----------
 def laid_pattern(size, line_spacing=4, line_depth=0.5, chain_spacing=96, chain_depth=0.5):
     x = np.arange(size)[None, :]
     y = np.arange(size)[:, None]
     lines = 1.0 - line_depth * (0.5 + 0.5 * np.cos(2 * np.pi * x / line_spacing))
     chain = 1.0 - chain_depth * (0.5 + 0.5 * np.cos(2 * np.pi * y / chain_spacing))
     pat = lines * chain
-    # 轻微扰动，避免过于规则
     pat = pat * (0.92 + 0.16 * fbm_noise(size, octaves=3, base_sigma_px=2.0, seed=77))
     return norm01(pat)
 
 
-# ---------- 老化污渍 / 斑点（周期边界，与旧版同思路） ----------
+# ---------- 老化污渍 / 斑点 ----------
 def stains(size, seed, n_stains=12, r_range=(60, 200)):
     rng = np.random.default_rng(seed)
     out = np.zeros((size, size), dtype=np.float64)
@@ -140,7 +139,6 @@ def stains(size, seed, n_stains=12, r_range=(60, 200)):
         dx = np.minimum(np.abs(x - cx), size - np.abs(x - cx))
         d = np.sqrt(dx ** 2 + dy ** 2)
         amp = rng.uniform(0.25, 0.8)
-        # 两个不同宽度的核叠加，边缘不那么"高斯圆"
         out += amp * np.exp(-(d ** 2) / (2 * r ** 2))
         out += amp * 0.6 * np.exp(-(d ** 2) / (2 * (r * 0.45) ** 2))
     return norm01(out)
@@ -153,19 +151,61 @@ def spots(size, seed, density, blur):
     return norm01(s) if s.max() > 0 else s
 
 
-# ---------- 合成输出 ----------
-def make_texture(size, base_rgb, tex01, strength):
-    base = np.array(base_rgb, dtype=np.float64) / 255.0
+# ---------- 反射率输出 ----------
+def tint_of(base_rgb):
+    """底色 → 亮度归一的色度向量（max 通道钳到 1，避免乘法输出大面积削顶）"""
+    t = np.array(base_rgb, dtype=np.float64) / 255.0
+    t = t / (t @ LUM_W)
+    return t / t.max()
+
+
+def save_reflectance(name, tex01, tint, strength, label):
+    """tex01∈[0,1] 调制图 + 强度（峰值调制）→ 亮度均值 247 的反射率 RGB"""
     mod = (tex01 - 0.5) * 2.0 * strength
-    rgb = np.clip(base[None, None, :] * (1.0 + mod[..., None]), 0, 1)
-    return np.round(rgb * 255).astype(np.uint8)
+    refl = 1.0 + mod
+    refl /= refl.mean()
+    rgb = np.clip(refl[..., None] * tint[None, None, :] * TARGET_MEAN, 0, 255)
+    img = Image.fromarray(np.round(rgb).astype(np.uint8), "RGB")
+    out = os.path.join(ASSET_DIR, f"{name}.webp")
+    img.save(out, "WEBP", quality=92, method=6)
+    arr = np.asarray(img, dtype=np.float64)
+    lum = arr @ LUM_W
+    print(f"{name}.webp  {os.path.getsize(out) / 1024:.1f} KB  [{label}]  "
+          f"均值{lum.mean():.0f} σ{lum.std():.1f} 峰峰{lum.max() - lum.min():.0f}")
+    return img
+
+
+def normalize_photo(name, label):
+    """CC0 实拍照片 → 反射率图：除掉打光晕影（高通），只留编织/纤维纹理，色度保留"""
+    p = os.path.join(ASSET_DIR, f"{name}.webp")
+    img = Image.open(p).convert("RGB")
+    if img.size != (SIZE, SIZE):
+        img = img.resize((SIZE, SIZE), Image.LANCZOS)
+    arr = np.asarray(img, dtype=np.float64)
+    lum = arr @ LUM_W
+    # PIL 高斯（边缘 clamp，不引入 FFT wrap 伪影）；半径 28 去掉 >~60px 的光照结构
+    low = np.asarray(Image.fromarray(lum.astype(np.uint8)).filter(ImageFilter.GaussianBlur(28)), dtype=np.float64)
+    detail = lum / (low + 1e-6)
+    detail = np.clip(detail, 0.70, 1.18)
+    detail /= (detail @ LUM_W).mean() if detail.ndim == 3 else detail.mean()
+    tint = arr.reshape(-1, 3).mean(axis=0) / 255.0
+    tint = tint / (tint @ LUM_W)
+    tint = tint / tint.max()
+    rgb = np.clip(detail[..., None] * tint[None, None, :] * TARGET_MEAN, 0, 255)
+    out_img = Image.fromarray(np.round(rgb).astype(np.uint8), "RGB")
+    out_img.save(p, "WEBP", quality=92, method=6)
+    o = np.asarray(out_img, dtype=np.float64)
+    olum = o @ LUM_W
+    print(f"{name}.webp  {os.path.getsize(p) / 1024:.1f} KB  [{label}]  "
+          f"均值{olum.mean():.0f} σ{olum.std():.1f}（实拍归一化）")
+    return out_img
 
 
 # =====================================================
-# 六种纸型配方
+# 纸型配方（返回 tex01∈[0,1]，强度统一在 save_reflectance 施加）
 # =====================================================
 def paper_xuan(size, seed=11):
-    """宣纸：暖白，云纹明显 + 密软纤维，无斑点"""
+    """宣纸：暖白，云纹明显 + 密软纤维"""
     mottle = spectral_noise(size, beta=1.4, seed=seed, aniso_y=1.6)
     grain = fbm_noise(size, octaves=3, base_sigma_px=1.0, seed=seed + 1)
     fibers = fiber_layer(size, seed + 2, n_fibers=900, length_range=(20, 110), dir_spread=0.5)
@@ -177,8 +217,8 @@ def paper_cream(size, seed=21):
     """米白纤维纸：细底噪 + 可见短纤维"""
     grain = fbm_noise(size, octaves=4, base_sigma_px=1.0, seed=seed)
     mottle = spectral_noise(size, beta=1.1, seed=seed + 1, f0=3.0)
-    fibers = fiber_layer(size, seed + 2, n_fibers=700, length_range=(15, 70), dir_spread=0.6)
-    t = 0.42 * grain + 0.23 * mottle + 0.35 * fibers
+    fibers = fiber_layer(size, seed + 2, n_fibers=750, length_range=(15, 70), dir_spread=0.6)
+    t = 0.40 * grain + 0.22 * mottle + 0.38 * fibers
     return norm01(t)
 
 
@@ -194,7 +234,7 @@ def paper_laid(size, seed=41):
     """罗纹纸：传统帘纹，细竖线 + 横链线 + 细底噪"""
     pat = laid_pattern(size, line_spacing=4, line_depth=0.55, chain_spacing=128, chain_depth=0.45)
     grain = fbm_noise(size, octaves=3, base_sigma_px=1.0, seed=seed)
-    t = 0.68 * pat + 0.32 * grain
+    t = 0.66 * pat + 0.32 * grain
     return norm01(t)
 
 
@@ -222,106 +262,91 @@ def paper_real(size, seed=71):
     1) 成形云纹（β=1.7 幂律谱，主导结构）
     2) 纤维絮聚（纤维密度受云纹软版调制，floc效应）
     3) 微颗粒（软核模糊，填充料+纤维交叠）
-    4) 表面起伏定向光照（低频高度场FFT梯度Lambert，给纸厚度感）
-    5) 冷暖色斑（与云纹弱相关的黄/蓝偏移，模拟荧光增白不均）
-    亮度结构 / 光照 / 色斑分别进 R/G/B 通道，强度都压在真纸量级"""
+    4) 表面起伏定向光照（低频高度场FFT梯度，给纸厚度感）
+    5) 冷暖色斑（与云纹弱相关的黄/蓝偏移，模拟荧光增白不均）"""
     rng = np.random.default_rng(seed)
-
-    # 1) 成形云纹
     formation = spectral_noise(size, beta=1.7, seed=seed, f0=2.0, aniso_y=1.35)
     formation_soft = fft_blur(formation, size / 256.0)
-
-    # 2) 纤维（密度耦合云纹）—— A/B 目检后定版：絮聚更足、颗粒更收敛
     fibers = fiber_layer(size, seed + 1, n_fibers=int(size * 3.2),
                          length_range=(size // 32, size // 13), dir_spread=0.35, thickness_blur=0.55)
-    fibers = fibers * (0.45 + 1.1 * formation_soft)
-    fibers = norm01(fibers)
-
-    # 3) 微颗粒
+    fibers = norm01(fibers * (0.45 + 1.1 * formation_soft))
     grain = norm01(fft_blur(rng.standard_normal((size, size)), 0.6))
-
-    # 4) 表面起伏光照（左上光）
     height = spectral_noise(size, beta=2.4, seed=seed + 2, f0=1.0, aniso_y=1.2)
     gy, gx = fft_grad(height)
     shade = -(gx * 0.7 + gy * 0.7)
-    shade = shade / (shade.std() + 1e-8)
-
-    # 5) 冷暖色斑
+    shade = shade / (shade.std() + 1e-8)  # 标准化，幅度在外部乘 shade_strength
     warm = spectral_noise(size, beta=1.3, seed=seed + 3, f0=2.5) - 0.5
-
-    lum = 0.56 * formation + 0.13 * grain + 0.31 * fibers
-    lum01 = norm01(lum)
-    return lum01, shade, warm
-
-
-def compose_real(size, base_rgb, lum01, shade, warm,
-                 lum_strength=0.080, shade_strength=0.026, warm_strength=0.045):
-    """书卷纸通道合成：亮度结构全通道，光照全通道，冷暖斑按 R+/B- 进色度"""
-    base = np.array(base_rgb, dtype=np.float64) / 255.0
-    mod_lum = (lum01 - 0.5) * 2.0 * lum_strength
-    mod_shade = shade * shade_strength
-    mod_warm = warm * warm_strength
-    r = base[0] * (1.0 + mod_lum + mod_shade + mod_warm * 0.7)
-    g = base[1] * (1.0 + mod_lum + mod_shade + mod_warm * 0.1)
-    b = base[2] * (1.0 + mod_lum + mod_shade - mod_warm * 0.7)
-    rgb = np.clip(np.stack([r, g, b], axis=-1), 0, 1)
-    return np.round(rgb * 255).astype(np.uint8)
+    lum = 0.52 * formation + 0.17 * grain + 0.31 * fibers
+    return norm01(lum), shade, warm
 
 
 # =====================================================
 # 输出
 # =====================================================
 if __name__ == "__main__":
-    configs = [
-        # (文件名, 生成函数, 底色 RGB, 纹理强度, seed, App 标签)
-        ("paper_xuan",     paper_xuan,     (250, 246, 236), 0.075, 11, "宣纸"),
-        ("paper_cream",    paper_cream,    (250, 248, 242), 0.070, 21, "米白纤维"),
-        ("paper_woodfree", paper_woodfree, (247, 246, 241), 0.060, 31, "道林纸"),
-        ("paper_laid",     paper_laid,     (249, 246, 238), 0.065, 41, "罗纹纸"),
-        ("paper_newsprint", paper_newsprint, (240, 238, 231), 0.095, 51, "新闻纸"),
-        ("paper_oldpage",  paper_oldpage,  (243, 231, 201), 0.105, 61, "仿旧书页"),
-    ]
-
     os.makedirs(ASSET_DIR, exist_ok=True)
     os.makedirs(PREVIEW_DIR, exist_ok=True)
-
     previews = []
+
+    # (文件名, 配方, 底色RGB, 峰值调制强度, seed, 标签)
+    # 强度从 v2 的 0.06~0.105 上调到 0.08~0.13：乘法全强度下的"纸感"锚定真纸反射率量级
+    configs = [
+        ("paper_xuan",      paper_xuan,      (250, 246, 236), 0.090, 11, "宣纸"),
+        ("paper_cream",     paper_cream,     (250, 248, 242), 0.095, 21, "米白纤维"),
+        ("paper_woodfree",  paper_woodfree,  (247, 246, 241), 0.075, 31, "道林纸"),
+        ("paper_laid",      paper_laid,      (249, 246, 238), 0.080, 41, "罗纹纸"),
+        ("paper_newsprint", paper_newsprint, (240, 238, 231), 0.120, 51, "新闻纸"),
+        ("paper_oldpage",   paper_oldpage,   (243, 231, 201), 0.130, 61, "仿旧书页"),
+    ]
+
+    def comic_overlay(img, size):
+        comic = np.full((size, size, 3), 200, dtype=np.uint8)
+        comic[:, : size // 4] = 255
+        comic[:, size // 4: size // 2] = 60
+        return Image.blend(Image.fromarray(comic), img, 0.30)
+
     for name, func, base, strength, seed, label in configs:
         tex = func(SIZE, seed=seed)
-        arr = make_texture(SIZE, base, tex, strength)
-        img = Image.fromarray(arr, "RGB")
-        out = os.path.join(ASSET_DIR, f"{name}.webp")
-        img.save(out, "WEBP", quality=92, method=6)
-        print(f"{name}.webp  {os.path.getsize(out) / 1024:.1f} KB  [{label}]")
+        img = save_reflectance(name, tex, tint_of(base), strength, label)
+        previews.append(np.concatenate([np.array(img), np.array(comic_overlay(img, SIZE))], axis=1))
 
-        # 预览：左半原图，右半叠在模拟漫画上（30% alpha）方便看效果
-        comic = np.full((SIZE, SIZE, 3), 200, dtype=np.uint8)
-        comic[:, : SIZE // 4] = 255          # 白底分镜块
-        comic[:, SIZE // 4: SIZE // 2] = 60  # 深色块
-        overlay = Image.blend(Image.fromarray(comic), img, 0.30)
-        row = np.concatenate([np.array(img), np.array(overlay)], axis=1)
-        previews.append(row)
-
-    # ---- 旗舰拟真书卷纸：1024 高清五层结构 ----
+    # ---- 旗舰拟真书卷纸：1024 五层结构 ----
     FSIZE = 1024
     lum01, shade, warm = paper_real(FSIZE, seed=71)
-    arr = compose_real(FSIZE, (250, 247, 240), lum01, shade, warm)
-    img = Image.fromarray(arr, "RGB")
+    lum_strength, shade_strength, warm_strength = 0.100, 0.030, 0.050
+    base = np.array([250, 247, 240], dtype=np.float64) / 255.0
+    mod = (lum01 - 0.5) * 2.0 * lum_strength + shade * shade_strength
+    refl = np.stack([
+        1.0 + mod + warm * warm_strength * 0.7,
+        1.0 + mod + warm * warm_strength * 0.1,
+        1.0 + mod - warm * warm_strength * 0.7,
+    ], axis=-1)
+    pixel = base[None, None, :] * refl
+    pixel *= TARGET_MEAN / ((pixel @ LUM_W).mean() * 255.0) * 255.0
+    img = Image.fromarray(np.clip(np.round(pixel), 0, 255).astype(np.uint8), "RGB")
     out = os.path.join(ASSET_DIR, "paper_real.webp")
     img.save(out, "WEBP", quality=92, method=6)
-    print(f"paper_real.webp  {os.path.getsize(out) / 1024:.1f} KB  [书卷纸]  {FSIZE}px")
+    arr = np.asarray(img, dtype=np.float64)
+    al = arr @ LUM_W
+    print(f"paper_real.webp  {os.path.getsize(out) / 1024:.1f} KB  [书卷纸]  {FSIZE}px  "
+          f"均值{al.mean():.0f} σ{al.std():.1f}")
 
-    comic = np.full((FSIZE, FSIZE, 3), 200, dtype=np.uint8)
-    comic[:, : FSIZE // 4] = 255
-    comic[:, FSIZE // 4: FSIZE // 2] = 60
-    overlay = Image.blend(Image.fromarray(comic), img, 0.30)
-    row = np.concatenate([np.array(img.resize((512, 512), Image.LANCZOS)),
-                          np.array(overlay.resize((512, 512), Image.LANCZOS))], axis=1)
-    previews.append(row)
+    previews.append(np.concatenate([
+        np.array(img.resize((512, 512), Image.LANCZOS)),
+        np.array(comic_overlay(img, FSIZE).resize((512, 512), Image.LANCZOS))], axis=1))
+
+    # ---- CC0 实拍 6 张 → 反射率归一化 ----
+    photos = [
+        ("paper_cotton", "棉纸（细纹）"), ("paper_cotton2", "棉纸（粗纹）"),
+        ("paper_kraft", "牛皮纸"), ("paper_kraft2", "牛皮纸2"),
+        ("paper_kraft_box", "牛皮纸盒"), ("paper_sketch", "素描纸"),
+    ]
+    for name, label in photos:
+        pimg = normalize_photo(name, label)
+        previews.append(np.concatenate([np.array(pimg), np.array(comic_overlay(pimg, SIZE))], axis=1))
 
     grid = np.concatenate(previews, axis=0)
     Image.fromarray(grid).save(os.path.join(PREVIEW_DIR, "preview_grid.png"))
-    # 旗舰纸中央 384px 区域 1:1 放大 2 倍细看
     zoom = img.crop((FSIZE // 2 - 192, FSIZE // 2 - 192, FSIZE // 2 + 192, FSIZE // 2 + 192))
     zoom.resize((768, 768), Image.NEAREST).save(os.path.join(PREVIEW_DIR, "preview_real_zoom.png"))
     print("预览：tools/preview/preview_grid.png + preview_real_zoom.png")

@@ -141,6 +141,7 @@ fun NativeReaderScreen(
     texturePresetId: Int = 0,
     textureAlpha: Int = 15,
     textureConcentration: Int = 100,
+    textureMultiply: Boolean = true,
     /** ★ SMB/WebDAV 页面供给（design.md 2.2.2）：非 null 时阅读页面走远程会话。
      *   以参数形式在 setup() 之前注入 delegate，消除"setup 早于供给挂接"的竞态窗口。 */
     remoteSupply: com.mangareader.native.RemotePageSupply? = null,
@@ -405,13 +406,11 @@ fun NativeReaderScreen(
         }
     }
 
-    LaunchedEffect(textureEnabled, texturePresetId, textureAlpha, textureConcentration, textureOverlayRef) {
-        textureOverlayRef?.applyState(textureEnabled, texturePresetId, textureAlpha, textureConcentration, ctx)
+    LaunchedEffect(textureEnabled, texturePresetId, textureAlpha, textureConcentration, textureMultiply, textureOverlayRef) {
+        textureOverlayRef?.applyState(textureEnabled, texturePresetId, textureAlpha, textureConcentration, textureMultiply, ctx)
         // 正片叠底需要容器硬件层：子视图 Xfermode 才能对已绘页面内容做乘法（全版本通用）
         containerRef?.setLayerType(
-            if (textureEnabled && ctx.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE)
-                    .getBoolean("texture_multiply", false))
-                View.LAYER_TYPE_HARDWARE else View.LAYER_TYPE_NONE,
+            if (textureEnabled && textureMultiply) View.LAYER_TYPE_HARDWARE else View.LAYER_TYPE_NONE,
             null
         )
     }
@@ -466,7 +465,7 @@ fun NativeReaderScreen(
             pagerView.visibility = if (!isVertical && !effectiveUseCurl) View.VISIBLE else View.GONE
             curlReaderView.visibility = if (!isVertical && effectiveUseCurl && pageLayout == 0) View.VISIBLE else View.GONE
             curlDoublePageView.visibility = if (!isVertical && effectiveUseCurl && pageLayout != 0) View.VISIBLE else View.GONE
-            textureOverlayRef?.applyState(textureEnabled, texturePresetId, textureAlpha, textureConcentration, ctx)
+            textureOverlayRef?.applyState(textureEnabled, texturePresetId, textureAlpha, textureConcentration, textureMultiply, ctx)
         },
         modifier = modifier
     )

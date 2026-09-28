@@ -68,6 +68,7 @@ class CurlReaderView(context: Context) : FrameLayout(context), ReaderViewDelegat
     override var onPageCountChanged: ((Int) -> Unit)? = null
     override var onToggleUi: (() -> Unit)? = null
     var onChapterEnd: ((Boolean) -> Unit)? = null
+    private val flipSound = CurlFlipSound(context)
 
     private val gestureDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
         override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
@@ -163,6 +164,8 @@ class CurlReaderView(context: Context) : FrameLayout(context), ReaderViewDelegat
                 tapForwardTrigger = tapForwardTrigger,
                 tapBackwardTrigger = tapBackwardTrigger,
                 onPageChanged = { newPage ->
+                    // 翻页落地（state.current 提交）才响，目录跳页 snapTo 不响，与双页语义一致
+                    flipSound.play()
                     currentPage = newPage
                     loader.setCurrentPage(newPage)
                     cache.protectThreeLayers(newPage)
@@ -189,6 +192,7 @@ class CurlReaderView(context: Context) : FrameLayout(context), ReaderViewDelegat
     }
 
     override fun release() {
+        flipSound.release()
         loader.cancelAll()
         scope.cancel()
         scope = CoroutineScope(Dispatchers.Default + SupervisorJob())

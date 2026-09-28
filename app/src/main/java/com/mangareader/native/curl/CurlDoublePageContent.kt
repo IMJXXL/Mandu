@@ -176,20 +176,24 @@ fun CurlDoublePageContent(
                 reloadTrigger.intValue
 
                 val targetSpread = if (forward) current + 1 else current - 1
-                if (targetSpread < 0 || targetSpread >= totalSpreads) {
-                    SpreadImage(null, null, doublePageReverse, pageBgColor, isRtl, landscapeZoom, fitScreen)
-                } else {
-                    val tLeftIdx = SpreadMapping.leftPage(targetSpread, totalPages, shift)
-                    val tRightIdx = SpreadMapping.rightPage(targetSpread, totalPages, shift)
-                    SpreadImage(
-                        cache.get(tLeftIdx),
-                        if (tRightIdx >= 0) cache.get(tRightIdx) else null,
-                        doublePageReverse,
-                        pageBgColor,
-                        isRtl,
-                        landscapeZoom,
-                        fitScreen,
-                    )
+                Box {
+                    if (targetSpread < 0 || targetSpread >= totalSpreads) {
+                        SpreadImage(null, null, doublePageReverse, pageBgColor, isRtl, landscapeZoom, fitScreen)
+                    } else {
+                        val tLeftIdx = SpreadMapping.leftPage(targetSpread, totalPages, shift)
+                        val tRightIdx = SpreadMapping.rightPage(targetSpread, totalPages, shift)
+                        SpreadImage(
+                            cache.get(tLeftIdx),
+                            if (tRightIdx >= 0) cache.get(tRightIdx) else null,
+                            doublePageReverse,
+                            pageBgColor,
+                            isRtl,
+                            landscapeZoom,
+                            fitScreen,
+                        )
+                    }
+                    // 沟阴影画进页面内容层：随纸翻动，不会悬在翻起的纸上方
+                    SpineGutterShadow()
                 }
             },
         ) { spreadIdx ->
@@ -198,34 +202,40 @@ fun CurlDoublePageContent(
 
             val leftIdx = SpreadMapping.leftPage(spreadIdx, totalPages, shift)
             val rightIdx = SpreadMapping.rightPage(spreadIdx, totalPages, shift)
-            SpreadImage(
-                cache.get(leftIdx),
-                if (rightIdx >= 0) cache.get(rightIdx) else null,
-                doublePageReverse,
-                pageBgColor,
-                isRtl,
-                landscapeZoom,
-                fitScreen,
-            )
-        }
-        // 书脊沟阴影：中缝恒定的低强度暗渐变，模拟装订沟（拟真增强，静态一层渐变零性能成本）
-        Canvas(
-            Modifier.fillMaxSize().padding(start = insetL, top = insetT, end = insetR, bottom = insetB)
-        ) {
-            val w = size.width
-            if (w > 0f) {
-                val cx = w / 2f
-                val half = w * 0.055f
-                drawRect(
-                    brush = Brush.horizontalGradient(
-                        0f to Color.Transparent,
-                        ((cx - half) / w).coerceIn(0f, 1f) to Color.Transparent,
-                        0.5f to Color.Black.copy(alpha = 0.09f),
-                        ((cx + half) / w).coerceIn(0f, 1f) to Color.Transparent,
-                        1f to Color.Transparent,
-                    )
+            Box {
+                SpreadImage(
+                    cache.get(leftIdx),
+                    if (rightIdx >= 0) cache.get(rightIdx) else null,
+                    doublePageReverse,
+                    pageBgColor,
+                    isRtl,
+                    landscapeZoom,
+                    fitScreen,
                 )
+                SpineGutterShadow()
             }
+        }
+    }
+}
+
+/** 书脊沟阴影：中缝恒定低强度暗渐变，模拟装订沟。画在页面内容层（静态一层渐变零性能成本），
+ *  翻起的纸会盖住阴影而不是被阴影盖住。 */
+@Composable
+private fun SpineGutterShadow() {
+    Canvas(Modifier.fillMaxSize()) {
+        val w = size.width
+        if (w > 0f) {
+            val cx = w / 2f
+            val half = w * 0.055f
+            drawRect(
+                brush = Brush.horizontalGradient(
+                    0f to Color.Transparent,
+                    ((cx - half) / w).coerceIn(0f, 1f) to Color.Transparent,
+                    0.5f to Color.Black.copy(alpha = 0.09f),
+                    ((cx + half) / w).coerceIn(0f, 1f) to Color.Transparent,
+                    1f to Color.Transparent,
+                )
+            )
         }
     }
 }
