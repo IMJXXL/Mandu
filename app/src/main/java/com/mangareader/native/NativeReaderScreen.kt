@@ -157,6 +157,7 @@ fun NativeReaderScreen(
     var firstComposition by remember { mutableStateOf(true) }
     var containerRef by remember { mutableStateOf<FrameLayout?>(null) }
     var brightnessOverlayAlpha by remember { mutableStateOf(0f) }
+    var brightnessOverlayRef by remember { mutableStateOf<View?>(null) }
     var textureOverlayRef by remember { mutableStateOf<com.mangareader.filter.PaperTextureView?>(null) }
 
 
@@ -396,6 +397,13 @@ fun NativeReaderScreen(
         ) { alpha -> brightnessOverlayAlpha = alpha }
     }
 
+    SideEffect {
+        brightnessOverlayRef?.let { overlay ->
+            overlay.alpha = brightnessOverlayAlpha
+            overlay.visibility = if (brightnessOverlayAlpha > 0f) View.VISIBLE else View.GONE
+        }
+    }
+
     LaunchedEffect(textureEnabled, texturePresetId, textureAlpha, textureOverlayRef) {
         textureOverlayRef?.applyState(textureEnabled, texturePresetId, textureAlpha, ctx)
     }
@@ -431,6 +439,7 @@ fun NativeReaderScreen(
             container.addView(textureOverlay)
             container.addView(brightnessOverlay)
             textureOverlayRef = textureOverlay
+            brightnessOverlayRef = brightnessOverlay
             fun syncVis() {
                 webtoonView.visibility = if (isVertical) View.VISIBLE else View.GONE
                 pagerView.visibility = if (!isVertical && !effectiveUseCurl) View.VISIBLE else View.GONE

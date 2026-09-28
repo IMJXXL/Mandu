@@ -108,9 +108,11 @@ fun ShelfManageSettingsScreen(onBack: () -> Unit) {
                 Spacer(Modifier.width(8.dp))
                 Button(onClick = {
                     val name = newFieldName.trim()
+                    val standardTags = setOf("Series", "Number", "Volume", "Title", "Writer", "Penciller", "Summary", "Genre", "Publisher", "ComicInfo")
                     when {
                         name.isBlank() -> fieldError = "不能为空"
                         name in autoCatConfig.customFieldNames -> fieldError = "已存在"
+                        name in standardTags -> fieldError = "这是标准字段，用上方勾选框启用"
                         else -> {
                             autoCatConfig = autoCatConfig.copy(
                                 customFieldNames = autoCatConfig.customFieldNames + name,

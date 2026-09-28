@@ -546,8 +546,8 @@ interface MangaDao {
     @Query("UPDATE bookshelves SET isHidden = :hidden WHERE id = :id")
     suspend fun setBookshelfHidden(id: Long, hidden: Boolean)
 
-    @Query("UPDATE bookshelf_items SET bookshelfId = :targetId WHERE bookshelfId IN (:sourceIds) AND bookId NOT IN (SELECT bookId FROM bookshelf_items WHERE bookshelfId = :targetId)")
-    suspend fun moveItemsToShelf(targetId: Long, sourceIds: List<Long>)
+    @Query("SELECT DISTINCT bookId FROM bookshelf_items WHERE bookshelfId IN (:sourceIds) AND bookId NOT IN (SELECT bookId FROM bookshelf_items WHERE bookshelfId = :targetId)")
+    suspend fun getUniqueBookIdsFromShelves(sourceIds: List<Long>, targetId: Long): List<Long>
 
     @Query("DELETE FROM bookshelf_items WHERE bookshelfId IN (:sourceIds)")
     suspend fun deleteItemsInShelves(sourceIds: List<Long>)
@@ -559,8 +559,11 @@ interface MangaDao {
     suspend fun mergeBookshelves(targetId: Long, sourceIds: List<Long>) {
         val validSources = sourceIds.filter { it != targetId }
         if (validSources.isEmpty()) return
-        moveItemsToShelf(targetId, validSources)
+        val bookIds = getUniqueBookIdsFromShelves(validSources, targetId)
         deleteItemsInShelves(validSources)
+        for (bookId in bookIds) {
+            insertBookshelfItem(BookshelfItem(bookshelfId = targetId, bookId = bookId))
+        }
         deleteBookshelvesByIds(validSources)
     }
 
