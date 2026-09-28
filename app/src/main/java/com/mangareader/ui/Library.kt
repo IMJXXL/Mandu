@@ -196,6 +196,31 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
     var filter by remember {
         mutableStateOf(try { FilterMode.valueOf(prefs.getString("library_filter", FilterMode.ALL.name)!!) } catch (_: Exception) { FilterMode.ALL })
     }
+    // 标签筛选状态（design.md §三）：已选集合 + AND/OR + 最近5个，均持久化
+    var selectedTagIds by remember { mutableStateOf(prefs.getString("library_tag_ids", "")?.split(",")?.mapNotNull { it.toLongOrNull() }?.toSet() ?: emptySet()) }
+    var tagLogicAnd by remember { mutableStateOf(prefs.getBoolean("tag_filter_and", true)) }
+    var recentTagIds by remember { mutableStateOf(prefs.getString("library_recent_tag_ids", "")?.split(",")?.mapNotNull { it.toLongOrNull() } ?: emptyList()) }
+    var showTagPicker by remember { mutableStateOf(false) }
+    val tagsWithCounts by dao.getTagsWithCounts().collectAsState(initial = emptyList())
+
+    fun toggleLibraryTag(id: Long) {
+        val next = if (id in selectedTagIds) selectedTagIds - id else selectedTagIds + id
+        selectedTagIds = next
+        prefs.edit().putString("library_tag_ids", next.joinToString(",")).apply()
+        if (id in next) {
+            val r = (listOf(id) + (recentTagIds - id)).take(5)
+            recentTagIds = r
+            prefs.edit().putString("library_recent_tag_ids", r.joinToString(",")).apply()
+        }
+    }
+    fun removeLibraryTag(id: Long) {
+        selectedTagIds = selectedTagIds - id
+        prefs.edit().putString("library_tag_ids", selectedTagIds.joinToString(",")).apply()
+    }
+    fun clearLibraryTags() {
+        selectedTagIds = emptySet()
+        prefs.edit().putString("library_tag_ids", "").apply()
+    }
 
     val configuration = LocalConfiguration.current
     val isTablet = configuration.smallestScreenWidthDp >= 600
@@ -328,7 +353,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
         }
     }
 
-    LaunchedEffect(sort, sortAsc, debouncedQuery, filter, selectedShelfId) {
+    LaunchedEffect(sort, sortAsc, debouncedQuery, filter, selectedShelfId, selectedTagIds, tagLogicAnd) {
         val globalHide = ctx.getSharedPreferences("manga_reader", Context.MODE_PRIVATE).getBoolean("global_hide", false)
         if (globalHide) {
             books = emptyList()
@@ -348,19 +373,26 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                 SortMode.PROGRESS -> dao.getVisibleBooksByProgress()
             }
         }
-        flow.distinctUntilChanged().collect {
+        // 标签筛选（AND=HAVING COUNT 索引查询 / OR=IN），先取允许集再内存交集（spec.md §八）
+        val allowedTagBookIds: Set<Long>? = if (selectedTagIds.isEmpty()) null else withContext(Dispatchers.IO) {
+            val tagBooks = if (tagLogicAnd) dao.getBooksByTagsAnd(selectedTagIds.toList(), selectedTagIds.size)
+                else dao.getBooksByTagsOr(selectedTagIds.toList())
+            tagBooks.map { it.id }.toHashSet()
+        }
+        flow.distinctUntilChanged().collect { loaded ->
             // ★ 取证：书架数据加载完成（死亡若发生在 books 加载前后可由 stages 定位）
-            com.mangareader.DiagTracer.mark(ctx, "library: books loaded n=${it.size}")
-            val canAggregate = debouncedQuery.isEmpty() && selectedShelfId == null && filter == FilterMode.ALL
+            com.mangareader.DiagTracer.mark(ctx, "library: books loaded n=" + loaded.size)
+            val list = if (allowedTagBookIds != null) loaded.filter { it.id in allowedTagBookIds } else loaded
+            val canAggregate = debouncedQuery.isEmpty() && selectedShelfId == null && filter == FilterMode.ALL && selectedTagIds.isEmpty()
             if (canAggregate) {
-                val aggregated = withContext(Dispatchers.IO) { sortShelfItems(aggregateKomgaSeries(it), sort) }
-                books = it
+                val aggregated = withContext(Dispatchers.IO) { sortShelfItems(aggregateKomgaSeries(list), sort) }
+                books = list
                 shelfItems = if (sortAsc) aggregated.reversed() else aggregated
             } else {
                 val ordered = withContext(Dispatchers.IO) {
                     if (sort == SortMode.NAME) {
-                        it.sortedWith(Comparator { a, b -> naturalCompare(a.title, b.title) })
-                    } else it
+                        list.sortedWith(Comparator { a, b -> naturalCompare(a.title, b.title) })
+                    } else list
                 }
                 books = if (sortAsc) ordered.reversed() else ordered
                 shelfItems = null
@@ -379,6 +411,22 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                 }
             }) { Text("删除", color = MaterialTheme.colorScheme.error) } },
             dismissButton = { TextButton(onClick = { deleteTarget = null }) { Text("取消") } })
+    }
+
+    if (showTagPicker) {
+        TagPickerSheet(
+            visible = true,
+            allTags = tagsWithCounts,
+            selectedIds = selectedTagIds,
+            andLogic = tagLogicAnd,
+            onToggle = { toggleLibraryTag(it) },
+            onLogicChange = {
+                tagLogicAnd = it
+                prefs.edit().putBoolean("tag_filter_and", it).apply()
+            },
+            onClear = { clearLibraryTags() },
+            onDismiss = { showTagPicker = false },
+        )
     }
 
     if (showDeleteConfirm) {
@@ -863,17 +911,40 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                 Text("书架: $selectedShelfName", fontSize = 13.sp, color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp))
             }
+            TagFilterRow(
+                allTags = tagsWithCounts,
+                selectedIds = selectedTagIds,
+                recentIds = recentTagIds,
+                onToggle = { toggleLibraryTag(it) },
+                onRemove = { removeLibraryTag(it) },
+                onClear = { clearLibraryTags() },
+                onOpenPicker = { showTagPicker = true },
+            )
 
             if (books == null && shelfItems == null) {
                 Box(Modifier.fillMaxSize())
             } else if ((shelfItems ?: books!!.map { ShelfItem.Single(it) }).isEmpty()) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(Icons.Default.MenuBook, null, Modifier.size(72.dp), tint = MaterialTheme.colorScheme.outline)
-                        Spacer(Modifier.height(16.dp))
-                        Text("还没有漫画", style = MaterialTheme.typography.titleMedium)
-                        Spacer(Modifier.height(8.dp))
-                        Text("点击设置导入文件夹", style = MaterialTheme.typography.bodyMedium)
+                        if (selectedTagIds.isNotEmpty() || selectedShelfId != null || filter != FilterMode.ALL || debouncedQuery.isNotEmpty()) {
+                            Icon(Icons.Default.FilterAlt, null, Modifier.size(72.dp), tint = MaterialTheme.colorScheme.outline)
+                            Spacer(Modifier.height(16.dp))
+                            Text("没有满足筛选条件的漫画", style = MaterialTheme.typography.titleMedium)
+                            Spacer(Modifier.height(8.dp))
+                            TextButton(onClick = {
+                                clearLibraryTags()
+                                selectedShelfId = null; selectedShelfName = ""
+                                filter = FilterMode.ALL
+                                prefs.edit().putString("library_filter", FilterMode.ALL.name).apply()
+                                searchQuery = ""
+                            }) { Text("清除全部筛选") }
+                        } else {
+                            Icon(Icons.Default.MenuBook, null, Modifier.size(72.dp), tint = MaterialTheme.colorScheme.outline)
+                            Spacer(Modifier.height(16.dp))
+                            Text("还没有漫画", style = MaterialTheme.typography.titleMedium)
+                            Spacer(Modifier.height(8.dp))
+                            Text("点击设置导入文件夹", style = MaterialTheme.typography.bodyMedium)
+                        }
                     }
                 }
             } else {
