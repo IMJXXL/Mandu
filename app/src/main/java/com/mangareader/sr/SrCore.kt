@@ -105,6 +105,7 @@ object SrCore {
                 hadNativeCrash = true
                 manager.forceCpu = true
                 Log.w(TAG, "native crash detected last session → force CPU mode")
+                runCatching { com.mangareader.DiagTracer.markStatic("enhance: safe mode (previous session abnormal)") }
                 // 清标记，别把这次正常会话也算成崩溃
                 crashPrefs.edit().putBoolean("sr_native_inflight", false).commit()
             }

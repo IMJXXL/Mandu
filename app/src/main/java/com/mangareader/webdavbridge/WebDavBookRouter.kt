@@ -75,6 +75,9 @@ object WebDavBookRouter {
             throw IllegalStateException("该归档需要密码（当前未配置归档密码）")
         }
         val adapter = WebDavPageAdapter()
+        // ★ 远端开书计时（诊断日志取证：epub/zip 打开时快时慢）
+        val openStartMs = android.os.SystemClock.uptimeMillis()
+        runCatching { com.mangareader.DiagTracer.markStatic("remote: open ${ref.ext} begin") }
         val sessionScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         sessionScope.launch {
             try {
@@ -111,9 +114,11 @@ object WebDavBookRouter {
         }
         try {
             val loader = withTimeout(OPEN_TIMEOUT_MS) { adapter.awaitReady() }
+            runCatching { com.mangareader.DiagTracer.markStatic("remote: open ok ${(android.os.SystemClock.uptimeMillis() - openStartMs)}ms") }
             OpenResult.Supported(loader, adapter.source, adapter)
         } catch (e: TimeoutCancellationException) {
             adapter.close()
+            runCatching { com.mangareader.DiagTracer.markStatic("remote: open timeout ${(android.os.SystemClock.uptimeMillis() - openStartMs)}ms") }
             OpenResult.Failed("无法连接服务器：打开超时")
         } catch (t: Throwable) {
             adapter.close()

@@ -693,7 +693,17 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     }
 
     fun setCenterGapType(type: Int) {
+        val changed = this.centerGapType != type
         this.centerGapType = type
+        // ★ 实时生效：gapPx 在 onBind 现合并时读取，双页模式下重绑当前窗口即可
+        if (changed && doublePageMode) pagerAdapter?.notifyDataSetChanged()
+    }
+
+    /** 侧边留白实时生效：margin 在 onCreateViewHolder 定死，变化需重建条目（var 属性 setter 冲突故改名 apply） */
+    fun applyImageMarginH(marginDp: Int) {
+        val changed = this.imageMarginH != marginDp
+        this.imageMarginH = marginDp
+        if (changed) pagerAdapter?.notifyDataSetChanged()
     }
 
     fun setLandscapeZoom(enabled: Boolean) {

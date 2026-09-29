@@ -28,4 +28,22 @@ object DiagTracer {
             }
         } catch (_: Throwable) {}
     }
+
+    /** 无 Context 场景（底层模块诊断）：App.onCreate 时注入 filesDir */
+    @Volatile
+    private var appFilesDir: File? = null
+
+    fun bindFilesDir(dir: File) { appFilesDir = dir }
+
+    fun markStatic(stage: String) {
+        val dir = appFilesDir ?: return
+        try {
+            synchronized(lock) {
+                val wall = java.text.SimpleDateFormat("HH:mm:ss.SSS", java.util.Locale.getDefault())
+                    .format(java.util.Date())
+                val line = "[$wall uptime=${SystemClock.elapsedRealtime()}ms] $stage"
+                File(dir, STAGES).appendText(line + "\n")
+            }
+        } catch (_: Throwable) {}
+    }
 }
