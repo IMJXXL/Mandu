@@ -991,7 +991,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                 val focusReq = remember { FocusRequester() }
                 LaunchedEffect(Unit) { focusReq.requestFocus() }
                 Column {
-                    OutlinedTextField(value = q, onValueChange = { q = it; searchQuery = it }, label = { Text("搜索书名、作者…") },
+                    OutlinedTextField(value = q, onValueChange = { q = it; searchQuery = it }, label = { Text("搜索书名、标签…") },
                         leadingIcon = { Icon(Icons.Default.Search, null) },
                         trailingIcon = {
                             if (q.isNotEmpty()) {
