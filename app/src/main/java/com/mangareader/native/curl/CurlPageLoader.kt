@@ -67,7 +67,7 @@ class CurlPageLoader(
             try {
                 val srHit = com.mangareader.sr.SrPipeline.attachOrScheduleFast(idx, cached)
                 if (srHit != null && !srHit.isRecycled && srHit !== cached) {
-                    cache.put(idx, srHit)
+                    cache.put(idx, com.mangareader.filter.PaperPageTexture.apply(srHit))
                     onLoaded(idx)
                 }
             } catch (_: Exception) {}
@@ -113,6 +113,8 @@ class CurlPageLoader(
                     if (einkDither && !bmp.isRecycled) {
                         try { bmp = bmp.applyEinkDither(einkDitherAlgorithm, einkDitherLevels, einkEndpointPassthrough) } catch (_: Exception) {}
                     }
+                    // ★ 纸张纹理烘焙：管线末端、入缓存前（纸随页翻动，替代旧屏幕覆盖层）
+                    bmp = com.mangareader.filter.PaperPageTexture.apply(bmp)
                     cache.put(idx, bmp)
                     withContext(Dispatchers.Main) { onLoaded(idx) }
                 } else {
@@ -147,6 +149,8 @@ class CurlPageLoader(
                         if (einkDither && !bmp.isRecycled) {
                             try { bmp = bmp.applyEinkDither(einkDitherAlgorithm, einkDitherLevels, einkEndpointPassthrough) } catch (_: Exception) {}
                         }
+                        // ★ 纸张纹理烘焙：管线末端、入缓存前
+                        bmp = com.mangareader.filter.PaperPageTexture.apply(bmp)
                         cache.put(idx, bmp)
                         withContext(Dispatchers.Main) { onLoaded(idx) }
                     }

@@ -86,10 +86,7 @@ data class ReaderConfig(
     val textureEnabled: Boolean = false,
     val texturePresetId: Int = 0,
     val textureAlpha: Int = 15,
-    val textureConcentration: Int = 100,
-    // 正片叠底合成（像真书）：默认开。旧版存于 manga_reader prefs 的 texture_multiply(默认关)，
-    // 移入 ReaderConfig 后旧键作废——新默认即修复后的正确路径
-    val textureMultiply: Boolean = true
+    val textureConcentration: Int = 100
 ) {
     enum class ScrollMode { VERTICAL, HORIZONTAL_LEFT, HORIZONTAL_RIGHT }
     @Deprecated("Dead code - navigation uses Int field navigationMode instead") enum class ClickFlipType { NO, LEFT_RIGHT, DIAGONAL_LB_RT, DIAGONAL_LT_RB }
@@ -170,7 +167,6 @@ data class ReaderConfig(
             putInt("${prefix}texturePresetId", texturePresetId)
             putInt("${prefix}textureAlpha", textureAlpha)
             putInt("${prefix}textureConcentration", textureConcentration)
-            putBoolean("${prefix}textureMultiply", textureMultiply)
             apply()
         }
     }
@@ -246,7 +242,6 @@ data class ReaderConfig(
                 texturePresetId = prefs.safeGetInt("${prefix}texturePresetId", 0),
                 textureAlpha = prefs.safeGetInt("${prefix}textureAlpha", 15).coerceIn(0, 40),
                 textureConcentration = prefs.safeGetInt("${prefix}textureConcentration", 100).coerceIn(0, 100),
-                textureMultiply = prefs.safeGetBoolean("${prefix}textureMultiply", true),
                 downsampleTier = if (prefs.contains("downsampleTier")) {
                     try { DownsampleTier.valueOf(prefs.getString("downsampleTier", "STANDARD")!!) } catch (_: Exception) { DownsampleTier.STANDARD }
                 } else if (prefs.safeGetBoolean("forceFullDecode", false)) DownsampleTier.ORIGINAL else DownsampleTier.STANDARD

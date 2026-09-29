@@ -122,6 +122,13 @@ class CurlReaderView(context: Context) : FrameLayout(context), ReaderViewDelegat
         loader.preloadAround(currentPage, pageList.size) { reloadTrigger.intValue++ }
     }
 
+    /** ★ 纸张纹理即时生效：全局 PaperPageTexture 已由 NES 先行更新（含升代），清缓存重载 */
+    fun applyPaperTextureNow() {
+        cache.clear()
+        reloadTrigger.intValue++
+        loader.preloadAround(currentPage, pageList.size) { reloadTrigger.intValue++ }
+    }
+
     fun setPanNavigation(pan: Boolean) {
     }
 

@@ -53,6 +53,24 @@ class ConfigManager(private val context: Context) {
             put("chapterTransition", config.chapterTransition)
             put("centerGapType", config.centerGapType)
             put("forceFullDecode", config.forceFullDecode)
+            // 滤镜/阅读区组（此前缺失：切换配置方案会把滤镜与亮度等重置为默认）
+            put("brightness", config.brightness)
+            put("screenBrightness", config.screenBrightness)
+            put("contrast", config.contrast)
+            put("gamma", config.gamma)
+            put("brightnessEnabled", config.brightnessEnabled)
+            put("screenBrightnessEnabled", config.screenBrightnessEnabled)
+            put("contrastEnabled", config.contrastEnabled)
+            put("gammaEnabled", config.gammaEnabled)
+            put("textureEnabled", config.textureEnabled)
+            put("texturePresetId", config.texturePresetId)
+            put("textureAlpha", config.textureAlpha)
+            put("textureConcentration", config.textureConcentration)
+            put("fitScreen", config.fitScreen)
+            put("seamlessNextVolume", config.seamlessNextVolume)
+            put("tileModeEnabled", config.tileModeEnabled)
+            put("tallSplitEnabled", config.tallSplitEnabled)
+            put("downsampleTier", config.downsampleTier.name)
         }
         prefs.edit().putString("config_$name", json.toString()).apply()
     }
@@ -103,7 +121,25 @@ class ConfigManager(private val context: Context) {
                 autoWebtoon = json.optBoolean("autoWebtoon", true),
                 chapterTransition = json.optBoolean("chapterTransition", true),
                 centerGapType = json.optInt("centerGapType", 0),
-                forceFullDecode = json.optBoolean("forceFullDecode", false)
+                forceFullDecode = json.optBoolean("forceFullDecode", false),
+                // 滤镜/阅读区组（与 save 镜像）
+                brightness = json.optInt("brightness", 0),
+                screenBrightness = json.optInt("screenBrightness", 0),
+                contrast = json.optInt("contrast", 100),
+                gamma = json.optInt("gamma", 100),
+                brightnessEnabled = json.optBoolean("brightnessEnabled", false),
+                screenBrightnessEnabled = json.optBoolean("screenBrightnessEnabled", false),
+                contrastEnabled = json.optBoolean("contrastEnabled", false),
+                gammaEnabled = json.optBoolean("gammaEnabled", false),
+                textureEnabled = json.optBoolean("textureEnabled", false),
+                texturePresetId = json.optInt("texturePresetId", 0),
+                textureAlpha = json.optInt("textureAlpha", 15),
+                textureConcentration = json.optInt("textureConcentration", 100),
+                fitScreen = json.optBoolean("fitScreen", false),
+                seamlessNextVolume = json.optBoolean("seamlessNextVolume", true),
+                tileModeEnabled = json.optBoolean("tileModeEnabled", false),
+                tallSplitEnabled = json.optBoolean("tallSplitEnabled", true),
+                downsampleTier = try { ReaderConfig.DownsampleTier.valueOf(json.getString("downsampleTier")) } catch (_: Exception) { ReaderConfig.DownsampleTier.STANDARD }
             )
         } catch (_: Exception) { null }
     }

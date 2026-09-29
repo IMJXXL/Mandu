@@ -426,22 +426,15 @@ private fun FilterTab(config: ReaderConfig, onConfigChange: (ReaderConfig) -> Un
                 )
             }
         }
-        if (config.textureMultiply) {
-            // 正片叠底下纹理以全强度乘进页面，浓度=纸纹调制深度；透明度滑条此时无意义不显示
-            SliderItem("纸感浓度（默认100%=真实纸感）", config.textureConcentration.toFloat(), 0f..100f, 99, "${config.textureConcentration}%") {
-                onConfigChange(config.copy(textureConcentration = it.toInt()))
-            }
-        } else {
-            SliderItem("透明度（默认15%）", config.textureAlpha.toFloat(), 0f..40f, 39, "${config.textureAlpha}%") {
-                onConfigChange(config.copy(textureAlpha = it.toInt()))
-            }
-            SliderItem("浓度（默认100%）", config.textureConcentration.toFloat(), 0f..100f, 99, "${config.textureConcentration}%") {
-                onConfigChange(config.copy(textureConcentration = it.toInt()))
-            }
+        // 纹理烘焙进页面位图（纸随页翻动/缩放、只作用于实际画面，墨色纯黑），浓度=纸纹深浅
+        SliderItem("纸感浓度（默认100%=真实纸感）", config.textureConcentration.toFloat(), 0f..100f, 99, "${config.textureConcentration}%") {
+            onConfigChange(config.copy(textureConcentration = it.toInt()))
         }
-        CheckboxItem("正片叠底合成（墨色不被纸纹洗灰·推荐）", config.textureMultiply) {
-            onConfigChange(config.copy(textureMultiply = it))
-        }
+        Text(
+            "纸纹随页面翻动缩放，仅作用于画面本身；动图页与瓦片模式不生效",
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f), fontSize = 11.sp,
+            modifier = Modifier.padding(start = 4.dp, bottom = 4.dp)
+        )
     }
     if (config.isEinkMode) {
         CheckboxItem("灰阶抖动（让墨水屏显示更多灰阶层次）", config.isEinkDither) { onConfigChange(config.copy(isEinkDither = it)) }

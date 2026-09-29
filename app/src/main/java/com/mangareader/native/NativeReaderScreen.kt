@@ -139,9 +139,7 @@ fun NativeReaderScreen(
     gamma: Int = 100,
     textureEnabled: Boolean = false,
     texturePresetId: Int = 0,
-    textureAlpha: Int = 15,
     textureConcentration: Int = 100,
-    textureMultiply: Boolean = true,
     /** ★ SMB/WebDAV 页面供给（design.md 2.2.2）：非 null 时阅读页面走远程会话。
      *   以参数形式在 setup() 之前注入 delegate，消除"setup 早于供给挂接"的竞态窗口。 */
     remoteSupply: com.mangareader.native.RemotePageSupply? = null,
@@ -160,8 +158,6 @@ fun NativeReaderScreen(
     var containerRef by remember { mutableStateOf<FrameLayout?>(null) }
     var brightnessOverlayAlpha by remember { mutableStateOf(0f) }
     var brightnessOverlayRef by remember { mutableStateOf<View?>(null) }
-    var textureOverlayRef by remember { mutableStateOf<com.mangareader.filter.PaperTextureView?>(null) }
-
 
     val webtoonView = remember { WebtoonReaderView(ctx).apply { layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT) } }
     val pagerView = remember { PagerReaderView(ctx).apply { layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT) } }
@@ -253,6 +249,9 @@ fun NativeReaderScreen(
         if (delegate is WebtoonReaderView) delegate.setTileModeEnabled(tileModeEnabled)
         if (delegate is com.mangareader.native.curl.CurlReaderView) delegate.remotePageSupply = remoteSupply
         if (delegate is com.mangareader.native.curl.CurlDoublePageView) delegate.remotePageSupply = remoteSupply
+        // ★ 纸张纹理：全局烘焙设置必须在 setup 前同步——setup 内 preloadAround 立刻开始解码，
+        //   晚了首页就会以无纹理位图入缓存（appliedTexture SideEffect 只管运行时变化）
+        com.mangareader.filter.PaperPageTexture.sync(ctx, textureEnabled, texturePresetId, textureConcentration)
         // ★ §34.3：verticalPager 传给 pagerView.setup（webtoon 走默认 false 无影响）
         delegate.setup(engine, treePath, pages, savedPage, isVertical, 0, isRtl, verticalPager)
         // Apply new config parameters to the delegate
@@ -406,13 +405,23 @@ fun NativeReaderScreen(
         }
     }
 
-    LaunchedEffect(textureEnabled, texturePresetId, textureAlpha, textureConcentration, textureMultiply, textureOverlayRef) {
-        textureOverlayRef?.applyState(textureEnabled, texturePresetId, textureAlpha, textureConcentration, textureMultiply, ctx)
-        // 正片叠底需要容器硬件层：子视图 Xfermode 才能对已绘页面内容做乘法（全版本通用）
-        containerRef?.setLayerType(
-            if (textureEnabled && textureMultiply) View.LAYER_TYPE_HARDWARE else View.LAYER_TYPE_NONE,
-            null
-        )
+    // ★ 纸张纹理烘焙通道：全局 PaperPageTexture 设置运行时变化（阅读内面板拖动）→ 同步设置
+    //  （内部升代，旧位图视为未贴）+ 当前 delegate 清缓存按需重载。首组合同步在上方
+    //   DisposableEffect setup 里做；remember 初值取当前参数避免与 setup 重复触发（eink 同款）
+    var appliedTexture by remember { mutableStateOf(listOf(textureEnabled, texturePresetId, textureConcentration)) }
+    SideEffect {
+        val cur = listOf(textureEnabled, texturePresetId, textureConcentration)
+        if (appliedTexture != cur) {
+            appliedTexture = cur
+            com.mangareader.filter.PaperPageTexture.sync(ctx, textureEnabled, texturePresetId, textureConcentration)
+            when (val d = activeDelegate(isVertical)) {
+                is WebtoonReaderView -> d.applyPaperTextureNow()
+                is PagerReaderView -> d.applyPaperTextureNow()
+                is com.mangareader.native.curl.CurlReaderView -> d.applyPaperTextureNow()
+                is com.mangareader.native.curl.CurlDoublePageView -> d.applyPaperTextureNow()
+                else -> {}
+            }
+        }
     }
 
     DisposableEffect(Unit) {
@@ -440,13 +449,7 @@ fun NativeReaderScreen(
                 alpha = 0f
                 visibility = View.GONE
             }
-            val textureOverlay = com.mangareader.filter.PaperTextureView(ctx).apply {
-                layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-                visibility = View.GONE
-            }
-            container.addView(textureOverlay)
             container.addView(brightnessOverlay)
-            textureOverlayRef = textureOverlay
             brightnessOverlayRef = brightnessOverlay
             fun syncVis() {
                 webtoonView.visibility = if (isVertical) View.VISIBLE else View.GONE
@@ -465,7 +468,6 @@ fun NativeReaderScreen(
             pagerView.visibility = if (!isVertical && !effectiveUseCurl) View.VISIBLE else View.GONE
             curlReaderView.visibility = if (!isVertical && effectiveUseCurl && pageLayout == 0) View.VISIBLE else View.GONE
             curlDoublePageView.visibility = if (!isVertical && effectiveUseCurl && pageLayout != 0) View.VISIBLE else View.GONE
-            textureOverlayRef?.applyState(textureEnabled, texturePresetId, textureAlpha, textureConcentration, textureMultiply, ctx)
         },
         modifier = modifier
     )

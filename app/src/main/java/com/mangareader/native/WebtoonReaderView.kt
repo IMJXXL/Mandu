@@ -326,6 +326,12 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
         synchronized(bitmapCache) { bitmapCache.evictAll() }
         adapter?.notifyDataSetChanged()
     }
+
+    /** ★ 纸张纹理即时生效：全局 PaperPageTexture 已由 NES 先行更新（含升代），清缓存+notify 触发可见项重绑按需重载 */
+    fun applyPaperTextureNow() {
+        synchronized(bitmapCache) { bitmapCache.evictAll() }
+        adapter?.notifyDataSetChanged()
+    }
     var gapEnabled: Boolean = false
         set(value) {
             field = value
@@ -648,6 +654,8 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
         if (einkDither && !bmp.isRecycled) {
             try { bmp = bmp.applyEinkDither(einkDitherAlgorithm, einkDitherLevels, einkEndpointPassthrough) } catch (_: Exception) {}
         }
+        // ★ 纸张纹理烘焙：SR 源图未贴纹理，注入缓存前补贴
+        bmp = com.mangareader.filter.PaperPageTexture.apply(bmp)
         synchronized(bitmapCache) { bitmapCache.put(pageIndex, bmp) }
         android.util.Log.i("WebtoonRV", "srInject p=$pageIndex bmp=${bmp.width}x${bmp.height}")
         recycler.post {
@@ -708,7 +716,7 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
                 // ★ F4.6：UI 绑定走 Fast 入口——磁盘命中不解码，交给 pollForResult 异步回填
                 val srHit = com.mangareader.sr.SrPipeline.attachOrScheduleFast(idx, cached)
                 if (srHit != null && !srHit.isRecycled && srHit !== cached) {
-                    synchronized(bitmapCache) { bitmapCache.put(idx, srHit) }
+                    synchronized(bitmapCache) { bitmapCache.put(idx, com.mangareader.filter.PaperPageTexture.apply(srHit)) }
                     recycler.post { adapter?.notifyItemChanged(idx, "ld") }
                 }
             } catch (_: Exception) {}
@@ -734,7 +742,8 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
                 val sharedKey = engine?.getPdfSharedKey(treePath, meta.index)
                 if (sharedKey != null) {
                     engine?.getCachedBitmap(sharedKey)?.let { bmp ->
-                        synchronized(bitmapCache) { bitmapCache.put(idx, bmp) }
+                        // 版本戳防重：共享位图可能已贴纹（代数不匹配才会再贴）
+                        synchronized(bitmapCache) { bitmapCache.put(idx, com.mangareader.filter.PaperPageTexture.apply(bmp)) }
                         onResult?.invoke(bmp)
                         return
                     }
@@ -791,6 +800,8 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
                         com.mangareader.sr.SrPipeline.pollForResult(idx) { b -> injectUpscaledBitmap(idx, b) }
                     }
                 } catch (_: Exception) {}
+                // ★ 纸张纹理烘焙：管线末端、入缓存前（纸随滚动/缩放，替代旧屏幕覆盖层）
+                processed = com.mangareader.filter.PaperPageTexture.apply(processed)
                 synchronized(bitmapCache) { bitmapCache.put(idx, processed) }
                 // ★ 白屏工单任务1：补 webtoon 成功路径观测（与 pager 对齐，消除盲区）
                 ArchiveEngine.d("WebtoonRV", "loaded idx=$idx bmp=${processed.width}x${processed.height}")

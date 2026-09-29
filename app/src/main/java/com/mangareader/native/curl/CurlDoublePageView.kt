@@ -130,6 +130,13 @@ class CurlDoublePageView(context: Context) : FrameLayout(context), ReaderViewDel
         preloadSpread(currentPage)
     }
 
+    /** ★ 纸张纹理即时生效：全局 PaperPageTexture 已由 NES 先行更新（含升代），清缓存重载当前 spread */
+    fun applyPaperTextureNow() {
+        cache.clear()
+        reloadTrigger.intValue++
+        preloadSpread(currentPage)
+    }
+
     fun setPanNavigation(pan: Boolean) {
     }
 

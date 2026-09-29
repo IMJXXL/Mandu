@@ -7,7 +7,8 @@ A. 滑擦（0~150ms）：纸面掠过空气/邻页的宽带摩擦，频带中心
    带随机调幅（纤维束断续擦过）——"沙沙"主体
 B. 碎裂（30~230ms）：十几个微瞬态，纤维粘合面剥离的"咔嚓"点，随机散布
 C. 落纸（190~300ms）：纸拍落到书面的低频闷响 + 短促余擦——"啪嗒"落地感
-输出：app/src/main/assets/sounds/page_flip.wav（44.1k 单声道 16bit，约 0.32s）
+输出：tools/sndtmp/page_flip_synth.wav（合成备胎——正式资产已改用 CC0 真实录音，
+见 tools/sndtmp/provenance.txt；重跑本脚本不会覆盖 assets 里的真录音）
 """
 import os
 import wave
@@ -16,7 +17,7 @@ import numpy as np
 SR = 44100
 T = 0.32
 N = int(SR * T)
-OUT = os.path.join(os.path.dirname(__file__), "..", "app", "src", "main", "assets", "sounds", "page_flip.wav")
+OUT = os.path.join(os.path.dirname(__file__), "sndtmp", "page_flip_synth.wav")
 
 
 def bandpass(x, lo, hi):

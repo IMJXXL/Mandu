@@ -95,6 +95,16 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         }
     }
 
+    /** ★ 纸张纹理即时生效：全局 PaperPageTexture 已由 NES 先行更新（含升代），此处全缓存
+     *  失效 + 当前±窗口重载，其余页滑到时 cache miss 按新纹理解码（eink 抖动同款无白屏策略） */
+    fun applyPaperTextureNow() {
+        bitmapCache.evictAll()
+        val cur = currentPage
+        (cur - 2..cur + 5).forEach {
+            if (it in pageList.indices) { inflightLoads.remove(it); loadPageAsync(it) }
+        }
+    }
+
     private var pageLayoutMode = 0 // 0=SINGLE, 1=DOUBLE, 2=AUTO
     var pageBgColor: Int = android.graphics.Color.parseColor("#FFFFFF")
     var imageMarginH: Int = 0
@@ -736,7 +746,8 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     /** 注入放大后的 bitmap 到缓存并刷新当前页显示 */
     fun injectUpscaledBitmap(pageIndex: Int, bitmap: Bitmap) {
         // 不主动回收旧bitmap，让GC自然处理（避免ViewHolder还在使用时被回收导致黑屏）
-        bitmapCache.put(pageIndex, bitmap)
+        // ★ 超分结果异步回填：SR 源图未贴纹理，注入缓存前补贴
+        bitmapCache.put(pageIndex, com.mangareader.filter.PaperPageTexture.apply(bitmap))
         val pos = positionOf(pageIndex)
         android.util.Log.i("PagerView", "srInject p=$pageIndex pos=$pos bmp=${bitmap.width}x${bitmap.height}")
         if (pos >= 0 && pos < pageList.size) {
@@ -921,7 +932,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             try {
                 val srHit = com.mangareader.sr.SrPipeline.attachOrScheduleFast(idx, cached)
                 if (srHit != null && !srHit.isRecycled && srHit !== cached) {
-                    bitmapCache.put(idx, srHit)
+                    bitmapCache.put(idx, com.mangareader.filter.PaperPageTexture.apply(srHit))
                     val pos = if (isRtl) pageList.size - 1 - idx else idx
                     if (pos >= 0 && pos < pageList.size) pagerAdapter?.notifyItemChanged(pos, "loaded")
                 }
@@ -1039,6 +1050,8 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 if (einkDither && !bmp.isRecycled) {
                     try { bmp = bmp.applyEinkDither(einkDitherAlgorithm, einkDitherLevels, einkEndpointPassthrough) } catch (_: Exception) {}
                 }
+                // ★ 纸张纹理烘焙：管线末端、入缓存前（纸随页翻动，替代旧屏幕覆盖层）
+                bmp = com.mangareader.filter.PaperPageTexture.apply(bmp)
                 bitmapCache.put(idx, bmp)
                 withContext(Dispatchers.Main) {
                     val adapterPos = positionOf(idx)
@@ -1099,6 +1112,8 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 if (einkDither && !bmp.isRecycled) {
                     try { bmp = bmp.applyEinkDither(einkDitherAlgorithm, einkDitherLevels, einkEndpointPassthrough) } catch (_: Exception) {}
                 }
+                // ★ 纸张纹理烘焙：管线末端、入缓存前
+                bmp = com.mangareader.filter.PaperPageTexture.apply(bmp)
                 bitmapCache.put(idx, bmp)
                 withContext(Dispatchers.Main) {
                     val adapterPos = positionOf(idx)

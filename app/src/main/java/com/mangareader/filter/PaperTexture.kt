@@ -59,4 +59,18 @@ object PaperTexture {
     }
 
     fun peek(presetId: Int): Bitmap? = synchronized(cache) { cache[presetId] }
+
+    /** 解码管线同步加载（后台 IO 线程调用；与异步 load 共用缓存，竞态最多重复解码一次） */
+    fun loadSync(context: Context, presetId: Int): Bitmap? {
+        val id = presetId.coerceIn(0, PRESETS.size - 1)
+        synchronized(cache) { cache[id]?.let { return it } }
+        val bitmap = try {
+            BitmapFactory.decodeStream(context.assets.open(PRESETS[id].first))
+        } catch (e: Exception) {
+            Log.e("PaperTexture", "decode failed: ${PRESETS[id].first}", e)
+            null
+        }
+        if (bitmap != null) synchronized(cache) { cache[id] = bitmap }
+        return bitmap
+    }
 }

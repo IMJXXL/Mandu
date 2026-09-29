@@ -1,0 +1,5 @@
+翻页纸声来源（CC0，无署名要求）：
+  freesound.org/sounds/630019/  "Singular Page Turn" by Flem0527 — Creative Commons 0
+  处理：掐头去尾留 0.43s 有声段、峰值归一 0.5、8ms 淡入 90ms 淡出、44.1kHz 单声道 16bit
+  备选未用：freesound.org/sounds/382651/ "Paper Page Turn" by bbrocer (CC0, 连续翻页)
+  下载日期：2026-09-29。gen_page_flip_sound.py 为合成备胎，输出只写 sndtmp 不再覆盖资产。
