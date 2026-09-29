@@ -380,6 +380,12 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         override fun sizeOf(key: Int, value: Bitmap): Int = 1
     }
 
+    // ★ 双页合并产物缓存：64MB 上限（全屏 ARGB_8888 约 3-6 张），重绑零重复分配。
+    //   按字节计重（非 recycle 策略同 bitmapCache，byteCount 恒定无失配风险）
+    private val mergedCache = object : androidx.collection.LruCache<String, Bitmap>(64 * 1024 * 1024) {
+        override fun sizeOf(key: String, value: Bitmap) = value.byteCount
+    }
+
     // ★ ⑧ 最小修复辅助：clear 缓存。
     //   ★ v102 关键修复：不再 recycle——v101 起 SMB 图片 decode 到 bitmapCache 的 Bitmap 会通过
     //   SSIV.setImage(ImageSource.bitmap(bmp)) 交给 SSIV 渲染，SSIV/RenderThread 异步持有该 Bitmap
@@ -1449,15 +1455,27 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 val rightBmp = if (rightIdx in 0 until pageList.size) bitmapCache[rightIdx] else null
                 if (leftBmp != null && !leftBmp.isRecycled) {
                     try {
-                        val mergeStart = android.os.SystemClock.uptimeMillis()
-                        val merged = if (rightBmp != null && !rightBmp.isRecycled) {
-                            if (doublePageReverseEnabled) mergeBitmaps(rightBmp, leftBmp, gapPx)
-                            else mergeBitmaps(leftBmp, rightBmp, gapPx)
-                        } else leftBmp
-                        // ★ 双页合并计时：切双页"要加载一下"取证（解码走 pageDecode，此处只记拼接）；
-                        //   仅 >50ms 落盘，普通 bind 不写 IO
-                        val mergeCost = android.os.SystemClock.uptimeMillis() - mergeStart
-                        if (mergeCost > 50) runCatching { com.mangareader.DiagTracer.markStatic("merge ${mergeCost}ms") }
+                        // ★ 合并位图缓存：key 掺左右位图对象 hash——页重解码/超分替换/纹理重烘
+                        //   会换对象自动 miss 重拼，无需失效逻辑；evict 不 recycle（GC 回收，同 bitmapCache 策略）
+                        val cacheKey = "l$leftIdx@${System.identityHashCode(leftBmp)}" +
+                                "r$rightIdx@${rightBmp?.let { System.identityHashCode(it) } ?: -1}" +
+                                "g$gapPx rev$doublePageReverseEnabled"
+                        val cachedMerge = mergedCache.get(cacheKey)
+                        val merged = if (cachedMerge != null && !cachedMerge.isRecycled) {
+                            cachedMerge
+                        } else {
+                            val mergeStart = android.os.SystemClock.uptimeMillis()
+                            val fresh = if (rightBmp != null && !rightBmp.isRecycled) {
+                                if (doublePageReverseEnabled) mergeBitmaps(rightBmp, leftBmp, gapPx)
+                                else mergeBitmaps(leftBmp, rightBmp, gapPx)
+                            } else leftBmp
+                            // ★ 双页合并计时：切双页"要加载一下"取证（解码走 pageDecode，此处只记拼接）；
+                            //   仅 >50ms 落盘，普通 bind 不写 IO
+                            val mergeCost = android.os.SystemClock.uptimeMillis() - mergeStart
+                            if (mergeCost > 50) runCatching { com.mangareader.DiagTracer.markStatic("merge ${mergeCost}ms") }
+                            if (fresh !== leftBmp && fresh !== rightBmp) mergedCache.put(cacheKey, fresh)
+                            fresh
+                        }
                         holder.setImage(merged, useSSIV, landscapeZoomEnabled, fitWidth = true)
                     } catch (_: OutOfMemoryError) {
                         holder.setImage(leftBmp, useSSIV, landscapeZoomEnabled, fitWidth = true)

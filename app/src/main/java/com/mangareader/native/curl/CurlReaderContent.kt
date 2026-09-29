@@ -107,7 +107,7 @@ fun CurlReaderContent(
         backward = PageCurlConfig.TargetTapInteraction.Config(target = leftHalf),
     )
 
-    val config = remember(pageBgColor) {
+    val config = remember {
         PageCurlConfig(
             backPageColor = Color(pageBgColor),
             backPageContentAlpha = backContentAlpha,
@@ -156,13 +156,16 @@ fun CurlReaderContent(
         val bg = Color(pageBgColor)
         val dark = (0.299f * bg.red + 0.587f * bg.green + 0.114f * bg.blue) < 0.5f
         // ★ 纸背：主线程仅缓存快查；未命中后台烘焙回填（首帧短暂无纸背，随后浮现）
-        val backBitmap = remember(paperBackPresetId, constraints.maxWidth, constraints.maxHeight) {
+        val backBitmap = remember(paperBackPresetId, dark, constraints.maxWidth, constraints.maxHeight) {
             if (paperBackPresetId < 0) null
             else runCatching {
                 com.mangareader.filter.PaperBackTexture.peek(paperBackPresetId, constraints.maxWidth, constraints.maxHeight, dark)
             }.getOrNull()
         }
-        LaunchedEffect(paperBackPresetId, constraints.maxWidth, constraints.maxHeight) {
+        LaunchedEffect(pageBgColor) {
+            config.backPageColor = Color(pageBgColor)
+        }
+        LaunchedEffect(paperBackPresetId, dark, constraints.maxWidth, constraints.maxHeight) {
             if (paperBackPresetId >= 0 && backBitmap == null) {
                 val w = constraints.maxWidth; val h = constraints.maxHeight
                 val baked = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {

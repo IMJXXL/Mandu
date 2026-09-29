@@ -103,6 +103,9 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     var config by remember { mutableStateOf(com.mangareader.data.ReaderConfig.load(ctx, bookId)) }
     var configVersion by remember { mutableIntStateOf(0) }
     var lastPageCbMarkMs by remember { mutableLongStateOf(0L) }
+    // ★ 本地打开耗时锚点（remote 链有 remote: open 系列，本地链补齐）
+    var localOpenStartMs by remember { mutableLongStateOf(0L) }
+    var localOpenMarked by remember { mutableStateOf(false) }
 
 
     // 监听 SharedPreferences 外部修改，自动触发 config 重读
@@ -582,6 +585,11 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         cur = (if (targetPage >= 0) targetPage else lastPage).coerceIn(0, (pages.size - 1).coerceAtLeast(0))
         viewing = true
         loading = false
+        // ★ 本地打开锚点 ok：点开→首页可看整链路
+        if (localOpenStartMs > 0L && !localOpenMarked) {
+            localOpenMarked = true
+            runCatching { com.mangareader.DiagTracer.markStatic("local: open ok ${android.os.SystemClock.uptimeMillis() - localOpenStartMs}ms") }
+        }
         return pages
     }
     /**
@@ -1828,6 +1836,13 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             val loadedBook = withContext(Dispatchers.IO) { dao.getBookById(bookId) }
             book = loadedBook
             persistDavCoverIfGated(loadedBook)
+            // ★ 本地打开锚点 begin：远程书由 remote: open 系列取证，此处只记本地
+            localOpenMarked = false
+            val fp0 = loadedBook?.filePath ?: ""
+            if (!fp0.startsWith("webdav:") && !fp0.startsWith("smb:")) {
+                localOpenStartMs = android.os.SystemClock.uptimeMillis()
+                runCatching { com.mangareader.DiagTracer.markStatic("local: open begin src=loc") }
+            } else localOpenStartMs = 0L
             loadedBook?.let { b ->
                 act?.requestedOrientation = prefs.getInt("orientation_$bookId", ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED)
                 val filePath = b.filePath

@@ -494,6 +494,7 @@ private fun ClickZonePreview(type: com.mangareader.data.ReaderConfig.ClickFlipTy
                     drawRect(color, topLeft = androidx.compose.ui.geometry.Offset(minOf(mx0, mx1) * w, y0 * h),
                         size = androidx.compose.ui.geometry.Size(kotlin.math.abs(mx1 - mx0) * w, (y1 - y0) * h))
                 }
+                drawRect(menuC) // 顶部 5%（与 getAction 的 y<0.05→MENU 一致）
                 rect(0f, 0.05f, 1f, 0.33f, prevC)
                 rect(0f, 0.33f, 0.33f, 0.67f, prevC)
                 rect(0.67f, 0.33f, 1f, 0.67f, nextC)
