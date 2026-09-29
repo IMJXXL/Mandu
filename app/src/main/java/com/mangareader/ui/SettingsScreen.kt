@@ -54,6 +54,8 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?, Int) -> Unit
     var showScrollModeDialog by remember { mutableStateOf(false) }
     var showClickFlipDialog by remember { mutableStateOf(false) }
     var showReadingSettings by remember { mutableStateOf(false) }
+    // ★ 外观设置子页：rememberSaveable——子页内改暗色/主题会 recreate Activity，saveable 保证回到本页而不是弹回设置首页
+    var showAppearanceSettings by rememberSaveable { mutableStateOf(false) }
     var showShelfManage by remember { mutableStateOf(false) }
     var showFolderManage by remember { mutableStateOf(false) }
     // 超分队列页（全屏页，不嵌在滚动 Column 里渲染）
@@ -234,116 +236,21 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?, Int) -> Unit
             Spacer(Modifier.height(16.dp))
             }
             item {
-            Text("外观（待完善）", style = MaterialTheme.typography.titleMedium)
+            Text("外观", style = MaterialTheme.typography.titleMedium)
             }
             item {
             Spacer(Modifier.height(8.dp))
             }
-
             item {
-            // 暗色模式切换
-            var darkMode by remember { mutableStateOf(prefs.getString("dark_mode", "SYSTEM") ?: "SYSTEM") }
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp)) {
-
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf("亮色" to "LIGHT", "暗色" to "DARK", "系统" to "SYSTEM").forEach { (label, value) ->
-                            FilterChip(
-                                selected = darkMode == value,
-                                onClick = {
-                                    darkMode = value
-                                    prefs.edit().putString("dark_mode", value).apply()
-                                    // 通过 recompose 生效，需要重启 activity
-                                    (ctx as? android.app.Activity)?.recreate()
-                                },
-                                label = { Text(label, fontSize = 13.sp) },
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
+            Card(Modifier.fillMaxWidth().clickable { showAppearanceSettings = true }) {
+                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Palette, null, modifier = Modifier.size(24.dp))
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("外观设置", fontSize = 16.sp)
+                        Text("主题颜色、暗色模式、自定义主色", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    Spacer(Modifier.height(16.dp))
-
-                    Spacer(Modifier.height(8.dp))
-                    val currentThemeOrdinal = remember { prefs.getInt("app_theme", 0) }
-                    val dynamicColorEnabled = remember { prefs.getBoolean("dynamic_color", false) }
-                    val currentDarkMode = remember { prefs.getString("dark_mode", "SYSTEM") ?: "SYSTEM" }
-                    val previewIsDark = when (currentDarkMode) {
-                        "LIGHT" -> false
-                        "DARK" -> true
-                        else -> {
-                            val nightMode = ctx.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK
-                            nightMode == android.content.res.Configuration.UI_MODE_NIGHT_YES
-                        }
-                    }
-                    androidx.compose.foundation.lazy.LazyRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp)
-            ) {
-                item {
-                    val isSelected = dynamicColorEnabled
-                    val dynAvailable = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S
-                    Card(
-                        modifier = Modifier.width(72.dp).clickable {
-                            if (dynAvailable) {
-                                prefs.edit().putBoolean("dynamic_color", true).apply()
-                                (ctx as? android.app.Activity)?.recreate()
-                            } else {
-                                android.widget.Toast.makeText(ctx, "动态色彩需 Android 12+", android.widget.Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                        colors = CardDefaults.cardColors(
-                            containerColor = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
-                            else MaterialTheme.colorScheme.surfaceVariant
-                        ),
-                        border = if (isSelected) androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null
-                    ) {
-                        Column(Modifier.padding(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                            Box(
-                                Modifier.size(32.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
-                                    .background(androidx.compose.ui.graphics.Brush.linearGradient(listOf(
-                                        androidx.compose.ui.graphics.Color(0xFF6750A4),
-                                        androidx.compose.ui.graphics.Color(0xFF6200EE),
-                                        androidx.compose.ui.graphics.Color(0xFF03DAC6)
-                                    )))
-                            ) {
-                                if (isSelected) {
-                                    androidx.compose.material3.Icon(
-                                        androidx.compose.material.icons.Icons.Default.Check,
-                                        null,
-                                        modifier = Modifier.size(20.dp).align(Alignment.Center),
-                                        tint = androidx.compose.ui.graphics.Color.White
-                                    )
-                                }
-                            }
-                            Spacer(Modifier.height(4.dp))
-                            Text("动态色彩", fontSize = 10.sp, maxLines = 1, color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                }
-                items(com.mangareader.ui.AppTheme.entries.size) { index ->
-                    val theme = com.mangareader.ui.AppTheme.entries[index]
-                    val isSelected = !dynamicColorEnabled && currentThemeOrdinal == index
-                    val themePrimary = com.mangareader.ui.getThemePrimaryColor(theme, previewIsDark)
-                    Card(
-                        modifier = Modifier.width(72.dp).clickable {
-                            prefs.edit().putInt("app_theme", index).putBoolean("dynamic_color", false).apply()
-                            (ctx as? android.app.Activity)?.recreate()
-                        },
-                        colors = CardDefaults.cardColors(
-                            containerColor = if (isSelected) themePrimary.copy(alpha = 0.15f)
-                            else MaterialTheme.colorScheme.surfaceVariant
-                        ),
-                        border = if (isSelected) androidx.compose.foundation.BorderStroke(2.dp, themePrimary) else null
-                    ) {
-                        Column(Modifier.padding(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                            Box(Modifier.size(32.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp)).background(themePrimary))
-                            Spacer(Modifier.height(4.dp))
-                            Text(theme.label, fontSize = 10.sp, maxLines = 1, color = if (isSelected) themePrimary else MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                }
-            }
+                    Icon(Icons.Default.ChevronRight, null)
                 }
             }
             }
@@ -557,6 +464,9 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?, Int) -> Unit
 
     if (showReadingSettings) {
         ReadingSettingsScreen(onBack = { showReadingSettings = false })
+    }
+    if (showAppearanceSettings) {
+        AppearanceSettingsScreen(onBack = { showAppearanceSettings = false })
     }
     if (showShelfManage) {
         ShelfManageScreen(onBack = { showShelfManage = false })

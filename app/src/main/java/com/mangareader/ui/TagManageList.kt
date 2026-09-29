@@ -12,6 +12,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
@@ -84,15 +85,22 @@ fun TagManageList(
 
     Box(Modifier.fillMaxSize()) {
         LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
-            // ===== 头部：搜索 + 排序 + 提示 =====
+            // ===== 头部：搜索 + 排序 + 提示（搜索框样式与书架一致：12dp 圆角 + 浮动标签 + 清空钮） =====
             item {
+                Spacer(Modifier.height(8.dp))
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
                         value = query,
                         onValueChange = { query = it },
-                        placeholder = { Text("搜索标签…", fontSize = 14.sp) },
+                        label = { Text("搜索标签...") },
                         leadingIcon = { Icon(androidx.compose.material.icons.Icons.Default.Search, null, Modifier.size(18.dp)) },
+                        trailingIcon = {
+                            if (query.isNotEmpty()) {
+                                IconButton(onClick = { query = "" }) { Icon(Icons.Default.Close, null, Modifier.size(18.dp)) }
+                            }
+                        },
                         singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.weight(1f)
                     )
                     TextButton(onClick = { sortMode = (sortMode + 1) % 3 }) {

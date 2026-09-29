@@ -178,16 +178,43 @@ fun Theme(
     appTheme: AppTheme = AppTheme.BLUE,
     isAmoled: Boolean = false,
     dynamicColor: Boolean = false,
+    customPrimary: Int? = null,
     content: @Composable () -> Unit
 ) {
-    val scheme = if (dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-        val ctx = LocalContext.current
-        if (dark) dynamicDarkColorScheme(ctx) else dynamicLightColorScheme(ctx)
-    } else {
-        colorSchemes[appTheme]?.getColorScheme(dark, isAmoled)
-            ?: colorSchemes[AppTheme.BLUE]!!.getColorScheme(dark, isAmoled)
+    val scheme = when {
+        // 自定义主色优先：以所选预设为底，仅替换 primary 一族，中性背景保持不动
+        customPrimary != null ->
+            (colorSchemes[appTheme] ?: colorSchemes[AppTheme.BLUE]!!).getColorScheme(dark, isAmoled)
+                .withCustomPrimary(customPrimary, dark)
+        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
+            val ctx = LocalContext.current
+            if (dark) dynamicDarkColorScheme(ctx) else dynamicLightColorScheme(ctx)
+        }
+        else ->
+            colorSchemes[appTheme]?.getColorScheme(dark, isAmoled)
+                ?: colorSchemes[AppTheme.BLUE]!!.getColorScheme(dark, isAmoled)
     }
     MaterialTheme(colorScheme = scheme, content = content)
+}
+
+/** 用 HSV 派生 primary 一族（onPrimary 按亮度取黑/白；容器色按暗/亮主题分别加深/提亮），其余槽位沿用底方案 */
+private fun androidx.compose.material3.ColorScheme.withCustomPrimary(argb: Int, dark: Boolean): androidx.compose.material3.ColorScheme {
+    val hsv = floatArrayOf(0f, 0f, 0f)
+    android.graphics.Color.colorToHSV(argb, hsv)
+    val h = hsv[0]; val s = hsv[1]; val v = hsv[2]
+    val lum = 0.299f * ((argb shr 16) and 0xFF) + 0.587f * ((argb shr 8) and 0xFF) + 0.114f * (argb and 0xFF)
+    val onPrimary = if (lum > 140f) androidx.compose.ui.graphics.Color.Black else androidx.compose.ui.graphics.Color.White
+    return if (dark) copy(
+        primary = androidx.compose.ui.graphics.Color(argb),
+        onPrimary = onPrimary,
+        primaryContainer = androidx.compose.ui.graphics.Color(android.graphics.Color.HSVToColor(floatArrayOf(h, s, 0.42f))),
+        onPrimaryContainer = androidx.compose.ui.graphics.Color(android.graphics.Color.HSVToColor(floatArrayOf(h, s * 0.55f, 0.92f))),
+    ) else copy(
+        primary = androidx.compose.ui.graphics.Color(argb),
+        onPrimary = onPrimary,
+        primaryContainer = androidx.compose.ui.graphics.Color(android.graphics.Color.HSVToColor(floatArrayOf(h, s * 0.45f, 0.90f))),
+        onPrimaryContainer = androidx.compose.ui.graphics.Color(android.graphics.Color.HSVToColor(floatArrayOf(h, s * 0.9f, v * 0.42f))),
+    )
 }
 
 /** 获取指定主题的主色（用于设置页预览） */
