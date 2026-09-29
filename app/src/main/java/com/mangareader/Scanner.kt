@@ -557,6 +557,11 @@ class Scanner(private val ctx: Context, private val dao: MangaDao) {
                 ctx.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE)
                     .getBoolean("scan_verify_zip_content", false)
             } catch (_: Exception) { false }
+            // ★ 智能解析文件名（默认开）：干净书名+v01 短缀+繁转简；关=旧行为
+            val smartTitle = try {
+                ctx.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE)
+                    .getBoolean("smart_title", true)
+            } catch (_: Exception) { true }
             val existingPaths = mutableSetOf<String>()
             try {
                 // ★ C1 补丁：查重数据源改全量（含隐藏书）——旧 getAllBooksList 只查未隐藏，
@@ -628,7 +633,8 @@ class Scanner(private val ctx: Context, private val dao: MangaDao) {
                             var firstCover: String? = null
                             try { firstCover = findFirstCoverInFolder(auth, treeDocId, id) } catch (_: Exception) {}
                             if (firstCover == null) continue  // 真正空文件夹，跳过
-                            books.add(Book(title = name.replace(Regex("[._-]"), " ").trim(), filePath = path, fileType = "dir", coverPath = firstCover))
+                            val dirTitle = if (smartTitle) com.mangareader.util.BookTitleParser.displayTitle(name) else name.replace(Regex("[._-]"), " ").trim()
+                            books.add(Book(title = dirTitle, filePath = path, fileType = "dir", coverPath = firstCover))
                             found++; onFound?.invoke(found)
                         }
                     } else if (name.isComic()) {
@@ -676,7 +682,7 @@ class Scanner(private val ctx: Context, private val dao: MangaDao) {
                             } catch (_: Exception) {}
                         }
                         if (skipDedup || !isPathDuplicate(path)) {
-                            val title = name.substringBeforeLast(".").replace(Regex("[._-]"), " ").trim()
+                            val title = if (smartTitle) com.mangareader.util.BookTitleParser.displayTitle(name) else name.substringBeforeLast(".").replace(Regex("[._-]"), " ").trim()
                             val coverPath = "cv:$docId|$name"
                             // ★ 源文件戳（物理文件可解析时）：mtime+size 记入 Book，
                             //   供下次重扫复用与封面新鲜度判定

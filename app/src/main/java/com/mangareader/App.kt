@@ -24,6 +24,16 @@ import kotlinx.coroutines.launch
 import okio.Path.Companion.toOkioPath
 
 class App : Application(), SingletonImageLoader.Factory {
+
+    companion object {
+        @Volatile
+        private lateinit var appInstance: App
+
+        /** 全局 Application 上下文访问（底层模块/扫描器无 Context 参数时使用） */
+        @JvmStatic
+        fun instance(): App = appInstance
+    }
+
     val db by lazy { MangaDatabase.getDatabase(this) }
     val crashHandler by lazy { CrashHandler(this) }
     val engine by lazy { ArchiveEngine(this) }
@@ -90,6 +100,7 @@ class App : Application(), SingletonImageLoader.Factory {
 
     override fun onCreate() {
         super.onCreate()
+        appInstance = this
         // ★ 崩溃处理器最先安装（2026-09-25 闪退排查教训）：原先排在签名校验之后，
         //   onCreate 早期崩溃（含 verify 逃逸的 Error 类异常）完全无 crash_logs，取证盲区。
         //   loadLibrary 已自行 catch，故此处为首个可崩点之前。

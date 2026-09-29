@@ -227,6 +227,14 @@ object WebDavScanner {
 
     private fun extOf(name: String): String = name.substringAfterLast('.', "").lowercase()
 
-    private fun titleOf(name: String): String =
-        name.substringBefore(':').substringAfterLast('/').substringBeforeLast('.')
+    private fun titleOf(name: String): String {
+        val base = name.substringBefore(':').substringAfterLast('/')
+        // ★ 智能解析文件名（默认开，本地漫画设置可关）：干净书名+v01 短缀+繁转简
+        val appCtx = runCatching { com.mangareader.App.instance() }.getOrNull()
+        val enabled = runCatching {
+            appCtx!!.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE).getBoolean("smart_title", true)
+        }.getOrDefault(true)
+        return if (enabled) com.mangareader.util.BookTitleParser.displayTitle(base)
+        else base.substringBeforeLast('.')
+    }
 }

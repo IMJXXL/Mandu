@@ -855,6 +855,14 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
             title = { Text("漫画详情") },
             text = {
                 Column {
+                    // ★ 原文件名：智能解析后书名可能与原名差异大，这里提供回查入口
+                    val rawName = remember(b.filePath) {
+                        b.filePath.substringAfterLast('|').substringAfterLast('/').substringAfterLast('\\')
+                    }
+                    if (rawName.isNotBlank()) {
+                        Text("文件名: $rawName", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Spacer(Modifier.height(6.dp))
+                    }
                     if (comicInfoLoading) {
                         Text("正在读取 ComicInfo.xml…")
                     } else if (comicInfoData == null || comicInfoData!!.isEmpty()) {

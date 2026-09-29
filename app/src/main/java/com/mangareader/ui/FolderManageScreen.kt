@@ -356,6 +356,17 @@ fun FolderManageScreen(onBack: () -> Unit) {
                             prefs.edit().putBoolean("auto_refresh", v).apply()
                         })
                     }
+                    var smartTitle by remember { mutableStateOf(prefs.getBoolean("smart_title", true)) }
+                    Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("智能解析文件名", fontSize = 16.sp)
+                            Text("扫描入库时提取干净书名与卷号（如 v01），自动繁转简；关闭则显示原文件名。仅影响新扫描的书，已入库书名不变", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(checked = smartTitle, onCheckedChange = { v ->
+                            smartTitle = v
+                            prefs.edit().putBoolean("smart_title", v).apply()
+                        })
+                    }
                 }
                 CacheManagementCard(
                     ctx = ctx,
