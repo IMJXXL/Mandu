@@ -679,7 +679,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                     Text("标签", fontSize = 13.sp, fontWeight = FontWeight.Medium)
                     Spacer(Modifier.height(4.dp))
                     val (xmlTagList, manualTagList) = bookTags.partition { it.linkSource == 0 }
-                    if (bookTags.isEmpty()) Text("暂无标签（导入带 ComicInfo.xml 的书可自动获得，或在下方手动添加）", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (bookTags.isEmpty()) Text("还没有标签（导入带 ComicInfo.xml 的书可自动获得，或在下方手动添加）", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     if (xmlTagList.isNotEmpty()) {
                         Text("元数据", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Spacer(Modifier.height(2.dp))
@@ -856,7 +856,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
             text = {
                 Column {
                     if (comicInfoLoading) {
-                        Text("正在读取 ComicInfo.xml...")
+                        Text("正在读取 ComicInfo.xml…")
                     } else if (comicInfoData == null || comicInfoData!!.isEmpty()) {
                         Text("无元数据信息")
                     } else {
@@ -991,7 +991,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                 val focusReq = remember { FocusRequester() }
                 LaunchedEffect(Unit) { focusReq.requestFocus() }
                 Column {
-                    OutlinedTextField(value = q, onValueChange = { q = it; searchQuery = it }, label = { Text("搜索...") },
+                    OutlinedTextField(value = q, onValueChange = { q = it; searchQuery = it }, label = { Text("搜索书名、作者…") },
                         leadingIcon = { Icon(Icons.Default.Search, null) },
                         trailingIcon = {
                             if (q.isNotEmpty()) {
@@ -1056,7 +1056,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                 if (bookshelves.size > shelfLimit + 1) {
                     item {
                         FilterChip(selected = false, onClick = { showShelfDrawer = true },
-                            label = { Text("书架 更多>", fontSize = 13.sp) })
+                            label = { Text("书架 更多 ›", fontSize = 13.sp) })
                     }
                 }
             }

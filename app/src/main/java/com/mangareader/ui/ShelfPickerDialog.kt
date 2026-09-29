@@ -58,7 +58,7 @@ fun ShelfPickerDialog(onDismiss: () -> Unit, dao: MangaDao, scope: CoroutineScop
                     }
                     onConfirm()
                 }
-            }) { Text("确定") }
+            }) { Text("添加") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
     )

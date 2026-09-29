@@ -153,7 +153,7 @@ fun SmbDownloadQueueScreen(onBack: () -> Unit, onOpenBook: ((Long, Int) -> Unit)
             onDismissRequest = { showInvalidDialog = false },
             title = { Text("移除失效任务") },
             text = { Text("已移除 $invalidCount 本本地文件不存在的书籍及其下载任务。") },
-            confirmButton = { TextButton(onClick = { showInvalidDialog = false }) { Text("确定") } },
+            confirmButton = { TextButton(onClick = { showInvalidDialog = false }) { Text("知道了") } },
         )
     }
 }

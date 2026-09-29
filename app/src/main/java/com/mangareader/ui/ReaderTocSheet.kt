@@ -272,7 +272,7 @@ fun ReaderTocSheet(
             if (tocTab == 2) {
                 // ─── 书签页签 ───
                 if (bookmarks.isEmpty()) {
-                    Text("暂无书签（阅读中点底部「书签」按钮添加当前页）", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
+                    Text("还没有书签（阅读中点底部「书签」按钮添加当前页）", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
                 } else {
                     LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         items(bookmarks.size) { i ->
@@ -452,7 +452,7 @@ fun ReaderTocSheet(
                         }
                     }
                 } else {
-                    Text("暂无可浏览页面", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
+                    Text("还没有可浏览的页面", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
                 }
             }
         }

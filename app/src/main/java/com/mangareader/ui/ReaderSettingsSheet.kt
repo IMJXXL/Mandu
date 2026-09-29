@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -178,7 +179,8 @@ private fun GroupTitle(title: String) {
 }
 
 @Composable
-private fun CheckboxItem(label: String, checked: Boolean, enabled: Boolean = true, onCheckedChange: (Boolean) -> Unit) {
+private fun CheckboxItem(label: String, checked: Boolean, enabled: Boolean = true, info: String? = null, onCheckedChange: (Boolean) -> Unit) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -189,7 +191,17 @@ private fun CheckboxItem(label: String, checked: Boolean, enabled: Boolean = tru
         horizontalArrangement = Arrangement.spacedBy(24.dp)
     ) {
         Checkbox(checked = checked, onCheckedChange = null, enabled = enabled)
-        Text(text = label, style = MaterialTheme.typography.bodyMedium)
+        Text(text = label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+        if (info != null) {
+            Icon(
+                Icons.Filled.Info,
+                contentDescription = "说明",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp).clickable {
+                    android.widget.Toast.makeText(ctx, info, android.widget.Toast.LENGTH_SHORT).show()
+                }
+            )
+        }
     }
 }
 
@@ -268,7 +280,7 @@ private fun ReadingModeTab(config: ReaderConfig, mode: Mode, onConfigChange: (Re
         CheckboxItem("裁剪白边", config.isTrimWhiteBorder) { onConfigChange(config.copy(isTrimWhiteBorder = it)) }
         if (config.isTrimWhiteBorder) {
             // 检测阈值：像素平均亮度超过此值视为"白色"，越小越激进
-            SliderItem("检测阈值（默认220）", config.trimThreshold.toFloat(), 180f..250f, 70, "${config.trimThreshold}") {
+            SliderItem("检测阈值（默认 220）", config.trimThreshold.toFloat(), 180f..250f, 70, "${config.trimThreshold}") {
                 onConfigChange(config.copy(trimThreshold = it.toInt()))
             }
             // 白色比例：一行/列中白色像素占比达到此值才算"白边"，越小越容易判定
@@ -345,14 +357,15 @@ private fun GeneralTab(config: ReaderConfig, onConfigChange: (ReaderConfig) -> U
     CheckboxItem("保持屏幕常亮", config.isKeepScreenOn) { onConfigChange(config.copy(isKeepScreenOn = it)) }
 
     // ★ N1：无缝续读（默认关；仅同本分卷；开启时读到卷末静默进入下一卷，无过渡页无确认弹窗）
-    CheckboxItem("无缝续读下一卷（读到卷末自动进入同书下一卷）", config.seamlessNextVolume) { onConfigChange(config.copy(seamlessNextVolume = it)) }
+    CheckboxItem("无缝续读下一卷", config.seamlessNextVolume, info = "读到卷末自动进入同书下一卷，无过渡页、无确认弹窗") { onConfigChange(config.copy(seamlessNextVolume = it)) }
     // ★ 翻页闪烁「全局 > 单本」：全局接管时常规只保留一行灰置开关（子项不可改故不显示），
     //   全局未开启时为常规的单本完整设置组
     val flashGlobal = config.flipFlashGlobalActive
     CheckboxItem(
-        if (flashGlobal) "翻页时闪烁（全局接管中：设置→阅读设置→墨水屏）" else "翻页时闪烁（开启后可降低墨水屏残影）",
+        "翻页时闪烁",
         config.isFlipFlashEnabled,
         enabled = !flashGlobal,
+        info = if (flashGlobal) "全局接管中：设置 → 阅读设置 → 墨水屏" else "开启后可降低墨水屏残影",
     ) { onConfigChange(config.copy(isFlipFlashEnabled = it)) }
     if (config.isFlipFlashEnabled && !flashGlobal) {
         SliderItem("持续时间", config.flipFlashDuration.toFloat(), 50f..1500f, 14, "${config.flipFlashDuration}ms", enabled = !flashGlobal) {
@@ -439,7 +452,7 @@ private fun AmbienceSection(config: ReaderConfig, onConfigChange: (ReaderConfig)
         FilterChip(
             selected = false,
             onClick = { importLauncher.launch(arrayOf("audio/*")) },
-            label = { Text("＋导入", fontSize = 13.sp) },
+            label = { Text("+ 导入", fontSize = 13.sp) },
         )
     }
     if (config.ambienceSound.isNotEmpty()) {
@@ -504,7 +517,7 @@ private fun FilterTab(config: ReaderConfig, onConfigChange: (ReaderConfig) -> Un
         onConfigChange(config.copy(brightnessEnabled = it, brightness = if (it) config.brightness else 0))
     }
     if (config.brightnessEnabled) {
-        SliderItem("图片亮度（默认0）", config.brightness.toFloat(), -100f..100f, 199, "${config.brightness}") {
+        SliderItem("图片亮度（默认 0）", config.brightness.toFloat(), -100f..100f, 199, "${config.brightness}") {
             onConfigChange(config.copy(brightness = it.toInt()))
         }
     }
@@ -512,7 +525,7 @@ private fun FilterTab(config: ReaderConfig, onConfigChange: (ReaderConfig) -> Un
         onConfigChange(config.copy(screenBrightnessEnabled = it, screenBrightness = if (it) config.screenBrightness else 0))
     }
     if (config.screenBrightnessEnabled) {
-        SliderItem("屏幕亮度（默认0）", config.screenBrightness.toFloat(), -100f..100f, 199, "${config.screenBrightness}") {
+        SliderItem("屏幕亮度（默认 0）", config.screenBrightness.toFloat(), -100f..100f, 199, "${config.screenBrightness}") {
             onConfigChange(config.copy(screenBrightness = it.toInt()))
         }
     }
@@ -520,7 +533,7 @@ private fun FilterTab(config: ReaderConfig, onConfigChange: (ReaderConfig) -> Un
         onConfigChange(config.copy(contrastEnabled = it, contrast = if (it) config.contrast else 100))
     }
     if (config.contrastEnabled) {
-        SliderItem("对比度（默认100）", config.contrast.toFloat(), 0f..200f, 199, "${config.contrast}") {
+        SliderItem("对比度（默认 100）", config.contrast.toFloat(), 0f..200f, 199, "${config.contrast}") {
             onConfigChange(config.copy(contrast = it.toInt()))
         }
     }
@@ -528,13 +541,13 @@ private fun FilterTab(config: ReaderConfig, onConfigChange: (ReaderConfig) -> Un
         onConfigChange(config.copy(gammaEnabled = it, gamma = if (it) config.gamma else 100))
     }
     if (config.gammaEnabled) {
-        SliderItem("伽马（默认100）", config.gamma.toFloat(), 50f..150f, 99, "${config.gamma}") {
+        SliderItem("伽马（默认 100）", config.gamma.toFloat(), 50f..150f, 99, "${config.gamma}") {
             onConfigChange(config.copy(gamma = it.toInt()))
         }
     }
     if (android.os.Build.VERSION.SDK_INT < 33) {
         Text(
-            "低于安卓13伽马调节会有细节丢失",
+            "安卓 13 以下为线性近似，细节略有丢失",
             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f), fontSize = 11.sp,
             modifier = Modifier.padding(start = 4.dp, bottom = 4.dp)
         )

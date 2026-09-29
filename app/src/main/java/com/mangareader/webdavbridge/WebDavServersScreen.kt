@@ -101,7 +101,7 @@ fun WebDavServersScreen(onBack: () -> Unit, onOpenBook: ((Long, Int) -> Unit)? =
         Column(Modifier.padding(padding).fillMaxSize()) {
             if (sources.isEmpty()) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("暂无服务器，点击右上角 + 添加", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("还没有服务器，点击右上角 + 添加", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             } else {
                 LazyColumn(Modifier.fillMaxSize()) {

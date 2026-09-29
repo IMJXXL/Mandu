@@ -79,7 +79,7 @@ fun MergeTargetPickerDialog(
                 } else {
                     errorMsg = "须选择目标"
                 }
-            }) { Text("确定") }
+            }) { Text("合并") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
     )

@@ -92,7 +92,7 @@ fun TagManageList(
                     OutlinedTextField(
                         value = query,
                         onValueChange = { query = it },
-                        label = { Text("搜索标签...") },
+                        label = { Text("搜索标签…") },
                         leadingIcon = { Icon(androidx.compose.material.icons.Icons.Default.Search, null, Modifier.size(18.dp)) },
                         trailingIcon = {
                             if (query.isNotEmpty()) {
@@ -318,7 +318,7 @@ fun TagManageList(
                             renameTarget = null
                         }
                     }
-                }) { Text("确定") }
+                }) { Text("重命名") }
             },
             dismissButton = { TextButton(onClick = { renameTarget = null; renameError = null }) { Text("取消") } }
         )

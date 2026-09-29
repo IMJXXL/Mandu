@@ -91,7 +91,7 @@ fun FolderManageScreen(onBack: () -> Unit) {
         if (r.resultCode == Activity.RESULT_OK) r.data?.data?.let { uri ->
             scope.launch {
                 try { ctx.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION) } catch (_: Exception) {}
-                scanning = true; scanTarget = "扫描中..."; scanCount = 0
+                scanning = true; scanTarget = "扫描中…"; scanCount = 0
                 val n = withContext(Dispatchers.IO) { scanner.scanAndCommit(uri) { count -> scanCount = count } }
                 scanning = false
                 Toast.makeText(ctx, if (n > 0) "导入成功，共 $n 本漫画，封面后台加载中" else "未找到漫画文件", Toast.LENGTH_SHORT).show()
@@ -130,7 +130,7 @@ fun FolderManageScreen(onBack: () -> Unit) {
             } else if (folders.size >= 2) {
                 Button(onClick = {
                     scope.launch {
-                        scanning = true; scanTarget = "一键扫描所有文件夹..."; scanCount = 0
+                        scanning = true; scanTarget = "一键扫描所有文件夹…"; scanCount = 0
                         var totalAdded = 0
                         var totalRemoved = 0
                         withContext(Dispatchers.IO) {
@@ -184,7 +184,7 @@ fun FolderManageScreen(onBack: () -> Unit) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                             TextButton(onClick = {
                                 scope.launch {
-                                    scanning = true; scanTarget = "正在扫描「${f.displayName}」..."; scanCount = 0
+                                    scanning = true; scanTarget = "正在扫描「${f.displayName}」…"; scanCount = 0
                                     val (addedN, removedN) = withContext(Dispatchers.IO) { scanner.rescanAndCommit(f) { count -> scanCount = count } }
                                     scanCount = addedN
                                     scanning = false
@@ -210,8 +210,8 @@ fun FolderManageScreen(onBack: () -> Unit) {
 
     if (showDeleteFolder != null) {
         val f = showDeleteFolder!!
-        AlertDialog(onDismissRequest = { showDeleteFolder = null }, title = { Text("删除文件夹") },
-            text = { Text("删除「${f.displayName}」及该文件夹下所有漫画记录？原始文件不受影响。已设置的自定义封面将一并删除。") },
+        AlertDialog(onDismissRequest = { showDeleteFolder = null }, title = { Text("删除文件夹？") },
+            text = { Text("将删除「${f.displayName}」及该文件夹下所有漫画记录；原始文件不受影响，已设置的自定义封面将一并删除。\n此操作不可撤销。") },
             confirmButton = {
                 TextButton(onClick = {
                     scope.launch {
@@ -242,7 +242,7 @@ fun FolderManageScreen(onBack: () -> Unit) {
                         showDeleteFolder = null
                         Toast.makeText(ctx, "已删除", Toast.LENGTH_SHORT).show()
                     }
-                }) { Text("确定", color = MaterialTheme.colorScheme.error) }
+                }) { Text("删除", color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = { TextButton(onClick = { showDeleteFolder = null }) { Text("取消") } })
     }
@@ -287,7 +287,7 @@ fun FolderManageScreen(onBack: () -> Unit) {
                             Toast.makeText(ctx, "已重命名", Toast.LENGTH_SHORT).show()
                         }
                     }
-                }) { Text("确定") }
+                }) { Text("保存") }
             },
             dismissButton = { TextButton(onClick = { showRenameFolder = null }) { Text("取消") } }
         )

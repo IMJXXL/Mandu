@@ -272,7 +272,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?, Int) -> Unit
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
                         Text("阅读设置", fontSize = 16.sp)
-                        Text("背景颜色、墨水屏、PDF质量、自动翻页等", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("背景颜色、墨水屏、PDF 质量、自动翻页等", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Icon(Icons.Default.ChevronRight, null)
                 }
@@ -391,9 +391,9 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?, Int) -> Unit
                             Text("当前设备: Android ${android.os.Build.VERSION.RELEASE} (API $sdk)", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
                             Text("处理器: $abi", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             if (!is64Bit) {
-                                Text("32位系统，部分功能性能可能有所下降", fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
+                                Text("32 位系统，部分功能性能可能有所下降", fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
                             } else {
-                                Text("64位系统，可使用全部功能", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
+                                Text("64 位系统，可使用全部功能", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
                             }
 
                             Spacer(Modifier.height(12.dp))
@@ -445,7 +445,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?, Int) -> Unit
                         }
                     },
                     confirmButton = {
-                        TextButton(onClick = { showAbout = false }) { Text("确定") }
+                        TextButton(onClick = { showAbout = false }) { Text("知道了") }
                     }
                 )
             }

@@ -99,7 +99,7 @@ fun OpdsServersScreen(onBack: () -> Unit, onOpenBook: (Long) -> Unit = {}) {
     ) { padding ->
         if (connections.isEmpty()) {
             Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                Text("暂无 OPDS 服务器，点击右上角 + 添加", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("还没有 OPDS 服务器，点击右上角 + 添加", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         } else {
             LazyColumn(Modifier.fillMaxSize().padding(padding)) {

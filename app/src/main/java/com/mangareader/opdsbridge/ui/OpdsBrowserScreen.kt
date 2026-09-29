@@ -152,7 +152,7 @@ fun OpdsBrowserScreen(serverId: String, onBack: () -> Unit, onOpenBook: (Long) -
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 CircularProgressIndicator()
                 Spacer(Modifier.height(8.dp))
-                Text("正在下载...", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("正在下载…", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
         return
@@ -163,7 +163,7 @@ fun OpdsBrowserScreen(serverId: String, onBack: () -> Unit, onOpenBook: (Long) -
             onDismissRequest = { openError = null },
             title = { Text("打开失败") },
             text = { Text(msg) },
-            confirmButton = { TextButton(onClick = { openError = null }) { Text("确定") } },
+            confirmButton = { TextButton(onClick = { openError = null }) { Text("知道了") } },
         )
     }
 
@@ -245,7 +245,7 @@ fun OpdsBrowserScreen(serverId: String, onBack: () -> Unit, onOpenBook: (Long) -
                 }
             } else if (entries.isEmpty()) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("暂无内容", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("还没有内容", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             } else {
                 val listState = rememberLazyListState()

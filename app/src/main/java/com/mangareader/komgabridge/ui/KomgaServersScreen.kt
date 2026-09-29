@@ -101,7 +101,7 @@ fun KomgaServersScreen(onBack: () -> Unit, onOpenBook: (Long) -> Unit = {}) {
     ) { padding ->
         if (connections.isEmpty()) {
             Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                Text("暂无 Komga 服务器，点击右上角 + 添加", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("还没有 Komga 服务器，点击右上角 + 添加", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         } else {
             LazyColumn(Modifier.fillMaxSize().padding(padding)) {

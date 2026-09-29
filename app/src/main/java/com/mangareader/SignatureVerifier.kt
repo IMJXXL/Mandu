@@ -47,7 +47,7 @@ object SignatureVerifier {
                 return true
             }
 
-            degrade(context, "签名hash不匹配", hash)
+            degrade(context, "签名 hash 不匹配", hash)
             return false
         } catch (e: Exception) {
             // ★ 异常路径同样可能是误杀源（如特定安装方式导致 signingInfo 异常），必须留全栈取证
@@ -100,7 +100,7 @@ object SignatureVerifier {
                     MessageDigest.getInstance("SHA-256").digest(it).joinToString("") { b -> "%02X".format(b) }
                 } != HASH_PART_A + hashPartB) {
                 isVerified = false
-                degrade(context, "后台定时校验失败(签名hash不匹配或签名列表为空)", null)
+                degrade(context, "后台定时校验失败（签名 hash 不匹配或签名列表为空）", null)
             }
         } catch (_: Exception) {}
     }

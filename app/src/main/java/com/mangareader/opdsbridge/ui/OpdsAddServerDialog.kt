@@ -205,7 +205,7 @@ fun OpdsAddServerDialog(
                     }
                 },
                 enabled = canSave && !testing,
-            ) { Text(if (testing) "测试中..." else "测试连接") }
+            ) { Text(if (testing) "测试中…" else "测试连接") }
             testResult?.let { result ->
                 Spacer(Modifier.height(8.dp))
                 Text(

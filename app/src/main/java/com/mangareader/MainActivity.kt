@@ -217,7 +217,7 @@ class MainActivity : ComponentActivity() {
                                 Text("QQ：1173350134（点击可复制）", fontSize = 15.sp, color = MaterialTheme.colorScheme.primary, modifier = Modifier.clickable {
                                     val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
                                     cm.setPrimaryClip(android.content.ClipData.newPlainText("QQ", "1173350134"))
-                                    android.widget.Toast.makeText(this@MainActivity, "QQ号已复制", android.widget.Toast.LENGTH_SHORT).show()
+                                    android.widget.Toast.makeText(this@MainActivity, "QQ 号已复制", android.widget.Toast.LENGTH_SHORT).show()
                                 })
                                 Spacer(Modifier.height(8.dp))
                                 Text("    特别感谢晓萌绘制 Logo，染林同学耐心测试。", fontSize = 15.sp)

@@ -234,12 +234,12 @@ fun ShelfManageScreen(onBack: () -> Unit) {
 
     if (showDeleteShelf != null) {
         val s = showDeleteShelf!!
-        AlertDialog(onDismissRequest = { showDeleteShelf = null }, title = { Text("删除书架") },
-            text = { Text("删除书架「${s.name}」？书架内的漫画不受影响。") },
+        AlertDialog(onDismissRequest = { showDeleteShelf = null }, title = { Text("删除书架？") },
+            text = { Text("书架内的漫画不受影响，仅移除该分组。\n此操作不可撤销。") },
             confirmButton = {
                 TextButton(onClick = {
                     scope.launch { withContext(Dispatchers.IO) { dao.deleteBookshelf(s) }; showDeleteShelf = null }
-                }) { Text("确定", color = MaterialTheme.colorScheme.error) }
+                }) { Text("删除", color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = { TextButton(onClick = { showDeleteShelf = null }) { Text("取消") } })
     }

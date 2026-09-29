@@ -246,7 +246,7 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
                     }
 
                     Spacer(Modifier.height(12.dp))
-                    Text("PDF加载质量", fontSize = 16.sp)
+                    Text("PDF 加载质量", fontSize = 16.sp)
                     Text("当前: ${String.format("%.2f", config.pdfQuality)}x", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.primary)
                     Slider(
                         value = config.pdfQuality,
@@ -259,7 +259,7 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
                         Text("3x\n216DPI\n推荐默认", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, lineHeight = 14.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                         Text("5x\n360DPI\n原图质量", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, lineHeight = 14.sp, textAlign = androidx.compose.ui.text.style.TextAlign.End)
                     }
-                    Text("倍率越高越清晰，加载越慢越占内存。手机屏幕一般300-500DPI，3x-4x已足够清晰", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("倍率越高越清晰，加载越慢越占内存。手机屏幕一般 300-500 DPI，3x-4x 已足够清晰", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
 
@@ -268,7 +268,7 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
                     Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text("墨水屏模式", fontSize = 16.sp)
-                            Text("降低分辨率解码、减少预加载、缩短UI自动隐藏时间以减少残影", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("降低分辨率解码、减少预加载、缩短 UI 自动隐藏时间以减少残影", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         Switch(checked = config.isEinkMode, onCheckedChange = { config = config.copy(isEinkMode = it); config.save(ctx) })
                     }
@@ -360,8 +360,8 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
                         }
 
                         Spacer(Modifier.height(12.dp))
-                        Text("UI自动隐藏时间", fontSize = 16.sp, fontWeight = FontWeight.Medium)
-                        Text("缩短隐藏时间可减少残影（普通模式默认10秒）", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("UI 自动隐藏时间", fontSize = 16.sp, fontWeight = FontWeight.Medium)
+                        Text("缩短隐藏时间可减少残影（普通模式默认 10 秒）", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Spacer(Modifier.height(8.dp))
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             listOf("3秒" to 3000L, "6秒" to 6000L, "10秒" to 10000L, "不隐藏" to 0L).forEach { (label, value) ->
@@ -396,7 +396,7 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
         AlertDialog(
             onDismissRequest = { showResetDialog = false },
             title = { Text("恢复默认设置") },
-            text = { Text("将清除所有阅读设置（含单本自定义），恢复到刚安装时的状态。阅读进度不受影响。") },
+            text = { Text("将清除所有阅读设置（含单本自定义），恢复到刚安装时的状态。阅读进度不受影响。\n此操作不可撤销。") },
             confirmButton = {
                 TextButton(onClick = {
                     com.mangareader.data.ReaderConfig().save(ctx)
@@ -414,7 +414,7 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
                     config = com.mangareader.data.ReaderConfig()
                     resetTrigger++
                     showResetDialog = false
-                }) { Text("确定") }
+                }) { Text("重置", color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = { TextButton(onClick = { showResetDialog = false }) { Text("取消") } }
         )

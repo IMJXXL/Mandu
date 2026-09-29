@@ -189,7 +189,7 @@ fun SmbAddWizardScreen(onBack: () -> Unit, onSaved: () -> Unit, initial: SmbSour
                 1 -> Column {
                     OutlinedTextField(displayName, { displayName = it }, label = { Text("名称（可选）") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     Spacer(Modifier.height(10.dp))
-                    OutlinedTextField(host, { host = it }, label = { Text("主机地址或 IP *") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(host, { host = it }, label = { Text("主机地址或 IP *") }, supportingText = { Text("局域网 IP 或主机名，如 192.168.1.10") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     Spacer(Modifier.height(10.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
                         OutlinedTextField(port, { port = it }, label = { Text("端口 *") }, singleLine = true, modifier = Modifier.weight(1f))

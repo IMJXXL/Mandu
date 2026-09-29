@@ -228,7 +228,7 @@ fun KomgaBrowserScreen(serverId: String, onBack: () -> Unit, onOpenBook: (Long) 
             val libs = libraries ?: emptyList()
             if (libs.isEmpty()) {
                 Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                    Text("暂无书库", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("还没有书库", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             } else {
                 LazyColumn(Modifier.fillMaxSize().padding(padding)) {
@@ -272,7 +272,7 @@ private fun SeriesListView(
 ) {
     if (seriesList.isEmpty() && !loading) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text("暂无系列", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("还没有系列", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         return
     }

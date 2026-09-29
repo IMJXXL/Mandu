@@ -2560,7 +2560,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                     val pwd = passwordInput
                     passwordInput = ""
                     passwordDeferred?.complete(pwd)
-                }) { Text("确定") }
+                }) { Text("解锁") }
             },
             dismissButton = {
                 TextButton(onClick = {

@@ -62,7 +62,7 @@ fun RenameBatchDialog(
                         OutlinedTextField(startNum, { startNum = it.filter { c -> c.isDigit() } },
                             label = { Text("起始序号") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                         Spacer(Modifier.height(4.dp))
-                        Text("输入01自动2位填充，也可用{序号:3}指定",
+                        Text("输入 01 自动 2 位填充，也可用 {序号:3} 指定",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
@@ -102,7 +102,7 @@ fun RenameBatchDialog(
                         onConfirm(updates)
                     }
                 }
-            ) { Text("确定") }
+            ) { Text("重命名") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
     )
