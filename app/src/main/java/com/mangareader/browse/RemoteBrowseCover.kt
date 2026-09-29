@@ -98,6 +98,23 @@ sealed interface BrowseCover {
 
 object RemoteBrowseCoverLoader {
 
+    // ★ WebDAV 每源「不主动加载封面」：会话级缓存 sourceId→开关，避免每条目查库
+    private val davNoCoverCache = java.util.concurrent.ConcurrentHashMap<Long, Boolean>()
+
+    /** 该 WebDAV 源是否开启「不主动加载封面」（开启时浏览页只出已落盘封面，不发网络请求） */
+    suspend fun davNoCoverFetch(sourceId: Long): Boolean = try {
+        davNoCoverCache.getOrPut(sourceId) {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                WebDavRepository.load(sourceId)?.noCoverFetch ?: false
+            }
+        }
+    } catch (_: Throwable) {
+        false
+    }
+
+    /** 开关切换后清缓存，让下次判断重读库 */
+    fun invalidateDavNoCoverCache() = davNoCoverCache.clear()
+
     /**
      * 确保封面缩略图存在并返回 JPEG 路径；不满足流量门/取数失败返回 null（UI 显示占位）。
      * 结果文件按 cover 内容寻址，进程内重复进入不再重取。
@@ -129,6 +146,8 @@ object RemoteBrowseCoverLoader {
                 com.mangareader.viewer.CoverAnimRawCache.readRawFile("webdav:" + cover.sourceId + ":" + cover.remote)
                     ?.let { return it.absolutePath.toPath() }
             }
+            // ★ 每源防封控：只出已落盘封面，绝不发起网络提取（磁盘命中时 archiveThumb 本就零网络）
+            if (davNoCoverFetch(cover.sourceId) && !davArchiveCoverCached(cover.sourceId, cover.remote)) return null
             archiveThumb(
             kind = "dava",
             cached = { davArchiveCoverCached(cover.sourceId, cover.remote) },
@@ -178,6 +197,8 @@ object RemoteBrowseCoverLoader {
                 ?.let { return it.absolutePath.toPath() }
         }
         val hit = WebDavCache.isCachedOnDisk(WebDavCache.thumbCachePath(sourceId, remote))
+        // ★ 每源防封控：磁盘未命中且源开启「不主动加载封面」→ 不发请求，直接占位
+        if (!hit && davNoCoverFetch(sourceId)) return null
         if (!hit && !Settings.downloadRemoteThumbs.value) return null
         if (hit) {
             return WebDavCache.ensureBrowseThumb(sourceId, remote, cacheOriginal = false) { }

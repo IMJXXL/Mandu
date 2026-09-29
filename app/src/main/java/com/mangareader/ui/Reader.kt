@@ -122,6 +122,25 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     }
 
     var book by remember { mutableStateOf<Book?>(null) }
+
+    // ★ WebDAV「不主动加载封面」源的补投递：打开阅读 = 用户主动行为，搭本次会话顺风车
+    //   把封面落盘（有缓存/非 webdav 源则幂等空转），列表下次刷新即有图
+    fun persistDavCoverIfGated(b: Book?) {
+        val cv = b?.coverPath ?: return
+        if (!cv.startsWith("cv:webdav:")) return
+        val davId = cv.removePrefix("cv:webdav:").substringBefore(':').toLongOrNull() ?: return
+        scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            if (!com.mangareader.browse.RemoteBrowseCoverLoader.davNoCoverFetch(davId)) return@launch
+            runCatching {
+                val cached = engine.loadCoverThumbBytes(cv)
+                if (cached == null) {
+                    com.mangareader.webdavbridge.WebDavCoverLoader.loadCoverRawWebDav(cv)?.let { (bytes, _) ->
+                        engine.saveCoverThumbBytes(cv, bytes)
+                    }
+                }
+            }
+        }
+    }
     var pageList by remember { mutableStateOf(listOf<ArchiveEngine.PageMeta>()) }
     var cur by remember { mutableIntStateOf(0) }
     var expandedPageCount by remember { mutableIntStateOf(0) }
@@ -1586,6 +1605,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                 val newBook = withContext(Dispatchers.IO) { dao.getBookByPath(switchTargetPath) }
                 if (newBook != null) {
                     book = newBook
+                    persistDavCoverIfGated(newBook)
                     val newBookId = newBook.id
                     config = com.mangareader.data.ReaderConfig.load(ctx, newBookId)
                     act?.requestedOrientation = prefs.getInt("orientation_$newBookId", ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED)
@@ -1803,6 +1823,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             // Step 1: All IO work on Dispatchers.IO (no state mutation)
             val loadedBook = withContext(Dispatchers.IO) { dao.getBookById(bookId) }
             book = loadedBook
+            persistDavCoverIfGated(loadedBook)
             loadedBook?.let { b ->
                 act?.requestedOrientation = prefs.getInt("orientation_$bookId", ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED)
                 val filePath = b.filePath

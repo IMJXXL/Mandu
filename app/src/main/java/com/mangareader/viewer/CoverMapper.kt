@@ -110,6 +110,14 @@ class CoverFetcher(
                     dataSource = DataSource.DISK,
                 )
             }
+            // ★ WebDAV 每源「不主动加载封面」：书架入口同样只出已落盘缓存（上方 loadCoverThumbBytes），
+            //   未落盘不发网络请求 → 抛占位；阅读打开时 ArchiveEngine 会另行落盘，之后这里自然命中
+            if (coverPath.startsWith("cv:webdav:")) {
+                val davId = coverPath.removePrefix("cv:webdav:").substringBefore(':').toLongOrNull()
+                if (davId != null && com.mangareader.browse.RemoteBrowseCoverLoader.davNoCoverFetch(davId)) {
+                    throw RuntimeException("no-cover-fetch source, placeholder: $coverPath")
+                }
+            }
             val raw = withContext(Dispatchers.IO) {
                 try {
                     if (coverPath.startsWith("cv:smb:")) {

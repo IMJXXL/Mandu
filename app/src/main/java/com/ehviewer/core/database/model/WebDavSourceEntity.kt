@@ -42,4 +42,11 @@ data class WebDavSourceEntity(
 
     @ColumnInfo(name = "LAST_ERROR")
     val lastError: String? = null,
+
+    /**
+     * 不主动加载封面（防服务器限流/封控）：true 时浏览与书架不发任何封面网络请求，
+     * 仅显示已落盘缓存（阅读打开时自动落盘）；阅读不受影响。默认 false。
+     */
+    @ColumnInfo(name = "NO_COVER_FETCH", defaultValue = "0")
+    val noCoverFetch: Boolean = false,
 )

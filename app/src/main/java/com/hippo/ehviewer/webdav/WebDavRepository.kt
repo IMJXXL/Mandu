@@ -49,6 +49,8 @@ object WebDavRepository {
         }
         BrowseSession.invalidateWebDavListing(source.id)
         BrowseSession.clearWebDavSegments(source.id)
+        // 「不主动加载封面」开关可能变化：清会话级缓存让浏览/书架判断重读库（幂等，代价≈0）
+        runCatching { com.mangareader.browse.RemoteBrowseCoverLoader.invalidateDavNoCoverCache() }
     }
 
     suspend fun delete(source: WebDavSourceEntity) = withIOContext {

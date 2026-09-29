@@ -51,6 +51,7 @@ fun WebDavAddWizardScreen(onBack: () -> Unit, onSaved: () -> Unit, initial: WebD
     var baseUrl by remember { mutableStateOf(initial?.baseUrl ?: "") }
     var username by remember { mutableStateOf(initial?.username ?: "") }
     var password by remember { mutableStateOf("") }
+    var noCoverFetch by remember { mutableStateOf(initial?.noCoverFetch ?: false) }
 
     var tempSource by remember { mutableStateOf<WebDavSourceEntity?>(null) }
     var dir by remember { mutableStateOf(initial?.pathPrefix ?: "") }
@@ -121,18 +122,24 @@ fun WebDavAddWizardScreen(onBack: () -> Unit, onSaved: () -> Unit, initial: WebD
                             baseUrl = baseUrl,
                             pathPrefix = dir,
                             username = username,
+                            noCoverFetch = noCoverFetch,
                         ),
                         password = password.takeIf { it.isNotBlank() },
                     )
                     initial.id
                 } else {
-                    WebDavRepository.add(
+                    val newId = WebDavRepository.add(
                         displayName = displayName,
                         baseUrl = baseUrl,
                         pathPrefix = dir,
                         username = username,
                         password = password,
                     )
+                    if (noCoverFetch) {
+                        com.hippo.ehviewer.webdav.WebDavRepository.load(newId)?.let {
+                            com.hippo.ehviewer.webdav.WebDavRepository.update(it.copy(noCoverFetch = true), null)
+                        }
+                    }
                 }
             }.getOrElse {
                 withContext(Dispatchers.Main) { Toast.makeText(ctx, "保存失败：${it.message?.take(60)}", Toast.LENGTH_SHORT).show() }
@@ -140,14 +147,14 @@ fun WebDavAddWizardScreen(onBack: () -> Unit, onSaved: () -> Unit, initial: WebD
             }
             // ★ 对齐 SmbAddWizardScreen：先扫描完成后才导航返回，
             //   否则 onSaved() 销毁 Composable 取消 scope，扫描协程永远跑不完
-            val scanned = runCatching { WebDavScanner.scanWebDavServer(savedId) }.getOrNull()
+            val scanned = runCatching { WebDavScanner.scanWebDavServer(savedId as Long) }.getOrNull()
             withContext(Dispatchers.Main) {
                 busy = false
                 val msg = if (isEdit) "已更新" else "已保存"
                 val scanMsg = when {
                     scanned == null -> ""
                     scanned == 0 -> "，书架无变化"
-                    else -> "，扫描新增 $scanned 本，封面后台加载中"
+                    else -> if (noCoverFetch) "，扫描新增 $scanned 本（已开启不主动加载封面）" else "，扫描新增 $scanned 本，封面后台加载中"
                 }
                 Toast.makeText(ctx, "$msg：/$dir$scanMsg", Toast.LENGTH_SHORT).show()
                 onSaved()
@@ -182,7 +189,15 @@ fun WebDavAddWizardScreen(onBack: () -> Unit, onSaved: () -> Unit, initial: WebD
                     OutlinedTextField(username, { username = it }, label = { Text("用户名") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     Spacer(Modifier.height(10.dp))
                     OutlinedTextField(password, { password = it }, label = { Text("密码") }, singleLine = true, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
-                    Spacer(Modifier.height(20.dp))
+                    Spacer(Modifier.height(6.dp))
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("不主动加载封面", fontSize = 14.sp)
+                            Text("只显示打开过的书的封面，点开阅读后自动补上；防服务器限流，阅读不受影响", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(checked = noCoverFetch, onCheckedChange = { noCoverFetch = it })
+                    }
+                    Spacer(Modifier.height(14.dp))
                     Button(
                         onClick = { scope.launch { if (connect()) step = 2 } },
                         enabled = !busy,

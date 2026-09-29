@@ -79,7 +79,7 @@ fun WebDavServersScreen(onBack: () -> Unit, onOpenBook: ((Long, Int) -> Unit)? =
     }
 
     if (showWizard) {
-        WebDavAddWizardScreen(onBack = { showWizard = false; editing = null }, onSaved = { showWizard = false; editing = null }, initial = editing)
+        WebDavAddWizardScreen(onBack = { showWizard = false; editing = null }, onSaved = { showWizard = false; editing = null; com.mangareader.browse.RemoteBrowseCoverLoader.invalidateDavNoCoverCache() }, initial = editing)
         return
     }
 
@@ -122,6 +122,13 @@ fun WebDavServersScreen(onBack: () -> Unit, onOpenBook: ((Long, Int) -> Unit)? =
                                     fontSize = 12.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
+                                if (s.noCoverFetch) {
+                                    Text(
+                                        "已开启不主动加载封面：只显示打开过的书的封面",
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.primary,
+                                    )
+                                }
                                 val statusColor: Color = when {
                                     s.lastError != null -> MaterialTheme.colorScheme.error
                                     s.lastOkAt != null -> Color(0xFF3A9D5D)
