@@ -54,6 +54,11 @@ class CurlReaderView(context: Context) : FrameLayout(context), ReaderViewDelegat
     var curlShadowAlpha: Float
         get() = curlShadowAlphaState.floatValue
         set(value) { curlShadowAlphaState.floatValue = value }
+    // ★ 纸背纹理 preset（-1=不启用；NES SideEffect 写入）
+    private val paperBackPresetIdState = mutableIntStateOf(-1)
+    var paperBackPresetId: Int
+        get() = paperBackPresetIdState.intValue
+        set(value) { paperBackPresetIdState.intValue = value }
     // 背面透出程度同上：单页翻页背面画的是当前页镜像，该值控制背面纸的明暗可见度
     private val curlBackContentAlphaState = mutableFloatStateOf(0.1f)
     var curlBackContentAlpha: Float
@@ -167,6 +172,7 @@ class CurlReaderView(context: Context) : FrameLayout(context), ReaderViewDelegat
                 fitScreen = fitScreen,
                 backContentAlpha = curlBackContentAlpha,
                 shadowAlpha = curlShadowAlpha,
+                paperBackPresetId = paperBackPresetId,
                 reloadTrigger = reloadTrigger,
                 tapForwardTrigger = tapForwardTrigger,
                 tapBackwardTrigger = tapBackwardTrigger,

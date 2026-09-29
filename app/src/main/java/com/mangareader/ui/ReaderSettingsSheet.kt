@@ -324,8 +324,8 @@ private fun ReadingModeTab(config: ReaderConfig, mode: Mode, onConfigChange: (Re
         SliderItem("侧边留白", config.imageMarginH.toFloat(), -20f..50f, 70, "${config.imageMarginH}dp") {
             onConfigChange(config.copy(imageMarginH = it.toInt()))
         }
-        SettingsChipRow("中间空白类型") {
-            listOf("无" to 0, "添加到双页视图" to 1, "添加到宽屏视图" to 2, "两个都添加" to 3).forEach { (label, value) ->
+        SettingsChipRow("双页中缝") {
+            listOf("贴合" to 0, "窄缝" to 1, "中缝" to 2, "宽缝" to 3).forEach { (label, value) ->
                 FilterChip(
                     selected = value == config.centerGapType,
                     onClick = { onConfigChange(config.copy(centerGapType = value)) },
@@ -386,6 +386,10 @@ private fun GeneralTab(config: ReaderConfig, onConfigChange: (ReaderConfig) -> U
         }
     }
     CheckboxItem("自动进入条漫模式", config.autoWebtoon) { onConfigChange(config.copy(autoWebtoon = it)) }
+    // ★ 横屏自动双页：仅单页布局显示（已双页无意义）；全局语义（用户拍板放常规页）
+    if (config.pageLayout == com.mangareader.data.ReaderConfig.PageLayout.SINGLE) {
+        CheckboxItem("横屏时自动使用双页", config.autoDoubleLandscape) { onConfigChange(config.copy(autoDoubleLandscape = it)) }
+    }
     AmbienceSection(config, onConfigChange)
 }
 

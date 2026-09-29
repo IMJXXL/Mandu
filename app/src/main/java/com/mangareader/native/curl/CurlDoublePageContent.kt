@@ -44,6 +44,7 @@ fun CurlDoublePageContent(
     curlContentAreaOnly: Boolean,
     backContentAlpha: Float,
     shadowAlpha: Float,
+    paperBackPresetId: Int = -1,
     reloadTrigger: MutableIntState,
     tapForwardTrigger: MutableIntState,
     tapBackwardTrigger: MutableIntState,
@@ -104,6 +105,7 @@ fun CurlDoublePageContent(
         config.shadowAlpha = shadowAlpha
     }
 
+
     LaunchedEffect(state.current) {
         if (state.current != currentSpread) {
             onSpreadChanged(state.current)
@@ -119,6 +121,17 @@ fun CurlDoublePageContent(
     }
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize().background(Color(pageBgColor))) {
+        // ★ 纸背纹理（同 CurlReaderContent）：按当前纸张 preset 烘米色纸纹图
+        val ctx = androidx.compose.ui.platform.LocalContext.current
+        val backBitmap = remember(paperBackPresetId, constraints.maxWidth, constraints.maxHeight) {
+            if (paperBackPresetId < 0) null
+            else runCatching {
+                com.mangareader.filter.PaperBackTexture.get(ctx, paperBackPresetId, constraints.maxWidth, constraints.maxHeight)
+            }.getOrNull()
+        }
+        LaunchedEffect(backBitmap) {
+            config.backPageBitmap = backBitmap?.asImageBitmap()
+        }
         // 「仅画面区域」模式：翻页动画范围缩到当前 spread 的显示矩形（与 SpreadImage 同一
         // 缩放语义），留边由外层背景铺满、不参与翻页，PageEdge 拖拽也随之变成"画面边缘"。
         // 矩形取当前 spread 已解码位图尺寸，未就绪时回退整屏；state.current 只在 turn 落地

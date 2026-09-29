@@ -2255,8 +2255,12 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                             trimThreshold = config.trimThreshold,
                             trimWhiteRatio = config.trimWhiteRatio,
                             panNavigation = config.panNavigation,
+                            clickFlip = config.clickFlipType.ordinal,
+                            clickFlipInvert = config.clickFlipInvertH,
                             pageLayout = when (config.pageLayout) {
-                                com.mangareader.data.ReaderConfig.PageLayout.SINGLE -> 0
+                                com.mangareader.data.ReaderConfig.PageLayout.SINGLE ->
+                                    // ★ 横屏自动双页：单页布局 + 开关开 + 当前横屏 → 双页（竖屏还原单页）
+                                    if (config.autoDoubleLandscape && (LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE)) 1 else 0
                                 com.mangareader.data.ReaderConfig.PageLayout.DOUBLE -> 1
                                 com.mangareader.data.ReaderConfig.PageLayout.DOUBLE_SHIFTED -> 2
                             },
@@ -2269,6 +2273,8 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                             pageCurlAnimationEnabled = config.isPageCurlAnimation,
                             curlContentAreaOnly = config.isCurlContentAreaOnly,
                             curlBackContentAlpha = config.curlBackContentAlpha,
+                            // ★ 纸背与页面同一张纸：纹理 preset 直接跟随
+                            paperBackPresetId = if (config.textureEnabled) config.texturePresetId else -1,
                             curlShadowAlpha = config.curlShadowAlpha,
                             einkDither = config.isEinkDither,
                             einkDitherAlgorithm = config.einkDitherAlgorithm,

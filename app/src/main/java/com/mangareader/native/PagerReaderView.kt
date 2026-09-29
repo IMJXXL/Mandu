@@ -578,11 +578,36 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         super.dispatchDraw(canvas)
     }
 
+    // ★ 点击翻页区域（0=关 1=左右分区 4=L型；2/3 旧对角线不活跃映射为左右分区）+ 水平对调
+    private var clickFlipType = 1
+    private var clickFlipInvertH = false
+
+    override fun setClickFlipInvert(invert: Boolean) {
+        if (clickFlipInvertH == invert) return
+        clickFlipInvertH = invert
+        applyNavigation()
+    }
+
+    private fun applyNavigation(verticalPagerNow: Boolean = verticalPager) {
+        val base = when (clickFlipType) {
+            0 -> AllMenuNavigation
+            4 -> LNavigation
+            else -> DefaultNavigation
+        }
+        // 竖向翻页 fx 无意义，恒用纵切预设；对调只对横向有意义
+        this.navigation = when {
+            verticalPagerNow -> VerticalPagerNavigation
+            clickFlipInvertH -> InvertedNavigation(base)
+            else -> base
+        }
+    }
+
     override fun setup(engine: ArchiveEngine, treePath: String, pages: List<ArchiveEngine.PageMeta>, startPage: Int, vertical: Boolean, clickFlip: Int, rtl: Boolean, verticalPager: Boolean) {
         val pagerOrientChanged = this.verticalPager != verticalPager
         this.verticalPager = verticalPager
         // ★ §34.3：竖向翻页用全宽三分纵切导航；横向保持默认左右三分
-        this.navigation = if (verticalPager) VerticalPagerNavigation else DefaultNavigation
+        this.clickFlipType = clickFlip
+        applyNavigation(verticalPager)
         // ★ §34.3：ViewPager2 方向——竖向翻页时 VERTICAL（上下滑切页），横向时 HORIZONTAL
         viewPager.orientation = if (verticalPager) ViewPager2.ORIENTATION_VERTICAL else ViewPager2.ORIENTATION_HORIZONTAL
         // ★ §34.3：竖向翻页禁用 FlipPageTransformer（3D 翻转对竖向不符）；后面 flipAnimationEnabled setter 会读 verticalPager
@@ -664,7 +689,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     }
 
     fun setNavigationMode(mode: Int) {
-        this.navigation = DefaultNavigation
+        applyNavigation()
     }
 
     fun setCenterGapType(type: Int) {
@@ -886,6 +911,8 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             if (pos == -1 || pos == androidx.recyclerview.widget.RecyclerView.NO_POSITION) return false
             val holder = rv.findViewHolderForAdapterPosition(pos) as? PagerViewHolder ?: return false
             val ssiv = holder.ssiv ?: return false
+            // ★ 裁切页放行：split 视口缩放恒 > minScale（见 isSplitPage 注释），不是用户放大
+            if (holder.isSplitPage) return false
             if (ssiv.visibility != View.VISIBLE || ssiv.scale <= ssiv.minScale + 0.01f) return false
             val remaining = android.graphics.RectF()
             ssiv.getPanRemaining(remaining)
@@ -1053,6 +1080,11 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 // ★ 纸张纹理烘焙：管线末端、入缓存前（纸随页翻动，替代旧屏幕覆盖层）
                 bmp = com.mangareader.filter.PaperPageTexture.apply(bmp)
                 bitmapCache.put(idx, bmp)
+                // ★ F 解码计时：慢书取证（epub/zip 解析慢）——请求→落缓存整链路 >300ms 记诊断
+                inflightLoads[idx]?.let { t0 ->
+                    val cost = android.os.SystemClock.uptimeMillis() - t0
+                    if (cost > 300) com.mangareader.DiagTracer.mark(context, "pageDecode idx=$idx ${cost}ms")
+                }
                 withContext(Dispatchers.Main) {
                     val adapterPos = positionOf(idx)
                     if (adapterPos >= 0 && adapterPos < (pagerAdapter?.itemCount ?: 0)) pagerAdapter?.notifyItemChanged(adapterPos, "loaded")
@@ -1115,6 +1147,11 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 // ★ 纸张纹理烘焙：管线末端、入缓存前
                 bmp = com.mangareader.filter.PaperPageTexture.apply(bmp)
                 bitmapCache.put(idx, bmp)
+                // ★ F 解码计时：慢书取证（epub/zip 解析慢）——请求→落缓存整链路 >300ms 记诊断
+                inflightLoads[idx]?.let { t0 ->
+                    val cost = android.os.SystemClock.uptimeMillis() - t0
+                    if (cost > 300) com.mangareader.DiagTracer.mark(context, "pageDecode idx=$idx ${cost}ms")
+                }
                 withContext(Dispatchers.Main) {
                     val adapterPos = positionOf(idx)
                     if (adapterPos >= 0 && adapterPos < (pagerAdapter?.itemCount ?: 0)) pagerAdapter?.notifyItemChanged(adapterPos, "loaded")
@@ -1369,7 +1406,13 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                     val hi = 2 * nsSpread + 1
                     if (isRtl) (if (hi < pageList.size) lo else -1) else hi
                 }
-                val gapPx = if (centerGapType in 1..3) (16 * holder.itemView.context.resources.displayMetrics.density).toInt() else 0
+                // ★ 双页中缝分档实宽（1=窄 8dp / 2=中 16dp / 3=宽 28dp），0=贴合
+                val gapPx = when (centerGapType) {
+                    1 -> (8 * holder.itemView.context.resources.displayMetrics.density).toInt()
+                    2 -> (16 * holder.itemView.context.resources.displayMetrics.density).toInt()
+                    3 -> (28 * holder.itemView.context.resources.displayMetrics.density).toInt()
+                    else -> 0
+                }
 
                 // wide image split: 全图加载到SSIV，视口定位显示左/右半边
                 if (doublePageSplitEnabled) {
@@ -1457,6 +1500,9 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     inner class PagerViewHolder(itemView: android.view.View) : androidx.recyclerview.widget.RecyclerView.ViewHolder(itemView) {
         private var heldBitmap: Bitmap? = null
         internal var ssiv: PagerSSIV? = itemView.findViewById(com.mangareader.R.id.ssiv_pager)
+        // ★ 双页裁切标记：裁切页视口缩放恒大于 minScale（minScale 是整图 fit），
+        //   tryPanIfZoomed 会误判"已放大"把翻页劫持成图内平移——此标记供其放行
+        internal var isSplitPage = false
         internal val iv: ImageView? = itemView.findViewById(android.R.id.content)
         /** §24 二代动图槽：setAnimDrawable 时存入，clear 时 stop+释放
          *  ★ 改 Coil AnimatedImageDecoder 后类型从 FrameAnimationDrawable<*> → 普通 Drawable */
@@ -1484,6 +1530,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         }
 
         fun setImage(bmp: Bitmap, useSsiv: Boolean, landscapeZoom: Boolean = true, fitWidth: Boolean = false) {
+            isSplitPage = false
             if (bmp.isRecycled) return
             heldBitmap = bmp
             if (useSsiv) {
@@ -1520,6 +1567,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
          * 用户可以通过navigateToPan平移到另一半。
          */
         fun setImageSplit(bmp: Bitmap, showRight: Boolean, useSsiv: Boolean, landscapeZoom: Boolean) {
+            isSplitPage = true
             if (bmp.isRecycled) return
             heldBitmap = bmp
             if (useSsiv) {
@@ -1601,6 +1649,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             }
         }
         fun clear() {
+            isSplitPage = false
             disposeAnimDrawable()
             heldBitmap = null
             iv?.setImageBitmap(null)

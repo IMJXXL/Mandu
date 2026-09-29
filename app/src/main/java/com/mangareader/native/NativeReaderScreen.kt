@@ -23,6 +23,9 @@ interface ReaderViewDelegate {
     /** ★ §34.3：verticalPager=true 表示 VERT_PAGER 竖向翻页模式（ViewPager2 orientation 垂直）。
      *  与 isVertical（条漫）语义分离。旧参数 vertical 保留语义兼容。 */
     fun setup(engine: ArchiveEngine, treePath: String, pages: List<ArchiveEngine.PageMeta>, startPage: Int, vertical: Boolean, clickFlip: Int, rtl: Boolean, verticalPager: Boolean = false)
+
+    /** 点击翻页水平对调（左手模式）：Pager 预设区域镜像 */
+    fun setClickFlipInvert(invert: Boolean) {}
     fun goToPage(page: Int)
     fun release()
     fun trimMemory(level: Int)
@@ -114,6 +117,9 @@ fun NativeReaderScreen(
     trimWhiteRatio: Float = 0.90f,
     panNavigation: Boolean = false,
     pageLayout: Int = 0,
+    // ★ 点击翻页区域（0=关 1=左右分区 4=L型）+ 水平对调——此前 setup 硬编码 0 从未生效
+    clickFlip: Int = 1,
+    clickFlipInvert: Boolean = false,
     pageBgColor: Int = android.graphics.Color.parseColor("#FFFFFF"),
     doublePageReverse: Boolean = false,
     doublePageSplit: Boolean = false,
@@ -126,6 +132,8 @@ fun NativeReaderScreen(
     curlContentAreaOnly: Boolean = false,
     /** 双页 curl 翻页背面透出程度 0~1：背面显示下一页内容的强度（0=纯背景色，1=完全清晰） */
     curlBackContentAlpha: Float = 0.1f,
+    // ★ 仿真翻页纸背：按当前纸张 preset 烘米色纸纹图，传给 pagecurl 背面
+    paperBackPresetId: Int = 0,
     /** 仿真翻页投影阴影浓度 0~0.5（0=关闭阴影，默认 0.2），单页/双页 curl 共用 */
     curlShadowAlpha: Float = 0.2f,
     /** ★ 墨水屏灰阶抖动（256级模拟）：解码管线参数，变更经 appliedDither SideEffect 即时生效 */
@@ -255,7 +263,9 @@ fun NativeReaderScreen(
         //   晚了首页就会以无纹理位图入缓存（appliedTexture SideEffect 只管运行时变化）
         com.mangareader.filter.PaperPageTexture.sync(ctx, textureEnabled, texturePresetId, textureConcentration)
         // ★ §34.3：verticalPager 传给 pagerView.setup（webtoon 走默认 false 无影响）
-        delegate.setup(engine, treePath, pages, savedPage, isVertical, 0, isRtl, verticalPager)
+        // ★ 点击翻页区域接线（此前硬编码 0=关闭，区域设置从未生效——2026-09-29 修复）
+        delegate.setup(engine, treePath, pages, savedPage, isVertical, clickFlip, isRtl, verticalPager)
+        delegate.setClickFlipInvert(clickFlipInvert)
         // Apply new config parameters to the delegate
         if (delegate is PagerReaderView) {
             delegate.setCenterGapType(centerGapType)
@@ -329,9 +339,11 @@ fun NativeReaderScreen(
         if (delegate is com.mangareader.native.curl.CurlDoublePageView) {
             delegate.curlBackContentAlpha = curlBackContentAlpha
             delegate.curlShadowAlpha = curlShadowAlpha
+            delegate.paperBackPresetId = paperBackPresetId
         } else if (delegate is com.mangareader.native.curl.CurlReaderView) {
             delegate.curlBackContentAlpha = curlBackContentAlpha
             delegate.curlShadowAlpha = curlShadowAlpha
+            delegate.paperBackPresetId = paperBackPresetId
         }
     }
 

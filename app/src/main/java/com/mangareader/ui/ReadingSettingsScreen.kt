@@ -14,6 +14,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -380,6 +381,44 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
             }
 
             item {
+                com.mangareader.smbbridge.SectionCard("点击翻页区域") {
+                    Text("翻页画面时点哪一块做什么（横向翻页模式；条漫/仿真翻页不适用）", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.height(10.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(
+                            "关闭" to com.mangareader.data.ReaderConfig.ClickFlipType.NO,
+                            "左右分区" to com.mangareader.data.ReaderConfig.ClickFlipType.LEFT_RIGHT,
+                            "L型" to com.mangareader.data.ReaderConfig.ClickFlipType.L_SHAPE,
+                        ).forEach { (label, value) ->
+                            Surface(
+                                modifier = Modifier.weight(1f).clickable { config = config.copy(clickFlipType = value); config.save(ctx) },
+                                shape = MaterialTheme.shapes.medium,
+                                color = if (config.clickFlipType == value) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                tonalElevation = if (config.clickFlipType == value) 4.dp else 0.dp,
+                            ) {
+                                Text(label, fontSize = 13.sp, modifier = Modifier.padding(10.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center, color = if (config.clickFlipType == value) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface)
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    // 染色预览：上一页=主色 / 菜单=灰 / 下一页=主色深，对调后水平镜像
+                    ClickZonePreview(config.clickFlipType, config.clickFlipInvertH)
+                    Spacer(Modifier.height(8.dp))
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("对调左右（左手模式）", fontSize = 14.sp)
+                            Text("点右侧=上一页、点左侧=下一页", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        androidx.compose.material3.Switch(
+                            checked = config.clickFlipInvertH,
+                            onCheckedChange = { on -> config = config.copy(clickFlipInvertH = on); config.save(ctx) },
+                            enabled = config.clickFlipType != com.mangareader.data.ReaderConfig.ClickFlipType.NO,
+                        )
+                    }
+                }
+            }
+
+            item {
                 Spacer(Modifier.height(16.dp))
                 TextButton(
                     onClick = { showResetDialog = true },
@@ -418,5 +457,57 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
             },
             dismissButton = { TextButton(onClick = { showResetDialog = false }) { Text("取消") } }
         )
+    }
+}
+
+/**
+ * 点击翻页区域染色预览（对调后水平镜像）：上一页=主色、菜单=灰、下一页=主色深。
+ * 仅示意当前预设的分区形态，与 ViewerNavigation 区域表一致。
+ */
+@Composable
+private fun ClickZonePreview(type: com.mangareader.data.ReaderConfig.ClickFlipType, invertH: Boolean) {
+    val prevC = MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)
+    val nextC = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)
+    val menuC = MaterialTheme.colorScheme.surfaceVariant
+    val bg = MaterialTheme.colorScheme.surface
+    androidx.compose.foundation.Canvas(
+        Modifier
+            .fillMaxWidth()
+            .height(64.dp)
+            .clip(MaterialTheme.shapes.medium)
+    ) {
+        drawRect(bg)
+        val w = size.width
+        val h = size.height
+        // invertH=true 时按水平镜像绘制（与 InvertedNavigation 的 fx→1-fx 一致）
+        fun mirrorX(x: Float) = if (invertH) 1f - x else x
+        when (type) {
+            com.mangareader.data.ReaderConfig.ClickFlipType.NO -> {
+                drawRect(menuC)
+            }
+            com.mangareader.data.ReaderConfig.ClickFlipType.L_SHAPE -> {
+                // PREV：上 1/3 横条 + 左中 1/3 竖条；NEXT：下 1/3 横条 + 右中 1/3 竖条；中央=菜单
+                fun rect(x0: Float, y0: Float, x1: Float, y1: Float, color: androidx.compose.ui.graphics.Color) {
+                    drawRect(color, topLeft = androidx.compose.ui.geometry.Offset(mirrorX(x0) * w, y0 * h),
+                        size = androidx.compose.ui.geometry.Size(kotlin.math.abs(mirrorX(x1) - mirrorX(x0)) * w, (y1 - y0) * h))
+                }
+                rect(0f, 0.05f, 1f, 0.33f, prevC)
+                rect(0f, 0.33f, 0.33f, 0.67f, prevC)
+                rect(0.67f, 0.33f, 1f, 0.67f, nextC)
+                rect(0f, 0.67f, 1f, 1f, nextC)
+                rect(0.33f, 0.33f, 0.67f, 0.67f, menuC)
+            }
+            else -> {
+                // 左右分区：左 1/3 PREV / 中 MENU / 右 1/3 NEXT
+                fun rect(x0: Float, x1: Float, color: androidx.compose.ui.graphics.Color) {
+                    val mx0 = mirrorX(x0); val mx1 = mirrorX(x1)
+                    drawRect(color, topLeft = androidx.compose.ui.geometry.Offset(minOf(mx0, mx1) * w, 0f),
+                        size = androidx.compose.ui.geometry.Size(kotlin.math.abs(mx1 - mx0) * w, h))
+                }
+                rect(0f, 0.33f, prevC)
+                rect(0.33f, 0.67f, menuC)
+                rect(0.67f, 1f, nextC)
+            }
+        }
     }
 }

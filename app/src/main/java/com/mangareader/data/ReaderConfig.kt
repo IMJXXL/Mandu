@@ -69,6 +69,12 @@ data class ReaderConfig(
     val autoWebtoon: Boolean = true,
     val chapterTransition: Boolean = true,
     val centerGapType: Int = 0,
+
+    /** ★ 横屏时自动使用双页（仅页面布局=单页时生效；全局语义，用户拍板放常规页） */
+    val autoDoubleLandscape: Boolean = false,
+
+    /** 点击翻页水平对调（左手模式）：区域矩形镜像，点右侧=上一页 */
+    val clickFlipInvertH: Boolean = false,
     // ★ N1：卷末无缝续读（默认开；仅同一本书的分卷之间生效，跨书永不自动跳）
     val seamlessNextVolume: Boolean = true,
     val forceFullDecode: Boolean = false,
@@ -92,7 +98,7 @@ data class ReaderConfig(
     val ambienceVolume: Int = 60
 ) {
     enum class ScrollMode { VERTICAL, HORIZONTAL_LEFT, HORIZONTAL_RIGHT }
-    @Deprecated("Dead code - navigation uses Int field navigationMode instead") enum class ClickFlipType { NO, LEFT_RIGHT, DIAGONAL_LB_RT, DIAGONAL_LT_RB }
+    @Deprecated("Dead code - navigation uses Int field navigationMode instead") enum class ClickFlipType { NO, LEFT_RIGHT, DIAGONAL_LB_RT, DIAGONAL_LT_RB, L_SHAPE }
     @Deprecated("Dead code - navigationMode is stored as Int, this enum is never referenced") enum class NavigationMode(val label: String) {
         DEFAULT("默认"), L_NAV("L形"), KINDLISH("Kindlish"), EDGE("边沿"), RIGHT_LEFT("右与左")
     }
@@ -154,6 +160,8 @@ data class ReaderConfig(
             putBoolean("chapterTransition", chapterTransition)
             putBoolean("seamlessNextVolume", seamlessNextVolume)
             putInt("${prefix}centerGapType", centerGapType)
+            putBoolean("${prefix}autoDoubleLandscape", autoDoubleLandscape)
+            putBoolean("${prefix}clickFlipInvertH", clickFlipInvertH)
             putBoolean("forceFullDecode", forceFullDecode)
             putBoolean("tileModeEnabled", tileModeEnabled)
             putString("downsampleTier", downsampleTier.name)
@@ -231,6 +239,8 @@ data class ReaderConfig(
                 autoWebtoon = prefs.safeGetBoolean("autoWebtoon", true),
                 chapterTransition = prefs.safeGetBoolean("chapterTransition", true),
                 centerGapType = prefs.safeGetInt("${prefix}centerGapType", 0),
+                autoDoubleLandscape = prefs.safeGetBoolean("${prefix}autoDoubleLandscape", false),
+                clickFlipInvertH = prefs.safeGetBoolean("${prefix}clickFlipInvertH", false),
                 seamlessNextVolume = prefs.safeGetBoolean("seamlessNextVolume", true),
                 forceFullDecode = prefs.safeGetBoolean("forceFullDecode", false),
                 tileModeEnabled = prefs.safeGetBoolean("tileModeEnabled", false),

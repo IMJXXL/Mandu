@@ -65,6 +65,11 @@ class CurlDoublePageView(context: Context) : FrameLayout(context), ReaderViewDel
     var curlShadowAlpha: Float
         get() = curlShadowAlphaState.floatValue
         set(value) { curlShadowAlphaState.floatValue = value }
+    // ★ 纸背纹理 preset（-1=不启用；NES SideEffect 写入）
+    private val paperBackPresetIdState = mutableIntStateOf(-1)
+    var paperBackPresetId: Int
+        get() = paperBackPresetIdState.intValue
+        set(value) { paperBackPresetIdState.intValue = value }
     var remotePageSupply: RemotePageSupply? = null
     var onChapterEnd: ((Boolean) -> Unit)? = null
 
@@ -204,6 +209,7 @@ class CurlDoublePageView(context: Context) : FrameLayout(context), ReaderViewDel
                 curlContentAreaOnly = curlContentAreaOnly,
                 backContentAlpha = curlBackContentAlpha,
                 shadowAlpha = curlShadowAlpha,
+                paperBackPresetId = paperBackPresetId,
                 reloadTrigger = reloadTrigger,
                 tapForwardTrigger = tapForwardTrigger,
                 tapBackwardTrigger = tapBackwardTrigger,

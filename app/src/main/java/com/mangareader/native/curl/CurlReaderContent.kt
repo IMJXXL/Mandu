@@ -74,6 +74,7 @@ fun CurlReaderContent(
     fitScreen: Boolean,
     backContentAlpha: Float,
     shadowAlpha: Float,
+    paperBackPresetId: Int = -1,
     reloadTrigger: MutableIntState,
     tapForwardTrigger: MutableIntState,
     tapBackwardTrigger: MutableIntState,
@@ -133,6 +134,7 @@ fun CurlReaderContent(
         config.shadowAlpha = shadowAlpha
     }
 
+
     LaunchedEffect(state.current) {
         if (state.current != currentPage) {
             onPageChanged(state.current)
@@ -148,6 +150,17 @@ fun CurlReaderContent(
     }
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize().background(Color(pageBgColor))) {
+        // ★ 纸背纹理：按当前纸张 preset 烘一张米色纸纹图挂到 pagecurl 背面
+        val ctx = androidx.compose.ui.platform.LocalContext.current
+        val backBitmap = remember(paperBackPresetId, constraints.maxWidth, constraints.maxHeight) {
+            if (paperBackPresetId < 0) null
+            else runCatching {
+                com.mangareader.filter.PaperBackTexture.get(ctx, paperBackPresetId, constraints.maxWidth, constraints.maxHeight)
+            }.getOrNull()
+        }
+        LaunchedEffect(backBitmap) {
+            config.backPageBitmap = backBitmap?.asImageBitmap()
+        }
         var insetL = 0.dp
         var insetT = 0.dp
         var insetR = 0.dp

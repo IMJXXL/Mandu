@@ -248,9 +248,10 @@ fun ReaderTocSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-        sheetMaxWidth = 520.dp
+        sheetMaxWidth = 520.dp,
+        dragHandle = null,  // ★ 顶部拖动横条纯装饰不可点，去掉把空间还给列表
     ) {
-        Column(Modifier.fillMaxWidth().height(400.dp).padding(16.dp)) {
+        Column(Modifier.fillMaxWidth().height(440.dp).padding(16.dp)) {
             // ★ 三 Tab：目录 / 浏览 / 书签
             TabRow(
                 selectedTabIndex = tocTab,

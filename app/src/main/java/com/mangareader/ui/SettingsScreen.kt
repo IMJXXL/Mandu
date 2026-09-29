@@ -52,7 +52,6 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?, Int) -> Unit
     var showDonation by remember { mutableStateOf(false) }
 
     var showScrollModeDialog by remember { mutableStateOf(false) }
-    var showClickFlipDialog by remember { mutableStateOf(false) }
     var showReadingSettings by remember { mutableStateOf(false) }
     // ★ 外观设置子页：rememberSaveable——子页内改暗色/主题会 recreate Activity，saveable 保证回到本页而不是弹回设置首页
     var showAppearanceSettings by rememberSaveable { mutableStateOf(false) }
@@ -87,62 +86,6 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?, Int) -> Unit
                             RadioButton(selected = config.scrollMode == mode, onClick = { config = config.copy(scrollMode = mode); config.save(ctx); showScrollModeDialog = false })
                             Spacer(Modifier.width(8.dp))
                             Text(label, fontSize = 16.sp)
-                        }
-                    }
-                }
-            }, confirmButton = {})
-    }
-
-    if (showClickFlipDialog) {
-        val accentColor = MaterialTheme.colorScheme.primary
-        val surfaceColor = MaterialTheme.colorScheme.surfaceVariant
-        AlertDialog(onDismissRequest = { showClickFlipDialog = false }, title = { Text("点击翻页区域") },
-            text = {
-                Column {
-                    listOf(
-                        com.mangareader.data.ReaderConfig.ClickFlipType.NO to "关闭" to "所有区域均切换UI",
-                        com.mangareader.data.ReaderConfig.ClickFlipType.LEFT_RIGHT to "左右分区" to "左35%上一页, 右35%下一页, 中间切换UI",
-                        com.mangareader.data.ReaderConfig.ClickFlipType.DIAGONAL_LB_RT to "对角线 (左下→右上)" to "左下区域上一页, 右上区域下一页",
-                        com.mangareader.data.ReaderConfig.ClickFlipType.DIAGONAL_LT_RB to "对角线 (左上→右下)" to "左上区域上一页, 右下区域下一页"
-                    ).forEach { (item, desc) ->
-                        val (type, label) = item
-                        Row(Modifier.fillMaxWidth().clickable { config = config.copy(clickFlipType = type); config.save(ctx); showClickFlipDialog = false }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            RadioButton(selected = config.clickFlipType == type, onClick = { config = config.copy(clickFlipType = type); config.save(ctx); showClickFlipDialog = false })
-                            Spacer(Modifier.width(8.dp))
-                            Column(Modifier.weight(1f)) {
-                                Text(label, fontSize = 16.sp)
-                                Text(desc, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            Box(Modifier.size(48.dp, 36.dp).clip(RoundedCornerShape(4.dp)).background(surfaceColor), contentAlignment = Alignment.Center) {
-                                androidx.compose.foundation.Canvas(Modifier.fillMaxSize().padding(4.dp)) {
-                                    val w = size.width
-                                    val h = size.height
-                                    when (type) {
-                                        com.mangareader.data.ReaderConfig.ClickFlipType.NO -> {
-                                            drawRect(Color.Gray, style = Stroke(width = 1.dp.toPx()))
-                                        }
-                                        com.mangareader.data.ReaderConfig.ClickFlipType.LEFT_RIGHT -> {
-                                            drawRect(Color.Gray, style = Stroke(width = 1.dp.toPx()))
-                                            drawLine(Color.Gray, Offset(w * 0.35f, 0f), Offset(w * 0.35f, h), strokeWidth = 1.dp.toPx())
-                                            drawLine(Color.Gray, Offset(w * 0.65f, 0f), Offset(w * 0.65f, h), strokeWidth = 1.dp.toPx())
-                                            drawLine(accentColor, Offset(w * 0.17f, h * 0.5f), Offset(w * 0.05f, h * 0.5f), strokeWidth = 2.dp.toPx())
-                                            drawLine(accentColor, Offset(w * 0.83f, h * 0.5f), Offset(w * 0.95f, h * 0.5f), strokeWidth = 2.dp.toPx())
-                                        }
-                                        com.mangareader.data.ReaderConfig.ClickFlipType.DIAGONAL_LB_RT -> {
-                                            drawRect(Color.Gray, style = Stroke(width = 1.dp.toPx()))
-                                            drawLine(Color.Gray, Offset(0f, h), Offset(w, 0f), strokeWidth = 1.dp.toPx())
-                                            drawLine(accentColor, Offset(w * 0.15f, h * 0.85f), Offset(w * 0.05f, h * 0.95f), strokeWidth = 2.dp.toPx())
-                                            drawLine(accentColor, Offset(w * 0.85f, h * 0.15f), Offset(w * 0.95f, h * 0.05f), strokeWidth = 2.dp.toPx())
-                                        }
-                                        com.mangareader.data.ReaderConfig.ClickFlipType.DIAGONAL_LT_RB -> {
-                                            drawRect(Color.Gray, style = Stroke(width = 1.dp.toPx()))
-                                            drawLine(Color.Gray, Offset(0f, 0f), Offset(w, h), strokeWidth = 1.dp.toPx())
-                                            drawLine(accentColor, Offset(w * 0.15f, h * 0.15f), Offset(w * 0.05f, h * 0.05f), strokeWidth = 2.dp.toPx())
-                                            drawLine(accentColor, Offset(w * 0.85f, h * 0.85f), Offset(w * 0.95f, h * 0.95f), strokeWidth = 2.dp.toPx())
-                                        }
-                                    }
-                                }
-                            }
                         }
                     }
                 }
