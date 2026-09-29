@@ -285,9 +285,10 @@ object NetworkFolderIndexCache {
             }
         }
         if (!merge.unchanged) {
+            // 磁盘写失败也保留 RAM 条目：刚合并出的大目录不因一次写失败被丢弃（磁盘留在旧文件，
+            // 下次保存重写）；原来这里 remove 会导致写失败即丢清单、触发整源重扫
             if (!idx.disk.writeListing(key, merge.stored)) {
-                idx.decoded.remove(key)
-                return merge.stored
+                logcat("FolderIndex") { "Write listing failed dir=$key (kept in memory)" }
             }
         }
         idx.decoded[key] = merge.stored
