@@ -197,23 +197,28 @@ fun Theme(
     MaterialTheme(colorScheme = scheme, content = content)
 }
 
-/** 用 HSV 派生 primary 一族（onPrimary 按亮度取黑/白；容器色按暗/亮主题分别加深/提亮），其余槽位沿用底方案 */
+/** 用 HSV 派生 primary+secondary 两族（onX 按亮度取黑/白；容器色按暗/亮主题分别加深/提亮），其余槽位沿用底方案。
+ *  预设主题（蓝/绿/紫等）均把 secondary 一族设为与 primary 同色，选中态 FilterChip、
+ *  底部导航指示条用的是 secondaryContainer——自定义色必须同步覆盖这两族才有同等的生效范围 */
 private fun androidx.compose.material3.ColorScheme.withCustomPrimary(argb: Int, dark: Boolean): androidx.compose.material3.ColorScheme {
     val hsv = floatArrayOf(0f, 0f, 0f)
     android.graphics.Color.colorToHSV(argb, hsv)
     val h = hsv[0]; val s = hsv[1]; val v = hsv[2]
     val lum = 0.299f * ((argb shr 16) and 0xFF) + 0.587f * ((argb shr 8) and 0xFF) + 0.114f * (argb and 0xFF)
     val onPrimary = if (lum > 140f) androidx.compose.ui.graphics.Color.Black else androidx.compose.ui.graphics.Color.White
-    return if (dark) copy(
+    val container = if (dark) android.graphics.Color.HSVToColor(floatArrayOf(h, s, 0.42f))
+        else android.graphics.Color.HSVToColor(floatArrayOf(h, s * 0.45f, 0.90f))
+    val onContainer = if (dark) android.graphics.Color.HSVToColor(floatArrayOf(h, s * 0.55f, 0.92f))
+        else android.graphics.Color.HSVToColor(floatArrayOf(h, s * 0.9f, v * 0.42f))
+    return copy(
         primary = androidx.compose.ui.graphics.Color(argb),
         onPrimary = onPrimary,
-        primaryContainer = androidx.compose.ui.graphics.Color(android.graphics.Color.HSVToColor(floatArrayOf(h, s, 0.42f))),
-        onPrimaryContainer = androidx.compose.ui.graphics.Color(android.graphics.Color.HSVToColor(floatArrayOf(h, s * 0.55f, 0.92f))),
-    ) else copy(
-        primary = androidx.compose.ui.graphics.Color(argb),
-        onPrimary = onPrimary,
-        primaryContainer = androidx.compose.ui.graphics.Color(android.graphics.Color.HSVToColor(floatArrayOf(h, s * 0.45f, 0.90f))),
-        onPrimaryContainer = androidx.compose.ui.graphics.Color(android.graphics.Color.HSVToColor(floatArrayOf(h, s * 0.9f, v * 0.42f))),
+        secondary = androidx.compose.ui.graphics.Color(argb),
+        onSecondary = onPrimary,
+        primaryContainer = androidx.compose.ui.graphics.Color(container),
+        onPrimaryContainer = androidx.compose.ui.graphics.Color(onContainer),
+        secondaryContainer = androidx.compose.ui.graphics.Color(container),
+        onSecondaryContainer = androidx.compose.ui.graphics.Color(onContainer),
     )
 }
 
