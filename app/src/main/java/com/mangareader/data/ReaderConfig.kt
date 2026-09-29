@@ -247,7 +247,15 @@ data class ReaderConfig(
                 texturePresetId = prefs.safeGetInt("${prefix}texturePresetId", 0),
                 textureAlpha = prefs.safeGetInt("${prefix}textureAlpha", 15).coerceIn(0, 40),
                 textureConcentration = prefs.safeGetInt("${prefix}textureConcentration", 100).coerceIn(0, 100),
-                ambienceSound = prefs.getString("${prefix}ambienceSound", "") ?: "",
+                // ambienceSound v1 曾以 Int 持久化（0关/1雨/2篝火/3咖啡），v2 为 String——
+                // 裸 getString 读旧 Int 会 ClassCastException（任何加载配置的入口都崩）。
+                // 读原始值做类型归一：1→"rain"，其余旧值→""（对应音色已删）
+                ambienceSound = when (val raw = prefs.all["${prefix}ambienceSound"]) {
+                    is String -> raw
+                    is Int -> if (raw == 1) "rain" else ""
+                    is Long -> if (raw == 1L) "rain" else ""
+                    else -> ""
+                },
                 ambienceVolume = prefs.safeGetInt("${prefix}ambienceVolume", 60).coerceIn(0, 100),
                 downsampleTier = if (prefs.contains("downsampleTier")) {
                     try { DownsampleTier.valueOf(prefs.getString("downsampleTier", "STANDARD")!!) } catch (_: Exception) { DownsampleTier.STANDARD }
