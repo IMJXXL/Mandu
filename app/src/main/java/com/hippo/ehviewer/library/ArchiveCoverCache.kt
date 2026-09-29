@@ -27,12 +27,16 @@ import com.hippo.ehviewer.jni.solidNextPlayable
 import java.io.File
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -86,6 +90,65 @@ object ArchiveCoverCache {
     private const val FORMAT_VERSION = 2
 
     private val extractSlots = Semaphore(1)
+
+    /**
+     * Browse folder identity. [onBrowseFolderChanged] cancels cover jobs from the previous
+     * folder so a RAR/7z page-0 extract (semaphore 1 + [ArchiveAccess]) cannot block the
+     * next folder's archives — same idea as our VideoThumbnail pool rotation.
+     */
+    private val browseFolderKey = AtomicReference<String?>(null)
+    private val browseGeneration = AtomicLong(0L)
+    private val extractJobs = ConcurrentHashMap<Job, Long>()
+
+    /**
+     * Call when the visible browse folder changes (SMB/WebDAV/local path).
+     * Cancels stale cover extracts and aborts native/network work immediately.
+     */
+    fun onBrowseFolderChanged(folderKey: String) {
+        val prev = browseFolderKey.getAndSet(folderKey)
+        if (prev == null || prev == folderKey) return
+        val gen = browseGeneration.incrementAndGet()
+        val stale = ArrayList<Job>()
+        extractJobs.forEach { job, jobGen -> if (jobGen < gen) stale += job }
+        stale.forEach { it.cancel(CancellationException("archive cover $prev → $folderKey")) }
+        ArchiveAccess.abortInFlightCover()
+    }
+
+    /**
+     * Screen dispose / empty stack. Only cancels if this screen still owns the extract
+     * generation — otherwise Library `onDispose` would wipe a folder we just entered.
+     */
+    fun onBrowseFolderLeft(ownerPrefix: String) {
+        val current = browseFolderKey.get() ?: return
+        if (current.startsWith(ownerPrefix)) {
+            onBrowseFolderChanged("")
+        }
+    }
+
+    /**
+     * One-at-a-time cover extract. Folder change cancels waiters and the holder so the
+     * next listing is not stuck behind a leftover RAR/ZIP page-0.
+     */
+    private suspend fun <T> withCoverExtractSlot(block: suspend () -> T): T {
+        val gen = browseGeneration.get()
+        val job = currentCoroutineContext().job
+        extractJobs[job] = gen
+        try {
+            currentCoroutineContext().ensureActive()
+            if (browseGeneration.get() != gen) {
+                throw CancellationException("archive cover folder changed")
+            }
+            return extractSlots.withPermit {
+                currentCoroutineContext().ensureActive()
+                if (browseGeneration.get() != gen) {
+                    throw CancellationException("archive cover folder changed")
+                }
+                block()
+            }
+        } finally {
+            extractJobs.remove(job, gen)
+        }
+    }
 
     /**
      * JPEG/UHDR cover encode runs here — **not** as a child of [ArchiveAccess.withArchive].
@@ -443,16 +506,16 @@ object ArchiveCoverCache {
         val dest = destOverride ?: thumbPathFor(cacheKey, 0L, 0L)
         if (isCachedOnDisk(dest)) return CoverEnsureResult.Hit(dest)
         val isZip = fileName.isNotEmpty() && isZipArchiveFileName(fileName)
-        val outcome = extractSlots.withPermit {
+        val outcome = withCoverExtractSlot {
             if (isCachedOnDisk(dest)) {
-                return@withPermit StreamExtractOutcome.Terminal(CoverEnsureResult.Hit(dest))
+                return@withCoverExtractSlot StreamExtractOutcome.Terminal(CoverEnsureResult.Hit(dest))
             }
             // Cached empty ZIP from a prior thumb/reader open — skip re-parse.
             if (isZip) {
                 val cachedEmpty = ArchiveStreamPageCache.loadIndex(cacheKey)
                     ?.takeIf { it.format == "zip" && it.members.isEmpty() && it.complete }
                 if (cachedEmpty != null) {
-                    return@withPermit StreamExtractOutcome.Terminal(CoverEnsureResult.NoImages)
+                    return@withCoverExtractSlot StreamExtractOutcome.Terminal(CoverEnsureResult.NoImages)
                 }
             }
             // Hold ArchiveAccess only for open + page-0 extract; encode outside.
@@ -680,16 +743,16 @@ object ArchiveCoverCache {
         coverFromDocumentExtractCache(cacheKey)?.let { return@withIOContext CoverEnsureResult.Hit(it) }
         val base = cacheKey.substringAfterLast('/').substringAfterLast(':')
         val isPdf = isPdfFileName(base) || cacheKey.endsWith(".pdf", ignoreCase = true)
-        extractSlots.withPermit {
-            if (isCachedOnDisk(dest)) return@withPermit CoverEnsureResult.Hit(dest)
-            coverFromDocumentExtractCache(cacheKey)?.let { return@withPermit CoverEnsureResult.Hit(it) }
+        withCoverExtractSlot {
+            if (isCachedOnDisk(dest)) return@withCoverExtractSlot CoverEnsureResult.Hit(dest)
+            coverFromDocumentExtractCache(cacheKey)?.let { return@withCoverExtractSlot CoverEnsureResult.Hit(it) }
             try {
                 openSource().use { source ->
                     val size = runCatching { source.size }.getOrDefault(0L)
                     // pdfium renders pages incl. ObjStm xref / /SMask /ICCBased that
                     // PdfImageEngine cannot parse. Must take priority for PDFs.
                     if (isPdf && size > 0L) {
-                        return@withPermit ensurePdfiumStreamCover(cacheKey, source, size, dest)
+                        return@withCoverExtractSlot ensurePdfiumStreamCover(cacheKey, source, size, dest)
                     }
                     val engine = openDocumentCoverEngine(cacheKey, source, size)
                         ?: return@use CoverEnsureResult.Skip
@@ -777,23 +840,23 @@ object ArchiveCoverCache {
         if (isCachedOnDisk(dest)) return CoverEnsureResult.Hit(dest)
         coverFromDocumentExtractCache(key)?.let { return CoverEnsureResult.Hit(it) }
         val isPdf = isPdfFileName(archivePath.name)
-        return extractSlots.withPermit {
-            if (isCachedOnDisk(dest)) return@withPermit CoverEnsureResult.Hit(dest)
-            coverFromDocumentExtractCache(key)?.let { return@withPermit CoverEnsureResult.Hit(it) }
+        return withCoverExtractSlot {
+            if (isCachedOnDisk(dest)) return@withCoverExtractSlot CoverEnsureResult.Hit(dest)
+            coverFromDocumentExtractCache(key)?.let { return@withCoverExtractSlot CoverEnsureResult.Hit(it) }
             try {
                 archivePath.openFileDescriptor("r").use { pfd ->
                     PfdArchiveByteSource(pfd, ownsPfd = false).use { source ->
                         // pdfium for PDFs: PdfImageEngine fails on ObjStm xref / SMask PDFs.
                         if (isPdf && pfd.statSize > 0L) {
-                            return@withPermit ensurePdfiumStreamCover(key, source, pfd.statSize, dest)
+                            return@withCoverExtractSlot ensurePdfiumStreamCover(key, source, pfd.statSize, dest)
                         }
                         val engine = openDocumentCoverEngine(key, source, pfd.statSize)
-                            ?: return@withPermit CoverEnsureResult.Skip
-                        if (engine.pageCount <= 0) return@withPermit CoverEnsureResult.NoImages
+                            ?: return@withCoverExtractSlot CoverEnsureResult.Skip
+                        if (engine.pageCount <= 0) return@withCoverExtractSlot CoverEnsureResult.NoImages
                         // Extract page 0 only; never persist coverOnly as document index
                         // (would pin multi-page docs to 1 page via openFromIndex).
                         val page = engine.extractToCache(key, 0)
-                            ?: return@withPermit CoverEnsureResult.Skip
+                            ?: return@withCoverExtractSlot CoverEnsureResult.Skip
                         val thumb = writeCoverFromExtractedPage(key, page)
                         if (thumb != null) CoverEnsureResult.Hit(thumb) else CoverEnsureResult.Skip
                     }
@@ -861,9 +924,9 @@ object ArchiveCoverCache {
         // Prefer page already extracted by a prior solid reader session.
         coverFromSolidExtractCache(cacheKey)?.let { return CoverEnsureResult.Hit(it) }
 
-        val outcome = extractSlots.withPermit {
+        val outcome = withCoverExtractSlot {
             if (isCachedOnDisk(dest)) {
-                return@withPermit SolidExtractOutcome.Terminal(CoverEnsureResult.Hit(dest))
+                return@withCoverExtractSlot SolidExtractOutcome.Terminal(CoverEnsureResult.Hit(dest))
             }
 
             try {

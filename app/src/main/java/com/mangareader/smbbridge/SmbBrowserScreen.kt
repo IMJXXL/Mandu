@@ -185,9 +185,17 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long, Int)
 
     LaunchedEffect(source, dir) {
         if (source != null) {
+            // 换目录即作废上一目录的在途封面提取（RAR/7z 页0提取不再卡住下一目录封面）
+            com.hippo.ehviewer.library.ArchiveCoverCache.onBrowseFolderChanged("smb:$serverId:$dir")
             loading = true
             entries = listDir(dir)
             loading = false
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            com.hippo.ehviewer.library.ArchiveCoverCache.onBrowseFolderLeft("smb:")
         }
     }
 
