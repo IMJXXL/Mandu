@@ -27,12 +27,28 @@ class VideoDirectLinkByteSource(
     knownSize: Long = -1L,
     private val blockSize: Int = VIDEO_BLOCK,
     private val maxBlocks: Int = VIDEO_WINDOW_BLOCKS,
-    private val prefetchAhead: Int = VIDEO_PREFETCH_AHEAD,
+    prefetchAhead: Int = VIDEO_PREFETCH_AHEAD,
+    prefetchParallel: Int = -1,
 ) : ArchiveByteSource {
+    /**
+     * Deflate ZIP members cannot jump: parallel far-ahead loads reset the inflater.
+     * STORE / plain files multiplex SMB READs on one handle.
+     */
+    private val prefetchAhead: Int
+    private val prefetchParallel: Int
+
     init {
         require(blockSize > 0) { "blockSize must be positive" }
         require(maxBlocks > 0) { "maxBlocks must be positive" }
         require(prefetchAhead >= 0) { "prefetchAhead must be non-negative" }
+        val sequential = !demand.isRandomAccess
+        this.prefetchAhead = if (sequential) minOf(prefetchAhead, 2) else prefetchAhead
+        this.prefetchParallel = when {
+            this.prefetchAhead <= 0 -> 0
+            sequential -> 1
+            prefetchParallel > 0 -> prefetchParallel
+            else -> PREFETCH_PARALLEL
+        }
     }
 
     private data class Block(val bytes: ByteArray, val length: Int)
@@ -47,8 +63,8 @@ class VideoDirectLinkByteSource(
     private val epoch = AtomicInteger(0)
     private val lastDemandBlock = AtomicLong(-1L)
 
-    private val prefetchExecutor: ExecutorService? = if (prefetchAhead > 0) {
-        val n = minOf(prefetchAhead, PREFETCH_PARALLEL)
+    private val prefetchExecutor: ExecutorService? = if (prefetchAhead > 0 && prefetchParallel > 0) {
+        val n = minOf(prefetchAhead, prefetchParallel)
         Executors.newFixedThreadPool(n) { runnable ->
             Thread(runnable, "video-direct-prefetch").apply {
                 isDaemon = true
@@ -201,14 +217,22 @@ class VideoDirectLinkByteSource(
         val source = if (usePrefetchLane) prefetchSource else demand
         val bytes = ByteArray(expected)
         var filled = 0
+        var reconnects = 0
         while (filled < expected && !closed.get()) {
             val n = try {
                 source.readAt(blockStart + filled, bytes, filled, expected - filled)
             } catch (_: Throwable) {
                 -1
             }
-            if (n <= 0) break
-            filled += n
+            if (n > 0) {
+                filled += n
+                continue
+            }
+            // n==0 且已到声明尺寸才是真 EOF；否则视为远端瞬断，重连后重试（封顶）
+            if (n == 0 && blockStart + filled >= size) break
+            if (closed.get() || reconnects >= BLOCK_RECONNECT_ATTEMPTS) break
+            reconnects++
+            source.requestReconnect()
         }
         if (filled <= 0 || closed.get()) return null
         val block = Block(bytes, filled)
@@ -295,21 +319,34 @@ class VideoDirectLinkByteSource(
         }
     }
 
+    override fun dropQueuedReads() {
+        demand.dropQueuedReads()
+        prefetch?.dropQueuedReads()
+    }
+
+    override fun requestReconnect() {
+        demand.requestReconnect()
+        prefetch?.requestReconnect()
+    }
+
     companion object {
-        /** Aligned network fetch size — amortizes SMB RTT for ~100+ Mbps LAN. */
+        /** Transient mid-block SMB death: re-arm sticky open and finish the aligned fetch. */
+        const val BLOCK_RECONNECT_ATTEMPTS = 4
+
+        /** Aligned network fetch size — amortizes SMB RTT for ~100+ Mbps LAN. */
         const val VIDEO_BLOCK = 2 * 1024 * 1024
 
-        /** ~56 MiB working set (~5–6 s at 80 Mbps) without unbounded download. */
+        /** ~56 MiB working set (~5–6 s at 80 Mbps) without unbounded download. */
         const val VIDEO_WINDOW_BLOCKS = 28
 
-        /** Blocks to keep filled ahead of the playhead on the one sticky lane. */
-        const val VIDEO_PREFETCH_AHEAD = 6
+        /** Blocks to keep filled ahead of the playhead (~16 MiB at [VIDEO_BLOCK]). */
+        const val VIDEO_PREFETCH_AHEAD = 8
 
         /**
-         * Prefetch worker count. One sticky handle serializes SMB READs, so extra
-         * workers only queue 2 MiB loads and make seek [dropQueuedReads] heavier.
+         * Parallel prefetch for random-access sources. Sticky SMB multiplexes READs
+         * on one handle ([KeepOpenSmbFileSource] pipeline = 4). Deflate ZIP stays at 1.
          */
-        const val PREFETCH_PARALLEL = 1
+        const val PREFETCH_PARALLEL = 4
 
         fun isVideo(mimeType: String, displayName: String): Boolean = mimeType.startsWith("video/", ignoreCase = true) || isVideoFileName(displayName)
 
