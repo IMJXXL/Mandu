@@ -368,6 +368,21 @@ private fun GeneralTab(config: ReaderConfig, onConfigChange: (ReaderConfig) -> U
         }
     }
     CheckboxItem("自动进入条漫模式", config.autoWebtoon) { onConfigChange(config.copy(autoWebtoon = it)) }
+    // 氛围音：独立于滤镜/纸张纹理，CC0 真实环境录音无缝循环，纯音频零 GPU 开销
+    SettingsChipRow("氛围音") {
+        listOf("关闭" to 0, "雨声" to 1, "篝火" to 2, "咖啡馆" to 3).forEach { (label, value) ->
+            FilterChip(
+                selected = config.ambienceSound == value,
+                onClick = { onConfigChange(config.copy(ambienceSound = value)) },
+                label = { Text(label, fontSize = 13.sp) },
+            )
+        }
+    }
+    if (config.ambienceSound > 0) {
+        SliderItem("氛围音量（默认60%）", config.ambienceVolume.toFloat(), 0f..100f, 99, "${config.ambienceVolume}%") {
+            onConfigChange(config.copy(ambienceVolume = it.toInt()))
+        }
+    }
 }
 
 // ===== Tab 2 =====
@@ -435,21 +450,6 @@ private fun FilterTab(config: ReaderConfig, onConfigChange: (ReaderConfig) -> Un
             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f), fontSize = 11.sp,
             modifier = Modifier.padding(start = 4.dp, bottom = 4.dp)
         )
-        // 氛围音：CC0 真实环境录音无缝循环，纯音频零 GPU 开销
-        SettingsChipRow("氛围音") {
-            listOf("关闭" to 0, "雨声" to 1, "篝火" to 2, "咖啡馆" to 3).forEach { (label, value) ->
-                FilterChip(
-                    selected = config.ambienceSound == value,
-                    onClick = { onConfigChange(config.copy(ambienceSound = value)) },
-                    label = { Text(label, fontSize = 13.sp) },
-                )
-            }
-        }
-        if (config.ambienceSound > 0) {
-            SliderItem("氛围音量（默认60%）", config.ambienceVolume.toFloat(), 0f..100f, 99, "${config.ambienceVolume}%") {
-                onConfigChange(config.copy(ambienceVolume = it.toInt()))
-            }
-        }
     }
     if (config.isEinkMode) {
         CheckboxItem("灰阶抖动（让墨水屏显示更多灰阶层次）", config.isEinkDither) { onConfigChange(config.copy(isEinkDither = it)) }
