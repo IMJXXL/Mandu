@@ -2262,6 +2262,8 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                             textureEnabled = config.textureEnabled,
                             texturePresetId = config.texturePresetId,
                             textureConcentration = config.textureConcentration,
+                            ambienceSound = config.ambienceSound,
+                            ambienceVolume = config.ambienceVolume,
 
                             remoteSupply = smbSession,
                             modifier = Modifier.fillMaxSize(),

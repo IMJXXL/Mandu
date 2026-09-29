@@ -66,6 +66,8 @@ class ConfigManager(private val context: Context) {
             put("texturePresetId", config.texturePresetId)
             put("textureAlpha", config.textureAlpha)
             put("textureConcentration", config.textureConcentration)
+            put("ambienceSound", config.ambienceSound)
+            put("ambienceVolume", config.ambienceVolume)
             put("fitScreen", config.fitScreen)
             put("seamlessNextVolume", config.seamlessNextVolume)
             put("tileModeEnabled", config.tileModeEnabled)
@@ -135,6 +137,8 @@ class ConfigManager(private val context: Context) {
                 texturePresetId = json.optInt("texturePresetId", 0),
                 textureAlpha = json.optInt("textureAlpha", 15),
                 textureConcentration = json.optInt("textureConcentration", 100),
+                ambienceSound = json.optInt("ambienceSound", 0),
+                ambienceVolume = json.optInt("ambienceVolume", 60),
                 fitScreen = json.optBoolean("fitScreen", false),
                 seamlessNextVolume = json.optBoolean("seamlessNextVolume", true),
                 tileModeEnabled = json.optBoolean("tileModeEnabled", false),

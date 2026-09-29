@@ -86,7 +86,10 @@ data class ReaderConfig(
     val textureEnabled: Boolean = false,
     val texturePresetId: Int = 0,
     val textureAlpha: Int = 15,
-    val textureConcentration: Int = 100
+    val textureConcentration: Int = 100,
+    // 氛围音：0=关 1=雨声 2=篝火 3=咖啡馆（assets/sounds/ambience/）；音量 0-100
+    val ambienceSound: Int = 0,
+    val ambienceVolume: Int = 60
 ) {
     enum class ScrollMode { VERTICAL, HORIZONTAL_LEFT, HORIZONTAL_RIGHT }
     @Deprecated("Dead code - navigation uses Int field navigationMode instead") enum class ClickFlipType { NO, LEFT_RIGHT, DIAGONAL_LB_RT, DIAGONAL_LT_RB }
@@ -167,6 +170,8 @@ data class ReaderConfig(
             putInt("${prefix}texturePresetId", texturePresetId)
             putInt("${prefix}textureAlpha", textureAlpha)
             putInt("${prefix}textureConcentration", textureConcentration)
+            putInt("${prefix}ambienceSound", ambienceSound)
+            putInt("${prefix}ambienceVolume", ambienceVolume)
             apply()
         }
     }
@@ -242,6 +247,8 @@ data class ReaderConfig(
                 texturePresetId = prefs.safeGetInt("${prefix}texturePresetId", 0),
                 textureAlpha = prefs.safeGetInt("${prefix}textureAlpha", 15).coerceIn(0, 40),
                 textureConcentration = prefs.safeGetInt("${prefix}textureConcentration", 100).coerceIn(0, 100),
+                ambienceSound = prefs.safeGetInt("${prefix}ambienceSound", 0).coerceIn(0, 3),
+                ambienceVolume = prefs.safeGetInt("${prefix}ambienceVolume", 60).coerceIn(0, 100),
                 downsampleTier = if (prefs.contains("downsampleTier")) {
                     try { DownsampleTier.valueOf(prefs.getString("downsampleTier", "STANDARD")!!) } catch (_: Exception) { DownsampleTier.STANDARD }
                 } else if (prefs.safeGetBoolean("forceFullDecode", false)) DownsampleTier.ORIGINAL else DownsampleTier.STANDARD

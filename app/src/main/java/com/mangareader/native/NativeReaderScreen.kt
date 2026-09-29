@@ -140,6 +140,8 @@ fun NativeReaderScreen(
     textureEnabled: Boolean = false,
     texturePresetId: Int = 0,
     textureConcentration: Int = 100,
+    ambienceSound: Int = 0,
+    ambienceVolume: Int = 60,
     /** ★ SMB/WebDAV 页面供给（design.md 2.2.2）：非 null 时阅读页面走远程会话。
      *   以参数形式在 setup() 之前注入 delegate，消除"setup 早于供给挂接"的竞态窗口。 */
     remoteSupply: com.mangareader.native.RemotePageSupply? = null,
@@ -351,6 +353,12 @@ fun NativeReaderScreen(
         }
     }
 
+    // ★ 氛围音：换音色/音量即时生效；进阅读器起播、退出释放（DisposableEffect onDispose）
+    LaunchedEffect(ambienceSound, ambienceVolume) {
+        com.mangareader.sound.AmbiencePlayer.setVolume(ambienceVolume)
+        com.mangareader.sound.AmbiencePlayer.play(ctx, ambienceSound)
+    }
+
     // Handle pageLayout: SINGLE=0, DOUBLE=1, DOUBLE_SHIFTED=2
     LaunchedEffect(isVertical, isRtl, pageLayout) {
         if (!isVertical && pagerView is PagerReaderView) {
@@ -426,6 +434,7 @@ fun NativeReaderScreen(
 
     DisposableEffect(Unit) {
         onDispose {
+            com.mangareader.sound.AmbiencePlayer.release()
             com.mangareader.filter.BrightnessController.reset()
             val window = (ctx as? android.app.Activity)?.window
             if (window != null) {

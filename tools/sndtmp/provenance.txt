@@ -3,3 +3,11 @@
   处理：掐头去尾留 0.43s 有声段、峰值归一 0.5、8ms 淡入 90ms 淡出、44.1kHz 单声道 16bit
   备选未用：freesound.org/sounds/382651/ "Paper Page Turn" by bbrocer (CC0, 连续翻页)
   下载日期：2026-09-29。gen_page_flip_sound.py 为合成备胎，输出只写 sndtmp 不再覆盖资产。
+
+氛围音三件套（均 CC0，无署名要求，2026-09-29 下载）：
+  雨声  freesound.org/sounds/393728/ "Steady rain in Zeist" by hz37
+  篝火  freesound.org/sounds/813328/ "Crackling Flames (loop)" by NickTayloe
+  咖啡馆 freesound.org/sounds/805155/ "Cafe 02" by mrspivey
+  加工：各取30s稳态段、1.5s等功率交叉淡化做无缝循环接缝、峰值归一0.45、
+  22050Hz单声道16bit WAV（SoundPool循环WAV严格无缝，OGG有编码填充间隙风险）。
+  存放 app/src/main/assets/sounds/ambience/{rain,fire,cafe}.wav。
