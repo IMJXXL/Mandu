@@ -52,6 +52,9 @@ class ConfigManager(private val context: Context) {
             put("autoWebtoon", config.autoWebtoon)
             put("chapterTransition", config.chapterTransition)
             put("centerGapType", config.centerGapType)
+                put("autoDoubleLandscape", config.autoDoubleLandscape)
+                put("clickFlipInvertH", config.clickFlipInvertH)
+                put("isPageCurlAnimation", config.isPageCurlAnimation)
             put("forceFullDecode", config.forceFullDecode)
             // 滤镜/阅读区组（此前缺失：切换配置方案会把滤镜与亮度等重置为默认）
             put("brightness", config.brightness)
@@ -123,6 +126,9 @@ class ConfigManager(private val context: Context) {
                 autoWebtoon = json.optBoolean("autoWebtoon", true),
                 chapterTransition = json.optBoolean("chapterTransition", true),
                 centerGapType = json.optInt("centerGapType", 0),
+                autoDoubleLandscape = json.optBoolean("autoDoubleLandscape", false),
+                clickFlipInvertH = json.optBoolean("clickFlipInvertH", false),
+                isPageCurlAnimation = json.optBoolean("isPageCurlAnimation", false),
                 forceFullDecode = json.optBoolean("forceFullDecode", false),
                 // 滤镜/阅读区组（与 save 镜像）
                 brightness = json.optInt("brightness", 0),

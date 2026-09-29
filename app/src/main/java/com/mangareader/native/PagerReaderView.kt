@@ -699,32 +699,30 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         applyNavigation()
     }
 
-    fun setCenterGapType(type: Int) {
-        val changed = this.centerGapType != type
-        this.centerGapType = type
-        // ★ 实时生效：gapPx 在 onBind 现合并时读取，双页模式下重绑当前窗口即可
-        if (changed && doublePageMode) pagerAdapter?.notifyDataSetChanged()
-    }
+    fun setCenterGapType(type: Int) { applyLivePrefs(gapType = type) }
 
     /** 侧边留白实时生效：margin 在 onCreateViewHolder 定死，变化需重建条目（var 属性 setter 冲突故改名 apply） */
     fun applyImageMarginH(marginDp: Int) {
-        val changed = this.imageMarginH != marginDp
-        this.imageMarginH = marginDp
+        applyLivePrefs(marginDp = marginDp)
+    }
+
+    /**
+     * ★ 四项画面参数合并应用：统一 changed 检测后至多一次 notifyDataSetChanged——
+     *   独立 setter 在进书 Live-sync 连发时会触发 2-3 次全量重绑（每次可见 spread 全部
+     *   重新 mergeBitmaps 全屏分配，实测 30-180MB 瞬时垃圾）。单次重绑消除峰值。
+     */
+    fun applyLivePrefs(marginDp: Int? = null, gapType: Int? = null, fit: Boolean? = null, zoom: Boolean? = null) {
+        var changed = false
+        if (marginDp != null && imageMarginH != marginDp) { imageMarginH = marginDp; changed = true }
+        if (gapType != null && centerGapType != gapType) { centerGapType = gapType; changed = true }
+        if (fit != null && fitScreenEnabled != fit) { fitScreenEnabled = fit; changed = true }
+        if (zoom != null && landscapeZoomEnabled != zoom) { landscapeZoomEnabled = zoom; changed = true }
         if (changed) pagerAdapter?.notifyDataSetChanged()
     }
 
-    fun setLandscapeZoom(enabled: Boolean) {
-        val changed = this.landscapeZoomEnabled != enabled
-        this.landscapeZoomEnabled = enabled
-        // ★ 实时生效：缩放语义在绑定时读取，变化需重绑当前窗口
-        if (changed) pagerAdapter?.notifyDataSetChanged()
-    }
+    fun setLandscapeZoom(enabled: Boolean) { applyLivePrefs(zoom = enabled) }
 
-    fun setFitScreen(enabled: Boolean) {
-        val changed = this.fitScreenEnabled != enabled
-        this.fitScreenEnabled = enabled
-        if (changed) pagerAdapter?.notifyDataSetChanged()
-    }
+    fun setFitScreen(enabled: Boolean) { applyLivePrefs(fit = enabled) }
 
     fun setTileModeEnabled(enabled: Boolean) {
         this.tileModeEnabled = enabled

@@ -2011,13 +2011,15 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     // Live-sync flip animation and side padding to pager/webtoon views
     LaunchedEffect(configVersion) {
         activePagerRef?.flipAnimationEnabled = config.isFlipAnimation
-        // ★ 侧边留白/双页中缝实时生效（走 setter：变化时重绑条目；原直接赋 var 不触发重绑）
-        activePagerRef?.applyImageMarginH(config.imageMarginH)
-        activePagerRef?.setCenterGapType(config.centerGapType)
+        // ★ 画面四参数合并应用（至多一次 notifyDataSetChanged，消除连发重绑）
+        activePagerRef?.applyLivePrefs(
+            marginDp = config.imageMarginH,
+            gapType = config.centerGapType,
+            fit = config.fitScreen,
+            zoom = config.landscapeZoom,
+        )
         activePagerRef?.setTrimWhiteBorder(config.isTrimWhiteBorder, config.trimThreshold, config.trimWhiteRatio)
         activePagerRef?.setTileModeEnabled(config.tileModeEnabled)
-        activePagerRef?.setFitScreen(config.fitScreen)
-        activePagerRef?.setLandscapeZoom(config.landscapeZoom)
 
         activePagerRef?.pageBgColor = bgColor.toArgb()
         activeWebtoonRef?.imageMarginH = config.imageMarginH

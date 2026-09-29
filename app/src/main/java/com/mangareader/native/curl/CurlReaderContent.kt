@@ -152,14 +152,24 @@ fun CurlReaderContent(
     BoxWithConstraints(modifier = Modifier.fillMaxSize().background(Color(pageBgColor))) {
         // ★ 纸背纹理：按当前纸张 preset 烘一张米色纸纹图挂到 pagecurl 背面
         val ctx = androidx.compose.ui.platform.LocalContext.current
+        // ★ 纸背：主线程仅缓存快查；未命中后台烘焙回填（首帧短暂无纸背，随后浮现）
         val backBitmap = remember(paperBackPresetId, constraints.maxWidth, constraints.maxHeight) {
             if (paperBackPresetId < 0) null
             else runCatching {
-                com.mangareader.filter.PaperBackTexture.get(ctx, paperBackPresetId, constraints.maxWidth, constraints.maxHeight)
+                com.mangareader.filter.PaperBackTexture.peek(paperBackPresetId, constraints.maxWidth, constraints.maxHeight)
             }.getOrNull()
         }
+        LaunchedEffect(paperBackPresetId, constraints.maxWidth, constraints.maxHeight) {
+            if (paperBackPresetId >= 0 && backBitmap == null) {
+                val w = constraints.maxWidth; val h = constraints.maxHeight
+                val baked = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                    runCatching { com.mangareader.filter.PaperBackTexture.get(ctx, paperBackPresetId, w, h) }.getOrNull()
+                }
+                config.backPageBitmap = baked?.asImageBitmap()
+            }
+        }
         LaunchedEffect(backBitmap) {
-            config.backPageBitmap = backBitmap?.asImageBitmap()
+            if (backBitmap != null) config.backPageBitmap = backBitmap.asImageBitmap()
         }
         var insetL = 0.dp
         var insetT = 0.dp

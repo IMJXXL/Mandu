@@ -1597,8 +1597,7 @@ abstract class MangaDatabase : com.ehviewer.core.database.LocalLibraryDatabase()
                         USERNAME TEXT NOT NULL,
                         ADDED_AT INTEGER NOT NULL,
                         LAST_OK_AT INTEGER,
-                        LAST_ERROR TEXT,
-                        NO_COVER_FETCH INTEGER NOT NULL DEFAULT 0
+                        LAST_ERROR TEXT
                     )
                 """.trimIndent())
             }

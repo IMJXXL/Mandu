@@ -113,7 +113,17 @@ data class ReaderConfig(
         val prefix = if (bookId >= 0) "book_${bookId}_" else ""
         prefs.edit().apply {
             putString("${prefix}scrollMode", scrollMode.name)
-            putString("${prefix}clickFlipType", clickFlipType.name)
+            // ★ 点击区域全局回退不固化：单本键未手动写过且值与全局一致时不落单本键，
+            //   否则阅读内首次 save 即固化，外部全局卡片对该书永久失效
+            val globalClickType = runCatching { prefs.getString("clickFlipType", null) }.getOrNull()
+            if (prefix.isEmpty() || prefs.contains("${prefix}clickFlipType") || clickFlipType.name != globalClickType) {
+                putString("${prefix}clickFlipType", clickFlipType.name)
+            }
+            val globalClickInvert = if (prefs.contains("clickFlipInvertH")) prefs.getBoolean("clickFlipInvertH", false) else null
+            val globalInvertKnown = globalClickInvert != null
+            if (prefix.isEmpty() || prefs.contains("${prefix}clickFlipInvertH") || !globalInvertKnown || clickFlipInvertH != globalClickInvert) {
+                putBoolean("${prefix}clickFlipInvertH", clickFlipInvertH)
+            }
             putBoolean("isFlipAnimation", isFlipAnimation)
             putBoolean("isPageCurlAnimation", isPageCurlAnimation)
             putBoolean("isCurlContentAreaOnly", isCurlContentAreaOnly)
@@ -160,8 +170,8 @@ data class ReaderConfig(
             putBoolean("chapterTransition", chapterTransition)
             putBoolean("seamlessNextVolume", seamlessNextVolume)
             putInt("${prefix}centerGapType", centerGapType)
-            putBoolean("${prefix}autoDoubleLandscape", autoDoubleLandscape)
-            putBoolean("${prefix}clickFlipInvertH", clickFlipInvertH)
+            // ★ 横屏自动双页为全局语义（用户拍板），恒写全局键
+            putBoolean("autoDoubleLandscape", autoDoubleLandscape)
             putBoolean("forceFullDecode", forceFullDecode)
             putBoolean("tileModeEnabled", tileModeEnabled)
             putString("downsampleTier", downsampleTier.name)
@@ -242,7 +252,7 @@ data class ReaderConfig(
                 autoWebtoon = prefs.safeGetBoolean("autoWebtoon", true),
                 chapterTransition = prefs.safeGetBoolean("chapterTransition", true),
                 centerGapType = prefs.safeGetInt("${prefix}centerGapType", 0),
-                autoDoubleLandscape = prefs.safeGetBoolean("${prefix}autoDoubleLandscape", false),
+                autoDoubleLandscape = prefs.safeGetBoolean("autoDoubleLandscape", false),
                 clickFlipInvertH = prefs.safeGetBoolean("${clickInvertPrefix}clickFlipInvertH", false),
                 seamlessNextVolume = prefs.safeGetBoolean("seamlessNextVolume", true),
                 forceFullDecode = prefs.safeGetBoolean("forceFullDecode", false),
