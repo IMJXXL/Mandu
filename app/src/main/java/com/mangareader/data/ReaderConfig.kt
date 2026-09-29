@@ -87,8 +87,8 @@ data class ReaderConfig(
     val texturePresetId: Int = 0,
     val textureAlpha: Int = 15,
     val textureConcentration: Int = 100,
-    // 氛围音：0=关 1=雨声 2=篝火 3=咖啡馆（assets/sounds/ambience/）；音量 0-100
-    val ambienceSound: Int = 0,
+    // 氛围音选择：""=关 "rain"=预设雨声，其余=filesDir/ambience/ 下用户导入的文件名；音量 0-100
+    val ambienceSound: String = "",
     val ambienceVolume: Int = 60
 ) {
     enum class ScrollMode { VERTICAL, HORIZONTAL_LEFT, HORIZONTAL_RIGHT }
@@ -170,7 +170,7 @@ data class ReaderConfig(
             putInt("${prefix}texturePresetId", texturePresetId)
             putInt("${prefix}textureAlpha", textureAlpha)
             putInt("${prefix}textureConcentration", textureConcentration)
-            putInt("${prefix}ambienceSound", ambienceSound)
+            putString("${prefix}ambienceSound", ambienceSound)
             putInt("${prefix}ambienceVolume", ambienceVolume)
             apply()
         }
@@ -247,7 +247,7 @@ data class ReaderConfig(
                 texturePresetId = prefs.safeGetInt("${prefix}texturePresetId", 0),
                 textureAlpha = prefs.safeGetInt("${prefix}textureAlpha", 15).coerceIn(0, 40),
                 textureConcentration = prefs.safeGetInt("${prefix}textureConcentration", 100).coerceIn(0, 100),
-                ambienceSound = prefs.safeGetInt("${prefix}ambienceSound", 0).coerceIn(0, 3),
+                ambienceSound = prefs.getString("${prefix}ambienceSound", "") ?: "",
                 ambienceVolume = prefs.safeGetInt("${prefix}ambienceVolume", 60).coerceIn(0, 100),
                 downsampleTier = if (prefs.contains("downsampleTier")) {
                     try { DownsampleTier.valueOf(prefs.getString("downsampleTier", "STANDARD")!!) } catch (_: Exception) { DownsampleTier.STANDARD }

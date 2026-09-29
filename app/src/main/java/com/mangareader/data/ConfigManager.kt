@@ -137,7 +137,7 @@ class ConfigManager(private val context: Context) {
                 texturePresetId = json.optInt("texturePresetId", 0),
                 textureAlpha = json.optInt("textureAlpha", 15),
                 textureConcentration = json.optInt("textureConcentration", 100),
-                ambienceSound = json.optInt("ambienceSound", 0),
+                ambienceSound = json.optString("ambienceSound", ""),
                 ambienceVolume = json.optInt("ambienceVolume", 60),
                 fitScreen = json.optBoolean("fitScreen", false),
                 seamlessNextVolume = json.optBoolean("seamlessNextVolume", true),

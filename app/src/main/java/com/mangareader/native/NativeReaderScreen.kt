@@ -140,7 +140,7 @@ fun NativeReaderScreen(
     textureEnabled: Boolean = false,
     texturePresetId: Int = 0,
     textureConcentration: Int = 100,
-    ambienceSound: Int = 0,
+    ambienceSound: String = "",
     ambienceVolume: Int = 60,
     /** ★ SMB/WebDAV 页面供给（design.md 2.2.2）：非 null 时阅读页面走远程会话。
      *   以参数形式在 setup() 之前注入 delegate，消除"setup 早于供给挂接"的竞态窗口。 */

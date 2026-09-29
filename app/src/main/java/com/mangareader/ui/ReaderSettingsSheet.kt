@@ -368,22 +368,109 @@ private fun GeneralTab(config: ReaderConfig, onConfigChange: (ReaderConfig) -> U
         }
     }
     CheckboxItem("自动进入条漫模式", config.autoWebtoon) { onConfigChange(config.copy(autoWebtoon = it)) }
-    // 氛围音：独立于滤镜/纸张纹理，CC0 真实环境录音无缝循环，纯音频零 GPU 开销
+    AmbienceSection(config, onConfigChange)
+}
+
+/** 氛围音：预设雨声 + 用户自选音频（SAF 导入拷入 filesDir/ambience/，长按无需管理、
+ *  选中后下方提供删除）。选择模型：""=关 "rain"=预设 其余=导入文件名 */
+@Composable
+private fun AmbienceSection(config: ReaderConfig, onConfigChange: (ReaderConfig) -> Unit) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val scope = rememberCoroutineScope()
+    var imported by remember { mutableStateOf(listImportedAmbience(ctx)) }
+    var pendingDelete by remember { mutableStateOf<String?>(null) }
+
+    val importLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) scope.launch {
+            val name = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                importAmbienceFile(ctx, uri)
+            }
+            if (name != null) {
+                imported = listImportedAmbience(ctx)
+                onConfigChange(config.copy(ambienceSound = name))
+            }
+        }
+    }
+
     SettingsChipRow("氛围音") {
-        listOf("关闭" to 0, "雨声" to 1, "篝火" to 2, "咖啡馆" to 3).forEach { (label, value) ->
+        listOf("关闭" to "", "下雨" to "rain").forEach { (label, value) ->
             FilterChip(
                 selected = config.ambienceSound == value,
                 onClick = { onConfigChange(config.copy(ambienceSound = value)) },
                 label = { Text(label, fontSize = 13.sp) },
             )
         }
+        imported.forEach { name ->
+            FilterChip(
+                selected = config.ambienceSound == name,
+                onClick = { onConfigChange(config.copy(ambienceSound = name)) },
+                label = { Text(name.substringBeforeLast('.').take(10), fontSize = 13.sp) },
+            )
+        }
+        FilterChip(
+            selected = false,
+            onClick = { importLauncher.launch(arrayOf("audio/*")) },
+            label = { Text("＋导入", fontSize = 13.sp) },
+        )
     }
-    if (config.ambienceSound > 0) {
+    if (config.ambienceSound.isNotEmpty()) {
         SliderItem("氛围音量（默认60%）", config.ambienceVolume.toFloat(), 0f..100f, 99, "${config.ambienceVolume}%") {
             onConfigChange(config.copy(ambienceVolume = it.toInt()))
         }
+        if (config.ambienceSound != "rain") {
+            TextButton(onClick = { pendingDelete = config.ambienceSound }) {
+                Text("删除当前导入的音频", fontSize = 13.sp, color = MaterialTheme.colorScheme.error)
+            }
+        }
+    }
+    pendingDelete?.let { name ->
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            title = { Text("删除音频") },
+            text = { Text("删除「${name.substringBeforeLast('.')}」？删除后无法恢复。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    val del = name
+                    pendingDelete = null
+                    scope.launch {
+                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                            java.io.File(java.io.File(ctx.filesDir, "ambience"), del).delete()
+                        }
+                        imported = listImportedAmbience(ctx)
+                        if (config.ambienceSound == del) {
+                            onConfigChange(config.copy(ambienceSound = ""))
+                        }
+                    }
+                }) { Text("删除", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { pendingDelete = null }) { Text("取消") } },
+        )
     }
 }
+
+private fun listImportedAmbience(ctx: android.content.Context): List<String> =
+    java.io.File(ctx.filesDir, "ambience").listFiles()?.map { it.name }?.sorted() ?: emptyList()
+
+private fun importAmbienceFile(ctx: android.content.Context, uri: android.net.Uri): String? = runCatching {
+    val displayName = ctx.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
+        ?.use { c -> if (c.moveToFirst()) c.getString(0) else null } ?: "import"
+    var name = displayName.replace(Regex("[\\\\/:*?\"<>|\r\n]"), "_").take(80).ifEmpty { "import" }
+    val dir = java.io.File(ctx.filesDir, "ambience").apply { mkdirs() }
+    var dest = java.io.File(dir, name)
+    var i = 1
+    while (dest.exists()) {
+        val base = name.substringBeforeLast('.')
+        val ext = name.substringAfterLast('.', "")
+        dest = java.io.File(dir, if (ext.isEmpty()) "$base($i)" else "$base($i).$ext")
+        i++
+    }
+    ctx.contentResolver.openInputStream(uri)?.use { ins ->
+        dest.outputStream().use { ins.copyTo(it) }
+    } ?: return null
+    dest.name
+}.getOrNull()
 
 // ===== Tab 2 =====
 @OptIn(ExperimentalLayoutApi::class)
