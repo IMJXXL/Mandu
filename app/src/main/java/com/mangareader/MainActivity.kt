@@ -83,7 +83,7 @@ class MainActivity : ComponentActivity() {
             val dynamicColor = prefs.getBoolean("dynamic_color", false)
             // 自定义主色（外观设置）：开启时覆盖预设/动态色彩，仅替换 primary 一族
             val useCustomColor = prefs.getBoolean("use_custom_color", false)
-            val customColor = prefs.getInt("custom_color", 0xFF1976D2.toInt())
+            val customColor = prefs.getInt("custom_color", 0xFFE91E63.toInt())
 
             Theme(dark = dark, appTheme = currentTheme, dynamicColor = dynamicColor, customPrimary = customColor.takeIf { useCustomColor }) {
                 // 首次组合提交 = 界面真正挂载（闪退若发生在此前，stages 终止于 setContent 上一条）

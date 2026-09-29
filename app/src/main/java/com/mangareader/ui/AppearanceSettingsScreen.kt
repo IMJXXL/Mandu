@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -29,6 +30,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mangareader.smbbridge.SectionCard
@@ -84,7 +87,7 @@ fun AppearanceSettingsScreen(onBack: () -> Unit) {
                     val currentThemeOrdinal = prefs.getInt("app_theme", 0)
                     val dynamicColorEnabled = prefs.getBoolean("dynamic_color", false)
                     val useCustomColor = prefs.getBoolean("use_custom_color", false)
-                    val storedCustom = prefs.getInt("custom_color", 0xFF1976D2.toInt())
+                    val storedCustom = prefs.getInt("custom_color", 0xFFE91E63.toInt())
                     val previewIsDark = when (prefs.getString("dark_mode", "SYSTEM") ?: "SYSTEM") {
                         "LIGHT" -> false
                         "DARK" -> true
@@ -199,13 +202,15 @@ fun AppearanceSettingsScreen(onBack: () -> Unit) {
 private fun CustomAccentSection(prefs: android.content.SharedPreferences, activity: Activity?) {
     SectionCard("自定义主色") {
         var enabled by remember { mutableStateOf(prefs.getBoolean("use_custom_color", false)) }
-        val initColor = prefs.getInt("custom_color", 0xFF1976D2.toInt())
+        // 默认取与默认蓝色主题拉开差距的粉色：开关键入即有可见变化，避免"开了像没开"误判不生效
+        val initColor = prefs.getInt("custom_color", 0xFFE91E63.toInt())
         val initHsv = floatArrayOf(0f, 0f, 0f)
         android.graphics.Color.colorToHSV(initColor, initHsv)
         var hue by remember { mutableFloatStateOf(initHsv[0]) }
         var sat by remember { mutableFloatStateOf(initHsv[1]) }
         var value by remember { mutableFloatStateOf(initHsv[2]) }
-        var hexText by remember { mutableStateOf(String.format("#%06X", initColor and 0xFFFFFF)) }
+        // hex 输入只存 # 后的 6 位；默认空，# 由 prefix 固定不可编辑
+        var hexText by remember { mutableStateOf("") }
         val pickedColor = android.graphics.Color.HSVToColor(floatArrayOf(hue, sat, value))
 
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -293,18 +298,22 @@ private fun CustomAccentSection(prefs: android.content.SharedPreferences, activi
         Row(verticalAlignment = Alignment.CenterVertically) {
             OutlinedTextField(
                 value = hexText,
-                onValueChange = {
-                    hexText = it
-                    val clean = it.removePrefix("#")
-                    if (clean.length == 6) {
-                        clean.toLongOrNull(16)?.let { rgb ->
+                onValueChange = { input ->
+                    // 只留 hex 字符、# 后最多 6 位；恰好 6 位时实时换算到拾色器
+                    val filtered = input.filter { it.isDigit() || it in 'a'..'f' || it in 'A'..'F' }.take(6)
+                    hexText = filtered
+                    if (filtered.length == 6) {
+                        filtered.toLongOrNull(16)?.let { rgb ->
                             val hsv = floatArrayOf(0f, 0f, 0f)
                             android.graphics.Color.colorToHSV(rgb.toInt(), hsv)
                             hue = hsv[0]; sat = hsv[1]; value = hsv[2]
                         }
                     }
                 },
+                prefix = { Text("#", fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) },
+                placeholder = { Text("如 FF5722", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) },
                 singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii, capitalization = KeyboardCapitalization.Characters),
                 modifier = Modifier.width(150.dp),
                 textStyle = androidx.compose.ui.text.TextStyle(fontSize = 15.sp)
             )
@@ -316,6 +325,6 @@ private fun CustomAccentSection(prefs: android.content.SharedPreferences, activi
             }) { Text("应用") }
         }
         Spacer(Modifier.height(6.dp))
-        Text("拖动选色或手输 hex，点「应用」立即生效；只改强调色，正文背景不受影响", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("拖动选色，或输满 6 位 hex 实时换算；点「应用」立即生效，只改强调色，正文背景不受影响", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
