@@ -39,8 +39,8 @@ import com.mangareader.smbbridge.SectionCard
 /**
  * 外观设置子页（自设置页「外观」卡片进入）：
  * - 暗色模式：亮色/暗色/系统（改动后 recreate 整个 Activity 生效，历史行为保持一致）
- * - 主题颜色：动态色彩 + 预设主题横滑 + 自定义色卡（「默认」为中性灰底，其余预设整体染色）
- * - 自定义主色：HSV 拾色器（SV 方块 + 色相条）+ hex 手输，按该颜色整体染色生成全套色板
+ * - 主题颜色：动态色彩 + 预设主题横滑（全部为原版手工配色）+ 自定义色卡
+ * - 自定义主色：HSV 拾色器（SV 方块 + 色相条）+ hex 手输，独立于预设按该颜色整体染色生成全套色板
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -183,7 +183,7 @@ fun AppearanceSettingsScreen(onBack: () -> Unit) {
                         }
                     }
                     Spacer(Modifier.height(6.dp))
-                    Text("除「默认」外全部整体染色：背景、卡片、次要文字随主题色相；「默认」保持中性灰底", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("预设主题为原版手工配色；自定义主色按整体染色单独生成", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
 

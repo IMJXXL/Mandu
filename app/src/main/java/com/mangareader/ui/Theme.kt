@@ -46,20 +46,116 @@ private val colorSchemes: Map<AppTheme, BaseColorScheme> = mapOf(
         )
     },
     AppTheme.GREEN to object : BaseColorScheme() {
-        override val darkScheme = tintedColorScheme(dark = true, accent = 0xFF81C784.toInt())
-        override val lightScheme = tintedColorScheme(dark = false, accent = 0xFF388E3C.toInt())
+        override val darkScheme = androidx.compose.material3.darkColorScheme(
+            primary = androidx.compose.ui.graphics.Color(0xFF81C784), onPrimary = androidx.compose.ui.graphics.Color.Black,
+            secondary = androidx.compose.ui.graphics.Color(0xFFA5D6A7), onSecondary = androidx.compose.ui.graphics.Color.Black,
+            background = androidx.compose.ui.graphics.Color(0xFF121212), surface = androidx.compose.ui.graphics.Color(0xFF1E1E1E),
+            onBackground = androidx.compose.ui.graphics.Color(0xFFE0E0E0), onSurface = androidx.compose.ui.graphics.Color(0xFFE0E0E0),
+            surfaceVariant = androidx.compose.ui.graphics.Color(0xFF2C2C2C), onSurfaceVariant = androidx.compose.ui.graphics.Color(0xFFBDBDBD),
+            error = androidx.compose.ui.graphics.Color(0xFFEF5350),
+            primaryContainer = androidx.compose.ui.graphics.Color(0xFF2E7D32), onPrimaryContainer = androidx.compose.ui.graphics.Color(0xFFC8E6C9),
+            secondaryContainer = androidx.compose.ui.graphics.Color(0xFF2E7D32), onSecondaryContainer = androidx.compose.ui.graphics.Color(0xFFC8E6C9),
+            tertiaryContainer = androidx.compose.ui.graphics.Color(0xFF4527A0), onTertiaryContainer = androidx.compose.ui.graphics.Color(0xFFD1C4E9),
+            surfaceContainerHigh = androidx.compose.ui.graphics.Color(0xFF2A2A2A), surfaceContainerHighest = androidx.compose.ui.graphics.Color(0xFF353535),
+            surfaceContainerLow = androidx.compose.ui.graphics.Color(0xFF191919), surfaceContainer = androidx.compose.ui.graphics.Color(0xFF242424),
+        )
+        override val lightScheme = androidx.compose.material3.lightColorScheme(
+            primary = androidx.compose.ui.graphics.Color(0xFF388E3C), onPrimary = androidx.compose.ui.graphics.Color.White,
+            secondary = androidx.compose.ui.graphics.Color(0xFF66BB6A), onSecondary = androidx.compose.ui.graphics.Color.White,
+            background = androidx.compose.ui.graphics.Color(0xFFF5F5F5), surface = androidx.compose.ui.graphics.Color.White,
+            onBackground = androidx.compose.ui.graphics.Color(0xFF212121), onSurface = androidx.compose.ui.graphics.Color(0xFF212121),
+            surfaceVariant = androidx.compose.ui.graphics.Color(0xFFE0E0E0), onSurfaceVariant = androidx.compose.ui.graphics.Color(0xFF616161),
+            error = androidx.compose.ui.graphics.Color(0xFFD32F2F),
+            primaryContainer = androidx.compose.ui.graphics.Color(0xFFC8E6C9), onPrimaryContainer = androidx.compose.ui.graphics.Color(0xFF1B5E20),
+            secondaryContainer = androidx.compose.ui.graphics.Color(0xFFC8E6C9), onSecondaryContainer = androidx.compose.ui.graphics.Color(0xFF1B5E20),
+            tertiaryContainer = androidx.compose.ui.graphics.Color(0xFFD1C4E9), onTertiaryContainer = androidx.compose.ui.graphics.Color(0xFF311B92),
+            surfaceContainerHigh = androidx.compose.ui.graphics.Color(0xFFE8E8E8), surfaceContainerHighest = androidx.compose.ui.graphics.Color(0xFFD0D0D0),
+            surfaceContainerLow = androidx.compose.ui.graphics.Color(0xFFF7F7F7), surfaceContainer = androidx.compose.ui.graphics.Color(0xFFEFEFEF),
+        )
     },
     AppTheme.PURPLE to object : BaseColorScheme() {
-        override val darkScheme = tintedColorScheme(dark = true, accent = 0xFFCE93D8.toInt())
-        override val lightScheme = tintedColorScheme(dark = false, accent = 0xFF7B1FA2.toInt())
+        override val darkScheme = androidx.compose.material3.darkColorScheme(
+            primary = androidx.compose.ui.graphics.Color(0xFFCE93D8), onPrimary = androidx.compose.ui.graphics.Color.Black,
+            secondary = androidx.compose.ui.graphics.Color(0xFFE1BEE7), onSecondary = androidx.compose.ui.graphics.Color.Black,
+            background = androidx.compose.ui.graphics.Color(0xFF121212), surface = androidx.compose.ui.graphics.Color(0xFF1E1E1E),
+            onBackground = androidx.compose.ui.graphics.Color(0xFFE0E0E0), onSurface = androidx.compose.ui.graphics.Color(0xFFE0E0E0),
+            surfaceVariant = androidx.compose.ui.graphics.Color(0xFF2C2C2C), onSurfaceVariant = androidx.compose.ui.graphics.Color(0xFFBDBDBD),
+            error = androidx.compose.ui.graphics.Color(0xFFEF5350),
+            primaryContainer = androidx.compose.ui.graphics.Color(0xFF6A1B9A), onPrimaryContainer = androidx.compose.ui.graphics.Color(0xFFE1BEE7),
+            secondaryContainer = androidx.compose.ui.graphics.Color(0xFF6A1B9A), onSecondaryContainer = androidx.compose.ui.graphics.Color(0xFFF3E5F5),
+            tertiaryContainer = androidx.compose.ui.graphics.Color(0xFF4527A0), onTertiaryContainer = androidx.compose.ui.graphics.Color(0xFFD1C4E9),
+            surfaceContainerHigh = androidx.compose.ui.graphics.Color(0xFF2A2A2A), surfaceContainerHighest = androidx.compose.ui.graphics.Color(0xFF353535),
+            surfaceContainerLow = androidx.compose.ui.graphics.Color(0xFF191919), surfaceContainer = androidx.compose.ui.graphics.Color(0xFF242424),
+        )
+        override val lightScheme = androidx.compose.material3.lightColorScheme(
+            primary = androidx.compose.ui.graphics.Color(0xFF7B1FA2), onPrimary = androidx.compose.ui.graphics.Color.White,
+            secondary = androidx.compose.ui.graphics.Color(0xFFAB47BC), onSecondary = androidx.compose.ui.graphics.Color.White,
+            background = androidx.compose.ui.graphics.Color(0xFFF5F5F5), surface = androidx.compose.ui.graphics.Color.White,
+            onBackground = androidx.compose.ui.graphics.Color(0xFF212121), onSurface = androidx.compose.ui.graphics.Color(0xFF212121),
+            surfaceVariant = androidx.compose.ui.graphics.Color(0xFFE0E0E0), onSurfaceVariant = androidx.compose.ui.graphics.Color(0xFF616161),
+            error = androidx.compose.ui.graphics.Color(0xFFD32F2F),
+            primaryContainer = androidx.compose.ui.graphics.Color(0xFFE1BEE7), onPrimaryContainer = androidx.compose.ui.graphics.Color(0xFF4A148C),
+            secondaryContainer = androidx.compose.ui.graphics.Color(0xFFF3E5F5), onSecondaryContainer = androidx.compose.ui.graphics.Color(0xFF4A148C),
+            tertiaryContainer = androidx.compose.ui.graphics.Color(0xFFD1C4E9), onTertiaryContainer = androidx.compose.ui.graphics.Color(0xFF311B92),
+            surfaceContainerHigh = androidx.compose.ui.graphics.Color(0xFFE8E8E8), surfaceContainerHighest = androidx.compose.ui.graphics.Color(0xFFD0D0D0),
+            surfaceContainerLow = androidx.compose.ui.graphics.Color(0xFFF7F7F7), surfaceContainer = androidx.compose.ui.graphics.Color(0xFFEFEFEF),
+        )
     },
     AppTheme.ORANGE to object : BaseColorScheme() {
-        override val darkScheme = tintedColorScheme(dark = true, accent = 0xFFFFCC80.toInt())
-        override val lightScheme = tintedColorScheme(dark = false, accent = 0xFFF57C00.toInt())
+        override val darkScheme = androidx.compose.material3.darkColorScheme(
+            primary = androidx.compose.ui.graphics.Color(0xFFFFCC80), onPrimary = androidx.compose.ui.graphics.Color.Black,
+            secondary = androidx.compose.ui.graphics.Color(0xFFFFE0B2), onSecondary = androidx.compose.ui.graphics.Color.Black,
+            background = androidx.compose.ui.graphics.Color(0xFF121212), surface = androidx.compose.ui.graphics.Color(0xFF1E1E1E),
+            onBackground = androidx.compose.ui.graphics.Color(0xFFE0E0E0), onSurface = androidx.compose.ui.graphics.Color(0xFFE0E0E0),
+            surfaceVariant = androidx.compose.ui.graphics.Color(0xFF2C2C2C), onSurfaceVariant = androidx.compose.ui.graphics.Color(0xFFBDBDBD),
+            error = androidx.compose.ui.graphics.Color(0xFFEF5350),
+            primaryContainer = androidx.compose.ui.graphics.Color(0xFFE65100), onPrimaryContainer = androidx.compose.ui.graphics.Color(0xFFFFE0B2),
+            secondaryContainer = androidx.compose.ui.graphics.Color(0xFFE65100), onSecondaryContainer = androidx.compose.ui.graphics.Color(0xFFFFE0B2),
+            tertiaryContainer = androidx.compose.ui.graphics.Color(0xFF4527A0), onTertiaryContainer = androidx.compose.ui.graphics.Color(0xFFD1C4E9),
+            surfaceContainerHigh = androidx.compose.ui.graphics.Color(0xFF2A2A2A), surfaceContainerHighest = androidx.compose.ui.graphics.Color(0xFF353535),
+            surfaceContainerLow = androidx.compose.ui.graphics.Color(0xFF191919), surfaceContainer = androidx.compose.ui.graphics.Color(0xFF242424),
+        )
+        override val lightScheme = androidx.compose.material3.lightColorScheme(
+            primary = androidx.compose.ui.graphics.Color(0xFFF57C00), onPrimary = androidx.compose.ui.graphics.Color.White,
+            secondary = androidx.compose.ui.graphics.Color(0xFFFFB74D), onSecondary = androidx.compose.ui.graphics.Color.Black,
+            background = androidx.compose.ui.graphics.Color(0xFFF5F5F5), surface = androidx.compose.ui.graphics.Color.White,
+            onBackground = androidx.compose.ui.graphics.Color(0xFF212121), onSurface = androidx.compose.ui.graphics.Color(0xFF212121),
+            surfaceVariant = androidx.compose.ui.graphics.Color(0xFFE0E0E0), onSurfaceVariant = androidx.compose.ui.graphics.Color(0xFF616161),
+            error = androidx.compose.ui.graphics.Color(0xFFD32F2F),
+            primaryContainer = androidx.compose.ui.graphics.Color(0xFFFFE0B2), onPrimaryContainer = androidx.compose.ui.graphics.Color(0xFFE65100),
+            secondaryContainer = androidx.compose.ui.graphics.Color(0xFFFFE0B2), onSecondaryContainer = androidx.compose.ui.graphics.Color(0xFFE65100),
+            tertiaryContainer = androidx.compose.ui.graphics.Color(0xFFD1C4E9), onTertiaryContainer = androidx.compose.ui.graphics.Color(0xFF311B92),
+            surfaceContainerHigh = androidx.compose.ui.graphics.Color(0xFFE8E8E8), surfaceContainerHighest = androidx.compose.ui.graphics.Color(0xFFD0D0D0),
+            surfaceContainerLow = androidx.compose.ui.graphics.Color(0xFFF7F7F7), surfaceContainer = androidx.compose.ui.graphics.Color(0xFFEFEFEF),
+        )
     },
     AppTheme.PINK to object : BaseColorScheme() {
-        override val darkScheme = tintedColorScheme(dark = true, accent = 0xFFF48FB1.toInt())
-        override val lightScheme = tintedColorScheme(dark = false, accent = 0xFFC2185B.toInt())
+        override val darkScheme = androidx.compose.material3.darkColorScheme(
+            primary = androidx.compose.ui.graphics.Color(0xFFF48FB1), onPrimary = androidx.compose.ui.graphics.Color.Black,
+            secondary = androidx.compose.ui.graphics.Color(0xFFF8BBD0), onSecondary = androidx.compose.ui.graphics.Color.Black,
+            background = androidx.compose.ui.graphics.Color(0xFF121212), surface = androidx.compose.ui.graphics.Color(0xFF1E1E1E),
+            onBackground = androidx.compose.ui.graphics.Color(0xFFE0E0E0), onSurface = androidx.compose.ui.graphics.Color(0xFFE0E0E0),
+            surfaceVariant = androidx.compose.ui.graphics.Color(0xFF2C2C2C), onSurfaceVariant = androidx.compose.ui.graphics.Color(0xFFBDBDBD),
+            error = androidx.compose.ui.graphics.Color(0xFFEF5350),
+            primaryContainer = androidx.compose.ui.graphics.Color(0xFFAD1457), onPrimaryContainer = androidx.compose.ui.graphics.Color(0xFFF8BBD0),
+            secondaryContainer = androidx.compose.ui.graphics.Color(0xFFAD1457), onSecondaryContainer = androidx.compose.ui.graphics.Color(0xFFFCE4EC),
+            tertiaryContainer = androidx.compose.ui.graphics.Color(0xFF4527A0), onTertiaryContainer = androidx.compose.ui.graphics.Color(0xFFD1C4E9),
+            surfaceContainerHigh = androidx.compose.ui.graphics.Color(0xFF2A2A2A), surfaceContainerHighest = androidx.compose.ui.graphics.Color(0xFF353535),
+            surfaceContainerLow = androidx.compose.ui.graphics.Color(0xFF191919), surfaceContainer = androidx.compose.ui.graphics.Color(0xFF242424),
+        )
+        override val lightScheme = androidx.compose.material3.lightColorScheme(
+            primary = androidx.compose.ui.graphics.Color(0xFFC2185B), onPrimary = androidx.compose.ui.graphics.Color.White,
+            secondary = androidx.compose.ui.graphics.Color(0xFFEC407A), onSecondary = androidx.compose.ui.graphics.Color.White,
+            background = androidx.compose.ui.graphics.Color(0xFFF5F5F5), surface = androidx.compose.ui.graphics.Color.White,
+            onBackground = androidx.compose.ui.graphics.Color(0xFF212121), onSurface = androidx.compose.ui.graphics.Color(0xFF212121),
+            surfaceVariant = androidx.compose.ui.graphics.Color(0xFFE0E0E0), onSurfaceVariant = androidx.compose.ui.graphics.Color(0xFF616161),
+            error = androidx.compose.ui.graphics.Color(0xFFD32F2F),
+            primaryContainer = androidx.compose.ui.graphics.Color(0xFFF8BBD0), onPrimaryContainer = androidx.compose.ui.graphics.Color(0xFF880E4F),
+            secondaryContainer = androidx.compose.ui.graphics.Color(0xFFFCE4EC), onSecondaryContainer = androidx.compose.ui.graphics.Color(0xFF880E4F),
+            tertiaryContainer = androidx.compose.ui.graphics.Color(0xFFD1C4E9), onTertiaryContainer = androidx.compose.ui.graphics.Color(0xFF311B92),
+            surfaceContainerHigh = androidx.compose.ui.graphics.Color(0xFFE8E8E8), surfaceContainerHighest = androidx.compose.ui.graphics.Color(0xFFD0D0D0),
+            surfaceContainerLow = androidx.compose.ui.graphics.Color(0xFFF7F7F7), surfaceContainer = androidx.compose.ui.graphics.Color(0xFFEFEFEF),
+        )
     },
     AppTheme.TACHYOMI to TachiyomiColorScheme,
     AppTheme.CATPPUCCIN to CatppuccinColorScheme,
@@ -86,7 +182,7 @@ fun Theme(
     content: @Composable () -> Unit
 ) {
     val scheme = when {
-        // 自定义主色优先：直接按该颜色整体染色生成全套色板（与青苹果一类主题同范围）
+        // 自定义主色优先：独立于预设，直接按该颜色整体染色生成全套色板
         customPrimary != null -> tintedColorScheme(dark, customPrimary)
         dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             val ctx = LocalContext.current
@@ -100,7 +196,7 @@ fun Theme(
 }
 
 /**
- * 整体染色生成器（青苹果/海浪一类全染色主题的通用配方）：给一个强调色，派生整套同色相色板。
+ * 整体染色生成器（自定义主色专用，预设主题不经过此函数）：给一个强调色，派生整套同色相色板。
  * 防止"整界面就一个色"的分层策略：
  * · 明度阶梯——背景最暗（暗色 8%→10%），卡片容器五档递进到 25%；亮色从纯白到 89% 浅染，层级靠明度差而不是靠色差
  * · 强度阶梯——背景只带 35% 饱和度的淡淡色相，卡片/选中容器渐浓，强调位最浓；次要文字用色相浅调，正文近白/近黑只微染 10%，保住可读性
