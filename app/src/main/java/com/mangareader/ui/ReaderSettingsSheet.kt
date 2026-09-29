@@ -17,6 +17,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -403,11 +404,26 @@ private fun AmbienceSection(config: ReaderConfig, onConfigChange: (ReaderConfig)
             )
         }
         imported.forEach { name ->
-            FilterChip(
-                selected = config.ambienceSound == name,
-                onClick = { onConfigChange(config.copy(ambienceSound = name)) },
-                label = { Text(name.substringBeforeLast('.').take(10), fontSize = 13.sp) },
-            )
+            // 导入项右上角小叉角标：只删该音频，不影响选中态以外的任何项
+            Box {
+                FilterChip(
+                    selected = config.ambienceSound == name,
+                    onClick = { onConfigChange(config.copy(ambienceSound = name)) },
+                    label = { Text(name.substringBeforeLast('.').take(10), fontSize = 13.sp, modifier = Modifier.padding(end = 6.dp)) },
+                )
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .offset(x = 3.dp, y = (-3).dp)
+                        .size(18.dp)
+                        .clip(androidx.compose.foundation.shape.CircleShape)
+                        .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                        .clickable { pendingDelete = name },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text("✕", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
         }
         FilterChip(
             selected = false,
@@ -418,11 +434,6 @@ private fun AmbienceSection(config: ReaderConfig, onConfigChange: (ReaderConfig)
     if (config.ambienceSound.isNotEmpty()) {
         SliderItem("氛围音量（默认60%）", config.ambienceVolume.toFloat(), 0f..100f, 99, "${config.ambienceVolume}%") {
             onConfigChange(config.copy(ambienceVolume = it.toInt()))
-        }
-        if (config.ambienceSound != "rain") {
-            TextButton(onClick = { pendingDelete = config.ambienceSound }) {
-                Text("删除当前导入的音频", fontSize = 13.sp, color = MaterialTheme.colorScheme.error)
-            }
         }
     }
     pendingDelete?.let { name ->
