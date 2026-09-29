@@ -588,6 +588,13 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         applyNavigation()
     }
 
+    /** 点击翻页区域切换实时生效（对调走 setClickFlipInvert 通道） */
+    override fun setClickFlipTypeLive(type: Int) {
+        if (clickFlipType == type) return
+        clickFlipType = type
+        applyNavigation()
+    }
+
     private fun applyNavigation(verticalPagerNow: Boolean = verticalPager) {
         val base = when (clickFlipType) {
             0 -> AllMenuNavigation
@@ -707,11 +714,16 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     }
 
     fun setLandscapeZoom(enabled: Boolean) {
+        val changed = this.landscapeZoomEnabled != enabled
         this.landscapeZoomEnabled = enabled
+        // ★ 实时生效：缩放语义在绑定时读取，变化需重绑当前窗口
+        if (changed) pagerAdapter?.notifyDataSetChanged()
     }
 
     fun setFitScreen(enabled: Boolean) {
+        val changed = this.fitScreenEnabled != enabled
         this.fitScreenEnabled = enabled
+        if (changed) pagerAdapter?.notifyDataSetChanged()
     }
 
     fun setTileModeEnabled(enabled: Boolean) {

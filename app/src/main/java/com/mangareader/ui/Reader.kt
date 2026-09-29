@@ -2013,6 +2013,8 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         activePagerRef?.setCenterGapType(config.centerGapType)
         activePagerRef?.setTrimWhiteBorder(config.isTrimWhiteBorder, config.trimThreshold, config.trimWhiteRatio)
         activePagerRef?.setTileModeEnabled(config.tileModeEnabled)
+        activePagerRef?.setFitScreen(config.fitScreen)
+        activePagerRef?.setLandscapeZoom(config.landscapeZoom)
 
         activePagerRef?.pageBgColor = bgColor.toArgb()
         activeWebtoonRef?.imageMarginH = config.imageMarginH

@@ -26,6 +26,8 @@ interface ReaderViewDelegate {
 
     /** 点击翻页水平对调（左手模式）：Pager 预设区域镜像 */
     fun setClickFlipInvert(invert: Boolean) {}
+    /** 点击翻页区域类型实时切换（仅横向 Pager 消费） */
+    fun setClickFlipTypeLive(type: Int) {}
     fun goToPage(page: Int)
     fun release()
     fun trimMemory(level: Int)
@@ -336,6 +338,11 @@ fun NativeReaderScreen(
     //   写 delegate 侧的 Compose state 字段，由其内部重组即时生效（写相同值无副作用）。
     SideEffect {
         val delegate = activeDelegate(isVertical)
+        if (delegate is PagerReaderView) {
+            // ★ 点击翻页区域/对调实时生效（此前进书时选定，改设置需重进）
+            delegate.setClickFlipTypeLive(clickFlip)
+            delegate.setClickFlipInvert(clickFlipInvert)
+        }
         if (delegate is com.mangareader.native.curl.CurlDoublePageView) {
             delegate.curlBackContentAlpha = curlBackContentAlpha
             delegate.curlShadowAlpha = curlShadowAlpha

@@ -315,7 +315,6 @@ private fun ReadingModeTab(config: ReaderConfig, mode: Mode, onConfigChange: (Re
             }
         }
         GroupTitle("画面")
-        Text("以下功能设置后，需重新进入漫画生效", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f), fontSize = 11.sp, modifier = Modifier.padding(start = 4.dp, bottom = 4.dp))
         CheckboxItem("漫画完整显示（开启后单页模式下，画面不会越界屏幕）", config.fitScreen) { onConfigChange(config.copy(fitScreen = it)) }
         CheckboxItem("拆分双页", config.doublePageSplit) { onConfigChange(config.copy(doublePageSplit = it)) }
         if (config.doublePageSplit) {
