@@ -438,6 +438,10 @@ fun NativeReaderScreen(
 
     AndroidView(
         factory = {
+            // 两层结构：container 是滤镜层（灰度/反色/对比度/图片亮度经硬件层 paint 作用于此），
+            // brightnessOverlay 放在 container 之外的 root 上——屏幕调暗是面板行为，若在滤镜层内，
+            // 图片亮度的加法提升会把黑遮罩抬灰（调暗效果被部分抵消的物理矛盾）
+            val root = FrameLayout(ctx).apply { layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT) }
             val container = FrameLayout(ctx).apply { layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT) }
             container.addView(webtoonView)
             container.addView(pagerView)
@@ -449,7 +453,8 @@ fun NativeReaderScreen(
                 alpha = 0f
                 visibility = View.GONE
             }
-            container.addView(brightnessOverlay)
+            root.addView(container)
+            root.addView(brightnessOverlay)
             brightnessOverlayRef = brightnessOverlay
             fun syncVis() {
                 webtoonView.visibility = if (isVertical) View.VISIBLE else View.GONE
@@ -461,7 +466,7 @@ fun NativeReaderScreen(
             containerRef = container
             onViewReady(webtoonView, pagerView)
             onContainerReady(container)
-            container
+            root
         },
         update = { container ->
             webtoonView.visibility = if (isVertical) View.VISIBLE else View.GONE

@@ -2253,10 +2253,12 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                             einkDitherAlgorithm = config.einkDitherAlgorithm,
                             einkDitherLevels = config.einkDitherLevels,
                             einkEndpointPassthrough = config.einkEndpointPassthrough,
-                            brightness = config.brightness,
-                            screenBrightness = config.screenBrightness,
-                            contrast = config.contrast,
-                            gamma = config.gamma,
+                            // ★ 开关旗子真正接入滤镜链（此前旗子零消费，全靠面板取消勾选时归零数值兜底，
+                            //   配置方案/旧数据若旗子与数值脱节会静默生效）：关=安全默认值
+                            brightness = if (config.brightnessEnabled) config.brightness else 0,
+                            screenBrightness = if (config.screenBrightnessEnabled) config.screenBrightness else 0,
+                            contrast = if (config.contrastEnabled) config.contrast else 100,
+                            gamma = if (config.gammaEnabled) config.gamma else 100,
                             textureEnabled = config.textureEnabled,
                             texturePresetId = config.texturePresetId,
                             textureConcentration = config.textureConcentration,
