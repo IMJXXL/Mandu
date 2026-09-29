@@ -36,7 +36,19 @@ object PaperBackTexture {
         val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             xfermode = PorterDuffXfermode(PorterDuff.Mode.MULTIPLY)
         }
-        val src = raw
+        // ★ 关键：assets 里是"反射图"（明度均值 ≈247 的近白图），直接 multiply 到底色
+        //   纹理只剩 ~3% 变化（纯白观感的根因）。先做线性映射 v'=2.08v-300——
+        //   反射图 230~255 的纹路带 → 178~230（底色的 70%~90%），multiply 后纸纹清晰不脏。
+        val stretched = Bitmap.createBitmap(raw.width, raw.height, Bitmap.Config.ARGB_8888)
+        val cm = android.graphics.ColorMatrixColorFilter(floatArrayOf(
+            2.08f, 0f, 0f, 0f, -300f,
+            0f, 2.08f, 0f, 0f, -300f,
+            0f, 0f, 2.08f, 0f, -300f,
+            0f, 0f, 0f, 1f, 0f,
+        ))
+        val sp = Paint(Paint.ANTI_ALIAS_FLAG).apply { colorFilter = cm }
+        Canvas(stretched).drawBitmap(raw, 0f, 0f, sp)
+        val src = stretched
         val scale = maxOf(width.toFloat() / src.width, height.toFloat() / src.height)
         val dw = (src.width * scale).toInt()
         val dh = (src.height * scale).toInt()
@@ -47,12 +59,10 @@ object PaperBackTexture {
             var y = 0
             var vFlip = false
             while (y < height) {
-                val m = Paint(paint)
-                m.alpha = 255
                 canvas.save()
                 canvas.translate(x.toFloat(), y.toFloat())
                 canvas.scale(if (flip) -1f else 1f, if (vFlip) -1f else 1f)
-                canvas.drawBitmap(src, 0f, 0f, m)
+                canvas.drawBitmap(src, 0f, 0f, paint)
                 canvas.restore()
                 y += dh
                 vFlip = !vFlip

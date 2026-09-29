@@ -54,6 +54,8 @@ object WebDavRepository {
     }
 
     suspend fun delete(source: WebDavSourceEntity) = withIOContext {
+        // ★ 源删除后失效「不主动加载封面」缓存（rowid 复用会指向旧布尔值）
+        runCatching { com.mangareader.browse.RemoteBrowseCoverLoader.invalidateDavNoCoverCache() }
         BrowseSession.invalidateWebDavListing(source.id)
         BrowseSession.clearWebDavSegments(source.id)
         // ★ 页缓存/封面缩略图按源整目录清理（`<root>/<sourceId>/`）

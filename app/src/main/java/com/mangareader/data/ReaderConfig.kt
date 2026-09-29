@@ -193,9 +193,12 @@ data class ReaderConfig(
             //   flipFlashGlobalActive 仅作运行时标记供阅读内 UI 灰置单本设置，不落盘。
             val globalFlash = prefs.safeGetBoolean("isFlipFlashEnabled", false)
             val flashPrefix = if (globalFlash) "" else prefix
+            // ★ 点击翻页区域：外部阅读设置写全局键——单本键缺失时回退全局，保证外部卡片生效
+            val clickPrefix = if (prefs.contains("${prefix}clickFlipType") || prefix.isEmpty()) prefix else ""
+            val clickInvertPrefix = if (prefs.contains("${prefix}clickFlipInvertH") || prefix.isEmpty()) prefix else ""
             return ReaderConfig(
                 scrollMode = try { ScrollMode.valueOf(prefs.getString("${prefix}scrollMode", "HORIZONTAL_LEFT")!!) } catch (_: Exception) { ScrollMode.HORIZONTAL_LEFT },
-                clickFlipType = try { ClickFlipType.valueOf(prefs.getString("${prefix}clickFlipType", "LEFT_RIGHT")!!) } catch (_: Exception) { ClickFlipType.LEFT_RIGHT },
+                clickFlipType = try { ClickFlipType.valueOf(prefs.getString("${clickPrefix}clickFlipType", "LEFT_RIGHT")!!) } catch (_: Exception) { ClickFlipType.LEFT_RIGHT },
                 isFlipAnimation = prefs.safeGetBoolean("isFlipAnimation", true),
                 isPageCurlAnimation = prefs.safeGetBoolean("isPageCurlAnimation", false),
                 isCurlContentAreaOnly = prefs.safeGetBoolean("isCurlContentAreaOnly", false),
@@ -240,7 +243,7 @@ data class ReaderConfig(
                 chapterTransition = prefs.safeGetBoolean("chapterTransition", true),
                 centerGapType = prefs.safeGetInt("${prefix}centerGapType", 0),
                 autoDoubleLandscape = prefs.safeGetBoolean("${prefix}autoDoubleLandscape", false),
-                clickFlipInvertH = prefs.safeGetBoolean("${prefix}clickFlipInvertH", false),
+                clickFlipInvertH = prefs.safeGetBoolean("${clickInvertPrefix}clickFlipInvertH", false),
                 seamlessNextVolume = prefs.safeGetBoolean("seamlessNextVolume", true),
                 forceFullDecode = prefs.safeGetBoolean("forceFullDecode", false),
                 tileModeEnabled = prefs.safeGetBoolean("tileModeEnabled", false),

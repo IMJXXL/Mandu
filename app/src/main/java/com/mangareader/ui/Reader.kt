@@ -107,7 +107,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     // 监听 SharedPreferences 外部修改，自动触发 config 重读
     DisposableEffect(bookId) {
         val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-            if (key?.startsWith("book_${bookId}_") == true || key in setOf("scrollMode", "readBackground", "autoFlipInterval", "tileModeEnabled", "downsampleTier", "isEinkMode", "isTrimWhiteBorder", "trimThreshold", "trimWhiteRatio", "imageMarginH", "isFlipAnimation", "isPageCurlAnimation", "isCurlContentAreaOnly", "landscapeZoom", "fitScreen", "panNavigation", "doublePageSplit", "doublePageReverse", "pageLayout", "useSSIV", "forceFullDecode", "tallSplitEnabled", "isFlipFlashEnabled", "flipFlashDuration", "flipFlashInterval", "flipFlashColor", "einkDecodeSize", "einkUiHideDelay", "pdfQuality", "isGrayscale", "isInvertColors", "centerGapType", "doublePageShift", "seamlessNextVolume", "isEinkDither", "einkDitherAlgorithm", "einkDitherLevels", "einkEndpointPassthrough")) {
+            if (key?.startsWith("book_${bookId}_") == true || key in setOf("scrollMode", "readBackground", "autoFlipInterval", "tileModeEnabled", "downsampleTier", "isEinkMode", "isTrimWhiteBorder", "trimThreshold", "trimWhiteRatio", "imageMarginH", "isFlipAnimation", "isPageCurlAnimation", "isCurlContentAreaOnly", "landscapeZoom", "fitScreen", "panNavigation", "doublePageSplit", "doublePageReverse", "pageLayout", "useSSIV", "forceFullDecode", "tallSplitEnabled", "isFlipFlashEnabled", "flipFlashDuration", "flipFlashInterval", "flipFlashColor", "einkDecodeSize", "einkUiHideDelay", "pdfQuality", "isGrayscale", "isInvertColors", "centerGapType", "doublePageShift", "seamlessNextVolume", "isEinkDither", "einkDitherAlgorithm", "einkDitherLevels", "einkEndpointPassthrough", "clickFlipType", "clickFlipInvertH")) {
                 configVersion++
             }
         }
@@ -131,11 +131,14 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         val davId = cv.removePrefix("cv:webdav:").substringBefore(':').toLongOrNull() ?: return
         scope.launch(kotlinx.coroutines.Dispatchers.IO) {
             if (!com.mangareader.browse.RemoteBrowseCoverLoader.davNoCoverFetch(davId)) return@launch
-            runCatching {
-                val cached = engine.loadCoverThumbBytes(cv)
-                if (cached == null) {
-                    com.mangareader.webdavbridge.WebDavCoverLoader.loadCoverRawWebDav(cv)?.let { (bytes, _) ->
-                        engine.saveCoverThumbBytes(cv, bytes)
+            // ★ NonCancellable：快速退出阅读不丢落盘（与承诺一致）；提取互斥由 WebDavCoverLoader 内部 per-path Mutex 保证
+            withContext(kotlinx.coroutines.NonCancellable) {
+                runCatching {
+                    val cached = engine.loadCoverThumbBytes(cv)
+                    if (cached == null) {
+                        com.mangareader.webdavbridge.WebDavCoverLoader.loadCoverRawWebDav(cv)?.let { (bytes, _) ->
+                            engine.saveCoverThumbBytes(cv, bytes)
+                        }
                     }
                 }
             }

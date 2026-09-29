@@ -33,7 +33,23 @@ object DiagTracer {
     @Volatile
     private var appFilesDir: File? = null
 
-    fun bindFilesDir(dir: File) { appFilesDir = dir }
+    fun bindFilesDir(dir: File) {
+        appFilesDir = dir
+        // ★ 启动轮转：diag_stages 超 2MB 时只保留末尾 256KB（打点含高频计时，防无界增长）
+        runCatching {
+            val f = File(dir, STAGES)
+            if (f.length() > 2L * 1024 * 1024) {
+                val raf = java.io.RandomAccessFile(f, "r")
+                val tail = try {
+                    raf.seek(f.length() - 256 * 1024)
+                    val bytes = ByteArray(256 * 1024)
+                    raf.readFully(bytes)
+                    String(bytes)
+                } finally { raf.close() }
+                f.writeText("…（历史已截断）…" + "\n" + tail)
+            }
+        }
+    }
 
     fun markStatic(stage: String) {
         val dir = appFilesDir ?: return

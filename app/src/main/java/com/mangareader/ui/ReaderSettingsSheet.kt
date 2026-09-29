@@ -385,10 +385,8 @@ private fun GeneralTab(config: ReaderConfig, onConfigChange: (ReaderConfig) -> U
         }
     }
     CheckboxItem("自动进入条漫模式", config.autoWebtoon) { onConfigChange(config.copy(autoWebtoon = it)) }
-    // ★ 横屏自动双页：仅单页布局显示（已双页无意义）；全局语义（用户拍板放常规页）
-    if (config.pageLayout == com.mangareader.data.ReaderConfig.PageLayout.SINGLE) {
-        CheckboxItem("横屏时自动使用双页", config.autoDoubleLandscape) { onConfigChange(config.copy(autoDoubleLandscape = it)) }
-    }
+    // ★ 横屏自动双页：始终显示（隐藏条件曾让双页布局用户找不到开关）；全局语义
+    CheckboxItem("横屏时自动使用双页（仅页面布局为单页时生效）", config.autoDoubleLandscape) { onConfigChange(config.copy(autoDoubleLandscape = it)) }
     AmbienceSection(config, onConfigChange)
 }
 

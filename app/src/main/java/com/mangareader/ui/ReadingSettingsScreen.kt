@@ -224,7 +224,7 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
                     Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text("条漫分割", fontSize = 16.sp)
-                            Text("开启后对超长 PDF 页与长图片（本地文件夹/压缩包）切割分段渲染，长图不再因降采样而发糊；改动重进漫画生效", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("开启后对超长 PDF 页与长图片（本地文件夹/压缩包）切割分段渲染，长图不再因降采样而发糊", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         Switch(checked = config.tallSplitEnabled, onCheckedChange = { config = config.copy(tallSplitEnabled = it); config.save(ctx) })
                     }
@@ -488,8 +488,9 @@ private fun ClickZonePreview(type: com.mangareader.data.ReaderConfig.ClickFlipTy
             com.mangareader.data.ReaderConfig.ClickFlipType.L_SHAPE -> {
                 // PREV：上 1/3 横条 + 左中 1/3 竖条；NEXT：下 1/3 横条 + 右中 1/3 竖条；中央=菜单
                 fun rect(x0: Float, y0: Float, x1: Float, y1: Float, color: androidx.compose.ui.graphics.Color) {
-                    drawRect(color, topLeft = androidx.compose.ui.geometry.Offset(mirrorX(x0) * w, y0 * h),
-                        size = androidx.compose.ui.geometry.Size(kotlin.math.abs(mirrorX(x1) - mirrorX(x0)) * w, (y1 - y0) * h))
+                    val mx0 = mirrorX(x0); val mx1 = mirrorX(x1)
+                    drawRect(color, topLeft = androidx.compose.ui.geometry.Offset(minOf(mx0, mx1) * w, y0 * h),
+                        size = androidx.compose.ui.geometry.Size(kotlin.math.abs(mx1 - mx0) * w, (y1 - y0) * h))
                 }
                 rect(0f, 0.05f, 1f, 0.33f, prevC)
                 rect(0f, 0.33f, 0.33f, 0.67f, prevC)
@@ -498,12 +499,13 @@ private fun ClickZonePreview(type: com.mangareader.data.ReaderConfig.ClickFlipTy
                 rect(0.33f, 0.33f, 0.67f, 0.67f, menuC)
             }
             else -> {
-                // 左右分区：左 1/3 PREV / 中 MENU / 右 1/3 NEXT
-                fun rect(x0: Float, x1: Float, color: androidx.compose.ui.graphics.Color) {
+                // 左右分区：左 1/3 PREV / 中 MENU / 右 1/3 NEXT；顶部 5% 与 getAction 一致为 MENU
+                fun rect(x0: Float, x1: Float, color: androidx.compose.ui.graphics.Color, y0: Float = 0.05f) {
                     val mx0 = mirrorX(x0); val mx1 = mirrorX(x1)
-                    drawRect(color, topLeft = androidx.compose.ui.geometry.Offset(minOf(mx0, mx1) * w, 0f),
-                        size = androidx.compose.ui.geometry.Size(kotlin.math.abs(mx1 - mx0) * w, h))
+                    drawRect(color, topLeft = androidx.compose.ui.geometry.Offset(minOf(mx0, mx1) * w, y0 * h),
+                        size = androidx.compose.ui.geometry.Size(kotlin.math.abs(mx1 - mx0) * w, (1f - y0) * h))
                 }
+                drawRect(menuC) // 顶部 5%
                 rect(0f, 0.33f, prevC)
                 rect(0.33f, 0.67f, menuC)
                 rect(0.67f, 1f, nextC)

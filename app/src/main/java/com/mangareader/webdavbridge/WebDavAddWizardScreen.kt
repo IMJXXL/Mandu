@@ -140,6 +140,7 @@ fun WebDavAddWizardScreen(onBack: () -> Unit, onSaved: () -> Unit, initial: WebD
                             com.hippo.ehviewer.webdav.WebDavRepository.update(it.copy(noCoverFetch = true), null)
                         }
                     }
+                    newId
                 }
             }.getOrElse {
                 withContext(Dispatchers.Main) { Toast.makeText(ctx, "保存失败：${it.message?.take(60)}", Toast.LENGTH_SHORT).show() }

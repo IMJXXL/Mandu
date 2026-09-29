@@ -12,6 +12,20 @@ object DiagExporter {
 
     fun export(ctx: Context): String {
         val ts = java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.getDefault()).format(java.util.Date())
+
+        // ★ 大文件防护：只读末尾 N KB（RandomAccessFile seek），防膨胀文件拖垮导出
+        fun tailOf(f: java.io.File, maxKb: Int): String {
+            val max = maxKb * 1024
+            if (f.length() <= max) return runCatching { f.readText() }.getOrElse { "<读取失败: ${it.message}>" }
+            val raf = java.io.RandomAccessFile(f, "r")
+            return try {
+                raf.seek(f.length() - max)
+                val bytes = ByteArray(max)
+                raf.readFully(bytes)
+                "…（前段已截断，仅末尾 ${maxKb}KB）…" + "\n" + String(bytes)
+            } finally { raf.close() }
+        }
+
         val sb = StringBuilder()
         sb.appendLine("=== 漫读 诊断日志 $ts ===")
         sb.appendLine("品牌: ${android.os.Build.BRAND}  型号: ${android.os.Build.MODEL}")
@@ -30,7 +44,7 @@ object DiagExporter {
             if (files.isNullOrEmpty()) sb.appendLine("[crash_logs] 无崩溃记录文件")
             else files.forEach { f ->
                 sb.appendLine("----- ${f.name} -----")
-                runCatching { sb.appendLine(f.readText()) }.onFailure { sb.appendLine("<读取失败: ${it.message}>") }
+                runCatching { sb.appendLine(tailOf(f, 64)) }.onFailure { sb.appendLine("<读取失败: ${it.message}>") }
                 sb.appendLine()
             }
         }
@@ -39,17 +53,15 @@ object DiagExporter {
             val f = java.io.File(ctx.getExternalFilesDir(null) ?: return@runCatching, "anr_log.txt")
             if (f.exists() && f.length() > 0) {
                 sb.appendLine("----- anr_log.txt（末尾 8KB）-----")
-                val bytes = f.readBytes()
-                val start = if (bytes.size > 8192) bytes.size - 8192 else 0
-                sb.appendLine(String(bytes, start, bytes.size - start))
+                sb.appendLine(tailOf(f, 8))
             } else sb.appendLine("[anr_log] 无记录")
         }
         // 启动阶段标记（无日志闪退专项取证）
         runCatching {
             val f = java.io.File(ctx.filesDir, "diag_stages.txt")
             if (f.exists()) {
-                sb.appendLine("----- diag_stages.txt（全量）-----")
-                sb.appendLine(f.readText())
+                sb.appendLine("----- diag_stages.txt（末尾 256KB）-----")
+                sb.appendLine(tailOf(f, 256))
             } else sb.appendLine("[diag_stages] 无（未到达任何启动标记点 = 崩溃极早期）")
         }
 

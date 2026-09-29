@@ -1451,10 +1451,15 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 val rightBmp = if (rightIdx in 0 until pageList.size) bitmapCache[rightIdx] else null
                 if (leftBmp != null && !leftBmp.isRecycled) {
                     try {
+                        val mergeStart = android.os.SystemClock.uptimeMillis()
                         val merged = if (rightBmp != null && !rightBmp.isRecycled) {
                             if (doublePageReverseEnabled) mergeBitmaps(rightBmp, leftBmp, gapPx)
                             else mergeBitmaps(leftBmp, rightBmp, gapPx)
                         } else leftBmp
+                        // ★ 双页合并计时：切双页"要加载一下"取证（解码走 pageDecode，此处只记拼接）；
+                        //   仅 >50ms 落盘，普通 bind 不写 IO
+                        val mergeCost = android.os.SystemClock.uptimeMillis() - mergeStart
+                        if (mergeCost > 50) runCatching { com.mangareader.DiagTracer.markStatic("doubleMerge ${mergeCost}ms") }
                         holder.setImage(merged, useSSIV, landscapeZoomEnabled, fitWidth = true)
                     } catch (_: OutOfMemoryError) {
                         holder.setImage(leftBmp, useSSIV, landscapeZoomEnabled, fitWidth = true)
@@ -1683,6 +1688,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         /** ★ §24 二代动图 set —— 接 drawable，存到 heldAnimDrawable 和全局 pageAnimDrawables，用 ImageView 显示；不 start（翻到这页时 startAnimIfNotRunning 才 start）
          *   ★ Coil 路线后 drawable 是 Animatable（系统 AnimatedDrawable），不强制是 FrameAnimationDrawable */
         fun setAnimDrawable(idx: Int, drawable: Drawable) {
+            isSplitPage = false
             // ★ Bug B 修复 2：若是同一 idx 的同一 drawable 实例，跳过 dispose+再设，
             //   避免 ImageView.setImageDrawable(null) → setImageDrawable(same) 这瞬空白 → 画面闪一下。
             if (heldIdx == idx && heldAnimDrawable === drawable) {
@@ -1725,6 +1731,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             iv?.visibility = View.VISIBLE
         }
         fun setImageFile(file: java.io.File, landscapeZoom: Boolean) {
+            isSplitPage = false
             heldBitmap = null
             val container = itemView as android.widget.FrameLayout
             // ★ 修复翻页闪烁：复用已有 SSIV（setImage 会重置内部 decoder/状态），
