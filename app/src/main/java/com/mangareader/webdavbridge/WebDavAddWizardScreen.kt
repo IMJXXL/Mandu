@@ -155,7 +155,7 @@ fun WebDavAddWizardScreen(onBack: () -> Unit, onSaved: () -> Unit, initial: WebD
                 val scanMsg = when {
                     scanned == null -> ""
                     scanned == 0 -> "，书架无变化"
-                    else -> if (noCoverFetch) "，扫描新增 $scanned 本（已开启不主动加载封面）" else "，扫描新增 $scanned 本，封面后台加载中"
+                    else -> if (noCoverFetch) "，扫描新增 $scanned 本（封面将随阅读逐本加载）" else "，扫描新增 $scanned 本，封面后台加载中"
                 }
                 Toast.makeText(ctx, "$msg：/$dir$scanMsg", Toast.LENGTH_SHORT).show()
                 onSaved()

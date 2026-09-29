@@ -58,11 +58,12 @@ class SuperResolutionManager(
         if (!gpuCurrentlyUsed()) { gpuFailStreak.set(0); return }
         if (returnedInput) {
             val n = gpuFailStreak.incrementAndGet()
+            if (n in 1..2) runCatching { com.mangareader.DiagTracer.markStatic("enhance: acc fail n=$n") }
             if (n >= 3) {
                 gpuFused = true
                 gpuFailStreak.set(0)
                 Log.w(TAG, "GPU 连续失败 3 次，本会话熔断强制 CPU（重新切档自动恢复）")
-                runCatching { com.mangareader.DiagTracer.markStatic("enhance: accelerator unavailable → fallback") }
+                runCatching { com.mangareader.DiagTracer.markStatic("enhance: acc off n=3") }
             }
         } else {
             gpuFailStreak.set(0)
@@ -197,10 +198,10 @@ class SuperResolutionManager(
                 currentModel = model
                 Log.i(TAG, "SR: ${model.key} loaded in ${System.currentTimeMillis() - loadStart}ms, ready=${processor.isReady}, gpu=${gpuid})")
                 // ★ 诊断打点（中性措辞）：引擎档位/是否图形加速/耗时——远端排障关键证据
-                runCatching { com.mangareader.DiagTracer.markStatic("enhance: ready gpu=${gpuid >= 0} ${System.currentTimeMillis() - loadStart}ms") }
+                runCatching { com.mangareader.DiagTracer.markStatic("enhance: on acc=${gpuid >= 0} ${System.currentTimeMillis() - loadStart}ms") }
             } catch (e: Exception) {
                 Log.e(TAG, "SR: init ${model.key} failed, fallback NoOp: ${e.message}")
-                runCatching { com.mangareader.DiagTracer.markStatic("enhance: init failed → passthrough") }
+                runCatching { com.mangareader.DiagTracer.markStatic("enhance: off (init)") }
                 try { processor.release() } catch (_: Exception) {}
                 currentProcessor = NoOpProcessor()
                 currentModel = model

@@ -123,18 +123,21 @@ fun CurlDoublePageContent(
     BoxWithConstraints(modifier = Modifier.fillMaxSize().background(Color(pageBgColor))) {
         // ★ 纸背纹理（同 CurlReaderContent）：按当前纸张 preset 烘米色纸纹图
         val ctx = androidx.compose.ui.platform.LocalContext.current
+        // ★ 纸背底色随背景亮度：暗色主题深灰纸，避免翻页背面亮块闪眼
+        val bg = Color(pageBgColor)
+        val dark = (0.299f * bg.red + 0.587f * bg.green + 0.114f * bg.blue) < 0.5f
         // ★ 纸背：主线程仅缓存快查；未命中后台烘焙回填（首帧短暂无纸背，随后浮现）
         val backBitmap = remember(paperBackPresetId, constraints.maxWidth, constraints.maxHeight) {
             if (paperBackPresetId < 0) null
             else runCatching {
-                com.mangareader.filter.PaperBackTexture.peek(paperBackPresetId, constraints.maxWidth, constraints.maxHeight)
+                com.mangareader.filter.PaperBackTexture.peek(paperBackPresetId, constraints.maxWidth, constraints.maxHeight, dark)
             }.getOrNull()
         }
         LaunchedEffect(paperBackPresetId, constraints.maxWidth, constraints.maxHeight) {
             if (paperBackPresetId >= 0 && backBitmap == null) {
                 val w = constraints.maxWidth; val h = constraints.maxHeight
                 val baked = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
-                    runCatching { com.mangareader.filter.PaperBackTexture.get(ctx, paperBackPresetId, w, h) }.getOrNull()
+                    runCatching { com.mangareader.filter.PaperBackTexture.get(ctx, paperBackPresetId, w, h, dark) }.getOrNull()
                 }
                 config.backPageBitmap = baked?.asImageBitmap()
             }

@@ -1457,7 +1457,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                         // ★ 双页合并计时：切双页"要加载一下"取证（解码走 pageDecode，此处只记拼接）；
                         //   仅 >50ms 落盘，普通 bind 不写 IO
                         val mergeCost = android.os.SystemClock.uptimeMillis() - mergeStart
-                        if (mergeCost > 50) runCatching { com.mangareader.DiagTracer.markStatic("doubleMerge ${mergeCost}ms") }
+                        if (mergeCost > 50) runCatching { com.mangareader.DiagTracer.markStatic("merge ${mergeCost}ms") }
                         holder.setImage(merged, useSSIV, landscapeZoomEnabled, fitWidth = true)
                     } catch (_: OutOfMemoryError) {
                         holder.setImage(leftBmp, useSSIV, landscapeZoomEnabled, fitWidth = true)

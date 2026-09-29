@@ -103,7 +103,13 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
 
     /** 诊断取证：状态翻转进诊断日志（关于页可导出），异常静默 */
     private fun diagMark(msg: String) = try {
-        com.mangareader.DiagTracer.mark(context, "webtoon: $msg")
+        com.mangareader.DiagTracer.mark(context, "w: " + when {
+            msg.contains("deferred") -> "1"
+            msg.contains("takeover") -> "2"
+            msg.contains("anchor") -> "3"
+            msg.contains("give-up") || msg.contains("giveup") -> "4"
+            else -> "?"
+        } + " " + msg.length)
     } catch (_: Exception) {}
 
     private val settleWindowRunnable = Runnable {

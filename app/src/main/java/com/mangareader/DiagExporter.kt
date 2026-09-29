@@ -14,15 +14,22 @@ object DiagExporter {
         val ts = java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.getDefault()).format(java.util.Date())
 
         // ★ 大文件防护：只读末尾 N KB（RandomAccessFile seek），防膨胀文件拖垮导出
+        // ★ 脱敏：包内类名 → 模块码（防从崩溃堆栈读出技术路线）；用户文件路径 → <book>（防暴露浏览内容）
+        fun sanitize(text: String): String = text
+            .replace(Regex("""com\.mangareader\.(sr|native|viewer|engine|webdavbridge|smbbridge|komgabridge|opdsbridge|filter|data|ui|backup|updatecheck|autocat)\.[A-Za-z0-9_$]+"""), "m.*")
+            .replace(Regex("""com\.hippo\.ehviewer\.(webdav|library)\.[A-Za-z0-9_$]+"""), "h.*")
+            .replace(Regex("""/storage/[^\s"]*"""), "<book>")
+            .replace(Regex("""/data/user/\d+/[^\s"]*"""), "<app>")
+
         fun tailOf(f: java.io.File, maxKb: Int): String {
             val max = maxKb * 1024
-            if (f.length() <= max) return runCatching { f.readText() }.getOrElse { "<读取失败: ${it.message}>" }
+            if (f.length() <= max) return runCatching { sanitize(f.readText()) }.getOrElse { "<读取失败: ${it.message}>" }
             val raf = java.io.RandomAccessFile(f, "r")
             return try {
                 raf.seek(f.length() - max)
                 val bytes = ByteArray(max)
                 raf.readFully(bytes)
-                "…（前段已截断，仅末尾 ${maxKb}KB）…" + "\n" + String(bytes)
+                "…（前段已截断，仅末尾 ${maxKb}KB）…" + "\n" + sanitize(String(bytes))
             } finally { raf.close() }
         }
 
@@ -40,7 +47,7 @@ object DiagExporter {
         // 崩溃日志（CrashHandler 落盘）
         runCatching {
             val dir = java.io.File(ctx.getExternalFilesDir(null) ?: ctx.filesDir, "crash_logs")
-            val files = dir.listFiles()?.filter { it.name.startsWith("crash_") }?.sortedByDescending { it.name }?.take(10)
+            val files = dir.listFiles()?.filter { it.name.startsWith("crash_") }?.sortedByDescending { it.name }?.take(5)
             if (files.isNullOrEmpty()) sb.appendLine("[crash_logs] 无崩溃记录文件")
             else files.forEach { f ->
                 sb.appendLine("----- ${f.name} -----")

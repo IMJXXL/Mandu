@@ -3185,7 +3185,7 @@ class ArchiveEngine(private val ctx: Context) {
                     Log.d(TAG, "loadPdfPageSegment idx=$pageIndex seg=$segmentIndex cache=miss ${segW}x${segH} rect=[${rect.left},${rect.top},${rect.right},${rect.bottom}] pageWH=${pageWidth}x${pageHeight} splitH=$splitH")
                     // ★ 诊断取证：每文档首段的成功渲染尺寸（模糊物证——位图小=渲染参数错，位图大=显示端拉伸）
                     if (pdfSegOkMarked.add(docKey)) {
-                        try { com.mangareader.DiagTracer.mark(ctx, "tallSplit pdfSegOK idx=$pageIndex seg=$segmentIndex ${bmp.width}x${bmp.height} segW=$segW pageWH=${pageWidth}x${pageHeight}") } catch (_: Exception) {}
+                        try { com.mangareader.DiagTracer.mark(ctx, "seg ok idx=$pageIndex seg=$segmentIndex ${bmp.width}x${bmp.height}") } catch (_: Exception) {}
                     }
                     putCachedBitmap(segKey, bmp)
                     future.complete(bmp)
@@ -3194,7 +3194,7 @@ class ArchiveEngine(private val ctx: Context) {
                 Log.w(TAG, "loadPdfPageSegment render null seg=$segmentIndex, fallback whole page")
                 val mk = "pdf|$docKey|$pageIndex#$segmentIndex"
                 if (segFallbackMarked.add(mk)) {
-                    try { com.mangareader.DiagTracer.mark(ctx, "tallSplit pdfSegFallback idx=$pageIndex seg=$segmentIndex") } catch (_: Exception) {}
+                    try { com.mangareader.DiagTracer.mark(ctx, "seg fallback idx=$pageIndex seg=$segmentIndex") } catch (_: Exception) {}
                 }
                 future.complete(null)
                 return loadPdfPage(uri, pageIndex)
@@ -3236,7 +3236,7 @@ class ArchiveEngine(private val ctx: Context) {
                 // ★ 诊断取证：段渲染失败回退整图（用户实测=后面全是糊图），每 (doc,idx,seg) 只记一次
                 val mk = "${p.doc}|${meta.localIdx}#$segmentIndex"
                 if (segFallbackMarked.add(mk)) {
-                    try { com.mangareader.DiagTracer.mark(ctx, "tallSplit segFallback idx=${meta.localIdx} seg=$segmentIndex src=${meta.source}") } catch (_: Exception) {}
+                    try { com.mangareader.DiagTracer.mark(ctx, "seg fallback idx=${meta.localIdx} seg=$segmentIndex") } catch (_: Exception) {}
                 }
                 future.complete(null)
                 return loadPage(meta, treeStr)

@@ -102,6 +102,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     var currentBookId by remember { mutableLongStateOf(bookId) }
     var config by remember { mutableStateOf(com.mangareader.data.ReaderConfig.load(ctx, bookId)) }
     var configVersion by remember { mutableIntStateOf(0) }
+    var lastPageCbMarkMs by remember { mutableLongStateOf(0L) }
 
 
     // 监听 SharedPreferences 外部修改，自动触发 config 重读
@@ -969,7 +970,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         } else pages
         pageList = expandedPages
         // ★ 分割诊断取证：入口展开统计进诊断日志（unprobed>0 = 有页探测失败被整页透传）
-        try { com.mangareader.DiagTracer.mark(ctx, "tallSplit expand ${com.mangareader.engine.pdf.VirtualPageExpander.lastStats} path=$path") } catch (_: Exception) {}
+        try { com.mangareader.DiagTracer.mark(ctx, "seg expand ${com.mangareader.engine.pdf.VirtualPageExpander.lastStats}") } catch (_: Exception) {}
         // ★ B1：分割实际生效（存在展开段）时提升共享位图缓存额度（仅大内存设备）
         try { engine.setSegmentCacheBoost(expandedPages.size > pages.size) } catch (_: Exception) {}
         val expandedSize = expandedPages.size
@@ -2326,7 +2327,10 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                                     }
                                 } else {
                                     android.util.Log.d("ReaderProgress", "onPageChanged EXEC newCur=$newCur isVert=$isVert")
-                                    try { com.mangareader.DiagTracer.mark(ctx, "pageCb EXEC cur=$newCur") } catch (_: Exception) {}
+                                    try {
+                                        val now = android.os.SystemClock.uptimeMillis()
+                                        if (now - lastPageCbMarkMs > 5000L) { lastPageCbMarkMs = now; com.mangareader.DiagTracer.mark(ctx, "page cur=$newCur") }
+                                    } catch (_: Exception) {}
                                     cur = newCur; save()
                                 }
                             },

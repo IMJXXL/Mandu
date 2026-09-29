@@ -403,11 +403,13 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
                     Spacer(Modifier.height(8.dp))
                     // 染色预览：上一页=主色 / 菜单=灰 / 下一页=主色深，对调后水平镜像
                     ClickZonePreview(config.clickFlipType, config.clickFlipInvertH)
+                    Text("深色区=上一页 · 浅色区=下一页 · 空白=唤出菜单", fontSize = 10.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+                    Text("深色区=上一页 · 浅色区=下一页 · 空白=唤出菜单", fontSize = 10.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
                     Spacer(Modifier.height(8.dp))
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text("对调左右（左手模式）", fontSize = 14.sp)
-                            Text("点右侧=上一页、点左侧=下一页", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(if (config.clickFlipInvertH) "开启后：点右侧=上一页、点左侧=下一页" else "关闭时：点左侧=上一页、点右侧=下一页", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         androidx.compose.material3.Switch(
                             checked = config.clickFlipInvertH,
@@ -466,8 +468,8 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
  */
 @Composable
 private fun ClickZonePreview(type: com.mangareader.data.ReaderConfig.ClickFlipType, invertH: Boolean) {
-    val prevC = MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)
-    val nextC = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)
+    val prevC = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
+    val nextC = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
     val menuC = MaterialTheme.colorScheme.surfaceVariant
     val bg = MaterialTheme.colorScheme.surface
     androidx.compose.foundation.Canvas(

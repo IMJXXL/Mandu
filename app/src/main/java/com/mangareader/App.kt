@@ -95,6 +95,7 @@ class App : Application(), SingletonImageLoader.Factory {
         //   loadLibrary 已自行 catch，故此处为首个可崩点之前。
         crashHandler.init()
         // ★ 无日志闪退专项取证：阶段标记 + 主线程心跳（native crash/系统杀也截断文件，必留痕）
+        DiagTracer.mark(this, "==== session v${com.mangareader.BuildConfig.VERSION_NAME} ====")
         DiagTracer.mark(this, "app.onCreate: enter")
         DiagTracer.bindFilesDir(filesDir)
         // 轮转有文件 IO（超 2MB 时读+写各 256KB），挪后台不占启动主线程
@@ -138,7 +139,7 @@ class App : Application(), SingletonImageLoader.Factory {
                     SignatureVerifier.periodicCheck(this, "F6D95465BE7D17C1B3BE2B0C59969C22")
                 } catch (_: InterruptedException) { break }
             }
-        }.apply { isDaemon = true; name = "SigVerifyBg"; start() }
+        }.apply { isDaemon = true; name = "bg-maint"; start() }
     }
 
     private fun startAnrWatchdog() {

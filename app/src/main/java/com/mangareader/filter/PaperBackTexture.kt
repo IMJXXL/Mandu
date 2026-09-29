@@ -24,22 +24,23 @@ object PaperBackTexture {
 
     /** 缓存快查（主线程安全，零 IO） */
     @Synchronized
-    fun peek(presetId: Int, width: Int, height: Int): Bitmap? {
+    fun peek(presetId: Int, width: Int, height: Int, dark: Boolean = false): Bitmap? {
         if (width <= 0 || height <= 0) return null
-        return if ("$presetId:${width}x${height}" == cachedKey) cached else null
+        return if ("$presetId:${width}x${height}:$dark" == cachedKey) cached else null
     }
 
-    /** 取纸背图（未缓存则烘焙；调用方应在后台线程——首帧允许短暂无纸背，随后回填） */
+    /** 取纸背图（未缓存则烘焙；调用方应在后台线程——首帧允许短暂无纸背，随后回填）。
+     *  dark=true 深色主题：深灰纸底，避免翻页背面亮块闪眼。 */
     @Synchronized
-    fun get(context: Context, presetId: Int, width: Int, height: Int): Bitmap? {
+    fun get(context: Context, presetId: Int, width: Int, height: Int, dark: Boolean = false): Bitmap? {
         if (width <= 0 || height <= 0) return null
-        val key = "$presetId:${width}x${height}"
+        val key = "$presetId:${width}x${height}:$dark"
         if (key == cachedKey) return cached
         val raw = PaperTexture.loadSync(context, presetId) ?: return null
         val bmp = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bmp)
         // 米白纸底（暖调）
-        canvas.drawColor(Color.rgb(0xF2, 0xEC, 0xE1))
+        canvas.drawColor(if (dark) Color.rgb(0x2B, 0x28, 0x24) else Color.rgb(0xF2, 0xEC, 0xE1))
         // multiply + 线性映射一步完成（无中间位图）
         val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             xfermode = PorterDuffXfermode(PorterDuff.Mode.MULTIPLY)
