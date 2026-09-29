@@ -5,13 +5,17 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -372,8 +376,9 @@ private fun GeneralTab(config: ReaderConfig, onConfigChange: (ReaderConfig) -> U
     AmbienceSection(config, onConfigChange)
 }
 
-/** 氛围音：预设雨声 + 用户自选音频（SAF 导入拷入 filesDir/ambience/，长按无需管理、
- *  选中后下方提供删除）。选择模型：""=关 "rain"=预设 其余=导入文件名 */
+/** 氛围音：预设雨声 + 用户自选音频（SAF 导入拷入 filesDir/ambience/）。
+ *  导入项右上角移除角标只删应用内副本，用户本地原文件不动。
+ *  选择模型：""=关 "rain"=预设 其余=导入文件名 */
 @Composable
 private fun AmbienceSection(config: ReaderConfig, onConfigChange: (ReaderConfig) -> Unit) {
     val ctx = androidx.compose.ui.platform.LocalContext.current
@@ -404,7 +409,7 @@ private fun AmbienceSection(config: ReaderConfig, onConfigChange: (ReaderConfig)
             )
         }
         imported.forEach { name ->
-            // 导入项右上角小叉角标：只删该音频，不影响选中态以外的任何项
+            // 导入项右上角移除角标：深色圆盘 + 细环 + 矢量叉，与芯片底色拉开层次
             Box {
                 FilterChip(
                     selected = config.ambienceSound == name,
@@ -414,14 +419,20 @@ private fun AmbienceSection(config: ReaderConfig, onConfigChange: (ReaderConfig)
                 Box(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
-                        .offset(x = 3.dp, y = (-3).dp)
-                        .size(18.dp)
-                        .clip(androidx.compose.foundation.shape.CircleShape)
-                        .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                        .offset(x = 2.dp, y = (-2).dp)
+                        .size(20.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.onSurfaceVariant)
+                        .border(1.5.dp, MaterialTheme.colorScheme.surface, CircleShape)
                         .clickable { pendingDelete = name },
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text("✕", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Icon(
+                        Icons.Rounded.Close,
+                        contentDescription = "移除",
+                        modifier = Modifier.size(12.dp),
+                        tint = MaterialTheme.colorScheme.surface,
+                    )
                 }
             }
         }
@@ -439,8 +450,8 @@ private fun AmbienceSection(config: ReaderConfig, onConfigChange: (ReaderConfig)
     pendingDelete?.let { name ->
         AlertDialog(
             onDismissRequest = { pendingDelete = null },
-            title = { Text("删除音频") },
-            text = { Text("删除「${name.substringBeforeLast('.')}」？删除后无法恢复。") },
+            title = { Text("移除氛围音") },
+            text = { Text("将「${name.substringBeforeLast('.')}」从氛围音列表移除？\n只移除应用内的副本，你本地原来的音频文件不受影响。") },
             confirmButton = {
                 TextButton(onClick = {
                     val del = name
@@ -454,7 +465,7 @@ private fun AmbienceSection(config: ReaderConfig, onConfigChange: (ReaderConfig)
                             onConfigChange(config.copy(ambienceSound = ""))
                         }
                     }
-                }) { Text("删除", color = MaterialTheme.colorScheme.error) }
+                }) { Text("移除", color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = { TextButton(onClick = { pendingDelete = null }) { Text("取消") } },
         )
