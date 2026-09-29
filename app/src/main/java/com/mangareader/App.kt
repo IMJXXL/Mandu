@@ -101,7 +101,7 @@ class App : Application(), SingletonImageLoader.Factory {
         // 轮转有文件 IO（超 2MB 时读+写各 256KB），挪后台不占启动主线程
         appScope.launch(Dispatchers.IO) { DiagTracer.rotateIfNeeded(filesDir) }
         try { System.loadLibrary("archive_stream") } catch (_: Throwable) {}
-        DiagTracer.mark(this, "app.onCreate: lib archive_stream loaded")
+        DiagTracer.mark(this, "app.onCreate: phase-1 done")
         // SMB 连接池预热（对齐上游 prewarm）：SmbConfig.builder 走 ServiceLoader 读 APK，
         // 懒构建防主线程磁盘 IO；启动即后台构建，首次进 SMB 浏览不再现等
         appScope.launch(Dispatchers.IO) {
