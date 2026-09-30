@@ -261,9 +261,19 @@ private fun CacheDrawScope.prepareClippedContent(
  *   改为：用未钳位的真实折叠线对画布矩形做半平面裁切（Sutherland–Hodgman），
  *   keepSide 参照点决定保哪一侧——正面/背面区域严格互补，任何翻转位姿无缝隙。
  */
-private fun CacheDrawScope.rectClipByLine(lineTop: Offset, lineBottom: Offset, keepTopRight: Boolean): List<Offset> {
+private fun CacheDrawScope.rectClipByLine(
+    lineTop: Offset,
+    lineBottom: Offset,
+    keepTopRight: Boolean,
+    expandForMirror: Boolean = false,
+): List<Offset> {
     val w = size.width
     val h = size.height
+    // ★ 背面多边形的采样域扩一圈（expandForMirror）：折叠线斜穿画布边缘时，镜像的源像素
+    //   只有画布内的部分，越界那块的镜像=空——缺口露出下层原画（右上角纹块实锤）。
+    //   扩域后镜像有源可采，缺口被纸背盖住。正面裁剪不需要（平面内互补即可）。
+    val ex = if (expandForMirror) w else 0f
+    val ey = if (expandForMirror) h else 0f
     // 折叠线方向：lineTop→lineBottom（画布坐标 y 向下）
     val ax = lineBottom.x - lineTop.x
     val ay = lineBottom.y - lineTop.y
@@ -273,7 +283,8 @@ private fun CacheDrawScope.rectClipByLine(lineTop: Offset, lineBottom: Offset, k
     val refCross = cross(ref)
     if (kotlin.math.abs(refCross) < 0.001f) {
         // 折线恰过参照点（= 右缘静止态）：背面零面积，正面满幅
-        return if (keepTopRight) emptyList() else listOf(Offset(0f, 0f), Offset(w, 0f), Offset(w, h), Offset(0f, h))
+        return if (keepTopRight) emptyList()
+        else listOf(Offset(0f, 0f), Offset(w, 0f), Offset(w, h), Offset(0f, h))
     }
     val wantPositive = if (keepTopRight) refCross > 0f else refCross < 0f
     fun inside(p: Offset): Boolean {
@@ -285,9 +296,8 @@ private fun CacheDrawScope.rectClipByLine(lineTop: Offset, lineBottom: Offset, k
         val t = cp / (cp - cq)
         return Offset(p.x + (q.x - p.x) * t, p.y + (q.y - p.y) * t)
     }
-    var out = listOf(Offset(0f, 0f), Offset(w, 0f), Offset(w, h), Offset(0f, h))
-    val subject = out
-    out = buildList {
+    val subject = listOf(Offset(-ex, -ey), Offset(w + ex, -ey), Offset(w + ex, h + ey), Offset(-ex, h + ey))
+    val out = buildList {
         for (i in subject.indices) {
             val cur = subject[i]
             val nxt = subject[(i + 1) % subject.size]
@@ -296,13 +306,16 @@ private fun CacheDrawScope.rectClipByLine(lineTop: Offset, lineBottom: Offset, k
             if (cIn != nIn) add(intersect(cur, nxt))
         }
     }
-    return out.ifEmpty { subject }
+    return out.ifEmpty {
+        if (keepTopRight) emptyList()
+        else listOf(Offset(0f, 0f), Offset(w, 0f), Offset(w, h), Offset(0f, h))
+    }
 }
 
 private fun CacheDrawScope.backPagePolygon(
     topCurlOffset: Offset,
     bottomCurlOffset: Offset,
-): Polygon = Polygon(rectClipByLine(topCurlOffset, bottomCurlOffset, keepTopRight = true))
+): Polygon = Polygon(rectClipByLine(topCurlOffset, bottomCurlOffset, keepTopRight = true, expandForMirror = true))
 
 /**
  * Kamigura fork: shadow of the flap without the back-page content, used by [drawCurlFront].
