@@ -79,18 +79,18 @@ fun SmbSettingsScreen(onBack: () -> Unit, onOpenDownloadQueue: () -> Unit = {}) 
             item {
             SectionCard("书名解析") {
                 val ctx = LocalContext.current
-                var smartTitleSmb by remember { mutableStateOf(runCatching { ctx.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE).getBoolean("smart_title_smb", true) }.getOrDefault(true)) }
+                var smartTitleSmb by remember { mutableStateOf(runCatching { ctx.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE).getBoolean("smart_title_smb", false) }.getOrDefault(false)) }
                 Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("智能解析文件名", fontSize = 16.sp)
-                        Text("扫描入库时提取干净书名与卷号（如 Vol.01）；关闭则显示原文件名。仅影响新扫描的书", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("扫描入库时提取干净书名与卷号（如 Vol.01）；关闭则显示原文件名。固有规则可能误判，改错可长按书名核对原名。仅影响新扫描的书", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Switch(checked = smartTitleSmb, onCheckedChange = { v ->
                         smartTitleSmb = v
                         ctx.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE).edit().putBoolean("smart_title_smb", v).apply()
                     })
                 }
-                var t2sTitleSmb by remember { mutableStateOf(runCatching { ctx.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE).getBoolean("t2s_enabled", true) }.getOrDefault(true)) }
+                var t2sTitleSmb by remember { mutableStateOf(runCatching { ctx.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE).getBoolean("t2s_enabled", false) }.getOrDefault(false)) }
                 Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("繁体标题转简体", fontSize = 16.sp)

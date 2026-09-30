@@ -356,22 +356,22 @@ fun FolderManageScreen(onBack: () -> Unit) {
                             prefs.edit().putBoolean("auto_refresh", v).apply()
                         })
                     }
-                    var smartTitle by remember { mutableStateOf(prefs.getBoolean("smart_title", true)) }
+                    var smartTitle by remember { mutableStateOf(prefs.getBoolean("smart_title", false)) }
                     Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text("智能解析文件名", fontSize = 16.sp)
-                            Text("扫描入库时提取干净书名与卷号（如 v01）；关闭则显示原文件名。仅影响新扫描的书，已入库书名不变", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("扫描入库时提取干净书名与卷号（如 Vol.01）；关闭则显示原文件名。固有规则可能误判，改错可长按书名核对原名。仅影响新扫描的书，已入库书名不变", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         Switch(checked = smartTitle, onCheckedChange = { v ->
                             smartTitle = v
                             prefs.edit().putBoolean("smart_title", v).apply()
                         })
                     }
-                    var t2sEnabled by remember { mutableStateOf(prefs.getBoolean("t2s_enabled", true)) }
+                    var t2sEnabled by remember { mutableStateOf(prefs.getBoolean("t2s_enabled", false)) }
                     Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text("繁体标题转简体", fontSize = 16.sp)
-                            Text("全局生效（本地/WebDAV/SMB 的智能解析结果都会应用）；关 = 保留繁体原字。仅影响新扫描的书", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("全局生效（本地/WebDAV/SMB 的智能解析结果都会应用）；关 = 保留繁体原字。固有规则可能误判，改错可长按书名核对原名。仅影响新扫描的书", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         Switch(checked = t2sEnabled, onCheckedChange = { v ->
                             t2sEnabled = v
@@ -388,7 +388,7 @@ fun FolderManageScreen(onBack: () -> Unit) {
                             onDismissRequest = { showRetitle = false },
                             title = { Text("重新命名已入库的书？") },
                             text = {
-                                Text("将按当前文件名重新解析全部书籍的书名（含手动改过的），解析不出结构时保持原名。原始文件名仍可在长按详情中查看。")
+                                Text("将按当前文件名重新解析全部书籍的书名（含手动改过的），解析不出结构时保持原名。固有规则可能误判，改错可长按书名核对原文件名。")
                             },
                             confirmButton = {
                                 TextButton(onClick = {
@@ -397,8 +397,9 @@ fun FolderManageScreen(onBack: () -> Unit) {
                                         val changed = withContext(Dispatchers.IO) {
                                             val d = (ctx.applicationContext as com.mangareader.App).db.mangaDao()
                                             val t2s = ctx.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE)
-                                                .getBoolean("t2s_enabled", true)
+                                                .getBoolean("t2s_enabled", false)
                                             var n = 0
+                                            var total = 0
                                             d.getAllBooksList().forEach { bk ->
                                                 // ★ 取原文件名必须走 fileNameOf：SAF 路径末段是 |ext 后缀，
                                                 //   直接 substringAfterLast('|') 会把扩展名（rar/mobi/epub）当书名
@@ -407,10 +408,17 @@ fun FolderManageScreen(onBack: () -> Unit) {
                                                 // （上级可能是分组夹 A/合集，逐级跳过，取第一个像系列名的）
                                                 val ancestors = com.mangareader.util.BookTitleParser.ancestorNamesOf(bk.filePath)
                                                 val newTitle = com.mangareader.util.BookTitleParser.displayTitle(raw, t2s, ancestors)
+                                                total++
+                                                // 诊断打点（tallSplit 同例）：逐书记录改名前后，排障用——用户日志里能对出哪本没解析好
+                                                com.mangareader.DiagTracer.mark(
+                                                    ctx,
+                                                    "retitle #${bk.id} 「${bk.title}」→「$newTitle」 src=${raw.take(80)}"
+                                                )
                                                 if (newTitle.isNotBlank() && newTitle != bk.title) {
                                                     d.updateBook(bk.copy(title = newTitle)); n++
                                                 }
                                             }
+                                            com.mangareader.DiagTracer.mark(ctx, "retitle done changed=$n/$total")
                                             n
                                         }
                                         android.widget.Toast.makeText(ctx, "已重命名 $changed 本", Toast.LENGTH_SHORT).show()

@@ -560,11 +560,11 @@ class Scanner(private val ctx: Context, private val dao: MangaDao) {
             // ★ 智能解析文件名（默认开）：干净书名+v01 短缀+繁转简；关=旧行为
             val smartTitle = try {
                 ctx.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE)
-                    .getBoolean("smart_title", true)
+                    .getBoolean("smart_title", false)
             } catch (_: Exception) { true }
             val t2sEnabled = try {
                 ctx.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE)
-                    .getBoolean("t2s_enabled", true)
+                    .getBoolean("t2s_enabled", false)
             } catch (_: Exception) { true }
             val existingPaths = mutableSetOf<String>()
             try {

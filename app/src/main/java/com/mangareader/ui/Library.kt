@@ -15,6 +15,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -261,6 +262,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
     var layoutMode by remember { mutableStateOf(prefs.getInt("layout_mode", 0)) }
     var showLayoutMenu by remember { mutableStateOf(false) }
     var hideAllBadges by remember { mutableStateOf(prefs.getBoolean("hide_all_badges", false)) }
+    var titleMarquee by remember { mutableStateOf(prefs.getBoolean("shelf_title_marquee", false)) }
 
     var searchQuery by remember { mutableStateOf("") }
     var debouncedQuery by remember { mutableStateOf("") }
@@ -670,6 +672,13 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
         AlertDialog(onDismissRequest = { showBookInfo = null }, title = { Text(b.title) },
             text = {
                 Column {
+                    // ★ 原文件名直接放长按弹窗顶部（智能解析改名后书名与原名差异大，用户要能当场对出来）；
+                    //   取名走 fileNameOf——SAF 路径末段是 |ext 后缀，不能直接 substringAfterLast('|')
+                    val rawName = remember(b.filePath) { com.mangareader.util.BookTitleParser.fileNameOf(b.filePath) }
+                    if (rawName.isNotBlank() && rawName != b.title) {
+                        Text("原文件名: $rawName", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                        Spacer(Modifier.height(8.dp))
+                    }
                     // 标签区（design.md §七）：元数据/我的两行轻分组 + 移除 + 添加（自动补全）+ 转手动
                     var bookTags by remember(b.id) { mutableStateOf(listOf<com.mangareader.data.TagWithSource>()) }
                     var tagInput by remember(b.id) { mutableStateOf("") }
@@ -1150,14 +1159,14 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                                     val onTap = remember(b.id, isMultiSelect) { { if (isMultiSelect) { selectedBooks = if (b.id in selectedBooks) selectedBooks - b.id else selectedBooks + b.id } else openBookThrottled(b.id, null) } }
                                     val onLongClick = remember(b.id) { { showBookInfo = b } }
                                     val onDelete = remember(b.id) { { deleteTarget = b } }
-                                    BookCard(b, engine, isMultiSelect, b.id in selectedBooks, thumbDecodePx, layoutMode, hideAllBadges,
+                                    BookCard(b, engine, isMultiSelect, b.id in selectedBooks, thumbDecodePx, layoutMode, hideAllBadges, titleMarquee,
                                         onToggleSelect = onToggleSelect,
                                         onTap = onTap,
                                         onLongClick = onLongClick,
                                         onDelete = onDelete)
                                 }
                                 is ShelfItem.Series -> {
-                                    SeriesCard(item, engine, thumbDecodePx, layoutMode, hideAllBadges, onTap = { onOpenKomgaSeries(item.serverId, item.seriesId) })
+                                    SeriesCard(item, engine, thumbDecodePx, layoutMode, hideAllBadges, titleMarquee, onTap = { onOpenKomgaSeries(item.serverId, item.seriesId) })
                                 }
                             }
                         }
@@ -1308,6 +1317,20 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                         prefs.edit().putBoolean("hide_all_badges", it).apply()
                     })
                 }
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("书名超长滚动", fontSize = 14.sp)
+                        Text("书名太长显示不全时在封面上滚动播放；默认关", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(checked = titleMarquee, onCheckedChange = {
+                        titleMarquee = it
+                        prefs.edit().putBoolean("shelf_title_marquee", it).apply()
+                    })
+                }
 
                     }
                 }
@@ -1322,7 +1345,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun BookCard(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, isSelected: Boolean, decodePx: Int, layoutMode: Int, hideAllBadges: Boolean, onToggleSelect: () -> Unit, onTap: () -> Unit, onLongClick: () -> Unit, onDelete: () -> Unit) {
+private fun BookCard(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, isSelected: Boolean, decodePx: Int, layoutMode: Int, hideAllBadges: Boolean, titleMarquee: Boolean, onToggleSelect: () -> Unit, onTap: () -> Unit, onLongClick: () -> Unit, onDelete: () -> Unit) {
     val ctx = LocalContext.current
     // ★ LV119 对齐参考项目：直接用 coverPath (cv:...) 作为 Coil3 model，
     //   CoverFetcher 返回原始字节 → Coil3 decoders 自动识别动图（GIF/WebP/APNG）
@@ -1379,7 +1402,7 @@ private fun BookCard(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, isS
             }
             if (layoutMode == 0) {
                 Box(Modifier.fillMaxWidth().align(Alignment.BottomCenter).background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xAA000000))))) {
-                    Text(text = b.title, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Color.White, modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 4.dp))
+                    Text(text = b.title, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Color.White, modifier = Modifier.fillMaxWidth().then(if (titleMarquee) Modifier.basicMarquee() else Modifier).padding(horizontal = 6.dp, vertical = 4.dp))
                 }
             } else {
                 Box(Modifier.fillMaxWidth().height(36.dp).align(Alignment.BottomCenter).background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.5f)))))
@@ -1531,7 +1554,7 @@ private fun BookListRow(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, 
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun SeriesCard(series: ShelfItem.Series, engine: ArchiveEngine, decodePx: Int, layoutMode: Int, hideAllBadges: Boolean, onTap: () -> Unit) {
+private fun SeriesCard(series: ShelfItem.Series, engine: ArchiveEngine, decodePx: Int, layoutMode: Int, hideAllBadges: Boolean, titleMarquee: Boolean, onTap: () -> Unit) {
     val ctx = LocalContext.current
     val coverPath = series.coverPath
     val maxProgress = series.books.maxOfOrNull { if (it.totalPages > 0) it.readPages.toFloat() / it.totalPages else 0f } ?: 0f
@@ -1572,7 +1595,7 @@ private fun SeriesCard(series: ShelfItem.Series, engine: ArchiveEngine, decodePx
                 }
                 if (layoutMode == 0) {
                     Box(Modifier.fillMaxWidth().align(Alignment.BottomCenter).background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xAA000000))))) {
-                        Text(text = series.title, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Color.White, modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 4.dp))
+                        Text(text = series.title, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Color.White, modifier = Modifier.fillMaxWidth().then(if (titleMarquee) Modifier.basicMarquee() else Modifier).padding(horizontal = 6.dp, vertical = 4.dp))
                     }
                 } else {
                     Box(Modifier.fillMaxWidth().height(36.dp).align(Alignment.BottomCenter).background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.5f)))))
