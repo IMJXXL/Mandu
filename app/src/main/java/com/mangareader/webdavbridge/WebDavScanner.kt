@@ -232,7 +232,7 @@ object WebDavScanner {
         // ★ 智能解析文件名（默认开，本地漫画设置可关）：干净书名+v01 短缀+繁转简
         val appCtx = runCatching { com.mangareader.App.instance() }.getOrNull()
         val enabled = runCatching {
-            appCtx!!.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE).getBoolean("smart_title", true)
+            appCtx!!.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE).getBoolean("smart_title_webdav", true)
         }.getOrDefault(true)
         return if (enabled) com.mangareader.util.BookTitleParser.displayTitle(base)
         else base.substringBeforeLast('.')

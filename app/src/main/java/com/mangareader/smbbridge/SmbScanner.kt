@@ -244,7 +244,7 @@ object SmbScanner {
         val base = name.substringBefore(':').substringAfterLast('/')
         val appCtx = runCatching { com.mangareader.App.instance() }.getOrNull()
         val enabled = runCatching {
-            appCtx!!.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE).getBoolean("smart_title", true)
+            appCtx!!.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE).getBoolean("smart_title_smb", true)
         }.getOrDefault(true)
         return if (enabled) com.mangareader.util.BookTitleParser.displayTitle(base)
         else base.substringBeforeLast('.')

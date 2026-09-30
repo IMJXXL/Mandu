@@ -77,6 +77,20 @@ fun SmbSettingsScreen(onBack: () -> Unit, onOpenDownloadQueue: () -> Unit = {}) 
         LazyColumn(Modifier.padding(padding).fillMaxSize().padding(16.dp)) {
 
             item {
+            SectionCard("书名解析") {
+                val ctx = LocalContext.current
+                var smartTitleSmb by remember { mutableStateOf(runCatching { ctx.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE).getBoolean("smart_title_smb", true) }.getOrDefault(true)) }
+                Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("智能解析文件名", fontSize = 16.sp)
+                        Text("扫描入库时提取干净书名与卷号（如 v01），自动繁转简；关闭则显示原文件名。仅影响新扫描的书", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(checked = smartTitleSmb, onCheckedChange = { v ->
+                        smartTitleSmb = v
+                        ctx.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE).edit().putBoolean("smart_title_smb", v).apply()
+                    })
+                }
+            }
             SectionCard("连接与协议") {
                 SwitchRow("仅使用 SMB3 协议", "只协商 SMB3（部分老 NAS/路由器共享需关闭）", Settings.smb3Only)
                 SwitchRow("加密数据传输", "SMB 报文加密，更安全但速度略降", Settings.smbEncryptData)
