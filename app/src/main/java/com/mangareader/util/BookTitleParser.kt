@@ -24,12 +24,16 @@ object BookTitleParser {
     /** 前导组名括号链：[..] (..) {..} 【..】 （..） */
     private val LEADING_BRACKETS = Regex("""^(\s*(\[[^\]]*\]|\([^)]*\)|\{[^}]*\}|【[^】]*】|（[^）]*）))+\s*""")
 
+    /** 单个括号组（从链里逐段取内容用） */
+    private val BRACKET_GROUP = Regex("""\[[^\]]*\]|\([^)]*\)|\{[^}]*\}|【[^】]*】|（[^）]*）""")
+
     /** 卷号（按优先序尝试） */
     private val VOL_PATTERNS = listOf(
         Regex("""(?i)\bv(?:ol(?:ume)?)?[\.\s]*((\d{1,4})(?:\.(\d))?)((?:\s*[-~]\s*v?\.?\s*(\d{1,4}))?)\b"""),
         Regex("""第\s*(\d{1,4})(?:\.(\d))?\s*[卷册巻]"""),
         Regex("""(?:(\d{1,4})\s*[-~]\s*)?(\d{1,4})(?:\.(\d))?\s*[卷册巻](?=\s|$)"""),
         Regex("""(\d{1,4})\s*장(?=\s|$)"""),
+        Regex("""[卷册巻]\s*(\d{1,4})(?:\.(\d))?(?!\d)"""),  // 卷01（数字在卷字后，日版常见）
     )
 
     /** 章号 */
@@ -46,24 +50,89 @@ object BookTitleParser {
     private val TRAILING_PUNCT = Regex("""[\s\-._,#:·、]+$""")
 
     /**
+     * 从任意 Book.filePath 形态提取原文件名（长按详情、批量改名共用，别处不要再手写截取）：
+     * - SAF 紧凑路径 "a:<auth>|<treeDocId>|<docId>|<ext>" / "z:a:...|<ext>//"——末段 |ext 是扩展名后缀，须剥掉
+     * - 目录书 "d:<auth>|<treeDocId>|<docId>" 与普通/WebDAV/SMB 路径——取最后一个 / 后的段
+     */
+    fun fileNameOf(path: String): String {
+        val p = path.trim().trimEnd('/')
+        var s = p
+        if ((p.startsWith("a:") || p.startsWith("z:")) && s.contains('|')) {
+            val i = s.lastIndexOf('|')
+            val tail = s.substring(i + 1)
+            // | 后是 1-5 位字母数字才当扩展名后缀剥（防文件名里恰好有 | 误伤）
+            if (tail.isNotEmpty() && tail.length <= 5 && tail.all { it.isLetterOrDigit() }) s = s.substring(0, i)
+        }
+        return s.substringAfterLast('/').substringAfterLast('\\')
+    }
+
+    /** 收藏夹/分组夹关键词：祖先目录名含这些词时不当地系列名（"日本漫画合集"、"2.漫画"、Download） */
+    private val COLLECTION_WORDS = listOf("合集", "收藏", "漫画", "杂图", "manga", "comic", "download", "下载")
+
+    /**
+     * 祖先目录名（从最近到最远，不含树根本身——树根是用户选的扫描根，不是系列名）。
+     * SAF d:/a: 书按 docId 层级取；z:（zip 内部）与其他路径形态返回空。
+     */
+    fun ancestorNamesOf(path: String): List<String> {
+        val p = path.trim().trimEnd('/')
+        if (!p.startsWith("d:") && !p.startsWith("a:")) return emptyList()
+        var body = p
+        if (p.startsWith("a:") && body.contains('|')) {
+            val i = body.lastIndexOf('|')
+            val tail = body.substring(i + 1)
+            if (tail.isNotEmpty() && tail.length <= 5 && tail.all { it.isLetterOrDigit() }) body = body.substring(0, i)
+        }
+        val segs = body.split('|')
+        if (segs.size < 3) return emptyList()
+        val treeDocId = segs[1]
+        val docId = segs.drop(2).joinToString("|")
+        // docId 去掉树根前缀后剩余的目录段，从最近到最远
+        val rel = if (docId.startsWith("$treeDocId/")) docId.substring(treeDocId.length + 1) else docId
+        val parts = rel.split('/')
+        if (parts.size < 2) return emptyList()  // 无层级（直接在树根下）→ 无祖先
+        return parts.dropLast(1).reversed()
+    }
+
+    /**
+     * 从祖先链（最近优先）挑系列名：跳过纯字母短名（"A"）、纯数字、章节/卷标记名（"第1话…"、"01卷"）、
+     * 收藏夹关键词（"合集"）；全不可信返回 null。上一级未必是系列——层级深浅不定，逐级找。
+     */
+    fun seriesFromAncestors(ancestors: List<String>): String? {
+        for (raw in ancestors) {
+            val n = raw.trim()
+            if (n.isEmpty()) continue
+            if (n.length <= 2 && n.all { it.code < 128 }) continue   // "A"/"B"/"01" 分组夹
+            if (n.matches(Regex("\\d+(\\.\\d)?"))) continue          // 纯数字
+            if (CH_PATTERNS.any { it.containsMatchIn(n) }) continue  // 它本身是章节名
+            if (VOL_PATTERNS.any { it.find(n)?.range?.first == 0 }) continue // 卷标记开头（v01/01卷/卷01）
+            if (COLLECTION_WORDS.any { n.lowercase().contains(it) }) continue
+            return n
+        }
+        return null
+    }
+
+    /**
      * 解析文件名（可含扩展名；目录名同样适用）。
      * volume 范围文件（v01-09）volume=1、volumeEnd=9。
+     * parents=祖先目录名（最近优先）：子项只有章/卷标记没有书名（"第1话新室友"）时，系列名逐级向上找。
      */
-    fun parse(fileName: String): Parsed {
+    fun parse(fileName: String, parents: List<String> = emptyList()): Parsed {
         var s = stripExt(fileName).trim()
         if (s.isEmpty()) return Parsed("")
 
         var group: String? = null
-        println("BTP step0 s=$s")
-        // 前导组名括号链（记录组名但不显示）
+        // 前导组名括号链（记录组名与各段内容——系列名可能在括号里，兜底用）
+        var leadingInners: List<String> = emptyList()
         LEADING_BRACKETS.find(s)?.let {
             if (it.range.first == 0 && it.value.length < s.length) {
                 group = it.value
+                leadingInners = BRACKET_GROUP.findAll(it.value)
+                    .map { g -> g.value.substring(1, g.value.length - 1).trim() }
+                    .filter { g -> g.isNotEmpty() }
+                    .toList()
                 s = s.substring(it.value.length).trim()
             }
         }
-
-        println("BTP step1 afterLead s=$s group=$group")
         // ★ 章号先检测（章标记常带修订号 "c042 V2"——先吞掉，避免修订 V2 被卷模式误当卷号）
         var chapter: Double? = null
         var chRange: IntRange? = null
@@ -80,14 +149,10 @@ object BookTitleParser {
         var volume: Int? = null; var volumeDec: Int? = null; var volumeEnd: Int? = null; var volRange: IntRange? = null
         val masked = if (chRange != null) s.replaceRange(chRange, " ".repeat(chRange.last - chRange.first + 1)) else s
         for ((pi, pat) in VOL_PATTERNS.withIndex()) {
-            val mm = pat.find(masked)
-            println("BTP volTry pi=$pi pat=<" + pat.pattern + "> on=<" + masked + "> => " + (mm?.value ?: "null"))
-            val m = mm ?: continue
+            val m = pat.find(masked) ?: continue
             // 模式 0 整数在 group2（group1 含小数点）；范围前缀模式整数在 group2；其余在 group1
             val intPart = when (pi) { 0 -> m.groupValues[2]; 2 -> m.groupValues[2]; else -> m.groupValues[1] }
-            println("BTP intPart=<$intPart> g1=<${m.groupValues.getOrNull(1)}> g2=<${m.groupValues.getOrNull(2)}> g3=<${m.groupValues.getOrNull(3)}>")
             volume = intPart.toIntOrNull() ?: continue
-            println("BTP volAssigned pi=$pi intPart=$intPart volume=$volume")
             volumeDec = when (pi) { 0 -> m.groupValues.getOrNull(3); 2 -> m.groupValues.getOrNull(3); else -> m.groupValues.getOrNull(2) }?.toIntOrNull()
             // volumeEnd 仅真范围模式有值（pi0 的范围尾组 / pi2 的范围前缀组；第N卷无范围）
             volumeEnd = when (pi) {
@@ -101,7 +166,6 @@ object BookTitleParser {
             break
         }
 
-        println("BTP step2 vol=$volume volEnd=$volumeEnd ch=$chapter cut candidates vol=$volRange ch=$chRange")
         // 标题切片：到第一个标记之前；无标记=整段；标记在串首 → 空串走兜底回退原名
         val cutStart = listOfNotNull(volRange, chRange).minOfOrNull { it.first }
         var title = when {
@@ -114,9 +178,20 @@ object BookTitleParser {
         // 点号保留（Fate.Zero / Re:Zero 类名有意义），只归一空格
         title = title.replace(Regex("[ _-]+"), " ").replace(Regex("\\s{2,}"), " ").trim()
 
-        // 全数字标题（纯卷文件 "03.cbz"）→ 不当书名，回退原名段
+        // 空标题/纯数字兜底：系列名在括号链里（"[组][系列]Vol.01" 形态）→ 挑含中文的最长段当书名，
+        // 无中文挑最长；子项只有章/卷标记（"第1话新室友"）→ 系列名沿祖先链逐级找；
+        // 都没有 → 回退原文（去扩展名），与旧行为一致
         if (title.isEmpty() || title.matches(Regex("\\d+(\\.\\d)?"))) {
-            title = stripExt(fileName).trim()
+            val cjk = leadingInners.filter { g -> g.any { c -> c.code in 0x4E00..0x9FFF } }
+            val picked = cjk.maxByOrNull { it.length } ?: leadingInners.maxByOrNull { it.length }
+            title = when {
+                picked != null -> picked.replace(Regex("[ _-]+"), " ").trim()
+                (chapter != null || volume != null) && parents.isNotEmpty() -> {
+                    seriesFromAncestors(parents)?.replace(Regex("[ _-]+"), " ")?.trim()
+                        ?.takeIf { it.isNotBlank() } ?: stripExt(fileName).trim()
+                }
+                else -> stripExt(fileName).trim()
+            }
         }
 
         // ★ 裸数字回退（chaptr 规则：需有前置元数据上下文——组名括号出现过才认）：
@@ -129,18 +204,18 @@ object BookTitleParser {
             }
         }
 
-        println("BTP final title=<$title> vol=$volume volDec=$volumeDec end=$volumeEnd ch=$chapter group=$group")
         return Parsed(title, volume, volumeDec, volumeEnd, chapter)
     }
 
     /**
-     * 书架显示名：干净书名（繁转简）+ 卷/章短缀（v01 / c42 风格，范围 v01-09）。
+     * 书架显示名：干净书名（繁转简）+ 卷/章短缀（Vol.01 / Ch.42 风格，范围 Vol.01-Vol.09）。
+     * parents=祖先目录名（最近优先，子文件夹章节书的系列上下文），可空。
      * 解析失败回退原名（去扩展名），与旧行为一致。
      */
-    fun displayTitle(fileName: String, t2s: Boolean = true): String {
+    fun displayTitle(fileName: String, t2s: Boolean = true, parents: List<String> = emptyList()): String {
         val base = stripExt(fileName).trim()
         return try {
-            val p = parse(fileName)
+            val p = parse(fileName, parents)
             if (p.title.isBlank()) return if (t2s) toSimplified(base) else base
             val sb = StringBuilder(if (t2s) toSimplified(p.title) else p.title)
             when {

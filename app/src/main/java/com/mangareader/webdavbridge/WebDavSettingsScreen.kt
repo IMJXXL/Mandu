@@ -94,11 +94,22 @@ fun WebDavSettingsScreen(onBack: () -> Unit, onOpenDownloadQueue: () -> Unit = {
                 Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("智能解析文件名", fontSize = 16.sp)
-                        Text("扫描入库时提取干净书名与卷号（如 Vol.01）；关闭则显示原文件名。繁转简为全局开关（本地漫画管理）。仅影响新扫描的书", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("扫描入库时提取干净书名与卷号（如 Vol.01）；关闭则显示原文件名。仅影响新扫描的书", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Switch(checked = smartTitle, onCheckedChange = { v ->
                         smartTitle = v
                         ctx.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE).edit().putBoolean("smart_title_webdav", v).apply()
+                    })
+                }
+                var t2sTitle by remember { mutableStateOf(runCatching { ctx.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE).getBoolean("t2s_enabled", true) }.getOrDefault(true)) }
+                Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("繁体标题转简体", fontSize = 16.sp)
+                        Text("全局开关（本地/WebDAV/SMB 统一生效）；关 = 保留繁体原字。仅影响新扫描的书", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(checked = t2sTitle, onCheckedChange = { v ->
+                        t2sTitle = v
+                        ctx.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE).edit().putBoolean("t2s_enabled", v).apply()
                     })
                 }
             }

@@ -93,5 +93,89 @@ class BookTitleParserTest {
         assertEquals("海贼王 Vol.99", d("海贼王 Vol.99.zip"))
         assertEquals("斗破苍穹 Vol.03", d("斗破苍穹 第03卷.cbz"))
     }
+
+    // ===== 卷字在后（卷01，日版常见） =====
+    @Test fun cjkVolumePrefix() {
+        assertEquals("海贼王", t("海贼王 卷01.cbz"))
+        assertEquals(1, v("海贼王 卷01.cbz"))
+        assertEquals("进击的巨人 Vol.01", d("進擊的巨人 卷01.mobi"))
+    }
+
+    // ===== 系列名在括号链里（[组][系列]卷01 形态） =====
+    @Test fun seriesInsideBrackets() {
+        assertEquals("猫之眼 Vol.01", d("[Comic][CAT__S.EYE][貓之眼][北条司][HK]Vol.01.rar"))
+        assertEquals("废渊战鬼GACHIAKUTA Vol.01", d("[Kmoe][廢淵戰鬼GACHIAKUTA]卷01.mobi"))
+        // 无中文括号段 → 取最长
+        assertEquals("Berserk Vol.02", d("[Group][Berserk] v02.cbz"))
+    }
+
+    // ===== 原文件名提取（批量改名/长按详情共用） =====
+    @Test fun fileNameOfSafPaths() {
+        // SAF 紧凑路径：末段 |ext 是扩展名后缀，不是文件名
+        assertEquals(
+            "[Comic][CAT__S.EYE][貓之眼][北条司][HK]Vol.01.rar",
+            BookTitleParser.fileNameOf("a:com.android.externalstorage.documents|primary:浩克下载|primary:浩克下载/[Comic][CAT__S.EYE][貓之眼][北条司][HK]Vol.01.rar|rar")
+        )
+        // z:（zip 内子目录浏览）+ 尾部 //
+        assertEquals(
+            "[Kmoe][廢淵戰鬼GACHIAKUTA]卷01.mobi",
+            BookTitleParser.fileNameOf("z:a:com.android.externalstorage.documents|primary:浩克下载|primary:浩克下载/[Kmoe][廢淵戰鬼GACHIAKUTA]卷01.mobi|mobi//")
+        )
+        // 目录书 d: 无 |ext 后缀
+        assertEquals("浪客行", BookTitleParser.fileNameOf("d:com.android.externalstorage.documents|primary:漫画|primary:漫画/浪客行"))
+        // 普通绝对路径 / 远程路径 / 纯文件名
+        assertEquals("海贼王 Vol.01.zip", BookTitleParser.fileNameOf("/storage/emulated/0/漫画/海贼王 Vol.01.zip"))
+        assertEquals("海贼王 Vol.01.cbz", BookTitleParser.fileNameOf("remote:1:comic/海贼王 Vol.01.cbz"))
+        assertEquals("某书.cbr", BookTitleParser.fileNameOf("\\\\nas\\comic\\某书.cbr"))
+    }
+
+    // ===== 改名按钮端到端：SAF 路径 → 原文件名 → 干净书名 =====
+    @Test fun retitleEndToEndFromSafPath() {
+        val raw = BookTitleParser.fileNameOf(
+            "a:com.android.externalstorage.documents|primary:浩克下载|primary:浩克下载/[Comic][CAT__S.EYE][貓之眼][北条司][HK]Vol.01.rar|rar"
+        )
+        assertEquals("猫之眼 Vol.01", BookTitleParser.displayTitle(raw))
+    }
+
+    // ===== epub 带站点尾巴（剑风传奇实库样本） =====
+    @Test fun epubWithSiteTags() {
+        val raw = BookTitleParser.fileNameOf(
+            "a:com.android.externalstorage.documents|primary:Download/2.漫画/普通漫画|primary:Download/2.漫画/普通漫画/剑风传奇/烙印勇士 - 01卷 (三浦建太郎) (z-library.sk, 1lib.sk, z-lib.sk).epub|epub"
+        )
+        assertEquals("烙印勇士 Vol.01", BookTitleParser.displayTitle(raw))
+        val raw2 = BookTitleParser.fileNameOf(
+            "a:com.android.externalstorage.documents|primary:Download/2.漫画/普通漫画|primary:Download/2.漫画/普通漫画/剑风传奇/烙印勇士 - 011卷 (三浦建太郎) (z-library.sk, 1lib.sk, z-lib.sk).epub|epub"
+        )
+        assertEquals("烙印勇士 Vol.11", BookTitleParser.displayTitle(raw2))
+    }
+
+    // ===== 子文件夹章节书：系列名沿祖先链逐级找（上级未必是系列——分组夹/合集要跳过） =====
+    @Test fun subfolderChapterUsesAncestorSeries() {
+        // 河合庄实库样本：…/新漫画-A(树根)/我们大家的河合庄/第1话新室友
+        val p = "d:com.android.externalstorage.documents|primary:Download/异次元2/local/新漫画-A|primary:Download/异次元2/local/新漫画-A/我们大家的河合庄/第1话新室友"
+        assertEquals(listOf("我们大家的河合庄"), BookTitleParser.ancestorNamesOf(p))
+        assertEquals(
+            "我们大家的河合庄 Ch.01",
+            BookTitleParser.displayTitle(BookTitleParser.fileNameOf(p), true, BookTitleParser.ancestorNamesOf(p))
+        )
+    }
+
+    @Test fun ancestorSeriesSkipsGroupingFolders() {
+        // 用户场景：合集/A/哆啦A梦/第1话新室友 —— A 和合集都不是系列名
+        val anc = listOf("哆啦A梦", "A", "日本漫画合集")
+        assertEquals("哆啦A梦", BookTitleParser.seriesFromAncestors(anc))
+        // 书直接在分组夹 A 里 → A 与合集都不可信 → 返回 null（退回原名+Ch.N）
+        assertEquals(null, BookTitleParser.seriesFromAncestors(listOf("A", "日本漫画合集")))
+        // 深层级：…/合集/哆啦A梦/第01卷/第1话 → 跳过卷标记层，取哆啦A梦
+        assertEquals("哆啦A梦", BookTitleParser.seriesFromAncestors(listOf("第01卷", "哆啦A梦", "日本漫画合集")))
+        // 纯数字/章节名/卷标记开头的祖先都不是系列
+        assertEquals(null, BookTitleParser.seriesFromAncestors(listOf("01", "第1话开端", "v01")))
+        // 章节标记直接在树根下 → 无祖先可用 → 原名+Ch.N
+        val rootBook = "d:com.android.externalstorage.documents|primary:漫画|primary:漫画/第1话开端"
+        assertEquals(emptyList<String>(), BookTitleParser.ancestorNamesOf(rootBook))
+        assertEquals("第1话开端 Ch.01", BookTitleParser.displayTitle(BookTitleParser.fileNameOf(rootBook), true, BookTitleParser.ancestorNamesOf(rootBook)))
+        // 自身有意义的名字 → 不动
+        assertEquals("浪客行", BookTitleParser.displayTitle("浪客行", true, listOf("漫画")))
+    }
 }
 

@@ -855,12 +855,13 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
             title = { Text("漫画详情") },
             text = {
                 Column {
-                    // ★ 原文件名：智能解析后书名可能与原名差异大，这里提供回查入口
+                    // ★ 原文件名：智能解析后书名可能与原名差异大，这里提供回查入口。
+                    //   取名走 fileNameOf——SAF 路径末段是 |ext 后缀，不能直接 substringAfterLast('|')
                     val rawName = remember(b.filePath) {
-                        b.filePath.substringAfterLast('|').substringAfterLast('/').substringAfterLast('\\')
+                        com.mangareader.util.BookTitleParser.fileNameOf(b.filePath)
                     }
                     if (rawName.isNotBlank()) {
-                        Text("文件名: $rawName", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Text("原文件名: $rawName", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         Spacer(Modifier.height(6.dp))
                     }
                     if (comicInfoLoading) {

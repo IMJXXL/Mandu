@@ -215,6 +215,9 @@ public class PageCurlConfig(
      */
     public var backPageColor: Color by mutableStateOf(backPageColor)
 
+    /** 纸背纹理（漫读自定义）：非空时背面在遮罩前先铺满该图（米色纸纹），翻页背面有真实纸张质感 */
+    public var backPageBitmap: androidx.compose.ui.graphics.ImageBitmap? by mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null)
+
     /**
      * The alpha which defines how content is "seen through" the back-page. From 0 (nothing is visible) to
      * 1 (everything is visible).

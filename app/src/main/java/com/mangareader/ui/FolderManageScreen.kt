@@ -396,10 +396,17 @@ fun FolderManageScreen(onBack: () -> Unit) {
                                     scope.launch {
                                         val changed = withContext(Dispatchers.IO) {
                                             val d = (ctx.applicationContext as com.mangareader.App).db.mangaDao()
+                                            val t2s = ctx.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE)
+                                                .getBoolean("t2s_enabled", true)
                                             var n = 0
                                             d.getAllBooksList().forEach { bk ->
-                                                val raw = bk.filePath.substringAfterLast('|').substringAfterLast('/')
-                                                val newTitle = com.mangareader.util.BookTitleParser.displayTitle(raw)
+                                                // ★ 取原文件名必须走 fileNameOf：SAF 路径末段是 |ext 后缀，
+                                                //   直接 substringAfterLast('|') 会把扩展名（rar/mobi/epub）当书名
+                                                val raw = com.mangareader.util.BookTitleParser.fileNameOf(bk.filePath)
+                                                // 子文件夹章节书（"…/哆啦A梦/第1话新室友"）：系列名沿祖先链找
+                                                // （上级可能是分组夹 A/合集，逐级跳过，取第一个像系列名的）
+                                                val ancestors = com.mangareader.util.BookTitleParser.ancestorNamesOf(bk.filePath)
+                                                val newTitle = com.mangareader.util.BookTitleParser.displayTitle(raw, t2s, ancestors)
                                                 if (newTitle.isNotBlank() && newTitle != bk.title) {
                                                     d.updateBook(bk.copy(title = newTitle)); n++
                                                 }

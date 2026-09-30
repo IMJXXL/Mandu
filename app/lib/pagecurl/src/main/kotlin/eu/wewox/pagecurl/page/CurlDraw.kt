@@ -182,6 +182,15 @@ internal fun Modifier.drawCurlBack(
                     this@onDrawWithContent.drawContent()
                 }
 
+                // ★ 纸背纹理：先铺满纸纹图再叠遮罩（遮罩逻辑不变，透出内容感一致）
+                config.backPageBitmap?.let { bmp ->
+                    drawImage(
+                        bmp,
+                        dstOffset = androidx.compose.ui.unit.IntOffset.Zero,
+                        dstSize = androidx.compose.ui.unit.IntSize(size.width.toInt(), size.height.toInt()),
+                    )
+                }
+
                 val overlayAlpha = 1f - config.backPageContentAlpha
                 if (overlayAlpha > 0f) {
                     drawRect(config.backPageColor.copy(alpha = overlayAlpha))
@@ -321,6 +330,14 @@ private fun CacheDrawScope.prepareCurl(
             // And finally draw the back-page with an overlay with alpha
             clipPath(polygon.toPath()) {
                 this@result.drawContent()
+
+                config.backPageBitmap?.let { bmp ->
+                    drawImage(
+                        bmp,
+                        dstOffset = androidx.compose.ui.unit.IntOffset.Zero,
+                        dstSize = androidx.compose.ui.unit.IntSize(size.width.toInt(), size.height.toInt()),
+                    )
+                }
 
                 val overlayAlpha = 1f - config.backPageContentAlpha
                 drawRect(config.backPageColor.copy(alpha = overlayAlpha))
