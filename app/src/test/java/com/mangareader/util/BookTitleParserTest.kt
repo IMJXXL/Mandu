@@ -91,3 +91,4 @@ class BookTitleParserTest {
         assertEquals("斗破苍穹 v03", d("斗破苍穹 第03卷.cbz"))
     }
 }
+
