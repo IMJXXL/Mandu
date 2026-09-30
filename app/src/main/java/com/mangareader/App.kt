@@ -139,6 +139,8 @@ class App : Application(), SingletonImageLoader.Factory {
             kotlinx.coroutines.delay(2000L)
             try { com.mangareader.data.BookDeduper.runOnce(this@App, db.mangaDao()) } catch (_: Throwable) {}
             try { com.mangareader.updatecheck.UpdateAutoTrigger.maybeCheck(this@App) } catch (_: Throwable) {}
+            // ★ 页表索引后台预建：让本地书第一次打开就秒开（老行为是第一次打开现建，慢 SD 上 25s）
+            try { com.mangareader.viewer.PageIndexWarmer.kick(this@App, db.mangaDao()) } catch (_: Throwable) {}
         }
     }
 

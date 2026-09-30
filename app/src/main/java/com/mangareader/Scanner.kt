@@ -545,6 +545,11 @@ class Scanner(private val ctx: Context, private val dao: MangaDao) {
         val removed = oldPaths.count { it !in newPaths }
         // Phase 2 火并忘：入库 + 后台封面
         coverScope.launch { commitRescanResults(f, books) }
+        // ★ 重扫入库完成后同样预建页表索引
+        coverScope.launch {
+            kotlinx.coroutines.delay(3000L)
+            runCatching { com.mangareader.viewer.PageIndexWarmer.kick(ctx, dao) }
+        }
         Pair(added, removed)
     }
 

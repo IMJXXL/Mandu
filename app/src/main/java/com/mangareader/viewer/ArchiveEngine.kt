@@ -682,6 +682,13 @@ class ArchiveEngine(private val ctx: Context) {
         }
     }
 
+    /** ★ 页表索引是否已落盘（d:/a: 有磁盘索引；远程书恒 true=无事可做）。PageIndexWarmer 用 */
+    fun pageIndexCached(path: String): Boolean = when {
+        path.startsWith("d:") -> dirIndexFile(path).let { it.isFile && it.length() > 0L }
+        path.startsWith("a:") -> archiveIndexFile(path).let { it.isFile && it.length() > 0L }
+        else -> true
+    }
+
     // ═══ E6 同款：a: 压缩书页表磁盘索引（cacheDir/arc_page_index/）═══
     // 失效戳 = SAF 文档 SIZE（文件级语义，可靠）；校验失败（查询不到/为 0）保守信任旧索引，
     // 真正的兜底在页加载失败（用户换文件同尺寸的概率远小于每次开书 25s 的代价）。
