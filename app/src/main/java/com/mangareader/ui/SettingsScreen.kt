@@ -5,6 +5,8 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -378,10 +380,31 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?, Int) -> Unit
                             Spacer(Modifier.height(8.dp))
                             // ★ 日志导出（2026-09-25 排查无日志闪退新增）：汇总崩溃/ANR/签名校验
                             //   诊断 + 设备信息，写入公共 Download，用户经文件管理器直接取用
+                            // 2026-09-30：导出目录可选（有的设备写不了公共 Download），SAF 授权持久化
                             var exportMsg by remember { mutableStateOf<String?>(null) }
+                            var exportDirName by remember { mutableStateOf(com.mangareader.DiagExporter.chosenDirLabel(ctx)) }
+                            val pickExportDir = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+                                if (uri != null) {
+                                    com.mangareader.DiagExporter.saveChosenDir(ctx, uri)
+                                    exportDirName = com.mangareader.DiagExporter.chosenDirLabel(ctx)
+                                }
+                            }
                             TextButton(onClick = {
                                 exportMsg = com.mangareader.DiagExporter.export(ctx)
                             }) { Text("导出诊断日志（排障用）") }
+                            TextButton(onClick = { pickExportDir.launch(null) }) {
+                                Text(
+                                    if (exportDirName == null) "选择日志导出目录（默认下载目录）"
+                                    else "更换导出目录（当前：$exportDirName）",
+                                    fontSize = 13.sp
+                                )
+                            }
+                            if (exportDirName != null) {
+                                TextButton(onClick = {
+                                    com.mangareader.DiagExporter.clearChosenDir(ctx)
+                                    exportDirName = null
+                                }) { Text("恢复默认（导出到下载）", fontSize = 13.sp) }
+                            }
                             exportMsg?.let {
                                 Text(it, fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
                             }

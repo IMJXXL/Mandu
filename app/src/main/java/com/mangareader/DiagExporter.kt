@@ -7,8 +7,45 @@ import android.content.Context
  * 启动阶段标记，写入公共 Download（API 29+ 经 MediaStore），
  * 文件管理器直接可见，无需 adb/root。关于页「导出诊断日志」按钮调用。
  * 返回给用户看的结果消息（含落盘位置）。
+ *
+ * 2026-09-30：导出目录可选——部分设备写不了公共 Download。优先级：
+ * ① 用户自选目录（SAF 授权持久化，关于页「选择日志导出目录」）
+ * ② 公共 Download
+ * ③ 应用私有目录兜底（一定可写，消息里给全路径）
  */
 object DiagExporter {
+
+    private const val PREFS = "manga_reader"
+    private const val KEY_DIR = "diag_export_dir"
+
+    /** 用户自选导出目录的显示名（未选返回 null） */
+    fun chosenDirLabel(ctx: Context): String? {
+        val saved = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_DIR, null) ?: return null
+        return dirLabel(ctx, android.net.Uri.parse(saved)) ?: "已选目录"
+    }
+
+    /** 记住用户选的导出目录（OpenDocumentTree 回调里调，持久化读写授权） */
+    fun saveChosenDir(ctx: Context, uri: android.net.Uri) {
+        runCatching {
+            ctx.contentResolver.takePersistableUriPermission(
+                uri,
+                android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            )
+            ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_DIR, uri.toString()).apply()
+        }
+    }
+
+    /** 恢复默认（导出到公共下载） */
+    fun clearChosenDir(ctx: Context) {
+        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().remove(KEY_DIR).apply()
+    }
+
+    private fun dirLabel(ctx: Context, tree: android.net.Uri): String? = runCatching {
+        val docId = android.provider.DocumentsContract.getTreeDocumentId(tree)
+        val docUri = android.provider.DocumentsContract.buildDocumentUriUsingTree(tree, docId)
+        ctx.contentResolver.query(docUri, arrayOf(android.provider.DocumentsContract.Document.COLUMN_DISPLAY_NAME), null, null, null)
+            ?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
+    }.getOrNull()
 
     fun export(ctx: Context): String {
         val ts = java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.getDefault()).format(java.util.Date())
@@ -75,20 +112,52 @@ object DiagExporter {
 
         val text = sb.toString()
         val name = "漫读_诊断日志_$ts.txt"
-        if (android.os.Build.VERSION.SDK_INT >= 29) {
-            val values = android.content.ContentValues().apply {
-                put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, name)
-                put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "text/plain")
+        val bytes = text.toByteArray()
+
+        // ① 用户自选目录优先
+        val saved = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_DIR, null)
+        if (saved != null) {
+            val wrote = runCatching {
+                val tree = android.net.Uri.parse(saved)
+                val docId = android.provider.DocumentsContract.getTreeDocumentId(tree)
+                val dirUri = android.provider.DocumentsContract.buildDocumentUriUsingTree(tree, docId)
+                val created = android.provider.DocumentsContract.createDocument(ctx.contentResolver, dirUri, "text/plain", name)
+                    ?: error("createDocument 返回空")
+                ctx.contentResolver.openOutputStream(created)?.use { it.write(bytes) } ?: error("输出流打开失败")
             }
-            val uri = ctx.contentResolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
-                ?: return "导出失败：无法写入下载目录"
-            ctx.contentResolver.openOutputStream(uri)?.use { it.write(text.toByteArray()) } ?: return "导出失败：无法打开输出流"
-        } else {
-            @Suppress("DEPRECATION")
-            val dl = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
-            dl.mkdirs()
-            java.io.File(dl, name).writeText(text)
+            if (wrote.isSuccess) {
+                val label = dirLabel(ctx, android.net.Uri.parse(saved)) ?: "所选目录"
+                return "已导出到所选目录（$label）/$name"
+            }
+            clearChosenDir(ctx)  // 授权失效/目录被删 → 清掉回落默认，下次重选
         }
-        return "已导出到 下载/$name（文件管理器可见，请把该文件发给开发者）"
+
+        // ② 公共 Download
+        val toDownload = if (android.os.Build.VERSION.SDK_INT >= 29) {
+            runCatching {
+                val values = android.content.ContentValues().apply {
+                    put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, name)
+                    put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "text/plain")
+                }
+                val uri = ctx.contentResolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                    ?: error("MediaStore 插入失败")
+                ctx.contentResolver.openOutputStream(uri)?.use { it.write(bytes) } ?: error("输出流打开失败")
+            }.isSuccess
+        } else {
+            runCatching {
+                @Suppress("DEPRECATION")
+                val dl = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
+                dl.mkdirs()
+                java.io.File(dl, name).writeBytes(bytes)
+            }.isSuccess
+        }
+        if (toDownload) return "已导出到 下载/$name（文件管理器可见，请把该文件发给开发者）"
+
+        // ③ 兜底：应用私有目录（一定可写）
+        return runCatching {
+            val dir = ctx.getExternalFilesDir(null) ?: ctx.filesDir
+            java.io.File(dir, name).writeBytes(bytes)
+            "公共下载目录写入失败，已导出到应用目录：${dir.absolutePath}/$name"
+        }.getOrElse { "导出失败：${it.message}" }
     }
 }
