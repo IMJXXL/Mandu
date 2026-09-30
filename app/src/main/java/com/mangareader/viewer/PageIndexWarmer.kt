@@ -29,6 +29,8 @@ object PageIndexWarmer {
                 val all = try { dao.getAllBooksList() } catch (_: Exception) { emptyList() }
                 val targets = all.map { it.filePath }
                     .filter { it.startsWith("a:") || it.startsWith("d:") }
+                    // ★ 只预热慢存储（外置 SD）：内置存储开书本来就快，预热纯属浪费 IO（用户裁定）
+                    .filter { isSlowStorage(it) }
                     .filter { !engine.pageIndexCached(it) }
                     .take(60)
                 if (targets.isEmpty()) return@launch
@@ -47,6 +49,20 @@ object PageIndexWarmer {
                 running = false
             }
         }
+    }
+
+    /**
+     * 慢存储判定：SAF 路径第二段（treeDocId）以 "primary:" 开头 = 内置存储，
+     * 其余（UUID 形如 "E22D-CF9D:"）= 外置/二级存储；物理路径 /storage/emulated = 内置。
+     * 判定不了的（异常形态）一律不算慢存储——宁可跳过也不打扰正常用户。
+     */
+    private fun isSlowStorage(path: String): Boolean = when {
+        path.startsWith("a:") || path.startsWith("d:") -> {
+            val treeSeg = path.split('|').getOrNull(1)
+            treeSeg != null && !treeSeg.startsWith("primary:")
+        }
+        path.startsWith("/storage/") -> !path.startsWith("/storage/emulated")
+        else -> false
     }
 
     /** 打点走 DiagTracer（中性化短码纪律），单独包一层避免 viewer 层直接依赖 */
