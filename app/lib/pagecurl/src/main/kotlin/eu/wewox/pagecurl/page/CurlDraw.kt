@@ -367,7 +367,9 @@ private fun CacheDrawScope.prepareCurl(
 
     return result@{
         CurlGeomProbe.mark(
-            "curlgeom node=${size.width.toInt()}x${size.height.toInt()}" +
+            // g=2：几何代码代际标识（1=右中参照点钳位/半平面裁切，2=书脊锚点判据）——
+            // 日志自证跑的是哪代绘制代码，避免"装了新包却按旧代码排查"的空转
+            "curlgeom g=2 node=${size.width.toInt()}x${size.height.toInt()}" +
                 " bmp=${config.backPageBitmap?.let { "${it.width}x${it.height}" } ?: "-"}" +
                 " a=${config.backPageContentAlpha}" +
                 " pivot=(${bottomCurlOffset.x.toInt()},${bottomCurlOffset.y.toInt()})" +

@@ -115,11 +115,18 @@ fun CurlReaderContent(
         backward = PageCurlConfig.TargetTapInteraction.Config(target = leftHalf),
     )
 
-    // ★ 纸背纯色遮罩色：亮=不明显的浅暖灰，暗=深灰防闪眼；backPlain=false 用背景色（原行为）
+    // ★ 纸背纯色遮罩色：贴正面"纸调"——正面纸色=背景色被纸纹轻微压暗（默认浓度下约6%），
+    //   亮主题用背景色同幅度加深贴色（随自定义背景自适应）；暗主题维持深灰防闪眼。
+    //   backPlain=false 用背景色（原行为）
     val bgPre = Color(pageBgColor)
     val darkPre = (0.299f * bgPre.red + 0.587f * bgPre.green + 0.114f * bgPre.blue) < 0.5f
     val effBackColor = if (backPlain) {
-        if (darkPre) android.graphics.Color.rgb(0x2B, 0x28, 0x24) else android.graphics.Color.rgb(0xE6, 0xE2, 0xDA)
+        if (darkPre) android.graphics.Color.rgb(0x2B, 0x28, 0x24)
+        else android.graphics.Color.rgb(
+            (bgPre.red * 255f * 0.94f).toInt().coerceIn(0, 255),
+            (bgPre.green * 255f * 0.94f).toInt().coerceIn(0, 255),
+            (bgPre.blue * 255f * 0.94f).toInt().coerceIn(0, 255),
+        )
     } else pageBgColor
     val config = remember {
         PageCurlConfig(
@@ -222,7 +229,9 @@ fun CurlReaderContent(
             }
         }
         LaunchedEffect(backBitmap) {
-            if (backBitmap != null) config.backPageBitmap = backBitmap.asImageBitmap()
+            // ★ 位图必须随 backBitmap 归零而清除：纯色开→关→开后旧纸纹位图残留 config，
+            //   且透出=0 时以 100% 全强度画在背面（0930 18:18 日志实锤：快照纯色=true 而 bmp 在）
+            config.backPageBitmap = backBitmap?.asImageBitmap()
         }
         var insetL = 0.dp
         var insetT = 0.dp
