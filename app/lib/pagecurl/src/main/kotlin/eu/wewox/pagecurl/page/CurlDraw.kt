@@ -346,6 +346,13 @@ private fun CacheDrawScope.prepareCurl(
     val drawShadow = prepareShadow(config, polygon, angle)
 
     return result@{
+        CurlGeomProbe.mark(
+            "curlgeom node=${size.width.toInt()}x${size.height.toInt()}" +
+                " bmp=${config.backPageBitmap?.let { "${it.width}x${it.height}" } ?: "-"}" +
+                " a=${config.backPageContentAlpha}" +
+                " pivot=(${bottomCurlOffset.x.toInt()},${bottomCurlOffset.y.toInt()})" +
+                " poly=${polygon.vertices.joinToString(prefix = "[", postfix = "]") { "(${it.x.toInt()},${it.y.toInt()})" }}"
+        )
         withTransform({
             // Mirror in X axis the drawing as back-page should be mirrored
             scale(-1f, 1f, pivot = bottomCurlOffset)

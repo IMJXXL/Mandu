@@ -60,7 +60,7 @@ object WebDavBookRouter {
         class Failed(val message: String) : OpenResult
     }
 
-    suspend fun openWebDavBook(
+    private suspend fun openWebDavBookOnce(
         filePath: String,
         startPage: Int = 0,
         passwdProvider: PasswdProvider? = null,
@@ -122,9 +122,33 @@ object WebDavBookRouter {
             OpenResult.Failed("无法连接服务器：打开超时")
         } catch (t: Throwable) {
             adapter.close()
-            runCatching { com.mangareader.DiagTracer.markStatic("remote: open fail ${(android.os.SystemClock.uptimeMillis() - openStartMs)}ms") }
+            runCatching { com.mangareader.DiagTracer.markStatic("remote: open fail ${(android.os.SystemClock.uptimeMillis() - openStartMs)}ms e=${t::class.java.simpleName}") }
             OpenResult.Failed(humanize(t))
         }
+    }
+
+    /**
+     * ★ 开书失败自动重试一次（2026-09-30）：日志实锤"空闲35-46s后首开必失败1.9-3.2s、
+     *   紧接重开即成"——服务端掐掉空闲 keep-alive 连接，首请求复用死 socket。
+     *   失败后换新连接自动重试，用户无感；Unsupported 不重试。
+     */
+    suspend fun openWebDavBook(
+        filePath: String,
+        startPage: Int = 0,
+        passwdProvider: PasswdProvider? = null,
+    ): OpenResult {
+        val first = openWebDavBookOnce(filePath, startPage, passwdProvider)
+        if (first !is OpenResult.Failed) return first
+        runCatching { com.mangareader.DiagTracer.markStatic("remote: open retry begin") }
+        kotlinx.coroutines.delay(300L)
+        val second = openWebDavBookOnce(filePath, startPage, passwdProvider)
+        runCatching {
+            when (second) {
+                is OpenResult.Failed -> com.mangareader.DiagTracer.markStatic("remote: open retry fail")
+                else -> com.mangareader.DiagTracer.markStatic("remote: open retry ok")
+            }
+        }
+        return second
     }
 
     /** 临时会话（封面提取）：与阅读会话同构分发 */

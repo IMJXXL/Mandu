@@ -133,6 +133,8 @@ class App : Application(), SingletonImageLoader.Factory {
                 com.mangareader.smbbridge.RemoteDownloadExecutor.execute(taskId, task, ctx)
             }
             crashHandler.clearOldCrashLogs()
+            // ★ 翻页几何探针 → 诊断日志（右上角纹块定位）
+            runCatching { eu.wewox.pagecurl.page.CurlGeomProbe.sink = { com.mangareader.DiagTracer.markStatic(it) } }
             try { com.mangareader.sr.SrCore.init(this@App) } catch (_: Throwable) {}
             com.mangareader.komgabridge.KomgaBridges.init(this@App, db)
             com.mangareader.opdsbridge.OpdsBridges.init(this@App, db)

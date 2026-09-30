@@ -208,14 +208,21 @@ object SrPipeline {
         if (!pollKeys.add(key)) return
         scope.launch(Dispatchers.IO) {
             try {
+                var hitFound = false
                 repeat(60) {
                     if (!sessionActive) return@launch
                     val hit = getCached(pageIndex)
                     if (hit != null && !hit.isRecycled) {
                         onReady(hit)
+                        hitFound = true
                         return@launch
                     }
                     delay(800)
+                }
+                // ★ 排障打点（2026-09-30）：可见页轮询48s仍未拿到增强结果=用户看到的"偶尔失效"；
+                //   有此标记=队列/熔断侧没出图，无此标记=显示路径没走轮询
+                if (!hitFound) {
+                    runCatching { com.mangareader.DiagTracer.markStatic("enhance: poll miss p=$pageIndex") }
                 }
             } finally {
                 pollKeys.remove(key)

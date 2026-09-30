@@ -400,6 +400,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         Log.w("Recycle", "pager clearBitmapCacheRecycling n=${bitmapCache.size()} view=${System.identityHashCode(this)}")
 
         bitmapCache.evictAll()
+        splitActivePositions.clear()
         clearTileFileCache()
     }
 
@@ -454,6 +455,12 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     private var centerGapType: Int = 0
     private var doublePageReverseEnabled: Boolean = false
     private var doublePageSplitEnabled: Boolean = false
+    // ★ 拆分翻页状态机（2026-09-30 修"翻一次翻两页"）：拆分跨页一次只显示半页，
+    //   翻页应先切到同份文件的另一半（同一跨页内），再进下一跨页——原来一次 +2
+    //   直接跳过半个内容。splitHalfRight=当前跨页正显示右半；splitActivePositions=
+    //   bind 时走了拆分分支的位置集合（判定翻页步进用）
+    private var splitHalfRight = false
+    private val splitActivePositions = java.util.Collections.newSetFromMap(java.util.concurrent.ConcurrentHashMap<Int, Boolean>())
 
     private fun isCurrentPageZoomed(): Boolean {
         return try {
@@ -489,6 +496,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                     val realPos = pageIdx
                     com.mangareader.viewer.ArchiveEngine.d("PagerView", "onPageSelected pos=$position pageIdx=$pageIdx realPos=$realPos rtl=$isRtl double=$doublePageMode total=${pageList.size} curPage=$currentPage")
                     if (realPos in pageList.indices && realPos != currentPage) {
+                        resetSplitHalf()
                         currentPage = realPos; onPageChanged?.invoke(currentPage)
 
                         // ★ 2026-09-09 跳页调度：翻页选中即取消远端 inflight，不等 IDLE
@@ -766,6 +774,8 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     fun setDoublePageSplit(split: Boolean) {
         if (this.doublePageSplitEnabled == split) return
         this.doublePageSplitEnabled = split
+        resetSplitHalf()
+        splitActivePositions.clear()
         pagerAdapter?.notifyDataSetChanged()
     }
 
@@ -773,6 +783,8 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         if (shiftDoublePage == enabled) return
         shiftDoublePage = enabled
         // ★ 同 setDoublePageMode：保留位图缓存，切换零重解码
+        resetSplitHalf()
+        splitActivePositions.clear()
         pagerAdapter?.notifyDataSetChanged()
         val newPos = positionOf(currentPage)
         val finalPos = newPos.coerceIn(0, pagerAdapter?.itemCount?.minus(1) ?: 0)
@@ -834,6 +846,8 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         doublePageMode = enabled
         // ★ 2026-09-30：不清缓存——单页位图仍是有效解码结果，合并路径直接复用
         //   （原 evictAll 把整本已解码页扔光，切双页要重解两页 ≈0.5s「要加载一下」）
+        resetSplitHalf()
+        splitActivePositions.clear()
         pagerAdapter?.notifyDataSetChanged()
         val newPos = positionOf(currentPage)
         val finalPos = newPos.coerceIn(0, pagerAdapter?.itemCount?.minus(1) ?: 0)
@@ -851,6 +865,8 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         doublePageMode = doubleEnabled
         shiftDoublePage = shiftEnabled
         // ★ 同 setDoublePageMode：保留位图缓存，切换零重解码
+        resetSplitHalf()
+        splitActivePositions.clear()
         pagerAdapter?.notifyDataSetChanged()
         val newPos = positionOf(savedPage)
         val finalPos = newPos.coerceIn(0, pagerAdapter?.itemCount?.minus(1) ?: 0)
@@ -908,9 +924,31 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         preloadAround(page)
     }
 
+    /** 跨页/页变更即重置半页交替（半页状态只在同一跨页内有效） */
+    private fun resetSplitHalf() {
+        splitHalfRight = false
+    }
+
+    private fun splitActiveNow(): Boolean =
+        doublePageSplitEnabled && positionOf(currentPage).let { it in splitActivePositions }
+
+    private fun rebindCurrent() {
+        val pos = positionOf(currentPage)
+        if (pos >= 0) pagerAdapter?.notifyItemChanged(pos)
+    }
+
     fun nextPage() {
         // navigateToPan: 缩放时先平移到边缘再翻页
         if (panNavigation && tryPanIfZoomed(forward = !isRtl)) return
+        // ★ 拆分跨页：先翻到同文件右半（位置不动），再进下一跨页
+        if (splitActiveNow()) {
+            if (!splitHalfRight) {
+                splitHalfRight = true
+                rebindCurrent()
+                return
+            }
+            splitHalfRight = false
+        }
         if (doublePageMode) {
             if (shiftDoublePage && currentPage == 0) goToPage(1, smooth = true)
             else if (currentPage < pageList.size - 1) goToPage(currentPage + 2, smooth = true)
@@ -921,6 +959,15 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     fun prevPage() {
         // navigateToPan: 缩放时先平移到边缘再翻页
         if (panNavigation && tryPanIfZoomed(forward = isRtl)) return
+        // ★ 拆分跨页回翻：在左半则回退到上一跨页的右半；在右半则切回左半
+        if (splitActiveNow()) {
+            if (splitHalfRight) {
+                splitHalfRight = false
+                rebindCurrent()
+                return
+            }
+            splitHalfRight = true
+        }
         if (doublePageMode) {
             if (shiftDoublePage && currentPage <= 1) goToPage(0, smooth = true)
             else if (currentPage > 0) goToPage(currentPage - 2, smooth = true)
@@ -1453,7 +1500,10 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 if (doublePageSplitEnabled) {
                     val leftBmp = bitmapCache[leftIdx]
                     if (leftBmp != null && !leftBmp.isRecycled && leftBmp.width > leftBmp.height) {
-                        val showRight = isRtl != doublePageReverseEnabled
+                        splitActivePositions.add(position)
+                        // ★ 半页交替：翻页状态机切到右半时显示另一半（仅当前位）
+                        val showRight = (isRtl != doublePageReverseEnabled) xor
+                            (splitHalfRight && position == positionOf(currentPage))
                         holder.setImageSplit(leftBmp, showRight, useSSIV, landscapeZoomEnabled)
                         return
                     }
@@ -1518,7 +1568,10 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 if (bmp != null && !bmp.isRecycled) {
                     val pageUseSsiv = useSSIV
                     if (doublePageSplitEnabled && bmp.width > bmp.height) {
-                        val showRight = isRtl != doublePageReverseEnabled
+                        splitActivePositions.add(realIdx)
+                        // ★ 半页交替（同双页）：仅当前页应用
+                        val showRight = (isRtl != doublePageReverseEnabled) xor
+                            (splitHalfRight && realIdx == currentPage)
                         holder.setImageSplit(bmp, showRight, pageUseSsiv, landscapeZoomEnabled)
                     } else {
                         val needFitWidth = bmp.width > holder.itemView.width
