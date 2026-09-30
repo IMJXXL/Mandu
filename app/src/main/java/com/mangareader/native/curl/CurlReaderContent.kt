@@ -113,16 +113,21 @@ fun CurlReaderContent(
         backward = PageCurlConfig.TargetTapInteraction.Config(target = leftHalf),
     )
 
-    // ★ 背面纸底色：贴正面"纸调"——正面纸色=背景色被纸纹轻微压暗（默认浓度下约6%），
-    //   亮主题=背景色同幅度加深（随自定义背景自适应）；暗主题维持深灰防闪眼
+    // ★ 背面纸底色：贴正面"纸调"——
+    //   开纸纹：纸纹已烘进页面位图（背面镜像自带纹理色调），纸底=背景色×该纹理平均反射率
+    //   （按浓度折算，见 PaperTexture.texturedTone）——任意透出滑条位置色调恒一致；
+    //   关纸纹：背景色加深约6%的正常纸调；暗主题恒深灰防闪眼（纸纹乘在暗底上近乎不可见）
     val bgPre = Color(pageBgColor)
     val darkPre = (0.299f * bgPre.red + 0.587f * bgPre.green + 0.114f * bgPre.blue) < 0.5f
-    val effBackColor = if (darkPre) android.graphics.Color.rgb(0x2B, 0x28, 0x24)
-    else android.graphics.Color.rgb(
-        (bgPre.red * 255f * 0.94f).toInt().coerceIn(0, 255),
-        (bgPre.green * 255f * 0.94f).toInt().coerceIn(0, 255),
-        (bgPre.blue * 255f * 0.94f).toInt().coerceIn(0, 255),
-    )
+    val effBackColor = when {
+        darkPre -> android.graphics.Color.rgb(0x2B, 0x28, 0x24)
+        paperBackPresetId >= 0 -> com.mangareader.filter.PaperTexture.texturedTone(pageBgColor, paperBackPresetId, bgTextureConcentration)
+        else -> android.graphics.Color.rgb(
+            (bgPre.red * 255f * 0.94f).toInt().coerceIn(0, 255),
+            (bgPre.green * 255f * 0.94f).toInt().coerceIn(0, 255),
+            (bgPre.blue * 255f * 0.94f).toInt().coerceIn(0, 255),
+        )
+    }
     val config = remember {
         PageCurlConfig(
             backPageColor = Color(effBackColor),
@@ -200,8 +205,9 @@ fun CurlReaderContent(
         } else Modifier
     )) {
         // ★ 背面纸底（0930 用户裁定定稿）：背面=镜像内容（透出滑条）+纯色纸底，
-        //   纸纹位图退役——config.backPageBitmap 恒空，无残留/花块可能
-        LaunchedEffect(pageBgColor) {
+        //   纸纹位图退役——config.backPageBitmap 恒空，无残留/花块可能；纸底色随
+        //   纸纹开关/preset/浓度实时换算（开纸纹时贴该纹理的取样色调）
+        LaunchedEffect(pageBgColor, paperBackPresetId, bgTextureConcentration) {
             config.backPageColor = Color(effBackColor)
         }
         var insetL = 0.dp

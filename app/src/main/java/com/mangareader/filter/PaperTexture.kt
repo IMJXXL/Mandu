@@ -36,6 +36,47 @@ object PaperTexture {
     private val pending = HashSet<Int>()
     private val executor: ExecutorService = Executors.newSingleThreadExecutor()
 
+    /**
+     * ★ 各预设整图平均 RGB（离线对 64×64 缩图取样 embed，运行时零开销）：仿真翻页背面纸底贴色用。
+     *   顺序与 [PRESETS] 一致；追加新预设时同步补一行。
+     */
+    val PRESET_MEAN_RGB = arrayOf(
+        intArrayOf(245, 236, 216), // 棉纸（细纹）
+        intArrayOf(246, 234, 214), // 棉纸（粗纹）
+        intArrayOf(246, 185, 117), // 牛皮纸
+        intArrayOf(243, 175, 112), // 牛皮纸2
+        intArrayOf(245, 205, 159), // 牛皮纸盒
+        intArrayOf(240, 239, 234), // 素描纸
+        intArrayOf(246, 243, 233), // 宣纸
+        intArrayOf(246, 245, 238), // 米白纤维
+        intArrayOf(247, 245, 241), // 道林纸
+        intArrayOf(246, 243, 235), // 罗纹纸
+        intArrayOf(246, 245, 237), // 新闻纸
+        intArrayOf(245, 235, 204), // 仿旧书页
+        intArrayOf(247, 246, 239), // 书卷纸
+    )
+
+    /**
+     * ★ 背面纸底贴色：纸纹以正片叠底烘进页面位图（有效纹理=s·tex+255(1-s)，MULTIPLY），
+     *   背面镜像内容因此自带纹理色调——纸底取「背景色 × 同款折算平均反射率」即与正面
+     *   纸调一致；透出滑条任意位置两层同色叠加结果恒为目标色，无需透明度补偿。
+     *   逐通道 m = (s·M + 255(1-s))/255，结果 = base·m，alpha 恒 255。
+     */
+    fun texturedTone(base: Int, presetId: Int, concentration: Int): Int {
+        val id = presetId.coerceIn(0, PRESETS.size - 1)
+        val mean = PRESET_MEAN_RGB[id]
+        val s = concentration.coerceIn(0, 100) / 100f
+        fun ch(v: Int, m: Int): Int {
+            val eff = s * m + 255f * (1 - s)
+            return (v * eff / 255f).toInt().coerceIn(0, 255)
+        }
+        return android.graphics.Color.rgb(
+            ch((base shr 16) and 0xFF, mean[0]),
+            ch((base shr 8) and 0xFF, mean[1]),
+            ch(base and 0xFF, mean[2]),
+        )
+    }
+
     fun load(context: Context, presetId: Int, onReady: (Int, Bitmap?) -> Unit) {
         val id = presetId.coerceIn(0, PRESETS.size - 1)
         synchronized(cache) {
