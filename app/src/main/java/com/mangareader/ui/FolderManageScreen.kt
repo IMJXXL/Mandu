@@ -367,6 +367,41 @@ fun FolderManageScreen(onBack: () -> Unit) {
                             prefs.edit().putBoolean("smart_title", v).apply()
                         })
                     }
+                    // ★ 批量应用：对已入库的书按文件名重新解析改名（解决老书/当时没勾选的情况）
+                    var showRetitle by remember { mutableStateOf(false) }
+                    TextButton(onClick = { showRetitle = true }) {
+                        Text("对已入库的书应用解析改名", fontSize = 13.sp)
+                    }
+                    if (showRetitle) {
+                        AlertDialog(
+                            onDismissRequest = { showRetitle = false },
+                            title = { Text("重新命名已入库的书？") },
+                            text = {
+                                Text("将按当前文件名重新解析全部书籍的书名（含手动改过的），解析不出结构时保持原名。原始文件名仍可在长按详情中查看。")
+                            },
+                            confirmButton = {
+                                TextButton(onClick = {
+                                    showRetitle = false
+                                    scope.launch {
+                                        val changed = withContext(Dispatchers.IO) {
+                                            val d = (ctx.applicationContext as com.mangareader.App).db.mangaDao()
+                                            var n = 0
+                                            d.getAllBooksList().forEach { bk ->
+                                                val raw = bk.filePath.substringAfterLast('|').substringAfterLast('/')
+                                                val newTitle = com.mangareader.util.BookTitleParser.displayTitle(raw)
+                                                if (newTitle.isNotBlank() && newTitle != bk.title) {
+                                                    d.updateBook(bk.copy(title = newTitle)); n++
+                                                }
+                                            }
+                                            n
+                                        }
+                                        android.widget.Toast.makeText(ctx, "已重命名 $changed 本", Toast.LENGTH_SHORT).show()
+                                    }
+                                }) { Text("应用", color = MaterialTheme.colorScheme.error) }
+                            },
+                            dismissButton = { TextButton(onClick = { showRetitle = false }) { Text("取消") } },
+                        )
+                    }
                 }
                 CacheManagementCard(
                     ctx = ctx,
