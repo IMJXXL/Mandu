@@ -568,8 +568,20 @@ private fun FilterTab(config: ReaderConfig, onConfigChange: (ReaderConfig) -> Un
         SliderItem("纸感浓度（默认100%=真实纸感）", config.textureConcentration.toFloat(), 0f..100f, 99, "${config.textureConcentration}%") {
             onConfigChange(config.copy(textureConcentration = it.toInt()))
         }
+        SettingsChipRow("生效范围") {
+            listOf("仅图片" to 0, "整屏幕" to 1).forEach { (label, value) ->
+                FilterChip(
+                    selected = value == config.textureScope,
+                    onClick = { onConfigChange(config.copy(textureScope = value)) },
+                    label = { Text(label, fontSize = 13.sp) },
+                )
+            }
+        }
         Text(
-            "纸纹随页面翻动缩放，仅作用于画面本身；动图页与瓦片模式不生效",
+            if (config.textureScope == 1)
+                "整屏幕：画面与页面外的留边背景都铺纸纹；背景纸纹固定不随页动"
+            else
+                "仅图片：纸纹随页面翻动缩放，只作用于画面本身；动图页与瓦片模式不生效",
             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f), fontSize = 11.sp,
             modifier = Modifier.padding(start = 4.dp, bottom = 4.dp)
         )

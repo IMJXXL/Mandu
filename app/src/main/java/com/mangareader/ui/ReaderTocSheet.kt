@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.LruCache
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.background
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
@@ -243,6 +244,15 @@ fun ReaderTocSheet(
     val resolvedCols = LayoutColumnsResolver.currentValue(configuration.orientation, portraitCols, landscapeCols)
     val gridCols = LayoutColumnsResolver.toGridCols(resolvedCols)
     val thumbCache = remember { LruCache<Int, Bitmap>(20) }
+    // ★ 章名显示跟随书架同款设置：智能解析渗透到目录/子项 + 超长滚动
+    val ctx0 = androidx.compose.ui.platform.LocalContext.current
+    val dispPrefs = remember { ctx0.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE) }
+    val tocSmartOn = remember { dispPrefs.getBoolean("smart_title", false) }
+    val tocT2s = remember { dispPrefs.getBoolean("t2s_enabled", false) }
+    val tocMarquee = remember { dispPrefs.getBoolean("shelf_title_marquee", false) }
+    val dispName: (String) -> String = remember(tocSmartOn, tocT2s) {
+        { n -> if (tocSmartOn) com.mangareader.util.BookTitleParser.displayTitle(n, tocT2s) else n }
+    }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -398,7 +408,16 @@ fun ReaderTocSheet(
                                         }
                                     }
                                 }
-                                Text(item.name, Modifier.padding(4.dp), color = MaterialTheme.colorScheme.onSurface, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                Text(
+                                    dispName(item.name),
+                                    Modifier
+                                        .then(if (tocMarquee) Modifier.basicMarquee() else Modifier)
+                                        .padding(4.dp),
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    fontSize = 11.sp,
+                                    maxLines = if (tocMarquee) 1 else 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
                             }
                         }
                     }

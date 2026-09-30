@@ -70,6 +70,15 @@ class CurlDoublePageView(context: Context) : FrameLayout(context), ReaderViewDel
     var paperBackPresetId: Int
         get() = paperBackPresetIdState.intValue
         set(value) { paperBackPresetIdState.intValue = value }
+    // ★ 整屏幕纸纹（textureScope=1）：背景铺纹理开关与浓度（NES 按 config 传入）
+    private val paperBgOnState = mutableStateOf(false)
+    var paperBgOn: Boolean
+        get() = paperBgOnState.value
+        set(value) { paperBgOnState.value = value }
+    private val paperBgConcState = mutableIntStateOf(100)
+    var paperBgConcentration: Int
+        get() = paperBgConcState.intValue
+        set(value) { paperBgConcState.intValue = value }
     var remotePageSupply: RemotePageSupply? = null
     var onChapterEnd: ((Boolean) -> Unit)? = null
 
@@ -210,6 +219,8 @@ class CurlDoublePageView(context: Context) : FrameLayout(context), ReaderViewDel
                 backContentAlpha = curlBackContentAlpha,
                 shadowAlpha = curlShadowAlpha,
                 paperBackPresetId = paperBackPresetId,
+                bgTextureOn = paperBgOn,
+                bgTextureConcentration = paperBgConcentration,
                 reloadTrigger = reloadTrigger,
                 tapForwardTrigger = tapForwardTrigger,
                 tapBackwardTrigger = tapBackwardTrigger,

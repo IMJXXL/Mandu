@@ -29,6 +29,8 @@ object PaperPageTexture {
     @Volatile var enabled: Boolean = false
     @Volatile var presetId: Int = 0
     @Volatile var concentration: Int = 100
+    /** ★ 生效范围：false=仅图片（只烘焙页面位图，默认） true=整屏幕（页面照旧烘焙 + 阅读器背景铺纸纹） */
+    @Volatile var overlayMode: Boolean = false
     @Volatile var generation: Int = 0
 
     @Volatile private var appContext: Context? = null
@@ -37,12 +39,13 @@ object PaperPageTexture {
     private val stamped = Collections.synchronizedMap(WeakHashMap<Bitmap, Int>())
 
     /** 阅读器 setup 时同步设置（幂等；值变化才升代数） */
-    fun sync(context: Context, newEnabled: Boolean, newPresetId: Int, newConcentration: Int) {
+    fun sync(context: Context, newEnabled: Boolean, newPresetId: Int, newConcentration: Int, newOverlayMode: Boolean = false) {
         if (appContext == null) appContext = context.applicationContext
-        val changed = enabled != newEnabled || presetId != newPresetId || concentration != newConcentration
+        val changed = enabled != newEnabled || presetId != newPresetId || concentration != newConcentration || overlayMode != newOverlayMode
         enabled = newEnabled
         presetId = newPresetId
         concentration = newConcentration
+        overlayMode = newOverlayMode
         if (changed) generation++
     }
 

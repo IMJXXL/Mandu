@@ -93,6 +93,8 @@ data class ReaderConfig(
     val texturePresetId: Int = 0,
     val textureAlpha: Int = 15,
     val textureConcentration: Int = 100,
+    /** ★ 纹理生效范围：0=仅图片（烘焙进页面位图，默认） 1=整屏幕（屏幕覆盖层，含留边背景） */
+    val textureScope: Int = 0,
     // 氛围音选择：""=关 "rain"=预设雨声，其余=filesDir/ambience/ 下用户导入的文件名；音量 0-100
     val ambienceSound: String = "",
     val ambienceVolume: Int = 60
@@ -188,6 +190,7 @@ data class ReaderConfig(
             putInt("${prefix}texturePresetId", texturePresetId)
             putInt("${prefix}textureAlpha", textureAlpha)
             putInt("${prefix}textureConcentration", textureConcentration)
+            putInt("${prefix}textureScope", textureScope)
             putString("${prefix}ambienceSound", ambienceSound)
             putInt("${prefix}ambienceVolume", ambienceVolume)
             apply()
@@ -270,6 +273,7 @@ data class ReaderConfig(
                 texturePresetId = prefs.safeGetInt("${prefix}texturePresetId", 0),
                 textureAlpha = prefs.safeGetInt("${prefix}textureAlpha", 15).coerceIn(0, 40),
                 textureConcentration = prefs.safeGetInt("${prefix}textureConcentration", 100).coerceIn(0, 100),
+                textureScope = prefs.safeGetInt("${prefix}textureScope", 0).coerceIn(0, 1),
                 // ambienceSound v1 曾以 Int 持久化（0关/1雨/2篝火/3咖啡），v2 为 String——
                 // 裸 getString 读旧 Int 会 ClassCastException（任何加载配置的入口都崩）。
                 // 读原始值做类型归一：1→"rain"，其余旧值→""（对应音色已删）

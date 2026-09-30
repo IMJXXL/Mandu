@@ -182,18 +182,31 @@ internal fun Modifier.drawCurlBack(
                     this@onDrawWithContent.drawContent()
                 }
 
-                // ★ 纸背纹理：先铺满纸纹图再叠遮罩（遮罩逻辑不变，透出内容感一致）
-                config.backPageBitmap?.let { bmp ->
+                // ★ 纸背：纸图打底（纸是页背本体），内容按透明度叠上（正面墨迹透纸感）——
+                //   原实现纸图画在内容之后，不透明纸把透出内容全盖死（背面纯色，透明失效）。
+                //   有纸图：纸打底 + 内容@contentAlpha，不再叠实色遮罩（纸自带色调）；
+                //   无纸图：保持原行为（内容 + 背景色遮罩）。
+                val bmp = config.backPageBitmap
+                if (bmp != null) {
                     drawImage(
                         bmp,
                         dstOffset = androidx.compose.ui.unit.IntOffset.Zero,
                         dstSize = androidx.compose.ui.unit.IntSize(size.width.toInt(), size.height.toInt()),
                     )
-                }
+                    if (config.backPageContentAlpha > 0f) {
+                        withTransform({ scale(-1f, 1f, pivot = center) }) {
+                            this@onDrawWithContent.drawContent()
+                        }
+                    }
+                } else {
+                    withTransform({ scale(-1f, 1f, pivot = center) }) {
+                        this@onDrawWithContent.drawContent()
+                    }
 
-                val overlayAlpha = 1f - config.backPageContentAlpha
-                if (overlayAlpha > 0f) {
-                    drawRect(config.backPageColor.copy(alpha = overlayAlpha))
+                    val overlayAlpha = 1f - config.backPageContentAlpha
+                    if (overlayAlpha > 0f) {
+                        drawRect(config.backPageColor.copy(alpha = overlayAlpha))
+                    }
                 }
             }
         }
@@ -313,6 +326,7 @@ private fun CacheDrawScope.prepareCurl(
     // right position of the curled back-page
     val lineVector = topCurlOffset - bottomCurlOffset
     val angle = Math.PI.toFloat() - atan2(lineVector.y, lineVector.x) * 2
+    val center = Offset(size.width / 2f, size.height / 2f)
 
     // Prepare a lambda to draw the shadow of the back-page
     val drawShadow = prepareShadow(config, polygon, angle)
@@ -329,18 +343,25 @@ private fun CacheDrawScope.prepareCurl(
 
             // And finally draw the back-page with an overlay with alpha
             clipPath(polygon.toPath()) {
-                this@result.drawContent()
-
-                config.backPageBitmap?.let { bmp ->
+                // ★ 与上方 onDrawWithContent 同规则：纸打底+内容透出 / 无纸走原遮罩
+                val bmp = config.backPageBitmap
+                if (bmp != null) {
                     drawImage(
                         bmp,
                         dstOffset = androidx.compose.ui.unit.IntOffset.Zero,
                         dstSize = androidx.compose.ui.unit.IntSize(size.width.toInt(), size.height.toInt()),
                     )
-                }
+                    if (config.backPageContentAlpha > 0f) {
+                        withTransform({ scale(-1f, 1f, pivot = center) }) {
+                            this@result.drawContent()
+                        }
+                    }
+                } else {
+                    this@result.drawContent()
 
-                val overlayAlpha = 1f - config.backPageContentAlpha
-                drawRect(config.backPageColor.copy(alpha = overlayAlpha))
+                    val overlayAlpha = 1f - config.backPageContentAlpha
+                    drawRect(config.backPageColor.copy(alpha = overlayAlpha))
+                }
             }
         }
     }

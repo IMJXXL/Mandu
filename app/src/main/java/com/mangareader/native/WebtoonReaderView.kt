@@ -1030,12 +1030,12 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
                     setMinimumTileDpi(160)
                     setMinimumScaleType(1)
                     setDoubleTapZoomDuration(300)
-                    setBackgroundColor(pageBgColor)
+                    com.mangareader.filter.PaperBgDrawable.apply(this, parent.context.applicationContext, pageBgColor, com.mangareader.filter.PaperPageTexture.overlayMode, com.mangareader.filter.PaperPageTexture.presetId, com.mangareader.filter.PaperPageTexture.concentration)
                     visibility = android.view.View.GONE
                 }
                 val iv = android.widget.ImageView(parent.context).apply {
                     scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
-                    setBackgroundColor(pageBgColor)
+                    com.mangareader.filter.PaperBgDrawable.apply(this, parent.context.applicationContext, pageBgColor, com.mangareader.filter.PaperPageTexture.overlayMode, com.mangareader.filter.PaperPageTexture.presetId, com.mangareader.filter.PaperPageTexture.concentration)
                     adjustViewBounds = true
                     visibility = android.view.View.VISIBLE
                 }
@@ -1049,7 +1049,7 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
             }
             val iv = android.widget.ImageView(parent.context).apply {
                 scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
-                setBackgroundColor(pageBgColor)
+                com.mangareader.filter.PaperBgDrawable.apply(this, parent.context.applicationContext, pageBgColor, com.mangareader.filter.PaperPageTexture.overlayMode, com.mangareader.filter.PaperPageTexture.presetId, com.mangareader.filter.PaperPageTexture.concentration)
                 adjustViewBounds = true
             }
             frame.addView(iv, android.widget.FrameLayout.LayoutParams(

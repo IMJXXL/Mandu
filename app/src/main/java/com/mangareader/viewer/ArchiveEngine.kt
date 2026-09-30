@@ -682,6 +682,104 @@ class ArchiveEngine(private val ctx: Context) {
         }
     }
 
+    // ═══ E6 同款：a: 压缩书页表磁盘索引（cacheDir/arc_page_index/）═══
+    // 失效戳 = SAF 文档 SIZE（文件级语义，可靠）；校验失败（查询不到/为 0）保守信任旧索引，
+    // 真正的兜底在页加载失败（用户换文件同尺寸的概率远小于每次开书 25s 的代价）。
+
+    private fun archiveIndexFile(path: String): File =
+        File(File(ctx.cacheDir, "arc_page_index"), sha1Hex(path) + ".json")
+
+    private fun archiveSizeStamp(tree: Uri, doc: String): Long = try {
+        val docUri = DocumentsContract.buildDocumentUriUsingTree(tree, doc)
+        ctx.contentResolver.query(
+            docUri,
+            arrayOf(DocumentsContract.Document.COLUMN_SIZE),
+            null, null, null,
+        )?.use { c -> if (c.moveToFirst()) c.getLong(0) else -1L } ?: -1L
+    } catch (_: Exception) { -1L }
+
+    private fun readArchivePageIndex(path: String): List<PageMeta>? {
+        val f = archiveIndexFile(path)
+        if (!f.isFile || f.length() <= 0L) return null
+        return try {
+            val obj = org.json.JSONObject(f.readText())
+            val arr = obj.getJSONArray("pages")
+            val out = ArrayList<PageMeta>(arr.length())
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                out.add(
+                    PageMeta(
+                        index = o.getInt("index"),
+                        source = o.getString("source"),
+                        ext = o.getString("ext"),
+                        localIdx = o.optInt("localIdx", 0),
+                        splitSide = o.optInt("splitSide", 0),
+                        name = o.optString("name", ""),
+                    ),
+                )
+            }
+            if (out.isEmpty()) null else {
+                f.setLastModified(System.currentTimeMillis())
+                out
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun writeArchivePageIndex(path: String, tree: Uri, doc: String, pages: List<PageMeta>) {
+        try {
+            val dir = File(ctx.cacheDir, "arc_page_index")
+            dir.mkdirs()
+            val arr = org.json.JSONArray()
+            pages.forEach { pm ->
+                arr.put(
+                    org.json.JSONObject().apply {
+                        put("index", pm.index)
+                        put("source", pm.source)
+                        put("ext", pm.ext)
+                        put("localIdx", pm.localIdx)
+                        put("splitSide", pm.splitSide)
+                        put("name", pm.name)
+                    },
+                )
+            }
+            val obj = org.json.JSONObject().apply {
+                put("size", archiveSizeStamp(tree, doc))
+                put("pages", arr)
+            }
+            val tmp = File(dir, sha1Hex(path) + ".tmp")
+            tmp.writeText(obj.toString())
+            val dest = archiveIndexFile(path)
+            if (!tmp.renameTo(dest)) {
+                tmp.copyTo(dest, overwrite = true)
+                tmp.delete()
+            }
+            trimDirPageIndex(dir)
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun scheduleArchiveIndexValidate(path: String, tree: Uri, doc: String) {
+        dirIndexBgScope.launch {
+            try {
+                val live = archiveSizeStamp(tree, doc)
+                val f = archiveIndexFile(path)
+                val stored = if (f.isFile) {
+                    try { org.json.JSONObject(f.readText()).optLong("size", -1L) } catch (_: Exception) { -1L }
+                } else -1L
+                if (live <= 0L || stored <= 0L || stored == live) return@launch  // 未知/一致：不动
+                // 文件尺寸变了（换文件/更新版本）：后台重建页表，当前会话保持旧页表，下次打开生效。
+                // 先踢内存缓存再走 listPages——否则命中缓存拿到的还是旧页表，白重建
+                synchronized(pageListCache) { pageListCache.remove(path) }
+                val fresh = listPages(path)
+                if (fresh.isNotEmpty()) writeArchivePageIndex(path, tree, doc, fresh)
+                d(TAG, "arcPageIndex refreshed total=${fresh.size} path=${path.takeLast(30)}")
+            } catch (_: Exception) {
+            }
+        }
+    }
+
     private fun scheduleDirIndexValidate(path: String, tree: Uri, doc: String) {
         dirIndexBgScope.launch {
             try {
@@ -746,6 +844,21 @@ class ArchiveEngine(private val ctx: Context) {
                 }
             }
         }
+        // ★ E6 同款（2026-09-30 Boyue+SD 实锤 25s 开书）：a: 压缩书（mobi/epub/zip…）页表磁盘索引。
+        //   慢 SD 上 scanMobi/scanEpub 每次开书都要经 SAF 流重读整个索引——命中后秒开。
+        //   失效戳用文档 SIZE（文件级可靠），后台校验发现尺寸变了就重建，当前会话不中断。
+        if (path.startsWith("a:")) {
+            val p0 = parsePath(path)
+            if (p0 != null) {
+                val hit = readArchivePageIndex(path)
+                if (hit != null) {
+                    synchronized(pageListCache) { pageListCache[path] = hit }
+                    scheduleArchiveIndexValidate(path, makeTree(p0.auth, p0.tree), p0.doc)
+                    d(TAG, "listPages ARC-INDEX hit total=${hit.size} path=${path.takeLast(30)}")
+                    return hit
+                }
+            }
+        }
         return try {
             val result = when {
                 path.startsWith("z:") -> {
@@ -781,6 +894,10 @@ class ArchiveEngine(private val ctx: Context) {
             if (path.startsWith("d:")) {
                 val p0 = parsePath(path)
                 if (p0 != null) writeDirPageIndex(path, makeTree(p0.auth, p0.tree), p0.doc, result)
+            }
+            if (path.startsWith("a:") && result.isNotEmpty()) {
+                val p0 = parsePath(path)
+                if (p0 != null) writeArchivePageIndex(path, makeTree(p0.auth, p0.tree), p0.doc, result)
             }
             d(TAG, "listPages path=${path.takeLast(40)} total=${result.size} first5=${result.take(5).map { it.index }}")
             result

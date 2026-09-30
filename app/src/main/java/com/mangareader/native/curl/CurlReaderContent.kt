@@ -10,12 +10,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableIntState
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
@@ -75,6 +78,9 @@ fun CurlReaderContent(
     backContentAlpha: Float,
     shadowAlpha: Float,
     paperBackPresetId: Int = -1,
+    /** ★ 整屏幕纸纹背景开关/浓度（textureScope=1 时由视图传入） */
+    bgTextureOn: Boolean = false,
+    bgTextureConcentration: Int = 100,
     reloadTrigger: MutableIntState,
     tapForwardTrigger: MutableIntState,
     tapBackwardTrigger: MutableIntState,
@@ -149,7 +155,40 @@ fun CurlReaderContent(
         if (tapBackwardTrigger.intValue > 0) state.prev()
     }
 
-    BoxWithConstraints(modifier = Modifier.fillMaxSize().background(Color(pageBgColor))) {
+
+        // ★ 整屏幕纸纹背景（textureScope=1）：背景色之上 MULTIPLY 纸纹（页面烘焙照旧，两层合成全屏纸感）
+        val bgCtx = androidx.compose.ui.platform.LocalContext.current
+        val bgTex = if (bgTextureOn && paperBackPresetId >= 0) {
+            produceState<android.graphics.Bitmap?>(null, paperBackPresetId, bgTextureOn) {
+                value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                    runCatching { com.mangareader.filter.PaperTexture.loadSync(bgCtx.applicationContext, paperBackPresetId) }.getOrNull()
+                }
+            }.value
+        } else null
+        val bgPaint = remember(bgTex, bgTextureConcentration) {
+            bgTex?.let { bmp ->
+                android.graphics.Paint().apply {
+                    shader = android.graphics.BitmapShader(bmp, android.graphics.Shader.TileMode.MIRROR, android.graphics.Shader.TileMode.MIRROR)
+                    isFilterBitmap = true
+                    xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.MULTIPLY)
+                    val s = bgTextureConcentration.coerceIn(0, 100) / 100f
+                    val w = 255f * (1 - s)
+                    colorFilter = android.graphics.ColorMatrixColorFilter(android.graphics.ColorMatrix(floatArrayOf(
+                        s, 0f, 0f, 0f, w,
+                        0f, s, 0f, 0f, w,
+                        0f, 0f, s, 0f, w,
+                        0f, 0f, 0f, 1f, 0f
+                    )))
+                }
+            }
+        }
+    BoxWithConstraints(modifier = Modifier.fillMaxSize().background(Color(pageBgColor)).then(
+        if (bgTextureOn) Modifier.drawBehind {
+            bgPaint?.let { p ->
+                drawContext.canvas.nativeCanvas.drawRect(0f, 0f, size.width, size.height, p)
+            }
+        } else Modifier
+    )) {
         // ★ 纸背纹理：按当前纸张 preset 烘一张米色纸纹图挂到 pagecurl 背面
         val ctx = androidx.compose.ui.platform.LocalContext.current
         // ★ 纸背底色随背景亮度：暗色主题深灰纸，避免翻页背面亮块闪眼

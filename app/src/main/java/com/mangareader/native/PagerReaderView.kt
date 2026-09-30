@@ -54,7 +54,9 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
      *  idx → 入坑时间戳；同页 5s 内已在加载→复用在途任务；坑龄≥5s 视为挂死残留，覆盖放行自愈。
      *  值仍等于自己那次时间戳才 remove（防误删后来者的坑）。 */
     private val inflightLoads = java.util.concurrent.ConcurrentHashMap<Int, Long>()
-    private val preloadSemaphore = kotlinx.coroutines.sync.Semaphore(1)
+    // ★ 2026-09-30：双页丝滑——预载并发 1→2（pageDecode p50≈400ms 串行时一跨页要 0.8s，
+    //   快翻必等页；2 路并行把缓冲构建速度翻倍，交互解码仍由 decodeSemaphore(2) 与焦点优先保障）
+    private val preloadSemaphore = kotlinx.coroutines.sync.Semaphore(2)
     private var pageList: List<ArchiveEngine.PageMeta> = emptyList()
     private var currentPage = 0
 
@@ -103,6 +105,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         (cur - 2..cur + 5).forEach {
             if (it in pageList.indices) { inflightLoads.remove(it); loadPageAsync(it) }
         }
+        pagerAdapter?.notifyDataSetChanged()  // ★ 整屏幕纹理背景随 holder 重绑刷新
     }
 
     private var pageLayoutMode = 0 // 0=SINGLE, 1=DOUBLE, 2=AUTO
@@ -376,7 +379,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     //   首版按 byteCount 计重——位图 recycle 后 byteCount 归 0，LruCache 内部计重失配，
     //   evictAll 时抛 "sizeOf() is reporting inconsistent results!" 闪退；常量计重永不失配。
     //   单页内存上限由 F3.2 解码闸（≤6M px ≈ 24MB）兜底，8 张最坏 ~192MB，远好于原来无上限。
-    private val bitmapCache = object : android.util.LruCache<Int, Bitmap>(12) {
+    private val bitmapCache = object : android.util.LruCache<Int, Bitmap>(16) {
         override fun sizeOf(key: Int, value: Bitmap): Int = 1
     }
 
@@ -769,7 +772,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     fun setShiftDoublePage(enabled: Boolean) {
         if (shiftDoublePage == enabled) return
         shiftDoublePage = enabled
-        clearBitmapCacheRecycling()  // ★ ⑧ 最小修复
+        // ★ 同 setDoublePageMode：保留位图缓存，切换零重解码
         pagerAdapter?.notifyDataSetChanged()
         val newPos = positionOf(currentPage)
         val finalPos = newPos.coerceIn(0, pagerAdapter?.itemCount?.minus(1) ?: 0)
@@ -829,7 +832,8 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     fun setDoublePageMode(enabled: Boolean) {
         if (doublePageMode == enabled) return
         doublePageMode = enabled
-        clearBitmapCacheRecycling()  // ★ ⑧ 最小修复
+        // ★ 2026-09-30：不清缓存——单页位图仍是有效解码结果，合并路径直接复用
+        //   （原 evictAll 把整本已解码页扔光，切双页要重解两页 ≈0.5s「要加载一下」）
         pagerAdapter?.notifyDataSetChanged()
         val newPos = positionOf(currentPage)
         val finalPos = newPos.coerceIn(0, pagerAdapter?.itemCount?.minus(1) ?: 0)
@@ -846,7 +850,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         layoutSwitchPending = true
         doublePageMode = doubleEnabled
         shiftDoublePage = shiftEnabled
-        clearBitmapCacheRecycling()  // ★ ⑧ 最小修复
+        // ★ 同 setDoublePageMode：保留位图缓存，切换零重解码
         pagerAdapter?.notifyDataSetChanged()
         val newPos = positionOf(savedPage)
         val finalPos = newPos.coerceIn(0, pagerAdapter?.itemCount?.minus(1) ?: 0)
@@ -1222,8 +1226,13 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             val leftIdx = centerIdx - (centerIdx % 2)
             loadPageAsync(leftIdx)
             if (leftIdx + 1 < pageList.size) loadPageAsync(leftIdx + 1)
+            // 相邻跨页（±1）
             if (leftIdx - 2 >= 0) { loadPageAsync(leftIdx - 2, isPreload = true); loadPageAsync(leftIdx - 1, isPreload = true) }
             if (leftIdx + 2 < pageList.size) { loadPageAsync(leftIdx + 2, isPreload = true); if (leftIdx + 3 < pageList.size) loadPageAsync(leftIdx + 3, isPreload = true) }
+            // ★ 次相邻跨页（±2）：双页一次前进 2 页，±1 跨页缓冲只够翻一次；
+            //   拉到 ±2 跨页让快翻也不打空（prioritizeLoad 窗口 ±8 容得下）
+            if (leftIdx - 4 >= 0) { loadPageAsync(leftIdx - 4, isPreload = true); loadPageAsync(leftIdx - 3, isPreload = true) }
+            if (leftIdx + 4 < pageList.size) { loadPageAsync(leftIdx + 4, isPreload = true); if (leftIdx + 5 < pageList.size) loadPageAsync(leftIdx + 5, isPreload = true) }
         } else {
             loadPageAsync(centerIdx)
             if (centerIdx + 1 < pageList.size) loadPageAsync(centerIdx + 1, isPreload = true)
@@ -1327,7 +1336,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): PagerViewHolder {
             val container = android.widget.FrameLayout(parent.context).apply {
                 layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-                setBackgroundColor(pageBgColor)
+                com.mangareader.filter.PaperBgDrawable.apply(this, parent.context.applicationContext, pageBgColor, com.mangareader.filter.PaperPageTexture.overlayMode, com.mangareader.filter.PaperPageTexture.presetId, com.mangareader.filter.PaperPageTexture.concentration)
                 val marginPx = (imageMarginH * parent.context.resources.displayMetrics.density).toInt()
                 setPadding(marginPx, 0, marginPx, 0)
             }
@@ -1384,7 +1393,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             val container = holder.itemView as android.widget.FrameLayout
             val marginPx = (imageMarginH * container.context.resources.displayMetrics.density).toInt()
             container.setPadding(marginPx, 0, marginPx, 0)
-            container.setBackgroundColor(pageBgColor)
+            com.mangareader.filter.PaperBgDrawable.apply(container, container.context.applicationContext, pageBgColor, com.mangareader.filter.PaperPageTexture.overlayMode, com.mangareader.filter.PaperPageTexture.presetId, com.mangareader.filter.PaperPageTexture.concentration)
 
             val debugLabel = container.findViewById<android.widget.TextView>(0x7F000001)
             debugLabel?.visibility = View.GONE

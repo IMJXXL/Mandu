@@ -13,6 +13,7 @@ import android.widget.FrameLayout
 
 
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -924,8 +925,18 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         // ★ 修复：文件系统路径（下载到本地缓存的归档）走 useArchivePageLoader，
         //   ArchiveEngine.listPages 只支持 SAF 路径（a:/d: 前缀），文件系统路径会返回空。
         if (path.startsWith("/")) return enterLocalArchiveReader(b, path, targetPage)
-        val pages = withContext(Dispatchers.IO) {
+        var pages = withContext(Dispatchers.IO) {
             try { engine.listPages(path) } catch (_: Exception) { emptyList() }
+        }
+        // ★ SD 卡瞬态 IO 失败兜底（Boyue+外置SD 实测报"文件暂时找不到"重进即好）：
+        //   空页表不等同于文件真丢——延迟后重试一次再判缺失
+        if (pages.isEmpty()) {
+            com.mangareader.DiagTracer.markStatic("listPages retry begin")
+            delay(500)
+            pages = withContext(Dispatchers.IO) {
+                try { engine.listPages(path) } catch (_: Exception) { emptyList() }
+            }
+            com.mangareader.DiagTracer.markStatic("listPages retry n=${pages.size}")
         }
         // ★ ④ 修复：listPages 失败/返回空 → 提示 + 不进 reading 死态。
         //   原 bug：pageList=空+viewing=true 落"没有内容"死胡同，FAB 卡死、退出键也可能无效必须杀进程。
@@ -1300,9 +1311,16 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                         }
                         break
                     }
-                    val pages = if (r.isEmpty()) {
+                    var pages = if (r.isEmpty()) {
                         try { engine.listPages(newPath) } catch (_: Exception) { emptyList() }
                     } else emptyList()
+                    // ★ SD 瞬态失败兜底：空页表重试一次再判缺失（同 enterReader）
+                    if (pages.isEmpty()) {
+                        com.mangareader.DiagTracer.markStatic("listPages retry begin")
+                        kotlinx.coroutines.delay(500)
+                        pages = try { engine.listPages(newPath) } catch (_: Exception) { emptyList() }
+                        com.mangareader.DiagTracer.markStatic("listPages retry n=${pages.size}")
+                    }
                     Triple(newTocItems, r, pages)
                 }
                 android.util.Log.d("ReaderToc", "path=$path children=${result.second.size} pages=${result.third.size}")
@@ -2314,6 +2332,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                             textureEnabled = config.textureEnabled,
                             texturePresetId = config.texturePresetId,
                             textureConcentration = config.textureConcentration,
+                            textureScope = config.textureScope,
                             ambienceSound = config.ambienceSound,
                             ambienceVolume = config.ambienceVolume,
 
@@ -2999,6 +3018,14 @@ private fun ItemGrid(
 ) {
     val ctx = LocalContext.current
     val configuration = LocalConfiguration.current
+    // ★ 章名显示跟随书架同款设置：智能解析渗透到满屏网格 + 超长滚动
+    val dispPrefs = remember { ctx.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE) }
+    val gridSmartOn = remember { dispPrefs.getBoolean("smart_title", false) }
+    val gridT2s = remember { dispPrefs.getBoolean("t2s_enabled", false) }
+    val gridMarquee = remember { dispPrefs.getBoolean("shelf_title_marquee", false) }
+    val gridDispName: (String) -> String = remember(gridSmartOn, gridT2s) {
+        { n -> if (gridSmartOn) com.mangareader.util.BookTitleParser.displayTitle(n, gridT2s) else n }
+    }
     var sortAsc by remember { mutableStateOf(true) }
     val portraitCols by com.hippo.ehviewer.Settings.thumbColumnsPortrait.valueFlow().collectAsState(initial = com.hippo.ehviewer.Settings.thumbColumnsPortrait.value)
     val landscapeCols by com.hippo.ehviewer.Settings.thumbColumnsLandscape.valueFlow().collectAsState(initial = com.hippo.ehviewer.Settings.thumbColumnsLandscape.value)
@@ -3038,6 +3065,14 @@ private fun ItemCard(
     onLongPress: () -> Unit,
 ) {
     val ctx = LocalContext.current
+    // ★ 章名显示跟随书架同款设置：智能解析渗透到满屏网格 + 超长滚动
+    val dispPrefs = remember { ctx.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE) }
+    val gridSmartOn = remember { dispPrefs.getBoolean("smart_title", false) }
+    val gridT2s = remember { dispPrefs.getBoolean("t2s_enabled", false) }
+    val gridMarquee = remember { dispPrefs.getBoolean("shelf_title_marquee", false) }
+    val gridDispName: (String) -> String = remember(gridSmartOn, gridT2s) {
+        { n -> if (gridSmartOn) com.mangareader.util.BookTitleParser.displayTitle(n, gridT2s) else n }
+    }
     val status = remember(progress, item.name) { com.mangareader.ui.statusForItem(item, progress) }
     // ★ 子卷自定义封面覆盖（与 ReaderTocSheet 目录 Tab 同款）：有覆盖走 CoverFetcher custom: 分支，
     //   lastModified 注入缓存 key（同名覆盖写后旧缓存不命中）
@@ -3073,7 +3108,14 @@ private fun ItemCard(
         Box(Modifier.fillMaxWidth().background(bgColor.copy(alpha = 0.9f)).padding(horizontal = 8.dp, vertical = 6.dp)) {
             val luminance = bgColor.red * 0.299f + bgColor.green * 0.587f + bgColor.blue * 0.114f
             val textColor = if (luminance > 0.5f) Color(0xFF333333) else Color(0xFFCCCCCC)
-            Text(item.name, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, color = textColor)
+            Text(
+                gridDispName(item.name),
+                fontSize = 12.sp,
+                maxLines = if (gridMarquee) 1 else 2,
+                overflow = TextOverflow.Ellipsis,
+                color = textColor,
+                modifier = Modifier.then(if (gridMarquee) Modifier.basicMarquee() else Modifier),
+            )
         }
     }
 }

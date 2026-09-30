@@ -59,6 +59,15 @@ class CurlReaderView(context: Context) : FrameLayout(context), ReaderViewDelegat
     var paperBackPresetId: Int
         get() = paperBackPresetIdState.intValue
         set(value) { paperBackPresetIdState.intValue = value }
+    // ★ 整屏幕纸纹（textureScope=1）：背景铺纹理开关与浓度（NES 按 config 传入）
+    private val paperBgOnState = mutableStateOf(false)
+    var paperBgOn: Boolean
+        get() = paperBgOnState.value
+        set(value) { paperBgOnState.value = value }
+    private val paperBgConcState = mutableIntStateOf(100)
+    var paperBgConcentration: Int
+        get() = paperBgConcState.intValue
+        set(value) { paperBgConcState.intValue = value }
     // 背面透出程度同上：单页翻页背面画的是当前页镜像，该值控制背面纸的明暗可见度
     private val curlBackContentAlphaState = mutableFloatStateOf(0.1f)
     var curlBackContentAlpha: Float
@@ -173,6 +182,8 @@ class CurlReaderView(context: Context) : FrameLayout(context), ReaderViewDelegat
                 backContentAlpha = curlBackContentAlpha,
                 shadowAlpha = curlShadowAlpha,
                 paperBackPresetId = paperBackPresetId,
+                bgTextureOn = paperBgOn,
+                bgTextureConcentration = paperBgConcentration,
                 reloadTrigger = reloadTrigger,
                 tapForwardTrigger = tapForwardTrigger,
                 tapBackwardTrigger = tapBackwardTrigger,

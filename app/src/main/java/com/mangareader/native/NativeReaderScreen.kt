@@ -150,6 +150,7 @@ fun NativeReaderScreen(
     textureEnabled: Boolean = false,
     texturePresetId: Int = 0,
     textureConcentration: Int = 100,
+    textureScope: Int = 0,
     ambienceSound: String = "",
     ambienceVolume: Int = 60,
     /** ★ SMB/WebDAV 页面供给（design.md 2.2.2）：非 null 时阅读页面走远程会话。
@@ -263,7 +264,7 @@ fun NativeReaderScreen(
         if (delegate is com.mangareader.native.curl.CurlDoublePageView) delegate.remotePageSupply = remoteSupply
         // ★ 纸张纹理：全局烘焙设置必须在 setup 前同步——setup 内 preloadAround 立刻开始解码，
         //   晚了首页就会以无纹理位图入缓存（appliedTexture SideEffect 只管运行时变化）
-        com.mangareader.filter.PaperPageTexture.sync(ctx, textureEnabled, texturePresetId, textureConcentration)
+        com.mangareader.filter.PaperPageTexture.sync(ctx, textureEnabled, texturePresetId, textureConcentration, textureScope != 0)
         // ★ §34.3：verticalPager 传给 pagerView.setup（webtoon 走默认 false 无影响）
         // ★ 点击翻页区域接线（此前硬编码 0=关闭，区域设置从未生效——2026-09-29 修复）
         delegate.setup(engine, treePath, pages, savedPage, isVertical, clickFlip, isRtl, verticalPager)
@@ -347,10 +348,14 @@ fun NativeReaderScreen(
             delegate.curlBackContentAlpha = curlBackContentAlpha
             delegate.curlShadowAlpha = curlShadowAlpha
             delegate.paperBackPresetId = paperBackPresetId
+            delegate.paperBgOn = textureEnabled && textureScope == 1
+            delegate.paperBgConcentration = textureConcentration
         } else if (delegate is com.mangareader.native.curl.CurlReaderView) {
             delegate.curlBackContentAlpha = curlBackContentAlpha
             delegate.curlShadowAlpha = curlShadowAlpha
             delegate.paperBackPresetId = paperBackPresetId
+            delegate.paperBgOn = textureEnabled && textureScope == 1
+            delegate.paperBgConcentration = textureConcentration
         }
     }
 
@@ -435,17 +440,25 @@ fun NativeReaderScreen(
     // ★ 纸张纹理烘焙通道：全局 PaperPageTexture 设置运行时变化（阅读内面板拖动）→ 同步设置
     //  （内部升代，旧位图视为未贴）+ 当前 delegate 清缓存按需重载。首组合同步在上方
     //   DisposableEffect setup 里做；remember 初值取当前参数避免与 setup 重复触发（eink 同款）
-    var appliedTexture by remember { mutableStateOf(listOf(textureEnabled, texturePresetId, textureConcentration)) }
+    var appliedTexture by remember { mutableStateOf(listOf(textureEnabled, texturePresetId, textureConcentration, textureScope)) }
     SideEffect {
-        val cur = listOf(textureEnabled, texturePresetId, textureConcentration)
+        val cur = listOf(textureEnabled, texturePresetId, textureConcentration, textureScope)
         if (appliedTexture != cur) {
             appliedTexture = cur
-            com.mangareader.filter.PaperPageTexture.sync(ctx, textureEnabled, texturePresetId, textureConcentration)
+            com.mangareader.filter.PaperPageTexture.sync(ctx, textureEnabled, texturePresetId, textureConcentration, textureScope != 0)
             when (val d = activeDelegate(isVertical)) {
                 is WebtoonReaderView -> d.applyPaperTextureNow()
                 is PagerReaderView -> d.applyPaperTextureNow()
-                is com.mangareader.native.curl.CurlReaderView -> d.applyPaperTextureNow()
-                is com.mangareader.native.curl.CurlDoublePageView -> d.applyPaperTextureNow()
+                is com.mangareader.native.curl.CurlReaderView -> {
+                    d.applyPaperTextureNow()
+                    d.paperBgOn = textureEnabled && textureScope == 1
+                    d.paperBgConcentration = textureConcentration
+                }
+                is com.mangareader.native.curl.CurlDoublePageView -> {
+                    d.applyPaperTextureNow()
+                    d.paperBgOn = textureEnabled && textureScope == 1
+                    d.paperBgConcentration = textureConcentration
+                }
                 else -> {}
             }
         }
