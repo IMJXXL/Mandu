@@ -22,10 +22,26 @@ object AmbiencePlayer {
     private var generation = 0
     private var volume = 0.48f   // 默认 60% × 0.8 上限
     private var appContext: Context? = null
+    @Volatile private var pausedByBackground = false
 
     fun setVolume(percent: Int) {
         volume = percent.coerceIn(0, 100) / 100f * 0.8f
         runCatching { player?.setVolume(volume, volume) }
+    }
+
+    /** ★ 进后台暂停（阅读页 ON_PAUSE）：MediaPlayer 单例不会自动让路，不暂停则退到后台持续出声 */
+    fun pause() {
+        pausedByBackground = true
+        runCatching { player?.takeIf { it.isPlaying }?.pause() }
+    }
+
+    /** ★ 回前台恢复：只复活因进后台暂停的播放；用户主动停止过的不复活 */
+    fun resume() {
+        if (!pausedByBackground) return
+        pausedByBackground = false
+        if (currentTrack.isNotEmpty()) {
+            runCatching { player?.takeIf { !it.isPlaying }?.start() }
+        }
     }
 
     fun play(context: Context, selection: String) {
@@ -63,7 +79,8 @@ object AmbiencePlayer {
                     }
                     player = mp
                     currentTrack = selection
-                    mp.start()
+                    // prepare 期间已进后台：备好但不起播，回前台 resume 接管
+                    if (!pausedByBackground) mp.start()
                     Log.d(TAG, "playing selection=$selection vol=$volume")
                 }
             } catch (e: Exception) {
@@ -74,6 +91,7 @@ object AmbiencePlayer {
 
     fun stop() {
         generation++
+        pausedByBackground = false
         player?.run {
             runCatching {
                 if (isPlaying) stop()

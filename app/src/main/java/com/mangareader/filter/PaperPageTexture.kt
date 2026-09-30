@@ -10,8 +10,6 @@ import android.graphics.PorterDuff
 import android.graphics.PorterDuffXfermode
 import android.graphics.Shader
 import android.graphics.BitmapShader
-import java.util.Collections
-import java.util.WeakHashMap
 
 /**
  * 纸张纹理烘焙：把纸纹以正片叠底乘进「页面位图本身」，在各阅读器解码管线末端
@@ -20,9 +18,6 @@ import java.util.WeakHashMap
  * 为什么烘进位图而不是屏幕覆盖层：覆盖层钉在屏幕上——翻页时纸动纹理不动（像玻璃），
  * 且盖住留边/页边距。烘进位图后纹理就是纸：随页翻动、随缩放、条漫随滚动，
  * 天然只作用于实际画面，且每帧零额外合成成本（反而省掉了原覆盖层的全屏 Xfermode）。
- *
- * generation 版本戳：设置变更自增，避免共享位图（PDF 共享缓存页、跨章 adopt 位图）
- * 在不同入口被重复叠纹；WeakHashMap 以位图实例记录已贴版本。
  */
 object PaperPageTexture {
 
@@ -31,35 +26,37 @@ object PaperPageTexture {
     @Volatile var concentration: Int = 100
     /** ★ 生效范围：false=仅图片（只烘焙页面位图，默认） true=整屏幕（页面照旧烘焙 + 阅读器背景铺纸纹） */
     @Volatile var overlayMode: Boolean = false
-    @Volatile var generation: Int = 0
 
     @Volatile private var appContext: Context? = null
     @Volatile private var tex: Bitmap? = null
     @Volatile private var texId: Int = -1
-    private val stamped = Collections.synchronizedMap(WeakHashMap<Bitmap, Int>())
 
-    /** 阅读器 setup 时同步设置（幂等；值变化才升代数） */
+    /** 阅读器 setup 时同步设置（幂等）；运行时变更由 NativeReaderScreen 触发各视图清缓存重载 */
     fun sync(context: Context, newEnabled: Boolean, newPresetId: Int, newConcentration: Int, newOverlayMode: Boolean = false) {
         if (appContext == null) appContext = context.applicationContext
-        val changed = enabled != newEnabled || presetId != newPresetId || concentration != newConcentration || overlayMode != newOverlayMode
         enabled = newEnabled
         presetId = newPresetId
         concentration = newConcentration
         overlayMode = newOverlayMode
-        if (changed) generation++
     }
 
-    /** 设置运行时变更（阅读内面板拖动）：升代数让所有已贴位图视为未贴 */
-    fun bumpGeneration() {
-        generation++
-    }
-
-    /** 解码管线末端调用。返回值可能为原位图（禁用/已贴/失败）或新位图（原位图不可变时复制）。 */
+    /**
+     * 解码管线末端调用。返回烘焙后的位图；禁用/失败返回原位图。
+     *
+     * ★ 0930 夜修「换纸张叠加/关闭不消失」：烘焙一律落在副本上，永不原地改写输入——
+     *   原实现命中可变位图（超分产物）时直接在原位图上叠纹，而 SrPipeline 缓存长期持有
+     *   同一实例：换纸张→视图清缓存重载→SR 命中同一实例→再烘=叠加；关纹理后该实例
+     *   已带纹照样被返回=关不掉。副本化后输入恒清洁，任意换纸张/开关都从干净源重烘。
+     *   （代价：每次烘焙多一次整页拷贝；不可变解码位图原本就走拷贝，仅 SR 命中路径多一份）
+     */
     fun apply(bmp: Bitmap): Bitmap {
         if (!enabled || bmp.isRecycled) return bmp
-        if (stamped[bmp] == generation) return bmp
         val texBmp = texture() ?: return bmp
-        val target = if (bmp.isMutable) bmp else mutableCopy(bmp) ?: return bmp
+        val target = try {
+            bmp.copy(bmp.config ?: Bitmap.Config.ARGB_8888, true)
+        } catch (_: Throwable) {
+            return bmp
+        }
         try {
             val s = concentration.coerceIn(0, 100) / 100f
             val w = 255f * (1 - s)
@@ -80,14 +77,7 @@ object PaperPageTexture {
         } catch (_: Throwable) {
             return bmp
         }
-        stamped[target] = generation
         return target
-    }
-
-    private fun mutableCopy(bmp: Bitmap): Bitmap? = try {
-        bmp.copy(bmp.config ?: Bitmap.Config.ARGB_8888, true)
-    } catch (_: Throwable) {
-        try { bmp.copy(Bitmap.Config.ARGB_8888, true) } catch (_: Throwable) { null }
     }
 
     private fun texture(): Bitmap? {

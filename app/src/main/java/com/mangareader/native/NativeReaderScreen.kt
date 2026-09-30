@@ -379,7 +379,21 @@ fun NativeReaderScreen(
         }
     }
 
-    // ★ 氛围音：换音色/音量即时生效；进阅读器起播、退出释放（DisposableEffect onDispose）
+    // ★ 氛围音：换音色/音量即时生效；进阅读器起播、退出释放（DisposableEffect onDispose）；
+    //   进后台暂停/回前台恢复——MediaPlayer 单例不会自动让路，不暂停则退到后台持续出声
+    //   （0930 用户反馈"退出后台还会响"）
+    val ambienceLifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    DisposableEffect(ambienceLifecycleOwner) {
+        val obs = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            when (event) {
+                androidx.lifecycle.Lifecycle.Event.ON_PAUSE -> com.mangareader.sound.AmbiencePlayer.pause()
+                androidx.lifecycle.Lifecycle.Event.ON_RESUME -> com.mangareader.sound.AmbiencePlayer.resume()
+                else -> {}
+            }
+        }
+        ambienceLifecycleOwner.lifecycle.addObserver(obs)
+        onDispose { ambienceLifecycleOwner.lifecycle.removeObserver(obs) }
+    }
     LaunchedEffect(ambienceSound, ambienceVolume) {
         com.mangareader.sound.AmbiencePlayer.setVolume(ambienceVolume)
         com.mangareader.sound.AmbiencePlayer.play(ctx, ambienceSound)
