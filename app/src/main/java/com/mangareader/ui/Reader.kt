@@ -1311,16 +1311,19 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                         }
                         break
                     }
+                    // ★ SD 瞬态失败兜底（0930 修误伤）：只有 r.isEmpty()（叶子卷）才调 listPages，
+                    //   且仅"真调用过且返回空"才重试——有子项的文件夹 pages 本来就该空，
+                    //   原写法每进一层目录都白等 500ms + 全量扫描一遍（多层导航转圈实锤）
                     var pages = if (r.isEmpty()) {
-                        try { engine.listPages(newPath) } catch (_: Exception) { emptyList() }
+                        val first = try { engine.listPages(newPath) } catch (_: Exception) { emptyList() }
+                        if (first.isEmpty()) {
+                            com.mangareader.DiagTracer.markStatic("listPages retry begin")
+                            kotlinx.coroutines.delay(500)
+                            val again = try { engine.listPages(newPath) } catch (_: Exception) { emptyList() }
+                            com.mangareader.DiagTracer.markStatic("listPages retry n=${again.size}")
+                            again
+                        } else first
                     } else emptyList()
-                    // ★ SD 瞬态失败兜底：空页表重试一次再判缺失（同 enterReader）
-                    if (pages.isEmpty()) {
-                        com.mangareader.DiagTracer.markStatic("listPages retry begin")
-                        kotlinx.coroutines.delay(500)
-                        pages = try { engine.listPages(newPath) } catch (_: Exception) { emptyList() }
-                        com.mangareader.DiagTracer.markStatic("listPages retry n=${pages.size}")
-                    }
                     Triple(newTocItems, r, pages)
                 }
                 android.util.Log.d("ReaderToc", "path=$path children=${result.second.size} pages=${result.third.size}")
