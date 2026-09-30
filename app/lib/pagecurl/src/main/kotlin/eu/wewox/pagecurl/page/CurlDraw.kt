@@ -187,19 +187,17 @@ internal fun Modifier.drawCurlBack(
                         dstOffset = androidx.compose.ui.unit.IntOffset.Zero,
                         dstSize = androidx.compose.ui.unit.IntSize(size.width.toInt(), size.height.toInt()),
                     )
-                    // ★ 透出内容：alpha 层包裹（背面透出程度滑条生效）+ 不做预镜像——
-                    //   fold 变换本身已左右镜像，物理上背面看到的就是正面镜像（Ab→bA）
-                    if (config.backPageContentAlpha > 0f) {
-                        drawIntoCanvas { cv ->
-                            val p = android.graphics.Paint()
-                            p.alpha = (config.backPageContentAlpha.coerceIn(0f, 1f) * 255f).toInt().coerceIn(0, 255)
-                            // ★ 边界扩 3 倍：fold 镜像+旋转变换后 (0,0,W,H) 会跑到偏离位置，
-                            //   透出内容被图层边界裁掉的区域只剩全强度裸纹理（右上角纹理块实锤）
-                            cv.nativeCanvas.saveLayer(-size.width, -size.height, size.width * 2f, size.height * 2f, p)
-                        }
-                        this@onDrawWithContent.drawContent()
-                        drawIntoCanvas { it.nativeCanvas.restore() }
-                    }
+                    // ★ 透出实现（0930 终版）：先镜像内容全量画，再以半透明纸盖上去——
+                    //   合成结果 0.9纸+0.1内容 与 saveLayer 方案完全等价，但无图层边界，
+                    //   根治"边界×fold变换交互裁出全强度裸纹理块"（右上角实锤两次）。
+                    //   透出程度滑条 = 内容可见度：contentAlpha=1 → 纸全透明；=0 → 纯纸。
+                    this@onDrawWithContent.drawContent()
+                    drawImage(
+                        bmp,
+                        dstOffset = androidx.compose.ui.unit.IntOffset.Zero,
+                        dstSize = androidx.compose.ui.unit.IntSize(size.width.toInt(), size.height.toInt()),
+                        alpha = (1f - config.backPageContentAlpha).coerceIn(0f, 1f),
+                    )
                 } else {
                     // ★ 无纸背同样去预镜像：背面内容 = 正面镜像 + 原遮罩（滑条语义不变）
                     this@onDrawWithContent.drawContent()
@@ -352,18 +350,14 @@ private fun CacheDrawScope.prepareCurl(
                         dstOffset = androidx.compose.ui.unit.IntOffset.Zero,
                         dstSize = androidx.compose.ui.unit.IntSize(size.width.toInt(), size.height.toInt()),
                     )
-                    // ★ 同块1：alpha 层 + 真镜像
-                    if (config.backPageContentAlpha > 0f) {
-                        drawIntoCanvas { cv ->
-                            val p = android.graphics.Paint()
-                            p.alpha = (config.backPageContentAlpha.coerceIn(0f, 1f) * 255f).toInt().coerceIn(0, 255)
-                            // ★ 边界扩 3 倍：fold 镜像+旋转变换后 (0,0,W,H) 会跑到偏离位置，
-                            //   透出内容被图层边界裁掉的区域只剩全强度裸纹理（右上角纹理块实锤）
-                            cv.nativeCanvas.saveLayer(-size.width, -size.height, size.width * 2f, size.height * 2f, p)
-                        }
-                        this@result.drawContent()
-                        drawIntoCanvas { it.nativeCanvas.restore() }
-                    }
+                    // ★ 同块1：镜像内容全量 + 半透明纸盖上（无 saveLayer，见块1注释）
+                    this@result.drawContent()
+                    drawImage(
+                        bmp,
+                        dstOffset = androidx.compose.ui.unit.IntOffset.Zero,
+                        dstSize = androidx.compose.ui.unit.IntSize(size.width.toInt(), size.height.toInt()),
+                        alpha = (1f - config.backPageContentAlpha).coerceIn(0f, 1f),
+                    )
                 } else {
                     this@result.drawContent()
 
