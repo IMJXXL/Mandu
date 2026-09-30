@@ -81,8 +81,6 @@ fun CurlReaderContent(
     /** ★ 整屏幕纸纹背景开关/浓度（textureScope=1 时由视图传入） */
     bgTextureOn: Boolean = false,
     bgTextureConcentration: Int = 100,
-    /** ★ 纸背纯色：true=背面不挂纸纹位图，纯色遮罩改用"不明显的灰"（暗色主题深灰防闪眼） */
-    backPlain: Boolean = false,
     reloadTrigger: MutableIntState,
     tapForwardTrigger: MutableIntState,
     tapBackwardTrigger: MutableIntState,
@@ -115,19 +113,16 @@ fun CurlReaderContent(
         backward = PageCurlConfig.TargetTapInteraction.Config(target = leftHalf),
     )
 
-    // ★ 纸背纯色遮罩色：贴正面"纸调"——正面纸色=背景色被纸纹轻微压暗（默认浓度下约6%），
-    //   亮主题用背景色同幅度加深贴色（随自定义背景自适应）；暗主题维持深灰防闪眼。
-    //   backPlain=false 用背景色（原行为）
+    // ★ 背面纸底色：贴正面"纸调"——正面纸色=背景色被纸纹轻微压暗（默认浓度下约6%），
+    //   亮主题=背景色同幅度加深（随自定义背景自适应）；暗主题维持深灰防闪眼
     val bgPre = Color(pageBgColor)
     val darkPre = (0.299f * bgPre.red + 0.587f * bgPre.green + 0.114f * bgPre.blue) < 0.5f
-    val effBackColor = if (backPlain) {
-        if (darkPre) android.graphics.Color.rgb(0x2B, 0x28, 0x24)
-        else android.graphics.Color.rgb(
-            (bgPre.red * 255f * 0.94f).toInt().coerceIn(0, 255),
-            (bgPre.green * 255f * 0.94f).toInt().coerceIn(0, 255),
-            (bgPre.blue * 255f * 0.94f).toInt().coerceIn(0, 255),
-        )
-    } else pageBgColor
+    val effBackColor = if (darkPre) android.graphics.Color.rgb(0x2B, 0x28, 0x24)
+    else android.graphics.Color.rgb(
+        (bgPre.red * 255f * 0.94f).toInt().coerceIn(0, 255),
+        (bgPre.green * 255f * 0.94f).toInt().coerceIn(0, 255),
+        (bgPre.blue * 255f * 0.94f).toInt().coerceIn(0, 255),
+    )
     val config = remember {
         PageCurlConfig(
             backPageColor = Color(effBackColor),
@@ -204,34 +199,10 @@ fun CurlReaderContent(
             }
         } else Modifier
     )) {
-        // ★ 纸背纹理：按当前纸张 preset 烘一张米色纸纹图挂到 pagecurl 背面
-        val ctx = androidx.compose.ui.platform.LocalContext.current
-        // ★ 纸背底色随背景亮度：暗色主题深灰纸，避免翻页背面亮块闪眼
-        val bg = Color(pageBgColor)
-        val dark = (0.299f * bg.red + 0.587f * bg.green + 0.114f * bg.blue) < 0.5f
-        // ★ 纸背：主线程仅缓存快查；未命中后台烘焙回填（首帧短暂无纸背，随后浮现）
-        val backBitmap = remember(paperBackPresetId, dark, constraints.maxWidth, constraints.maxHeight) {
-            if (paperBackPresetId < 0) null
-            else runCatching {
-                com.mangareader.filter.PaperBackTexture.peek(paperBackPresetId, constraints.maxWidth, constraints.maxHeight, dark)
-            }.getOrNull()
-        }
-        LaunchedEffect(pageBgColor, backPlain) {
+        // ★ 背面纸底（0930 用户裁定定稿）：背面=镜像内容（透出滑条）+纯色纸底，
+        //   纸纹位图退役——config.backPageBitmap 恒空，无残留/花块可能
+        LaunchedEffect(pageBgColor) {
             config.backPageColor = Color(effBackColor)
-        }
-        LaunchedEffect(paperBackPresetId, dark, constraints.maxWidth, constraints.maxHeight) {
-            if (paperBackPresetId >= 0 && backBitmap == null) {
-                val w = constraints.maxWidth; val h = constraints.maxHeight
-                val baked = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
-                    runCatching { com.mangareader.filter.PaperBackTexture.get(ctx, paperBackPresetId, w, h, dark) }.getOrNull()
-                }
-                config.backPageBitmap = baked?.asImageBitmap()
-            }
-        }
-        LaunchedEffect(backBitmap) {
-            // ★ 位图必须随 backBitmap 归零而清除：纯色开→关→开后旧纸纹位图残留 config，
-            //   且透出=0 时以 100% 全强度画在背面（0930 18:18 日志实锤：快照纯色=true 而 bmp 在）
-            config.backPageBitmap = backBitmap?.asImageBitmap()
         }
         var insetL = 0.dp
         var insetT = 0.dp

@@ -2319,10 +2319,10 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                             pageCurlAnimationEnabled = config.isPageCurlAnimation,
                             curlContentAreaOnly = config.isCurlContentAreaOnly,
                             curlBackContentAlpha = config.curlBackContentAlpha,
-                            // ★ 纸背与页面同一张纸：纹理 preset 直接跟随
+                            // ★ 纸背与页面同一张纸：纹理 preset 直接跟随（仅供整屏幕纸纹背景，
+                            //   背面纸纹位图已退役）
                             paperBackPresetId = if (config.textureEnabled) config.texturePresetId else -1,
                             curlShadowAlpha = config.curlShadowAlpha,
-                            curlBackPlain = config.curlBackPlain,
                             einkDither = config.isEinkDither,
                             einkDitherAlgorithm = config.einkDitherAlgorithm,
                             einkDitherLevels = config.einkDitherLevels,

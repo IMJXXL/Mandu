@@ -79,11 +79,6 @@ class CurlDoublePageView(context: Context) : FrameLayout(context), ReaderViewDel
     var paperBgConcentration: Int
         get() = paperBgConcState.intValue
         set(value) { paperBgConcState.intValue = value }
-    // ★ 纸背纯色开关：content 据此铺纯色不挂纸纹位图
-    private val curlBackPlainState = mutableStateOf(false)
-    var curlBackPlain: Boolean
-        get() = curlBackPlainState.value
-        set(value) { curlBackPlainState.value = value }
     var remotePageSupply: RemotePageSupply? = null
     var onChapterEnd: ((Boolean) -> Unit)? = null
 
@@ -225,7 +220,6 @@ class CurlDoublePageView(context: Context) : FrameLayout(context), ReaderViewDel
                 shadowAlpha = curlShadowAlpha,
                 paperBackPresetId = paperBackPresetId,
                 bgTextureOn = paperBgOn,
-                backPlain = curlBackPlain,
                 bgTextureConcentration = paperBgConcentration,
                 reloadTrigger = reloadTrigger,
                 tapForwardTrigger = tapForwardTrigger,

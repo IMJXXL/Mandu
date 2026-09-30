@@ -306,7 +306,6 @@ private fun ReadingModeTab(config: ReaderConfig, mode: Mode, onConfigChange: (Re
             }
             if (config.isPageCurlAnimation) {
                 CheckboxItem("翻页仅限画面区域（画面外的留边不参与翻页动画）", config.isCurlContentAreaOnly) { onConfigChange(config.copy(isCurlContentAreaOnly = it)) }
-                CheckboxItem("纸背纯色（背面铺不明显的灰色，不画纸纹；翻页更省性能，正面纹理不受影响）", config.curlBackPlain) { onConfigChange(config.copy(curlBackPlain = it)) }
                 SliderItem("背面透出程度（翻页背面内容的可见强度，默认10%；双页透出下一页，单页为背面镜像明暗）", config.curlBackContentAlpha, 0f..1f, 19, "${(config.curlBackContentAlpha * 100).toInt()}%") {
                     onConfigChange(config.copy(curlBackContentAlpha = it))
                 }

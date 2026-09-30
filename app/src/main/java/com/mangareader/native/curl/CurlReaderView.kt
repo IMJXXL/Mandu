@@ -68,11 +68,6 @@ class CurlReaderView(context: Context) : FrameLayout(context), ReaderViewDelegat
     var paperBgConcentration: Int
         get() = paperBgConcState.intValue
         set(value) { paperBgConcState.intValue = value }
-    // ★ 纸背纯色开关：content 据此铺纯色不挂纸纹位图
-    private val curlBackPlainState = mutableStateOf(false)
-    var curlBackPlain: Boolean
-        get() = curlBackPlainState.value
-        set(value) { curlBackPlainState.value = value }
     // 背面透出程度同上：单页翻页背面画的是当前页镜像，该值控制背面纸的明暗可见度
     private val curlBackContentAlphaState = mutableFloatStateOf(0.1f)
     var curlBackContentAlpha: Float
@@ -188,7 +183,6 @@ class CurlReaderView(context: Context) : FrameLayout(context), ReaderViewDelegat
                 shadowAlpha = curlShadowAlpha,
                 paperBackPresetId = paperBackPresetId,
                 bgTextureOn = paperBgOn,
-                backPlain = curlBackPlain,
                 bgTextureConcentration = paperBgConcentration,
                 reloadTrigger = reloadTrigger,
                 tapForwardTrigger = tapForwardTrigger,

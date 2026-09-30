@@ -88,7 +88,7 @@ object DiagExporter {
             fun i(k: String, d: Int) = try { p.getInt(k, d) } catch (_: Exception) { d }
             fun f2(k: String, d: Float) = try { p.getFloat(k, d) } catch (_: Exception) { d }
             sb.appendLine("----- 设置快照（排障） -----")
-            sb.appendLine("curl动画=${b("isPageCurlAnimation", false)} 纸背纯色=${b("curlBackPlain", false)} 背面透出=${(f2("curlBackContentAlpha", 0.1f) * 100).toInt()}% 阴影=${(f2("curlShadowAlpha", 0.2f) * 100).toInt()}%")
+            sb.appendLine("curl动画=${b("isPageCurlAnimation", false)} 背面透出=${(f2("curlBackContentAlpha", 0.1f) * 100).toInt()}% 阴影=${(f2("curlShadowAlpha", 0.2f) * 100).toInt()}%")
             sb.appendLine("纸张纹理=${b("textureEnabled", false)} 生效范围=${i("textureScope", 0)} 浓度=${i("textureConcentration", 100)}")
             sb.appendLine("双页=${i("pageLayout", 0)} 中缝=${i("centerGapType", 0)}")
             sb.appendLine()
