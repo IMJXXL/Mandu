@@ -185,7 +185,9 @@ internal fun Modifier.drawCurlBack(
                     //   合成结果 0.9纸+0.1内容 与 saveLayer 方案完全等价，但无图层边界，
                     //   根治"边界×fold变换交互裁出全强度裸纹理块"（右上角实锤两次）。
                     //   透出程度滑条 = 内容可见度：contentAlpha=1 → 纸全透明；=0 → 纯纸。
-                    this@onDrawWithContent.drawContent()
+                    // ★ contentAlpha<=0（纸背纯色开关强制 0 / 滑条拉到 0）跳过内容绘制——
+                    //   背面=纯纸/纯色，省掉镜像内容整页重绘（翻页背面最大开销）
+                    if (config.backPageContentAlpha > 0f) this@onDrawWithContent.drawContent()
                     drawImage(
                         bmp,
                         dstOffset = androidx.compose.ui.unit.IntOffset.Zero,
@@ -193,8 +195,10 @@ internal fun Modifier.drawCurlBack(
                         alpha = (1f - config.backPageContentAlpha).coerceIn(0f, 1f),
                     )
                 } else {
-                    // ★ 无纸背同样去预镜像：背面内容 = 正面镜像 + 原遮罩（滑条语义不变）
-                    this@onDrawWithContent.drawContent()
+                    // ★ 纯色分支：contentAlpha<=0（纸背纯色开关）→ 只画纯色，内容也不画
+                    if (config.backPageContentAlpha > 0f) {
+                        this@onDrawWithContent.drawContent()
+                    }
 
                     val overlayAlpha = 1f - config.backPageContentAlpha
                     if (overlayAlpha > 0f) {
@@ -348,7 +352,9 @@ private fun CacheDrawScope.prepareCurl(
                         alpha = (1f - config.backPageContentAlpha).coerceIn(0f, 1f),
                     )
                 } else {
-                    this@result.drawContent()
+                    if (config.backPageContentAlpha > 0f) {
+                        this@result.drawContent()
+                    }
 
                     val overlayAlpha = 1f - config.backPageContentAlpha
                     drawRect(config.backPageColor.copy(alpha = overlayAlpha))

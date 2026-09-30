@@ -347,15 +347,15 @@ fun NativeReaderScreen(
             delegate.setClickFlipInvert(clickFlipInvert)
         }
         if (delegate is com.mangareader.native.curl.CurlDoublePageView) {
-            delegate.curlBackContentAlpha = curlBackContentAlpha
+            // ★ 纸背纯色：位图不烘焙 + 背面内容不画（镜像重绘是背面最大开销）→ 纯色
+            delegate.curlBackContentAlpha = if (curlBackPlain) 0f else curlBackContentAlpha
             delegate.curlShadowAlpha = curlShadowAlpha
-            // ★ 纸背纯色：不给背面烘焙纸纹位图（背面走纯色遮罩分支）
             delegate.paperBackPresetId = if (curlBackPlain) -1 else paperBackPresetId
             delegate.paperBgOn = textureEnabled && textureScope == 1
             delegate.paperBgConcentration = textureConcentration
             delegate.curlBackPlain = curlBackPlain
         } else if (delegate is com.mangareader.native.curl.CurlReaderView) {
-            delegate.curlBackContentAlpha = curlBackContentAlpha
+            delegate.curlBackContentAlpha = if (curlBackPlain) 0f else curlBackContentAlpha
             delegate.curlShadowAlpha = curlShadowAlpha
             delegate.paperBackPresetId = if (curlBackPlain) -1 else paperBackPresetId
             delegate.paperBgOn = textureEnabled && textureScope == 1
@@ -472,8 +472,14 @@ fun NativeReaderScreen(
     // ★ 纸背纯色实时生效：阅读中面板切换开关立即反映（setup 只管开书那一刻）
     SideEffect {
         when (val d = activeDelegate(isVertical)) {
-            is com.mangareader.native.curl.CurlReaderView -> d.curlBackPlain = curlBackPlain
-            is com.mangareader.native.curl.CurlDoublePageView -> d.curlBackPlain = curlBackPlain
+            is com.mangareader.native.curl.CurlReaderView -> {
+                d.curlBackPlain = curlBackPlain
+                d.curlBackContentAlpha = if (curlBackPlain) 0f else curlBackContentAlpha
+            }
+            is com.mangareader.native.curl.CurlDoublePageView -> {
+                d.curlBackPlain = curlBackPlain
+                d.curlBackContentAlpha = if (curlBackPlain) 0f else curlBackContentAlpha
+            }
             else -> {}
         }
     }
