@@ -83,7 +83,7 @@ fun SmbSettingsScreen(onBack: () -> Unit, onOpenDownloadQueue: () -> Unit = {}) 
                 Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("智能解析文件名", fontSize = 16.sp)
-                        Text("扫描入库时提取干净书名与卷号（如 v01），自动繁转简；关闭则显示原文件名。仅影响新扫描的书", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("扫描入库时提取干净书名与卷号（如 Vol.01）；关闭则显示原文件名。繁转简为全局开关（本地漫画管理）。仅影响新扫描的书", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Switch(checked = smartTitleSmb, onCheckedChange = { v ->
                         smartTitleSmb = v

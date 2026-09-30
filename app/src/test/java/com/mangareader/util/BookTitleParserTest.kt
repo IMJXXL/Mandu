@@ -32,11 +32,11 @@ class BookTitleParserTest {
     }
     @Test fun decimalVolume() {
         assertEquals(3, v("某书 v3.5.epub"))
-        assertTrue(d("某书 v3.5.epub").contains("3.5"))
+        assertTrue(d("某书 v3.5.epub").contains("Vol.03.5"))
     }
     @Test fun volumeRange() {
         assertEquals(1, v("某全集 v01-09.cbz"))
-        assertTrue(d("某全集 v01-09.cbz").contains("v01-09"))
+        assertTrue(d("某全集 v01-09.cbz").contains("Vol.01-Vol.09"))
     }
 
     // ===== 标题 + 章节 =====
@@ -44,7 +44,7 @@ class BookTitleParserTest {
         val p = BookTitleParser.parse("[组] 一拳超人 c042.5.zip")
         assertEquals("一拳超人", p.title)
         assertEquals(42.5, p.chapter!!, 1e-9)
-        assertTrue(d("[组] 一拳超人 c042.5.zip").contains("c42.5"))
+        assertTrue(d("[组] 一拳超人 c042.5.zip").contains("Ch.42.5"))
     }
     @Test fun chineseChapter() {
         assertEquals("某漫画", t("某漫画 第25话.zip"))
@@ -78,17 +78,20 @@ class BookTitleParserTest {
 
     // ===== 繁转简（仅 displayTitle 应用） =====
     @Test fun traditionalToSimplified() {
-        assertEquals("进击的巨人 v01", d("進擊的巨人 v01.cbz"))
+        assertEquals("进击的巨人 Vol.01", d("進擊的巨人 v01.cbz"))
         assertTrue(t("進擊的巨人 v01.cbz").contains("進"))
     }
+    @Test fun t2sOffKeepsTraditional() {
+        assertEquals("進擊的巨人 Vol.01", BookTitleParser.displayTitle("進擊的巨人 v01.cbz", t2s = false))
+    }
     @Test fun simplifiedUnchanged() {
-        assertEquals("进击的巨人 v01", d("进击的巨人 v01.cbz"))
+        assertEquals("进击的巨人 Vol.01", d("进击的巨人 v01.cbz"))
     }
 
     // ===== 显示名 =====
     @Test fun displayVolumeZeroPadded() {
-        assertEquals("海贼王 v99", d("海贼王 Vol.99.zip"))
-        assertEquals("斗破苍穹 v03", d("斗破苍穹 第03卷.cbz"))
+        assertEquals("海贼王 Vol.99", d("海贼王 Vol.99.zip"))
+        assertEquals("斗破苍穹 Vol.03", d("斗破苍穹 第03卷.cbz"))
     }
 }
 

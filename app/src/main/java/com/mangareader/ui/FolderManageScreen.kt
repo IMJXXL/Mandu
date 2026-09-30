@@ -360,11 +360,22 @@ fun FolderManageScreen(onBack: () -> Unit) {
                     Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text("智能解析文件名", fontSize = 16.sp)
-                            Text("扫描入库时提取干净书名与卷号（如 v01），自动繁转简；关闭则显示原文件名。仅影响新扫描的书，已入库书名不变", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("扫描入库时提取干净书名与卷号（如 v01）；关闭则显示原文件名。仅影响新扫描的书，已入库书名不变", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         Switch(checked = smartTitle, onCheckedChange = { v ->
                             smartTitle = v
                             prefs.edit().putBoolean("smart_title", v).apply()
+                        })
+                    }
+                    var t2sEnabled by remember { mutableStateOf(prefs.getBoolean("t2s_enabled", true)) }
+                    Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("繁体标题转简体", fontSize = 16.sp)
+                            Text("全局生效（本地/WebDAV/SMB 的智能解析结果都会应用）；关 = 保留繁体原字。仅影响新扫描的书", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(checked = t2sEnabled, onCheckedChange = { v ->
+                            t2sEnabled = v
+                            prefs.edit().putBoolean("t2s_enabled", v).apply()
                         })
                     }
                     // ★ 批量应用：对已入库的书按文件名重新解析改名（解决老书/当时没勾选的情况）

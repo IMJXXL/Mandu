@@ -243,10 +243,10 @@ object SmbScanner {
     private fun titleOf(name: String): String {
         val base = name.substringBefore(':').substringAfterLast('/')
         val appCtx = runCatching { com.mangareader.App.instance() }.getOrNull()
-        val enabled = runCatching {
-            appCtx!!.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE).getBoolean("smart_title_smb", true)
-        }.getOrDefault(true)
-        return if (enabled) com.mangareader.util.BookTitleParser.displayTitle(base)
+        val sp = runCatching { appCtx!!.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE) }.getOrNull()
+        val enabled = sp?.getBoolean("smart_title_smb", true) ?: true
+        val t2s = sp?.getBoolean("t2s_enabled", true) ?: true
+        return if (enabled) com.mangareader.util.BookTitleParser.displayTitle(base, t2s)
         else base.substringBeforeLast('.')
     }
 }

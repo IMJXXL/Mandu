@@ -137,20 +137,21 @@ object BookTitleParser {
      * 书架显示名：干净书名（繁转简）+ 卷/章短缀（v01 / c42 风格，范围 v01-09）。
      * 解析失败回退原名（去扩展名），与旧行为一致。
      */
-    fun displayTitle(fileName: String): String {
+    fun displayTitle(fileName: String, t2s: Boolean = true): String {
         val base = stripExt(fileName).trim()
         return try {
             val p = parse(fileName)
-            if (p.title.isBlank()) return toSimplified(base)
-            val sb = StringBuilder(toSimplified(p.title))
+            if (p.title.isBlank()) return if (t2s) toSimplified(base) else base
+            val sb = StringBuilder(if (t2s) toSimplified(p.title) else p.title)
             when {
                 p.volume != null -> {
-                    sb.append(" v").append("%02d".format(p.volume))
+                    // 卷缀用正式写法 Vol.01（用户拍板：v/V 都不如 Vol）
+                    sb.append(" Vol.").append("%02d".format(p.volume))
                     p.volumeDec?.let { sb.append(".").append(it) }
-                    p.volumeEnd?.let { sb.append("-").append("%02d".format(it)) }
+                    p.volumeEnd?.let { sb.append("-Vol.").append("%02d".format(it)) }
                 }
                 p.chapter != null -> {
-                    sb.append(" c")
+                    sb.append(" Ch.")
                     val whole = p.chapter.toInt()
                     val dec = p.chapter - whole
                     sb.append("%02d".format(whole))
@@ -159,7 +160,7 @@ object BookTitleParser {
             }
             sb.toString().trim()
         } catch (_: Throwable) {
-            toSimplified(base)
+            if (t2s) toSimplified(base) else base
         }
     }
 
