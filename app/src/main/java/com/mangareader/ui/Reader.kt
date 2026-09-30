@@ -2322,6 +2322,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                             // ★ 纸背与页面同一张纸：纹理 preset 直接跟随
                             paperBackPresetId = if (config.textureEnabled) config.texturePresetId else -1,
                             curlShadowAlpha = config.curlShadowAlpha,
+                            curlBackPlain = config.curlBackPlain,
                             einkDither = config.isEinkDither,
                             einkDitherAlgorithm = config.einkDitherAlgorithm,
                             einkDitherLevels = config.einkDitherLevels,

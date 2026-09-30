@@ -51,6 +51,8 @@ fun CurlDoublePageContent(
     /** ★ 整屏幕纸纹背景开关/浓度（textureScope=1 时由视图传入） */
     bgTextureOn: Boolean = false,
     bgTextureConcentration: Int = 100,
+    /** ★ 纸背纯色：true=背面不挂纸纹位图，纯色遮罩改用"不明显的灰"（暗色主题深灰防闪眼） */
+    backPlain: Boolean = false,
     reloadTrigger: MutableIntState,
     tapForwardTrigger: MutableIntState,
     tapBackwardTrigger: MutableIntState,
@@ -84,9 +86,15 @@ fun CurlDoublePageContent(
         backward = PageCurlConfig.TargetTapInteraction.Config(target = leftHalf),
     )
 
+    // ★ 纸背纯色遮罩色：亮=不明显的浅暖灰，暗=深灰防闪眼；backPlain=false 用背景色（原行为）
+    val bgPre = Color(pageBgColor)
+    val darkPre = (0.299f * bgPre.red + 0.587f * bgPre.green + 0.114f * bgPre.blue) < 0.5f
+    val effBackColor = if (backPlain) {
+        if (darkPre) android.graphics.Color.rgb(0x2B, 0x28, 0x24) else android.graphics.Color.rgb(0xE6, 0xE2, 0xDA)
+    } else pageBgColor
     val config = remember {
         PageCurlConfig(
-            backPageColor = Color(pageBgColor),
+            backPageColor = Color(effBackColor),
             backPageContentAlpha = backContentAlpha,
             shadowColor = Color.Black,
             shadowAlpha = shadowAlpha,
@@ -172,8 +180,8 @@ fun CurlDoublePageContent(
                 com.mangareader.filter.PaperBackTexture.peek(paperBackPresetId, constraints.maxWidth, constraints.maxHeight, dark)
             }.getOrNull()
         }
-        LaunchedEffect(pageBgColor) {
-            config.backPageColor = Color(pageBgColor)
+        LaunchedEffect(pageBgColor, backPlain) {
+            config.backPageColor = Color(effBackColor)
         }
         LaunchedEffect(paperBackPresetId, dark, constraints.maxWidth, constraints.maxHeight) {
             if (paperBackPresetId >= 0 && backBitmap == null) {

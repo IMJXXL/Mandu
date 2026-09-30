@@ -138,6 +138,8 @@ fun NativeReaderScreen(
     paperBackPresetId: Int = 0,
     /** 仿真翻页投影阴影浓度 0~0.5（0=关闭阴影，默认 0.2），单页/双页 curl 共用 */
     curlShadowAlpha: Float = 0.2f,
+    /** ★ 纸背纯色：背面铺纯色不画纸纹位图（省性能）；正面纹理不受影响 */
+    curlBackPlain: Boolean = false,
     /** ★ 墨水屏灰阶抖动（256级模拟）：解码管线参数，变更经 appliedDither SideEffect 即时生效 */
     einkDither: Boolean = false,
     einkDitherAlgorithm: Int = 0,
@@ -347,15 +349,18 @@ fun NativeReaderScreen(
         if (delegate is com.mangareader.native.curl.CurlDoublePageView) {
             delegate.curlBackContentAlpha = curlBackContentAlpha
             delegate.curlShadowAlpha = curlShadowAlpha
-            delegate.paperBackPresetId = paperBackPresetId
+            // ★ 纸背纯色：不给背面烘焙纸纹位图（背面走纯色遮罩分支）
+            delegate.paperBackPresetId = if (curlBackPlain) -1 else paperBackPresetId
             delegate.paperBgOn = textureEnabled && textureScope == 1
             delegate.paperBgConcentration = textureConcentration
+            delegate.curlBackPlain = curlBackPlain
         } else if (delegate is com.mangareader.native.curl.CurlReaderView) {
             delegate.curlBackContentAlpha = curlBackContentAlpha
             delegate.curlShadowAlpha = curlShadowAlpha
-            delegate.paperBackPresetId = paperBackPresetId
+            delegate.paperBackPresetId = if (curlBackPlain) -1 else paperBackPresetId
             delegate.paperBgOn = textureEnabled && textureScope == 1
             delegate.paperBgConcentration = textureConcentration
+            delegate.curlBackPlain = curlBackPlain
         }
     }
 
@@ -461,6 +466,15 @@ fun NativeReaderScreen(
                 }
                 else -> {}
             }
+        }
+    }
+
+    // ★ 纸背纯色实时生效：阅读中面板切换开关立即反映（setup 只管开书那一刻）
+    SideEffect {
+        when (val d = activeDelegate(isVertical)) {
+            is com.mangareader.native.curl.CurlReaderView -> d.curlBackPlain = curlBackPlain
+            is com.mangareader.native.curl.CurlDoublePageView -> d.curlBackPlain = curlBackPlain
+            else -> {}
         }
     }
 
