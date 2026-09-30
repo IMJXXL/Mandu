@@ -176,12 +176,6 @@ internal fun Modifier.drawCurlBack(
             rotateRad(angle, pivot = bottomCurlOffset)
         }) {
             clipPath(polygon.toPath()) {
-                // Pre-mirror about the node centre: composed with the fold mirror above,
-                // landed-position content maps to identity when the fold reaches its end.
-                withTransform({ scale(-1f, 1f, pivot = center) }) {
-                    this@onDrawWithContent.drawContent()
-                }
-
                 // ★ 纸背：纸图打底（纸是页背本体），内容按透明度叠上（正面墨迹透纸感）——
                 //   原实现纸图画在内容之后，不透明纸把透出内容全盖死（背面纯色，透明失效）。
                 //   有纸图：纸打底 + 内容@contentAlpha，不再叠实色遮罩（纸自带色调）；
@@ -193,15 +187,20 @@ internal fun Modifier.drawCurlBack(
                         dstOffset = androidx.compose.ui.unit.IntOffset.Zero,
                         dstSize = androidx.compose.ui.unit.IntSize(size.width.toInt(), size.height.toInt()),
                     )
+                    // ★ 透出内容：alpha 层包裹（背面透出程度滑条生效）+ 不做预镜像——
+                    //   fold 变换本身已左右镜像，物理上背面看到的就是正面镜像（Ab→bA）
                     if (config.backPageContentAlpha > 0f) {
-                        withTransform({ scale(-1f, 1f, pivot = center) }) {
-                            this@onDrawWithContent.drawContent()
+                        drawIntoCanvas { cv ->
+                            val p = android.graphics.Paint()
+                            p.alpha = (config.backPageContentAlpha.coerceIn(0f, 1f) * 255f).toInt().coerceIn(0, 255)
+                            cv.nativeCanvas.saveLayer(0f, 0f, size.width, size.height, p)
                         }
+                        this@onDrawWithContent.drawContent()
+                        drawIntoCanvas { it.nativeCanvas.restore() }
                     }
                 } else {
-                    withTransform({ scale(-1f, 1f, pivot = center) }) {
-                        this@onDrawWithContent.drawContent()
-                    }
+                    // ★ 无纸背同样去预镜像：背面内容 = 正面镜像 + 原遮罩（滑条语义不变）
+                    this@onDrawWithContent.drawContent()
 
                     val overlayAlpha = 1f - config.backPageContentAlpha
                     if (overlayAlpha > 0f) {
@@ -351,10 +350,15 @@ private fun CacheDrawScope.prepareCurl(
                         dstOffset = androidx.compose.ui.unit.IntOffset.Zero,
                         dstSize = androidx.compose.ui.unit.IntSize(size.width.toInt(), size.height.toInt()),
                     )
+                    // ★ 同块1：alpha 层 + 真镜像
                     if (config.backPageContentAlpha > 0f) {
-                        withTransform({ scale(-1f, 1f, pivot = center) }) {
-                            this@result.drawContent()
+                        drawIntoCanvas { cv ->
+                            val p = android.graphics.Paint()
+                            p.alpha = (config.backPageContentAlpha.coerceIn(0f, 1f) * 255f).toInt().coerceIn(0, 255)
+                            cv.nativeCanvas.saveLayer(0f, 0f, size.width, size.height, p)
                         }
+                        this@result.drawContent()
+                        drawIntoCanvas { it.nativeCanvas.restore() }
                     }
                 } else {
                     this@result.drawContent()
