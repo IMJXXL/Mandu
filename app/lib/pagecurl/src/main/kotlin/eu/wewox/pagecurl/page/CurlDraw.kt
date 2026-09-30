@@ -176,17 +176,11 @@ internal fun Modifier.drawCurlBack(
             rotateRad(angle, pivot = bottomCurlOffset)
         }) {
             clipPath(polygon.toPath()) {
-                // ★ 纸背：纸图打底（纸是页背本体），内容按透明度叠上（正面墨迹透纸感）——
-                //   原实现纸图画在内容之后，不透明纸把透出内容全盖死（背面纯色，透明失效）。
-                //   有纸图：纸打底 + 内容@contentAlpha，不再叠实色遮罩（纸自带色调）；
-                //   无纸图：保持原行为（内容 + 背景色遮罩）。
+                // ★ 纸背（0930 终版）：镜像内容全量画 + 半透明纸盖上——
+                //   合成 = (1-a)纸 + a内容（a=背面透出程度），无图层边界（根治裸纹理块）
+                //   且省每帧离屏图层分配；透出滑条=内容可见度，a=1 纸全透明，a=0 纯纸。
                 val bmp = config.backPageBitmap
                 if (bmp != null) {
-                    drawImage(
-                        bmp,
-                        dstOffset = androidx.compose.ui.unit.IntOffset.Zero,
-                        dstSize = androidx.compose.ui.unit.IntSize(size.width.toInt(), size.height.toInt()),
-                    )
                     // ★ 透出实现（0930 终版）：先镜像内容全量画，再以半透明纸盖上去——
                     //   合成结果 0.9纸+0.1内容 与 saveLayer 方案完全等价，但无图层边界，
                     //   根治"边界×fold变换交互裁出全强度裸纹理块"（右上角实锤两次）。
@@ -342,14 +336,9 @@ private fun CacheDrawScope.prepareCurl(
 
             // And finally draw the back-page with an overlay with alpha
             clipPath(polygon.toPath()) {
-                // ★ 与上方 onDrawWithContent 同规则：纸打底+内容透出 / 无纸走原遮罩
+                // ★ 同块1：镜像内容全量 + 半透明纸盖上（无 saveLayer，见块1注释）
                 val bmp = config.backPageBitmap
                 if (bmp != null) {
-                    drawImage(
-                        bmp,
-                        dstOffset = androidx.compose.ui.unit.IntOffset.Zero,
-                        dstSize = androidx.compose.ui.unit.IntSize(size.width.toInt(), size.height.toInt()),
-                    )
                     // ★ 同块1：镜像内容全量 + 半透明纸盖上（无 saveLayer，见块1注释）
                     this@result.drawContent()
                     drawImage(
