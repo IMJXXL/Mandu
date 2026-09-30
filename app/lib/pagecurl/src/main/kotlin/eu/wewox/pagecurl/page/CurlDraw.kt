@@ -72,6 +72,13 @@ internal fun Modifier.drawCurl(
     val topCurlOffset = topIntersection
     val bottomCurlOffset = bottomIntersection
 
+    // ★ 折线整体越过书脊（两端交点都在左缘或更左）= 翻页已完成：本页全让位露出下层。
+    //   侧别判据换成书脊锚点后（见 rectClipByLine），此位姿的"含书脊侧"=整幅画布，
+    //   必须显式收尾，否则已翻过的页会以平面姿态重新盖回来。
+    if (topCurlOffset.x <= 0f && bottomCurlOffset.x <= 0f) {
+        return@drawWithCache drawNothing()
+    }
+
     // That is the easy part, prepare a lambda to draw the content clipped by the curl line
     val drawClippedContent = prepareClippedContent(topCurlOffset, bottomCurlOffset)
     // That is the tricky part, prepare a lambda to draw the back-page with the shadow
@@ -118,6 +125,11 @@ internal fun Modifier.drawCurlFront(
     // ★ 不钳位（同 drawCurl）：真实折线喂给 rectClipByLine，正/背面严格互补
     val topCurlOffset = topIntersection
     val bottomCurlOffset = bottomIntersection
+
+    // ★ 折线整体越过书脊 = 翻页已完成（同 drawCurl 守卫）
+    if (topCurlOffset.x <= 0f && bottomCurlOffset.x <= 0f) {
+        return@drawWithCache drawNothing()
+    }
 
     val drawClippedContent = prepareClippedContent(topCurlOffset, bottomCurlOffset)
     val drawShadow = prepareCurlShadowOnly(config, topCurlOffset, bottomCurlOffset)
@@ -167,6 +179,11 @@ internal fun Modifier.drawCurlBack(
     // ★ 不钳位（同 drawCurl）：真实折线喂给 rectClipByLine，正/背面严格互补
     val topCurlOffset = topIntersection
     val bottomCurlOffset = bottomIntersection
+
+    // ★ 折线整体越过书脊 = 翻页已完成（同 drawCurl 守卫）
+    if (topCurlOffset.x <= 0f && bottomCurlOffset.x <= 0f) {
+        return@drawWithCache drawNothing()
+    }
 
     val polygon = backPagePolygon(topCurlOffset, bottomCurlOffset)
     val lineVector = topCurlOffset - bottomCurlOffset
@@ -234,9 +251,9 @@ private fun CacheDrawScope.prepareClippedContent(
     topCurlOffset: Offset,
     bottomCurlOffset: Offset,
 ): ContentDrawScope.() -> Unit {
-    // ★ 正面区域 = 折线另一侧（与背面多边形同一几何源，严格互补无缝隙）
+    // ★ 正面区域 = 含书脊侧（平整区，与背面多边形同一几何源，严格互补无缝隙）
     val path = Path()
-    rectClipByLine(topCurlOffset, bottomCurlOffset, keepTopRight = false).forEachIndexed { i, p ->
+    rectClipByLine(topCurlOffset, bottomCurlOffset, keepFlapSide = false).forEachIndexed { i, p ->
         if (i == 0) path.moveTo(p.x, p.y) else path.lineTo(p.x, p.y)
     }
     path.close()
@@ -255,27 +272,32 @@ private fun CacheDrawScope.prepareClippedContent(
  * the shadow rendering, otherwise it will create a visual artifact when switching between 3 and 4 points polygon
  */
 /**
- * ★ 2026-09-30 修翻页角落露底（用户截图实锤）：原多边形用钳位后的交点构造，
- *   折叠线倾斜到与画布左/右边相交时（翻转中后段常态）"折线"偏离真实折叠线，
- *   背面多边形切进翻转视觉区域——没盖住的角落露出下层页面原画（RTL 右上角全强度纹块）。
- *   改为：用未钳位的真实折叠线对画布矩形做半平面裁切（Sutherland–Hodgman），
- *   keepSide 参照点决定保哪一侧——正面/背面区域严格互补，任何翻转位姿无缝隙。
+ * ★ 2026-09-30 纹块根治（设计缺陷修正）：侧别判据从"右中参照点"换成"书脊锚点"。
+ *   用未钳位的真实折叠线对画布矩形做半平面裁切（Sutherland–Hodgman），正/背面严格互补。
+ *
+ *   侧别物理：装订边在画布左缘（节点坐标 x=0）。平整页必然含书脊，翻起源区=不含书脊侧。
+ *   旧判据 ref=(w, mid)：折线穿出上/下缘时与书脊判据等价（设备探针 10 帧全部一致，
+ *   正常折叠零变化）；但指端捏角拖拽时折线斜切【右缘】（如 (837,0)→(1220,790)），
+ *   右中参照点与捏角同在大区一侧 → 背面多边形误取大区、平整区误取捏角，
+ *   T(大区) 镜像后恰好盖住右上角 = 镜像错区内容 + 0.9 纸纹 = 全强度纹块
+ *   （用户截图实锤；纸背纯色时为灰块，故纯色也有）。纹理非成因，只是让这个
+ *   一直存在的错误侧从近白淡块变成显眼花纹块。
  */
-private fun CacheDrawScope.rectClipByLine(lineTop: Offset, lineBottom: Offset, keepTopRight: Boolean): List<Offset> {
+private fun CacheDrawScope.rectClipByLine(lineTop: Offset, lineBottom: Offset, keepFlapSide: Boolean): List<Offset> {
     val w = size.width
     val h = size.height
     // 折叠线方向：lineTop→lineBottom（画布坐标 y 向下）
     val ax = lineBottom.x - lineTop.x
     val ay = lineBottom.y - lineTop.y
     fun cross(p: Offset): Float = ax * (p.y - lineTop.y) - ay * (p.x - lineTop.x)
-    // 参照点定侧：折叠线中点右侧 (w, (top.y+bottom.y)/2) 恒属背面区域
-    val ref = Offset(w, (lineTop.y + lineBottom.y) / 2f)
-    val refCross = cross(ref)
-    if (kotlin.math.abs(refCross) < 0.001f) {
-        // 折线恰过参照点（= 右缘静止态）：背面零面积，正面满幅
-        return if (keepTopRight) emptyList() else listOf(Offset(0f, 0f), Offset(w, 0f), Offset(w, h), Offset(0f, h))
+    // ★ 书脊锚点：装订边（x=0）中点。keepFlapSide=true 取不含书脊侧（翻起源），
+    //   false 取含书脊侧（平整区）。
+    val spineCross = cross(Offset(0f, h / 2f))
+    if (kotlin.math.abs(spineCross) < 0.001f) {
+        // 折线恰过书脊锚点（含后翻静止态折线=左缘）：背面与正面都收空，本页全让位
+        return emptyList()
     }
-    val wantPositive = if (keepTopRight) refCross > 0f else refCross < 0f
+    val wantPositive = if (keepFlapSide) spineCross < 0f else spineCross > 0f
     fun inside(p: Offset): Boolean {
         val c = cross(p)
         return if (wantPositive) c >= 0f else c <= 0f
@@ -285,9 +307,8 @@ private fun CacheDrawScope.rectClipByLine(lineTop: Offset, lineBottom: Offset, k
         val t = cp / (cp - cq)
         return Offset(p.x + (q.x - p.x) * t, p.y + (q.y - p.y) * t)
     }
-    var out = listOf(Offset(0f, 0f), Offset(w, 0f), Offset(w, h), Offset(0f, h))
-    val subject = out
-    out = buildList {
+    val subject = listOf(Offset(0f, 0f), Offset(w, 0f), Offset(w, h), Offset(0f, h))
+    return buildList {
         for (i in subject.indices) {
             val cur = subject[i]
             val nxt = subject[(i + 1) % subject.size]
@@ -296,13 +317,12 @@ private fun CacheDrawScope.rectClipByLine(lineTop: Offset, lineBottom: Offset, k
             if (cIn != nIn) add(intersect(cur, nxt))
         }
     }
-    return out.ifEmpty { subject }
 }
 
 private fun CacheDrawScope.backPagePolygon(
     topCurlOffset: Offset,
     bottomCurlOffset: Offset,
-): Polygon = Polygon(rectClipByLine(topCurlOffset, bottomCurlOffset, keepTopRight = true))
+): Polygon = Polygon(rectClipByLine(topCurlOffset, bottomCurlOffset, keepFlapSide = true))
 
 /**
  * Kamigura fork: shadow of the flap without the back-page content, used by [drawCurlFront].
