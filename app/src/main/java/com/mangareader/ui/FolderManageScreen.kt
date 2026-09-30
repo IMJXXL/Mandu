@@ -14,6 +14,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 
@@ -38,6 +39,9 @@ import com.mangareader.data.Folder
 import com.mangareader.smbbridge.CacheEntry
 import com.mangareader.smbbridge.CacheManagementCard
 import com.mangareader.smbbridge.SectionCard
+import com.mangareader.smbbridge.showArchivePasswdsDialog
+import com.mangareader.smbbridge.unwrapActivity
+import com.hippo.ehviewer.Settings
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
@@ -427,6 +431,28 @@ fun FolderManageScreen(onBack: () -> Unit) {
                             },
                             dismissButton = { TextButton(onClick = { showRetitle = false }) { Text("取消") } },
                         )
+                    }
+                }
+                // ★ 归档密码（0930）：本地/SMB/WebDAV 三路共用的记忆库，加密压缩包打开时
+                //   自动尝试（命中的密码优先），封面提取同样静默尝试
+                SectionCard("归档密码") {
+                    var passwds by remember { mutableStateOf(Settings.archivePasswds) }
+                    Row(
+                        Modifier.fillMaxWidth().clickable {
+                            (ctx.unwrapActivity())?.let { activity ->
+                                showArchivePasswdsDialog(activity, passwds.sorted()) { newList ->
+                                    Settings.archivePasswds = newList.toSet()
+                                    passwds = newList.toSet()
+                                }
+                            }
+                        }.padding(vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("归档密码 (${passwds.size} 条)", fontSize = 16.sp)
+                            Text("加密压缩包打开时自动尝试，命中的优先（本地/SMB/WebDAV 通用）", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Text("编辑 ›", fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
                     }
                 }
                 CacheManagementCard(

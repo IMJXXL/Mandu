@@ -5,6 +5,7 @@ import android.os.ParcelFileDescriptor
 import com.ehviewer.core.files.openFileDescriptor
 import com.ehviewer.core.util.logcat
 import com.ehviewer.core.util.withIOContext
+import com.hippo.ehviewer.gallery.archivePasswdTryKnown
 import com.hippo.ehviewer.image.hdr.HdrConvertCache
 import com.hippo.ehviewer.jni.closeArchive
 import com.hippo.ehviewer.jni.extractToByteBuffer
@@ -565,7 +566,8 @@ object ArchiveCoverCache {
                                         }
                                         StreamExtractOutcome.Terminal(empty)
                                     }
-                                    needPassword() -> StreamExtractOutcome.Terminal(CoverEnsureResult.Skip)
+                                    // ★ 静默吃记忆库：命中则 native passwd 已就位，落入 else 继续取第 0 页封面
+                                    needPassword() && !archivePasswdTryKnown() -> StreamExtractOutcome.Terminal(CoverEnsureResult.Skip)
                                     else -> {
                                         if (!openedFromDisk && isZip) {
                                             persistZipSeekIndex(cacheKey, archiveSize, n)
@@ -947,7 +949,12 @@ object ArchiveCoverCache {
                                     return@tryWithArchive SolidExtractOutcome.Terminal(CoverEnsureResult.Skip)
                                 }
                                 currentCoroutineContext().ensureActive()
-                                val idx = bridge.checkedNative { solidNextPlayable() }
+                                var idx = bridge.checkedNative { solidNextPlayable() }
+                                if (idx < 0 && needPassword() && archivePasswdTryKnown()) {
+                                    // ★ 静默吃记忆库：命中则 solid 会话已用密码重建（providePassword 内部
+                                    //   重开并探测），再探测首个可读成员继续出封面
+                                    idx = bridge.checkedNative { solidNextPlayable() }
+                                }
                                 if (idx < 0) {
                                     if (needPassword()) {
                                         logcat("SolidCover") { "passworded solid skipped key=$cacheKey" }

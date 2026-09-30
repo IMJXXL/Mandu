@@ -174,8 +174,10 @@ suspend inline fun <T> useStreamArchivePageLoader(
                 },
                 { _, _ -> closeArchive() },
             )
-            if (needPassword() && archivePasswds.none(::providePassword)) {
-                archivePasswds += passwdProvider(::providePassword)
+            if (needPassword() && !archivePasswdTryKnown()) {
+                val pwd = passwdProvider(::providePassword)
+                archivePasswds += pwd
+                Settings.archivePasswdFront = pwd
             }
 
             val format = when (val fmt = diskIndex?.format) {

@@ -541,6 +541,8 @@ object Settings : DataStorePreferences(null) {
     var downloadQuery by stringOrNullPref("image_query")
     var downloadFragment by stringOrNullPref("image_fragment")
     var archivePasswds by stringSetPref("archive_passwds")
+    /** ★ 最近命中的归档密码（自动尝试最先试，"中的放前边"；弹窗输入成功同样写入） */
+    var archivePasswdFront by stringPref("archive_passwd_front", "")
     var appLinkVerifyTip by boolPref("app_link_verify_tip", false)
     var hasDefaultDownloadLabel by boolPref("has_default_download_label", false)
     var removeImageFiles by boolPref("include_pic", true)

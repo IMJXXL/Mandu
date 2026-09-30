@@ -20,6 +20,7 @@ import com.ehviewer.core.files.openFileDescriptor
 import com.ehviewer.core.model.GalleryInfo
 import com.ehviewer.core.util.logcat
 import com.ehviewer.core.util.withIOContext
+import com.hippo.ehviewer.Settings.archivePasswdFront
 import com.hippo.ehviewer.Settings.archivePasswds
 import com.hippo.ehviewer.image.ImageSource
 import com.hippo.ehviewer.image.byteBufferSource
@@ -50,6 +51,20 @@ import okio.Path
 
 typealias PasswdInvalidator = (String) -> Boolean
 typealias PasswdProvider = suspend (PasswdInvalidator) -> String
+
+/**
+ * ★ 记忆密码自动尝试（0930）：先试最近命中密码（front，"中的放前边"），再遍历整个列表，
+ *   逐个交给 native 验证（providePassword = 设密码 + 重建探测会话）。命中返回 true——
+ *   native passwd 已就位，当前打开流程可直接继续取内容。未加密包不会走到这里，零开销。
+ *   三个加载器（本地/Solid/流式）与封面提取共用本函数，记忆库同一份（Settings.archivePasswds）。
+ */
+fun archivePasswdTryKnown(): Boolean {
+    val front = archivePasswdFront
+    if (front.isNotEmpty() && providePassword(front)) return true
+    val hit = archivePasswds.firstOrNull { it.isNotEmpty() && it != front && providePassword(it) } ?: return false
+    archivePasswdFront = hit
+    return true
+}
 
 /** Library metadata must finish even if the reader destination is replaced. */
 // Public inline [useArchivePageLoader] inlines at call sites; property must be @PublishedApi.
@@ -83,8 +98,10 @@ suspend inline fun <T> useArchivePageLoader(
                 { _, _ -> closeArchive() },
             )
             check(opened > 0) { "Archive have no content!" }
-            if (needPassword() && archivePasswds.none(::providePassword)) {
-                archivePasswds += passwdProvider(::providePassword)
+            if (needPassword() && !archivePasswdTryKnown()) {
+                val pwd = passwdProvider(::providePassword)
+                archivePasswds += pwd
+                archivePasswdFront = pwd
             }
             val indexMap = if (imageNames.isEmpty() && memberPrefix.isEmpty()) {
                 null

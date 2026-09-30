@@ -125,8 +125,10 @@ suspend inline fun <T> useSolidExtractPageLoader(
                     // maxScanBytes = 0: no scan limit
                     val opened = openSolidSequential(bridge, sizeHint, 0L)
                     check(opened > 0) { "Solid sequential open failed" }
-                    if (needPassword() && archivePasswds.none(::providePassword)) {
-                        archivePasswds += passwdProvider(::providePassword)
+                    if (needPassword() && !archivePasswdTryKnown()) {
+                        val pwd = passwdProvider(::providePassword)
+                        archivePasswds += pwd
+                        Settings.archivePasswdFront = pwd
                     }
                     solidOpen.set(true)
                 }
