@@ -193,7 +193,9 @@ internal fun Modifier.drawCurlBack(
                         drawIntoCanvas { cv ->
                             val p = android.graphics.Paint()
                             p.alpha = (config.backPageContentAlpha.coerceIn(0f, 1f) * 255f).toInt().coerceIn(0, 255)
-                            cv.nativeCanvas.saveLayer(0f, 0f, size.width, size.height, p)
+                            // ★ 边界扩 3 倍：fold 镜像+旋转变换后 (0,0,W,H) 会跑到偏离位置，
+                            //   透出内容被图层边界裁掉的区域只剩全强度裸纹理（右上角纹理块实锤）
+                            cv.nativeCanvas.saveLayer(-size.width, -size.height, size.width * 2f, size.height * 2f, p)
                         }
                         this@onDrawWithContent.drawContent()
                         drawIntoCanvas { it.nativeCanvas.restore() }
@@ -355,7 +357,9 @@ private fun CacheDrawScope.prepareCurl(
                         drawIntoCanvas { cv ->
                             val p = android.graphics.Paint()
                             p.alpha = (config.backPageContentAlpha.coerceIn(0f, 1f) * 255f).toInt().coerceIn(0, 255)
-                            cv.nativeCanvas.saveLayer(0f, 0f, size.width, size.height, p)
+                            // ★ 边界扩 3 倍：fold 镜像+旋转变换后 (0,0,W,H) 会跑到偏离位置，
+                            //   透出内容被图层边界裁掉的区域只剩全强度裸纹理（右上角纹理块实锤）
+                            cv.nativeCanvas.saveLayer(-size.width, -size.height, size.width * 2f, size.height * 2f, p)
                         }
                         this@result.drawContent()
                         drawIntoCanvas { it.nativeCanvas.restore() }
