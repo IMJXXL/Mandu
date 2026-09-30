@@ -67,9 +67,10 @@ internal fun Modifier.drawCurl(
         return@drawWithCache drawOnlyContent()
     }
 
-    // Limit x coordinates of both intersections to be at least 0, so that page do not look like teared from the book
-    val topCurlOffset = Offset(max(0f, topIntersection.x), topIntersection.y)
-    val bottomCurlOffset = Offset(max(0f, bottomIntersection.x), bottomIntersection.y)
+    // ★ 2026-09-30：不再钳位交点——钳位会让"折线"偏离真实折叠线（倾斜相交画布左/右边时），
+    //   多边形随之切错位置露出下层原画（右上角纹块实锤）；全部几何改由 rectClipByLine 用真实折线计算
+    val topCurlOffset = topIntersection
+    val bottomCurlOffset = bottomIntersection
 
     // That is the easy part, prepare a lambda to draw the content clipped by the curl line
     val drawClippedContent = prepareClippedContent(topCurlOffset, bottomCurlOffset)
@@ -114,8 +115,9 @@ internal fun Modifier.drawCurlFront(
         return@drawWithCache drawOnlyContent()
     }
 
-    val topCurlOffset = Offset(max(0f, topIntersection.x), topIntersection.y)
-    val bottomCurlOffset = Offset(max(0f, bottomIntersection.x), bottomIntersection.y)
+    // ★ 不钳位（同 drawCurl）：真实折线喂给 rectClipByLine，正/背面严格互补
+    val topCurlOffset = topIntersection
+    val bottomCurlOffset = bottomIntersection
 
     val drawClippedContent = prepareClippedContent(topCurlOffset, bottomCurlOffset)
     val drawShadow = prepareCurlShadowOnly(config, topCurlOffset, bottomCurlOffset)
@@ -162,8 +164,9 @@ internal fun Modifier.drawCurlBack(
         return@drawWithCache drawNothing()
     }
 
-    val topCurlOffset = Offset(max(0f, topIntersection.x), topIntersection.y)
-    val bottomCurlOffset = Offset(max(0f, bottomIntersection.x), bottomIntersection.y)
+    // ★ 不钳位（同 drawCurl）：真实折线喂给 rectClipByLine，正/背面严格互补
+    val topCurlOffset = topIntersection
+    val bottomCurlOffset = bottomIntersection
 
     val polygon = backPagePolygon(topCurlOffset, bottomCurlOffset)
     val lineVector = topCurlOffset - bottomCurlOffset
@@ -231,11 +234,12 @@ private fun CacheDrawScope.prepareClippedContent(
     topCurlOffset: Offset,
     bottomCurlOffset: Offset,
 ): ContentDrawScope.() -> Unit {
-    // Make a quadrilateral from the left side to the intersection points
+    // ★ 正面区域 = 折线另一侧（与背面多边形同一几何源，严格互补无缝隙）
     val path = Path()
-    path.lineTo(topCurlOffset.x, topCurlOffset.y)
-    path.lineTo(bottomCurlOffset.x, bottomCurlOffset.y)
-    path.lineTo(0f, size.height)
+    rectClipByLine(topCurlOffset, bottomCurlOffset, keepTopRight = false).forEachIndexed { i, p ->
+        if (i == 0) path.moveTo(p.x, p.y) else path.lineTo(p.x, p.y)
+    }
+    path.close()
     return result@{
         // Draw a content clipped by the constructed path
         clipPath(path) {
@@ -250,42 +254,55 @@ private fun CacheDrawScope.prepareClippedContent(
  * In all cases polygon should have 4 points, even when back-page is only a small "corner" (with 3 points) due to
  * the shadow rendering, otherwise it will create a visual artifact when switching between 3 and 4 points polygon
  */
+/**
+ * ★ 2026-09-30 修翻页角落露底（用户截图实锤）：原多边形用钳位后的交点构造，
+ *   折叠线倾斜到与画布左/右边相交时（翻转中后段常态）"折线"偏离真实折叠线，
+ *   背面多边形切进翻转视觉区域——没盖住的角落露出下层页面原画（RTL 右上角全强度纹块）。
+ *   改为：用未钳位的真实折叠线对画布矩形做半平面裁切（Sutherland–Hodgman），
+ *   keepSide 参照点决定保哪一侧——正面/背面区域严格互补，任何翻转位姿无缝隙。
+ */
+private fun CacheDrawScope.rectClipByLine(lineTop: Offset, lineBottom: Offset, keepTopRight: Boolean): List<Offset> {
+    val w = size.width
+    val h = size.height
+    // 折叠线方向：lineTop→lineBottom（画布坐标 y 向下）
+    val ax = lineBottom.x - lineTop.x
+    val ay = lineBottom.y - lineTop.y
+    fun cross(p: Offset): Float = ax * (p.y - lineTop.y) - ay * (p.x - lineTop.x)
+    // 参照点定侧：折叠线中点右侧 (w, (top.y+bottom.y)/2) 恒属背面区域
+    val ref = Offset(w, (lineTop.y + lineBottom.y) / 2f)
+    val refCross = cross(ref)
+    if (kotlin.math.abs(refCross) < 0.001f) {
+        // 折线恰过参照点（= 右缘静止态）：背面零面积，正面满幅
+        return if (keepTopRight) emptyList() else listOf(Offset(0f, 0f), Offset(w, 0f), Offset(w, h), Offset(0f, h))
+    }
+    val wantPositive = if (keepTopRight) refCross > 0f else refCross < 0f
+    fun inside(p: Offset): Boolean {
+        val c = cross(p)
+        return if (wantPositive) c >= 0f else c <= 0f
+    }
+    fun intersect(p: Offset, q: Offset): Offset {
+        val cp = cross(p); val cq = cross(q)
+        val t = cp / (cp - cq)
+        return Offset(p.x + (q.x - p.x) * t, p.y + (q.y - p.y) * t)
+    }
+    var out = listOf(Offset(0f, 0f), Offset(w, 0f), Offset(w, h), Offset(0f, h))
+    val subject = out
+    out = buildList {
+        for (i in subject.indices) {
+            val cur = subject[i]
+            val nxt = subject[(i + 1) % subject.size]
+            val cIn = inside(cur); val nIn = inside(nxt)
+            if (cIn) add(cur)
+            if (cIn != nIn) add(intersect(cur, nxt))
+        }
+    }
+    return out.ifEmpty { subject }
+}
+
 private fun CacheDrawScope.backPagePolygon(
     topCurlOffset: Offset,
     bottomCurlOffset: Offset,
-): Polygon =
-    Polygon(
-        sequence {
-            // Find the intersection of the curl line and right side
-            // If intersection is found adds to the polygon points list
-            suspend fun SequenceScope<Offset>.yieldEndSideInterception() {
-                val offset = lineLineIntersection(
-                    topCurlOffset, bottomCurlOffset,
-                    Offset(size.width, 0f), Offset(size.width, size.height)
-                ) ?: return
-                yield(offset)
-                yield(offset)
-            }
-
-            // In case top intersection lays in the bounds of the page curl, take 2 points from the top side, otherwise
-            // take the interception with a right side
-            if (topCurlOffset.x < size.width) {
-                yield(topCurlOffset)
-                yield(Offset(size.width, topCurlOffset.y))
-            } else {
-                yieldEndSideInterception()
-            }
-
-            // In case bottom intersection lays in the bounds of the page curl, take 2 points from the bottom side,
-            // otherwise take the interception with a right side
-            if (bottomCurlOffset.x < size.width) {
-                yield(Offset(size.width, size.height))
-                yield(bottomCurlOffset)
-            } else {
-                yieldEndSideInterception()
-            }
-        }.toList()
-    )
+): Polygon = Polygon(rectClipByLine(topCurlOffset, bottomCurlOffset, keepTopRight = true))
 
 /**
  * Kamigura fork: shadow of the flap without the back-page content, used by [drawCurlFront].
