@@ -2087,9 +2087,35 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     var pagerViewRef by remember { mutableStateOf<View?>(null) }
     var autoScrollPaused by remember { mutableStateOf(false) }
 
+    // ★ 1001 UI 审查 Phase3：横屏阅读改侧边胶囊 chrome（竖屏路径原样不动）
+    val landscapeReading = viewing && isLandscapeOrientation()
+    val chapterNav: @Composable () -> Unit = {
+        ChapterNavigator(
+            isVertical = false,
+            currentPage = cur,
+            totalPages = if (expandedPageCount > 0) expandedPageCount else displayPages.size,
+            onPageChange = { newCur ->
+                // ★ P0-B6：Slider 直通不设限（用户要求：任何时候都不能限制进度条操作）。
+                //   误触防护由两处承担：① ChapterNavigator 内部改为松手才提交（拖动过程不触发本回调）
+                //   ② settleWindow 承诺"用户滚过绝不拉回"
+                cur = newCur
+            },
+            onSliderFinished = { save(); restartAutoHide() },
+            onPreviousChapter = ::switchToPrevious,
+            onNextChapter = ::switchToNext,
+            isShowPageNum = config.isShowPageNum,
+            isRtl = isRtl,
+            bgColor = if (viewing) bgColor else MaterialTheme.colorScheme.surface,
+            onPreviewPage = { previewPage ->
+                // ★ 丝滑对齐：拖动时预热目标页（preloadAround 幂等，缓存命中近零开销）
+                val pv = activePagerRef ?: (pagerViewRef as? com.mangareader.native.PagerReaderView)
+                pv?.preloadPreview(previewPage)
+            }
+        )
+    }
     Scaffold(
         topBar = {
-            if (ui || !viewing) {
+            if ((ui || !viewing) && !landscapeReading) {
                 val pageSubtitle = if (viewing && displayPages.isNotEmpty() && cur >= 0) {
                     val totalCount = if (expandedPageCount > 0) expandedPageCount else displayPages.size
                     val p = if (cur < displayPages.size) displayPages[cur] else displayPages.last()
@@ -2156,7 +2182,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         },
         containerColor = bgColor,
         bottomBar = {
-            if (viewing && ui) {
+            if (viewing && ui && !landscapeReading) {
                 Column(Modifier.fillMaxWidth()) {
                     ReaderBottomBar(actions = buildList {
                         add(BottomBarAction(Icons.Default.Menu, "目录") { showToc = !showToc })
@@ -2174,29 +2200,8 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                         }
                         add(BottomBarAction(Icons.Default.Settings, "设置") { showSettings = true })
                     }, bgColor = if (viewing) bgColor else MaterialTheme.colorScheme.surface)
-                    // 进度条放在底部（横竖都一样）
-                    ChapterNavigator(
-                        isVertical = false,
-                        currentPage = cur,
-                        totalPages = if (expandedPageCount > 0) expandedPageCount else displayPages.size,
-                        onPageChange = { newCur ->
-                            // ★ P0-B6：Slider 直通不设限（用户要求：任何时候都不能限制进度条操作）。
-                            //   误触防护由两处承担：① ChapterNavigator 内部改为松手才提交（拖动过程不触发本回调）
-                            //   ② settleWindow 承诺"用户滚过绝不拉回"
-                            cur = newCur
-                        },
-                        onSliderFinished = { save(); restartAutoHide() },
-                        onPreviousChapter = ::switchToPrevious,
-                        onNextChapter = ::switchToNext,
-                        isShowPageNum = config.isShowPageNum,
-                        isRtl = isRtl,
-                        bgColor = if (viewing) bgColor else MaterialTheme.colorScheme.surface,
-                        onPreviewPage = { previewPage ->
-                            // ★ 丝滑对齐：拖动时预热目标页（preloadAround 幂等，缓存命中近零开销）
-                            val pv = activePagerRef ?: (pagerViewRef as? com.mangareader.native.PagerReaderView)
-                            pv?.preloadPreview(previewPage)
-                        }
-                    )
+                    // 进度条放在底部（横竖都一样；横屏时由侧边胶囊 chrome 底部胶囊接管）
+                    chapterNav()
                 }
             }
         }
@@ -2310,8 +2315,11 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                             clickFlipInvert = config.clickFlipInvertH,
                             pageLayout = when (config.pageLayout) {
                                 com.mangareader.data.ReaderConfig.PageLayout.SINGLE ->
-                                    // ★ 横屏自动双页：单页布局 + 开关开 + 当前横屏 → 双页（竖屏还原单页）
-                                    if (config.autoDoubleLandscape && (LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE)) 1 else 0
+                                    // ★ 横屏自动双页：单页布局 + 开关开 + 当前横屏 + 最小屏宽≥600dp（平板）→ 双页。
+                                    //   1001 UI 审查：矮横屏手机（sw≈360-430dp）双页每页仅 ~200dp 宽不可读，收窄到平板生效
+                                    if (config.autoDoubleLandscape && (LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE) &&
+                                        LocalConfiguration.current.smallestScreenWidthDp >= 600
+                                    ) 1 else 0
                                 com.mangareader.data.ReaderConfig.PageLayout.DOUBLE -> 1
                                 com.mangareader.data.ReaderConfig.PageLayout.DOUBLE_SHIFTED -> 2
                             },
@@ -2534,9 +2542,58 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                 if (showNavOverlay && viewing && !isVerticalMode) {
                     com.mangareader.ui.ReaderNavigationOverlay(
                         visible = true,
-                        isVertical = false,
+                        // ★ 1001 UI 审查：VERT_PAGER 是竖向翻页（上/中/下分区），提示图必须画竖向；
+                        //   此前恒 isVertical=false，竖向翻页模式提示与真实点击区相反
+                        isVertical = mode == Mode.VERT_PAGER,
                         onDismiss = { showNavOverlay = false },
                         modifier = Modifier.fillMaxSize()
+                    )
+                }
+                // ★ 1001 UI 审查 Phase3：横屏侧边胶囊 chrome——左右竖排按钮 + 顶部标题 + 底部限宽进度条，
+                //   竖屏永远不进此分支（chrome 仍由 Scaffold 顶底栏承担）
+                if (landscapeReading && ui) {
+                    LandscapeReaderChrome(
+                        title = computeReaderTitle(book, navStack, viewing, prefs.getBoolean("hide_all_titles", false)),
+                        subtitle = if (viewing && displayPages.isNotEmpty() && cur >= 0) {
+                            val totalCount = if (expandedPageCount > 0) expandedPageCount else displayPages.size
+                            "${cur + 1}/$totalCount"
+                        } else "",
+                        bgColor = bgColor,
+                        isFavorite = book?.isFavorite ?: false,
+                        isHidden = book?.isHidden ?: false,
+                        showCompare = com.mangareader.sr.SrUiState.scope.intValue > 0 || com.mangareader.sr.SrPipeline.sessionHasBatch,
+                        compareActive = com.mangareader.sr.SrUiState.compareActive.value,
+                        pageBookmarked = pageBookmarked,
+                        onBack = ::goBack,
+                        onRename = {
+                            renameInput = book?.title ?: ""
+                            showRename = true
+                        },
+                        onAddToShelf = {
+                            book?.let { b ->
+                                scope.launch {
+                                    withContext(Dispatchers.IO) { dao.setHidden(b.id, false) }
+                                    book = b.copy(isHidden = false)
+                                }
+                            }
+                        },
+                        onFavorite = {
+                            book?.let { b ->
+                                val newFav = !(b.isFavorite)
+                                scope.launch {
+                                    withContext(Dispatchers.IO) { dao.updateBook(b.copy(isFavorite = newFav)) }
+                                    book = b.copy(isFavorite = newFav)
+                                }
+                            }
+                        },
+                        onToc = { showToc = !showToc },
+                        onBookmark = { toggleBookmark() },
+                        onSrPanel = { showSrPanel = true },
+                        onCompare = {
+                            com.mangareader.sr.SrUiState.compareActive.value = !com.mangareader.sr.SrUiState.compareActive.value
+                        },
+                        onSettings = { showSettings = true },
+                        chapterNavigator = chapterNav
                     )
                 }
             }

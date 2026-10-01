@@ -13,6 +13,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import com.mangareader.ui.CONTENT_MAX_WIDTH_DP
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -102,7 +103,7 @@ fun OpdsServersScreen(onBack: () -> Unit, onOpenBook: (Long) -> Unit = {}) {
                 Text("还没有 OPDS 服务器，点击右上角 + 添加", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         } else {
-            LazyColumn(Modifier.fillMaxSize().padding(padding)) {
+            LazyColumn(Modifier.fillMaxSize().wrapContentWidth(Alignment.CenterHorizontally).widthIn(max = CONTENT_MAX_WIDTH_DP).padding(padding)) {
                 items(connections) { conn ->
                     val isActive = store.connection()?.id == conn.id
                     val hiddenCount = remember(conn.id) { mutableStateOf(0) }

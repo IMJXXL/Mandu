@@ -26,6 +26,7 @@ import kotlinx.coroutines.launch
 
 private const val ANIM_DURATION = 300
 private val SHEET_SHAPE = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+private val SIDE_PANEL_SHAPE = RoundedCornerShape(topStart = 28.dp, bottomStart = 28.dp)
 
 /**
  * 阅读器底栏【超分】面板。
@@ -45,27 +46,36 @@ fun SrPanel(bookId: Long, bookTitle: String, onOpenQueue: () -> Unit, onDismiss:
     var visible by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { visible = true }
 
+    // ★ 1001 UI 审查 Phase3：横屏改右侧滑出全高抽屉；竖屏保持底部面板原样
+    val landscape = LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black.copy(alpha = if (visible) 0.3f else 0f))
             .clickable(interactionSource = null, indication = null, onClick = { visible = false; onDismiss() }),
-        contentAlignment = Alignment.BottomCenter,
+        contentAlignment = if (landscape) Alignment.CenterEnd else Alignment.BottomCenter,
     ) {
         AnimatedVisibility(
             visible = visible,
-            enter = slideInVertically(tween(ANIM_DURATION)) { it },
-            exit = slideOutVertically(tween(ANIM_DURATION)) { it },
+            enter = if (landscape) slideInHorizontally(tween(ANIM_DURATION)) { it } else slideInVertically(tween(ANIM_DURATION)) { it },
+            exit = if (landscape) slideOutHorizontally(tween(ANIM_DURATION)) { it } else slideOutVertically(tween(ANIM_DURATION)) { it },
         ) {
             Surface(
-                modifier = Modifier
-                    .widthIn(max = 520.dp)
-                    .fillMaxWidth()
-                    .heightIn(max = with(LocalDensity.current) {
-                        (LocalConfiguration.current.screenHeightDp * 0.60f).dp
-                    })
-                    .clickable(interactionSource = null, indication = null, onClick = {}),
-                shape = SHEET_SHAPE,
+                modifier = if (landscape) {
+                    Modifier
+                        .width(440.dp)
+                        .fillMaxHeight()
+                        .clickable(interactionSource = null, indication = null, onClick = {})
+                } else {
+                    Modifier
+                        .widthIn(max = 520.dp)
+                        .fillMaxWidth()
+                        .heightIn(max = with(LocalDensity.current) {
+                            (LocalConfiguration.current.screenHeightDp * 0.60f).dp
+                        })
+                        .clickable(interactionSource = null, indication = null, onClick = {})
+                },
+                shape = if (landscape) SIDE_PANEL_SHAPE else SHEET_SHAPE,
                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
             ) {
                 if (!SrCore.initialized) {

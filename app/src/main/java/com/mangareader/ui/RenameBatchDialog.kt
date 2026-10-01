@@ -1,6 +1,8 @@
 package com.mangareader.ui
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -33,7 +35,7 @@ fun RenameBatchDialog(
         onDismissRequest = onDismiss,
         title = { Text("批量重命名（已选 ${books.size} 本）") },
         text = {
-            Column {
+            Column(Modifier.heightIn(max = dialogContentMaxHeight()).verticalScroll(rememberScrollState())) {
                 TabRow(selectedTabIndex = mode, containerColor = MaterialTheme.colorScheme.surfaceContainerHigh) {
                     listOf("查找替换", "前缀后缀", "序号").forEachIndexed { i, label ->
                         Tab(selected = mode == i, onClick = { mode = i; errorMsg = null }, text = { Text(label) })

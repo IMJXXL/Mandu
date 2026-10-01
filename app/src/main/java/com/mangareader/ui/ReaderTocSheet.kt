@@ -259,14 +259,14 @@ fun ReaderTocSheet(
         { n -> if (tocSmartOn) com.mangareader.util.BookTitleParser.displayTitle(n, tocT2s) else n }
     }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-        sheetMaxWidth = 520.dp,
-        dragHandle = null,  // ★ 顶部拖动横条纯装饰不可点，去掉把空间还给列表
-    ) {
-        Column(Modifier.fillMaxWidth().height((androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp * 0.8f).dp).padding(16.dp)) {
+    // ★ 1001 UI 审查 Phase3：横屏高度稀缺 → TOC 改右侧滑出全高抽屉；竖屏保持底部抽屉原样。
+    //   内容只有一份（tocPanel），两种容器各自给高度约束
+    val isLandscape = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+    val tocPanel: @Composable () -> Unit = {
+        Column(
+            if (isLandscape) Modifier.fillMaxHeight().padding(16.dp)
+            else Modifier.fillMaxWidth().height((androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp * 0.8f).dp).padding(16.dp)
+        ) {
             // ★ 三 Tab：目录 / 浏览 / 书签
             TabRow(
                 selectedTabIndex = tocTab,
@@ -480,6 +480,44 @@ fun ReaderTocSheet(
                     Text("还没有可浏览的页面", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
                 }
             }
+        }
+    }
+    if (isLandscape) {
+        // 右侧滑出全高抽屉（进入即带入场动画）
+        val state = remember { androidx.compose.animation.core.MutableTransitionState(false).apply { targetState = true } }
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.3f))
+                .clickable(interactionSource = null, indication = null, onClick = onDismiss)
+        ) {
+            androidx.compose.animation.AnimatedVisibility(
+                visibleState = state,
+                enter = androidx.compose.animation.slideInHorizontally { it },
+                exit = androidx.compose.animation.slideOutHorizontally { it },
+                modifier = Modifier.align(Alignment.CenterEnd)
+            ) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .width(440.dp)
+                        .clickable(interactionSource = null, indication = null, onClick = {}),
+                    shape = RoundedCornerShape(topStart = 28.dp, bottomStart = 28.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh
+                ) {
+                    tocPanel()
+                }
+            }
+        }
+    } else {
+        ModalBottomSheet(
+            onDismissRequest = onDismiss,
+            sheetState = sheetState,
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            sheetMaxWidth = 520.dp,
+            dragHandle = null,  // ★ 顶部拖动横条纯装饰不可点，去掉把空间还给列表
+        ) {
+            tocPanel()
         }
     }
 }

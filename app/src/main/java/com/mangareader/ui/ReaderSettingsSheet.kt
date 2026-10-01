@@ -40,6 +40,7 @@ private val HORIZONTAL_PAD = 24.dp
 private val VERTICAL_PAD = 10.dp
 private val SPACING_SMALL = 8.dp
 private val SHEET_SHAPE = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+private val SIDE_PANEL_SHAPE = RoundedCornerShape(topStart = 28.dp, bottomStart = 28.dp)
 
 @OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -58,6 +59,8 @@ fun ReaderSettingsSheet(
     val sheetCtx = androidx.compose.ui.platform.LocalContext.current
 
     // Box overlay — no Dialog, no scrim, reader stays visible underneath
+    // ★ 1001 UI 审查 Phase3：横屏高度稀缺 → 面板改右侧滑出全高抽屉；竖屏保持底部面板原样
+    val landscape = LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -67,22 +70,29 @@ fun ReaderSettingsSheet(
                 indication = null,
                 onClick = { visible = false; onDismiss() }
             ),
-        contentAlignment = Alignment.BottomCenter,
+        contentAlignment = if (landscape) Alignment.CenterEnd else Alignment.BottomCenter,
     ) {
         AnimatedVisibility(
             visible = visible,
-            enter = slideInVertically(tween(ANIM_DURATION)) { it },
-            exit = slideOutVertically(tween(ANIM_DURATION)) { it }
+            enter = if (landscape) slideInHorizontally(tween(ANIM_DURATION)) { it } else slideInVertically(tween(ANIM_DURATION)) { it },
+            exit = if (landscape) slideOutHorizontally(tween(ANIM_DURATION)) { it } else slideOutVertically(tween(ANIM_DURATION)) { it }
         ) {
             Surface(
-                modifier = Modifier
-                    .widthIn(max = 520.dp)
-                    .fillMaxWidth()
-                    .heightIn(max = with(LocalDensity.current) {
-                        (LocalConfiguration.current.screenHeightDp * 0.60f).dp
-                    })
-                    .clickable(interactionSource = null, indication = null, onClick = {}),
-                shape = SHEET_SHAPE,
+                modifier = if (landscape) {
+                    Modifier
+                        .width(440.dp)
+                        .fillMaxHeight()
+                        .clickable(interactionSource = null, indication = null, onClick = {})
+                } else {
+                    Modifier
+                        .widthIn(max = 520.dp)
+                        .fillMaxWidth()
+                        .heightIn(max = with(LocalDensity.current) {
+                            (LocalConfiguration.current.screenHeightDp * 0.60f).dp
+                        })
+                        .clickable(interactionSource = null, indication = null, onClick = {})
+                },
+                shape = if (landscape) SIDE_PANEL_SHAPE else SHEET_SHAPE,
                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
                 content = {
                     ReaderSettingsContent(config, mode, onConfigChange, onModeChange, onOrientationChange)

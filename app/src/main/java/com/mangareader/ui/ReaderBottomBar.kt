@@ -38,7 +38,12 @@ fun ReaderBottomBar(
         val hPad = if (isTablet) 24.dp else 12.dp
         val vPad = if (isTablet) 10.dp else 6.dp
         Column(Modifier.fillMaxWidth().padding(horizontal = hPad, vertical = vPad)) {
-            val rows = actions.chunked(5)
+            // ★ 横屏零影响机制C：竖屏保持 chunked(5) 输出不变；横屏宽度富余，按屏宽算每行容量
+            //   （单按钮占约 56dp，取下限 5 保证任何屏宽下行数只多不少）
+            val rows = if (isLandscapeOrientation()) {
+                val perRow = maxOf(5, (LocalConfiguration.current.screenWidthDp - 24) / 56)
+                actions.chunked(perRow)
+            } else actions.chunked(5)
             rows.forEach { rowActions ->
                 Row(
                     Modifier.fillMaxWidth(),

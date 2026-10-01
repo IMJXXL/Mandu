@@ -31,6 +31,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
+import com.mangareader.ui.CONTENT_MAX_WIDTH_DP
+import com.mangareader.ui.isTabletWide
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -521,7 +523,7 @@ fun WebDavBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long, I
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                 )
-                LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
+                LazyColumn(Modifier.fillMaxWidth().wrapContentWidth(Alignment.CenterHorizontally).widthIn(max = CONTENT_MAX_WIDTH_DP).weight(1f)) {
                     items(searchHits, key = { h -> h::class.simpleName + "@" + h.name + "@" + searchHitPath(h) }) { h ->
                         val hitExt = h.name.substringAfterLast('.', "").lowercase()
                         val hitPlaceholder = when {
@@ -626,7 +628,7 @@ fun WebDavBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long, I
                 }
                 !listMode -> {
                     LazyVerticalGrid(
-                        columns = GridCells.Fixed(3),
+                        columns = if (isTabletWide()) GridCells.Adaptive(96.dp) else GridCells.Fixed(3),
                         contentPadding = PaddingValues(8.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -691,7 +693,7 @@ fun WebDavBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long, I
                         }
                     }
                 }
-                else -> LazyColumn(Modifier.fillMaxSize()) {
+                else -> LazyColumn(Modifier.fillMaxSize().wrapContentWidth(Alignment.CenterHorizontally).widthIn(max = CONTENT_MAX_WIDTH_DP)) {
                     items(visibleEntries) { e ->
                         val dl = extractDownloadable(e)
                         val remotePath = dl?.first

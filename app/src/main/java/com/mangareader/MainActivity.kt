@@ -206,7 +206,7 @@ class MainActivity : ComponentActivity() {
                     }
                     AlertDialog(
                         onDismissRequest = { },
-                        modifier = Modifier.fillMaxWidth(0.95f),
+                        modifier = Modifier.fillMaxWidth(0.95f).widthIn(max = 480.dp),
                         title = { Text("大家好，我是瑾轩小狼") },
                         text = {
                             Column(Modifier.verticalScroll(rememberScrollState())) {

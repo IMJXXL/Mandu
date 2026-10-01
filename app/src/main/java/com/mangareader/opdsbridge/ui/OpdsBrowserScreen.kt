@@ -15,6 +15,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import com.mangareader.ui.CONTENT_MAX_WIDTH_DP
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -283,7 +284,7 @@ fun OpdsBrowserScreen(serverId: String, onBack: () -> Unit, onOpenBook: (Long) -
                         }
                 }
                 LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.fillMaxSize().wrapContentWidth(Alignment.CenterHorizontally).widthIn(max = CONTENT_MAX_WIDTH_DP),
                     state = listState,
                 ) {
                     items(entries) { entry ->

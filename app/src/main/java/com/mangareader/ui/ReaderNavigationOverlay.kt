@@ -9,6 +9,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.unit.sp
 
 private val COLOR_PREV = Color(0xCCFF7733.toInt())
 private val COLOR_NEXT = Color(0xCC84E296.toInt())
@@ -22,11 +23,11 @@ private val horizontalZones = listOf(
     NavZone(Rect(0.67f, 0.05f, 1f, 1f), COLOR_NEXT, "下一页"),
 )
 
-// 竖向模式：上=上一页，中=菜单，下=下一页
+// 竖向模式：上=上一页，中=菜单，下=下一页（与 VerticalPagerNavigation 真实分区严格一致）
 private val verticalZones = listOf(
-    NavZone(Rect(0f, 0.05f, 1f, 0.45f), COLOR_PREV, "上一页"),
-    NavZone(Rect(0f, 0.45f, 1f, 0.55f), COLOR_MENU, "菜单"),
-    NavZone(Rect(0f, 0.55f, 1f, 1f), COLOR_NEXT, "下一页"),
+    NavZone(Rect(0f, 0f, 1f, 0.4f), COLOR_PREV, "上一页"),
+    NavZone(Rect(0f, 0.4f, 1f, 0.6f), COLOR_MENU, "菜单"),
+    NavZone(Rect(0f, 0.6f, 1f, 1f), COLOR_NEXT, "下一页"),
 )
 
 @Composable
@@ -37,28 +38,30 @@ fun ReaderNavigationOverlay(
     modifier: Modifier = Modifier
 ) {
     val zones = if (isVertical) verticalZones else horizontalZones
-    val textPaint = remember {
+    // ★ 字号 px→sp：原 64f 像素在高密度/平板上相对变小，改 sp 随密度与字体缩放
+    val labelPx = with(androidx.compose.ui.platform.LocalDensity.current) { 21.sp.toPx() }
+    val textPaint = remember(labelPx) {
         android.graphics.Paint().apply {
             textAlign = android.graphics.Paint.Align.CENTER
             color = android.graphics.Color.WHITE
-            textSize = 64f
+            textSize = labelPx
             isAntiAlias = true
         }
     }
-    val textBorderPaint = remember {
+    val textBorderPaint = remember(labelPx) {
         android.graphics.Paint().apply {
             textAlign = android.graphics.Paint.Align.CENTER
             color = android.graphics.Color.BLACK
-            textSize = 64f
+            textSize = labelPx
             style = android.graphics.Paint.Style.STROKE
-            strokeWidth = 8f
+            strokeWidth = labelPx / 8f
             isAntiAlias = true
         }
     }
 
     Canvas(modifier = modifier.fillMaxSize()) {
-        // 顶部5%安全区
-        drawRect(
+        // 顶部5%安全区（仅横向模式有顶部 MENU 边；竖向分区从 0 起，不画该条）
+        if (!isVertical) drawRect(
             color = COLOR_MENU.copy(alpha = 0.3f),
             topLeft = Offset(0f, 0f),
             size = Size(size.width, size.height * 0.05f)

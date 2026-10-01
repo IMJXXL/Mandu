@@ -449,8 +449,8 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
 
     if (showShelfDrawer) {
         val drawerState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-        ModalBottomSheet(onDismissRequest = { showShelfDrawer = false }, sheetState = drawerState) {
-            Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 24.dp)) {
+        ModalBottomSheet(onDismissRequest = { showShelfDrawer = false }, sheetState = drawerState, sheetMaxWidth = 520.dp) {
+            Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 24.dp).heightIn(max = dialogContentMaxHeight()).verticalScroll(rememberScrollState())) {
                 Text("全部书架", fontSize = 18.sp, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(8.dp))
                 bookshelves.forEach { shelf ->
@@ -592,7 +592,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
     if (showShelfDialog) {
         AlertDialog(onDismissRequest = { showShelfDialog = false }, title = { Text("添加到书架") },
             text = {
-                Column {
+                Column(Modifier.heightIn(max = dialogContentMaxHeight()).verticalScroll(rememberScrollState())) {
                     TextButton(onClick = { showCreateShelf = true; showShelfDialog = false }) {
                         Text("+ 新建书架", color = MaterialTheme.colorScheme.primary)
                     }
@@ -671,7 +671,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
         val statusText = when { f -> "已读完"; r -> "阅读中"; else -> "未读" }
         AlertDialog(onDismissRequest = { showBookInfo = null }, title = { Text(b.title) },
             text = {
-                Column {
+                Column(Modifier.heightIn(max = dialogContentMaxHeight()).verticalScroll(rememberScrollState())) {
                     // ★ 原文件名直接放长按弹窗顶部（智能解析改名后书名与原名差异大，用户要能当场对出来）；
                     //   取名走 fileNameOf——SAF 路径末段是 |ext 后缀，不能直接 substringAfterLast('|')
                     val rawName = remember(b.filePath) { com.mangareader.util.BookTitleParser.fileNameOf(b.filePath) }
@@ -863,7 +863,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
             onDismissRequest = { showComicInfo = null; comicInfoData = null; comicInfoLoading = false },
             title = { Text("漫画详情") },
             text = {
-                Column {
+                Column(Modifier.heightIn(max = dialogContentMaxHeight()).verticalScroll(rememberScrollState())) {
                     // ★ 原文件名：智能解析后书名可能与原名差异大，这里提供回查入口。
                     //   取名走 fileNameOf——SAF 路径末段是 |ext 后缀，不能直接 substringAfterLast('|')
                     val rawName = remember(b.filePath) {
@@ -1125,6 +1125,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                 val renderItems = shelfItems ?: books!!.map { ShelfItem.Single(it) }
                 if (layoutMode == 3) {
                     androidx.compose.foundation.lazy.LazyColumn(
+                        modifier = Modifier.fillMaxSize().wrapContentWidth(Alignment.CenterHorizontally).widthIn(max = CONTENT_MAX_WIDTH_DP),
                         contentPadding = PaddingValues(12.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {

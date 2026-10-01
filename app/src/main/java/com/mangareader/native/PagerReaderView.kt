@@ -1739,7 +1739,11 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                     if (w > 0 && bmp.width > 0) {
                         // fitScreen=true（默认）：等比 contain（哪边先到屏幕边界就停），完整不裁切
                         // fitScreen=false：fit-width（贴满宽度，竖图可能上下裁切）
-                        val scale = if (fitScreenEnabled && h > 0) minOf(w / bmp.width, h / bmp.height) else w / bmp.width
+                        // ★ 平板防糊：贴宽模式放大超过位图原生分辨率（scale>1）时封顶到 1，
+                        //   避免小页在大屏被拉糊；手机路径不变（scale 通常<1 无影响）
+                        val scale = if (fitScreenEnabled && h > 0) minOf(w / bmp.width, h / bmp.height)
+                            else if (resources.configuration.smallestScreenWidthDp >= 600) minOf(w / bmp.width, 1f)
+                            else w / bmp.width
                         ssiv.setScaleAndCenter(scale, android.graphics.PointF(bmp.width / 2f, bmp.height / 2f))
                     }
                 }
@@ -1836,6 +1840,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                                 val isTablet = ssv.resources.configuration.smallestScreenWidthDp >= 600
                                 val scale = if (fitScreenEnabled && h > 0) minOf(w / sw, h / sh)
                                     else if (h > 0 && sw > sh && !landscapeZoom && isTablet) minOf(w / sw, h / sh)
+                                    else if (isTablet) minOf(w / sw, 1f)
                                     else w / sw
                                 ssv.setScaleAndCenter(scale, android.graphics.PointF(sw / 2f, sh / 2f))
                             }

@@ -1,6 +1,7 @@
 package com.mangareader.ui
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.material.icons.Icons
@@ -46,7 +47,7 @@ fun TagPickerSheet(
     }
 
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState, sheetMaxWidth = 520.dp) {
         Column(Modifier.padding(horizontal = 16.dp)) {
             Text(if (addMode) "添加标签" else "按标签筛选", fontSize = 20.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
             Spacer(Modifier.height(10.dp))
@@ -74,7 +75,7 @@ fun TagPickerSheet(
                 Text("没有匹配的标签", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(vertical = 24.dp))
             } else {
                 val groups = remember(filtered) { groupTags(filtered) }
-                LazyColumn(Modifier.fillMaxWidth().heightIn(max = 420.dp)) {
+                LazyColumn(Modifier.fillMaxWidth().heightIn(max = with(LocalConfiguration.current) { minOf(420, screenHeightDp - 160) }.dp)) {
                     if (q.isEmpty()) {
                         item {
                             Text("热门", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)

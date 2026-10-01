@@ -33,7 +33,7 @@ fun ShelfPickerDialog(onDismiss: () -> Unit, dao: MangaDao, scope: CoroutineScop
         onDismissRequest = onDismiss,
         title = { Text("添加到书架") },
         text = {
-            Column(Modifier.verticalScroll(rememberScrollState())) {
+            Column(Modifier.heightIn(max = dialogContentMaxHeight()).verticalScroll(rememberScrollState())) {
                 allShelves.forEach { s ->
                     Row(
                         Modifier.fillMaxWidth().clickable { selected = if (s.id in selected) selected - s.id else selected + s.id }.padding(vertical = 4.dp),

@@ -5,6 +5,8 @@ import androidx.activity.compose.BackHandler
 import com.hippo.ehviewer.util.LocalNetworkPermissionEffect
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -182,7 +184,7 @@ fun WebDavAddWizardScreen(onBack: () -> Unit, onSaved: () -> Unit, initial: WebD
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize().padding(16.dp)) {
             if (step == 1) {
-                Column {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
                     OutlinedTextField(displayName, { displayName = it }, label = { Text("名称（可选）") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     Spacer(Modifier.height(10.dp))
                     OutlinedTextField(baseUrl, { baseUrl = it }, label = { Text("服务器地址 *") }, supportingText = { Text("示例：https://dav.example.com/") }, singleLine = true, modifier = Modifier.fillMaxWidth())

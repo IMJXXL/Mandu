@@ -59,7 +59,7 @@ fun AppearanceSettingsScreen(onBack: () -> Unit) {
         }
     ) { padding ->
         LazyColumn(
-            modifier = Modifier.padding(padding).fillMaxSize().padding(horizontal = 16.dp)
+            modifier = Modifier.padding(padding).fillMaxSize().wrapContentWidth(Alignment.CenterHorizontally).widthIn(max = CONTENT_MAX_WIDTH_DP).padding(horizontal = 16.dp)
         ) {
             item {
                 SectionCard("暗色模式") {

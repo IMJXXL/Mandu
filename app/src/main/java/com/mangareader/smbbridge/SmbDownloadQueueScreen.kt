@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import com.mangareader.ui.CONTENT_MAX_WIDTH_DP
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -78,7 +79,7 @@ fun SmbDownloadQueueScreen(onBack: () -> Unit, onOpenBook: ((Long, Int) -> Unit)
             }
         } else {
             LazyColumn(
-                Modifier.padding(padding).fillMaxSize(),
+                Modifier.padding(padding).fillMaxSize().wrapContentWidth(Alignment.CenterHorizontally).widthIn(max = CONTENT_MAX_WIDTH_DP),
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {

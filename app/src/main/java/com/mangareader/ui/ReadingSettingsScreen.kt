@@ -55,6 +55,7 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
             modifier = Modifier
                 .padding(padding)
                 .fillMaxSize()
+                .wrapContentWidth(Alignment.CenterHorizontally).widthIn(max = CONTENT_MAX_WIDTH_DP)
                 .padding(16.dp)
         ) {
 

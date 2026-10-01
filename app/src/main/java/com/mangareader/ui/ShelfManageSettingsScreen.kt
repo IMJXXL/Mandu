@@ -53,7 +53,7 @@ fun ShelfManageSettingsScreen(onBack: () -> Unit) {
             )
         }
     ) { pad ->
-        Column(Modifier.padding(pad).fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp)) {
+        Column(Modifier.padding(pad).fillMaxSize().wrapContentWidth(Alignment.CenterHorizontally).widthIn(max = CONTENT_MAX_WIDTH_DP).verticalScroll(rememberScrollState()).padding(12.dp)) {
 
             // ===== 首页与筛选 =====
             SettingsCard(Icons.Default.Tune, "首页与筛选") {

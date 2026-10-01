@@ -84,7 +84,7 @@ fun TagManageList(
     val dragEnabled = sortMode == 2 && query.isBlank() && !multiMode && !layoutGrid && shown.size > 1
 
     Box(Modifier.fillMaxSize()) {
-        LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
+        LazyColumn(Modifier.fillMaxSize().wrapContentWidth(Alignment.CenterHorizontally).widthIn(max = CONTENT_MAX_WIDTH_DP).padding(horizontal = 16.dp)) {
             // ===== 头部：搜索 + 排序 + 提示（搜索框样式与书架一致：12dp 圆角 + 浮动标签 + 清空钮） =====
             item {
                 Spacer(Modifier.height(8.dp))
@@ -350,7 +350,7 @@ fun TagManageList(
             onDismissRequest = { showMergePicker = false },
             title = { Text("合并到哪个标签？") },
             text = {
-                Column(Modifier.heightIn(max = 400.dp).verticalScroll(rememberScrollState())) {
+                Column(Modifier.heightIn(max = dialogContentMaxHeight()).verticalScroll(rememberScrollState())) {
                     if (candidates.isEmpty()) Text("没有其他标签可作为目标", fontSize = 13.sp)
                     candidates.forEach { t ->
                         Row(Modifier.fillMaxWidth().clickable {

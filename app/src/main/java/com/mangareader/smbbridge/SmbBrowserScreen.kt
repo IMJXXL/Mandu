@@ -33,6 +33,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
+import com.mangareader.ui.CONTENT_MAX_WIDTH_DP
+import com.mangareader.ui.isTabletWide
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -530,7 +532,7 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long, Int)
                         modifier = Modifier.padding(horizontal = 16.dp),
                     )
                 }
-                LazyColumn(Modifier.fillMaxSize().weight(1f)) {
+                LazyColumn(Modifier.fillMaxSize().wrapContentWidth(Alignment.CenterHorizontally).widthIn(max = CONTENT_MAX_WIDTH_DP).weight(1f)) {
                     item {
                         Text(
                             "「${searchQuery.trim()}」· ${searchHits.size} 个结果（上限 500）",
@@ -645,7 +647,7 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long, Int)
                 }
                 !listMode -> {
                     LazyVerticalGrid(
-                        columns = GridCells.Fixed(3),
+                        columns = if (isTabletWide()) GridCells.Adaptive(96.dp) else GridCells.Fixed(3),
                         contentPadding = PaddingValues(8.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -712,7 +714,7 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long, Int)
                         }
                     }
                 }
-                else -> LazyColumn(Modifier.fillMaxSize()) {
+                else -> LazyColumn(Modifier.fillMaxSize().wrapContentWidth(Alignment.CenterHorizontally).widthIn(max = CONTENT_MAX_WIDTH_DP)) {
                     items(visibleEntries) { e ->
                         val dl = extractDownloadable(e)
                         val remotePath = dl?.first

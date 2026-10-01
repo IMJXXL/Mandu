@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import com.mangareader.ui.CONTENT_MAX_WIDTH_DP
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -74,7 +75,7 @@ fun SmbSettingsScreen(onBack: () -> Unit, onOpenDownloadQueue: () -> Unit = {}) 
             )
         },
     ) { padding ->
-        LazyColumn(Modifier.padding(padding).fillMaxSize().padding(16.dp)) {
+        LazyColumn(Modifier.padding(padding).fillMaxSize().wrapContentWidth(Alignment.CenterHorizontally).widthIn(max = CONTENT_MAX_WIDTH_DP).padding(16.dp)) {
 
             item {
             SectionCard("书名解析") {

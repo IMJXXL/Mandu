@@ -5,6 +5,8 @@ import androidx.activity.compose.BackHandler
 import com.hippo.ehviewer.util.LocalNetworkPermissionEffect
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -186,7 +188,7 @@ fun SmbAddWizardScreen(onBack: () -> Unit, onSaved: () -> Unit, initial: SmbSour
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize().padding(16.dp)) {
             when (step) {
-                1 -> Column {
+                1 -> Column(Modifier.verticalScroll(rememberScrollState())) {
                     OutlinedTextField(displayName, { displayName = it }, label = { Text("名称（可选）") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     Spacer(Modifier.height(10.dp))
                     OutlinedTextField(host, { host = it }, label = { Text("主机地址或 IP *") }, supportingText = { Text("局域网 IP 或主机名，如 192.168.1.10") }, singleLine = true, modifier = Modifier.fillMaxWidth())

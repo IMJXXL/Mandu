@@ -101,7 +101,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?, Int) -> Unit
         }
     ) { padding ->
         var showAbout by remember { mutableStateOf(false) }
-        LazyColumn(modifier = Modifier.padding(padding).fillMaxSize().padding(16.dp)) {
+        LazyColumn(modifier = Modifier.padding(padding).fillMaxSize().wrapContentWidth(Alignment.CenterHorizontally).widthIn(max = CONTENT_MAX_WIDTH_DP).padding(16.dp)) {
             item {
             Spacer(Modifier.height(12.dp))
             }

@@ -121,7 +121,7 @@ fun HistoryScreen(onBack: () -> Unit, onOpen: (Long, String?) -> Unit) {
             }
         } else {
             LazyColumn(
-                Modifier.padding(pad).fillMaxSize(),
+                Modifier.padding(pad).fillMaxSize().wrapContentWidth(Alignment.CenterHorizontally).widthIn(max = CONTENT_MAX_WIDTH_DP),
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
             ) {
                 var lastBucket = -1

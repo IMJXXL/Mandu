@@ -127,7 +127,7 @@ fun FolderManageScreen(onBack: () -> Unit) {
             )
         }
     ) { pad ->
-        Column(Modifier.padding(pad).fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
+        Column(Modifier.padding(pad).fillMaxSize().wrapContentWidth(Alignment.CenterHorizontally).widthIn(max = CONTENT_MAX_WIDTH_DP).verticalScroll(rememberScrollState()).padding(16.dp)) {
 
             if (folders.isEmpty()) {
                 Text("还没有导入文件夹", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -338,7 +338,7 @@ fun FolderManageScreen(onBack: () -> Unit) {
                 )
             }
         ) { pad ->
-            Column(Modifier.padding(pad).fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
+            Column(Modifier.padding(pad).fillMaxSize().wrapContentWidth(Alignment.CenterHorizontally).widthIn(max = CONTENT_MAX_WIDTH_DP).verticalScroll(rememberScrollState()).padding(16.dp)) {
                 SectionCard("扫描设置") {
                     Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {

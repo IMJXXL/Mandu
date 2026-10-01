@@ -55,7 +55,7 @@ fun TagColorPickerSheet(
     val customArgb = if (customArgbRaw == TagColors.AUTO_SENTINEL) customArgbRaw + 1L else customArgbRaw
 
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState, sheetMaxWidth = 520.dp) {
         Column(
             Modifier.padding(horizontal = 20.dp).verticalScroll(rememberScrollState()).padding(bottom = 24.dp)
         ) {
