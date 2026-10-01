@@ -60,7 +60,8 @@ typealias PasswdProvider = suspend (PasswdInvalidator) -> String
  */
 fun archivePasswdTryKnown(): Boolean {
     val front = archivePasswdFront
-    if (front.isNotEmpty() && providePassword(front)) return true
+    // front 必须仍在库内才试：用户经编辑器删除的密码不允许继续被自动尝试
+    if (front.isNotEmpty() && front in archivePasswds && providePassword(front)) return true
     val hit = archivePasswds.firstOrNull { it.isNotEmpty() && it != front && providePassword(it) } ?: return false
     archivePasswdFront = hit
     return true
