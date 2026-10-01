@@ -1,0 +1,898 @@
+[
+ {
+  "input": "Nickel Comics #08 [Fawcett][Aug23'1940][paper+1fiche][ibc upgraded]-c2c -RH+ML.cbz",
+  "source": "comictagger",
+  "expected_series": "Nickel Comics",
+  "expected_chapter": "8",
+  "expected_volume": null
+ },
+ {
+  "input": "Nickel Comics 08 [Fawcett][Aug23'1940][paper+1fiche][ibc upgraded]-c2c -RH+ML.cbz",
+  "source": "comictagger",
+  "expected_series": "Nickel Comics",
+  "expected_chapter": "8",
+  "expected_volume": null
+ },
+ {
+  "input": "De Psy #6 Bonjour l'angoisse!.cbz",
+  "source": "comictagger",
+  "expected_series": "De Psy",
+  "expected_chapter": "6",
+  "expected_volume": null
+ },
+ {
+  "input": "De Psy 6 Bonjour l'angoisse!.cbz",
+  "source": "comictagger",
+  "expected_series": "De Psy",
+  "expected_chapter": "6",
+  "expected_volume": null
+ },
+ {
+  "input": "Airfiles #4 The 'Big Show'.cbz",
+  "source": "comictagger",
+  "expected_series": "Airfiles",
+  "expected_chapter": "4",
+  "expected_volume": null
+ },
+ {
+  "input": "Airfiles 4 The 'Big Show'.cbz",
+  "source": "comictagger",
+  "expected_series": "Airfiles",
+  "expected_chapter": "4",
+  "expected_volume": null
+ },
+ {
+  "input": "Conceptions #1 Conceptions I.cbz",
+  "source": "comictagger",
+  "expected_series": "Conceptions",
+  "expected_chapter": "1",
+  "expected_volume": null
+ },
+ {
+  "input": "Conceptions 1 Conceptions I.cbz",
+  "source": "comictagger",
+  "expected_series": "Conceptions",
+  "expected_chapter": "1",
+  "expected_volume": null
+ },
+ {
+  "input": "Series #1 Stop it!.cbz",
+  "source": "comictagger",
+  "expected_series": "Series",
+  "expected_chapter": "1",
+  "expected_volume": null
+ },
+ {
+  "input": "Series 1 Stop it!.cbz",
+  "source": "comictagger",
+  "expected_series": "Series",
+  "expected_chapter": "1",
+  "expected_volume": null
+ },
+ {
+  "input": "Drystan & Esyllt #3",
+  "source": "comictagger",
+  "expected_series": "Drystan & Esyllt",
+  "expected_chapter": "3",
+  "expected_volume": null
+ },
+ {
+  "input": "Drystan & Esyllt 3",
+  "source": "comictagger",
+  "expected_series": "Drystan & Esyllt",
+  "expected_chapter": "3",
+  "expected_volume": null
+ },
+ {
+  "input": "Michel Vaillant #5 Nr. 13 aan de start",
+  "source": "comictagger",
+  "expected_series": "Michel Vaillant",
+  "expected_chapter": "5",
+  "expected_volume": null
+ },
+ {
+  "input": "Michel Vaillant 5 Nr. 13 aan de start",
+  "source": "comictagger",
+  "expected_series": "Michel Vaillant",
+  "expected_chapter": "5",
+  "expected_volume": null
+ },
+ {
+  "input": "Karl May #001 Old Shatterhand.cbr",
+  "source": "comictagger",
+  "expected_series": "Karl May",
+  "expected_chapter": "1",
+  "expected_volume": null
+ },
+ {
+  "input": "Karl May 001 Old Shatterhand.cbr",
+  "source": "comictagger",
+  "expected_series": "Karl May",
+  "expected_chapter": "1",
+  "expected_volume": null
+ },
+ {
+  "input": "Michel Vaillant #8 De 8ste man",
+  "source": "comictagger",
+  "expected_series": "Michel Vaillant",
+  "expected_chapter": "8",
+  "expected_volume": null
+ },
+ {
+  "input": "Michel Vaillant 8 De 8ste man",
+  "source": "comictagger",
+  "expected_series": "Michel Vaillant",
+  "expected_chapter": "8",
+  "expected_volume": null
+ },
+ {
+  "input": "Michel Vaillant #13 Mach 1 voor Steve Warson",
+  "source": "comictagger",
+  "expected_series": "Michel Vaillant",
+  "expected_chapter": "13",
+  "expected_volume": null
+ },
+ {
+  "input": "Michel Vaillant 13 Mach 1 voor Steve Warson",
+  "source": "comictagger",
+  "expected_series": "Michel Vaillant",
+  "expected_chapter": "13",
+  "expected_volume": null
+ },
+ {
+  "input": "Michel Vaillant #19 5 Meisjes in de race",
+  "source": "comictagger",
+  "expected_series": "Michel Vaillant",
+  "expected_chapter": "19",
+  "expected_volume": null
+ },
+ {
+  "input": "Michel Vaillant 19 5 Meisjes in de race",
+  "source": "comictagger",
+  "expected_series": "Michel Vaillant",
+  "expected_chapter": "19",
+  "expected_volume": null
+ },
+ {
+  "input": "Michel Vaillant #34 Steve Warson gaat K.O.",
+  "source": "comictagger",
+  "expected_series": "Michel Vaillant",
+  "expected_chapter": "34",
+  "expected_volume": null
+ },
+ {
+  "input": "Michel Vaillant 34 Steve Warson gaat K.O.",
+  "source": "comictagger",
+  "expected_series": "Michel Vaillant",
+  "expected_chapter": "34",
+  "expected_volume": null
+ },
+ {
+  "input": "Michel Vaillant #40 F.1 in oproer",
+  "source": "comictagger",
+  "expected_series": "Michel Vaillant",
+  "expected_chapter": "40",
+  "expected_volume": null
+ },
+ {
+  "input": "Michel Vaillant 40 F.1 in oproer",
+  "source": "comictagger",
+  "expected_series": "Michel Vaillant",
+  "expected_chapter": "40",
+  "expected_volume": null
+ },
+ {
+  "input": "Michel Vaillant #42 300 kmu door Parijs",
+  "source": "comictagger",
+  "expected_series": "Michel Vaillant",
+  "expected_chapter": "42",
+  "expected_volume": null
+ },
+ {
+  "input": "Michel Vaillant 42 300 kmu door Parijs",
+  "source": "comictagger",
+  "expected_series": "Michel Vaillant",
+  "expected_chapter": "42",
+  "expected_volume": null
+ },
+ {
+  "input": "Michel Vaillant #52 F 3000",
+  "source": "comictagger",
+  "expected_series": "Michel Vaillant",
+  "expected_chapter": "52",
+  "expected_volume": null
+ },
+ {
+  "input": "Michel Vaillant 52 F 3000",
+  "source": "comictagger",
+  "expected_series": "Michel Vaillant",
+  "expected_chapter": "52",
+  "expected_volume": null
+ },
+ {
+  "input": "Michel Vaillant #66 100.000.000 $ voor Steve Warson",
+  "source": "comictagger",
+  "expected_series": "Michel Vaillant",
+  "expected_chapter": "66",
+  "expected_volume": null
+ },
+ {
+  "input": "Michel Vaillant 66 100.000.000 $ voor Steve Warson",
+  "source": "comictagger",
+  "expected_series": "Michel Vaillant",
+  "expected_chapter": "66",
+  "expected_volume": null
+ },
+ {
+  "input": "batman #B01 title (DC).cbz",
+  "source": "comictagger",
+  "expected_series": "batman",
+  "expected_chapter": "B1",
+  "expected_volume": null
+ },
+ {
+  "input": "batman B01 title (DC).cbz",
+  "source": "comictagger",
+  "expected_series": "batman",
+  "expected_chapter": "B1",
+  "expected_volume": null
+ },
+ {
+  "input": "batman #3 title (DC).cbz",
+  "source": "comictagger",
+  "expected_series": "batman",
+  "expected_chapter": "3",
+  "expected_volume": null
+ },
+ {
+  "input": "batman 3 title (DC).cbz",
+  "source": "comictagger",
+  "expected_series": "batman",
+  "expected_chapter": "3",
+  "expected_volume": null
+ },
+ {
+  "input": "batman #3 title DC.cbz",
+  "source": "comictagger",
+  "expected_series": "batman",
+  "expected_chapter": "3",
+  "expected_volume": null
+ },
+ {
+  "input": "batman 3 title DC.cbz",
+  "source": "comictagger",
+  "expected_series": "batman",
+  "expected_chapter": "3",
+  "expected_volume": null
+ },
+ {
+  "input": "batman #3 title (DC.cbz",
+  "source": "comictagger",
+  "expected_series": "batman",
+  "expected_chapter": "3",
+  "expected_volume": null
+ },
+ {
+  "input": "batman 3 title (DC.cbz",
+  "source": "comictagger",
+  "expected_series": "batman",
+  "expected_chapter": "3",
+  "expected_volume": null
+ },
+ {
+  "input": "ms. Marvel #3.cbz",
+  "source": "comictagger",
+  "expected_series": "ms. Marvel",
+  "expected_chapter": "3",
+  "expected_volume": null
+ },
+ {
+  "input": "ms. Marvel 3.cbz",
+  "source": "comictagger",
+  "expected_series": "ms. Marvel",
+  "expected_chapter": "3",
+  "expected_volume": null
+ },
+ {
+  "input": "Dr. Doom And The Masters Of Evil #1 (2009).cbz",
+  "source": "comictagger",
+  "expected_series": "Dr. Doom And The Masters Of Evil",
+  "expected_chapter": "1",
+  "expected_volume": null
+ },
+ {
+  "input": "Dr. Doom And The Masters Of Evil 1 (2009).cbz",
+  "source": "comictagger",
+  "expected_series": "Dr. Doom And The Masters Of Evil",
+  "expected_chapter": "1",
+  "expected_volume": null
+ },
+ {
+  "input": "action comics #2026.cbz",
+  "source": "comictagger",
+  "expected_series": "action comics",
+  "expected_chapter": "2026",
+  "expected_volume": null
+ },
+ {
+  "input": "action comics 2026.cbz",
+  "source": "comictagger",
+  "expected_series": "action comics",
+  "expected_chapter": "2026",
+  "expected_volume": null
+ },
+ {
+  "input": "action comics 1024.cbz",
+  "source": "comictagger",
+  "expected_series": "action comics",
+  "expected_chapter": "1024",
+  "expected_volume": null
+ },
+ {
+  "input": "Action Comics #1001 (2018).cbz",
+  "source": "comictagger",
+  "expected_series": "Action Comics",
+  "expected_chapter": "1001",
+  "expected_volume": null
+ },
+ {
+  "input": "Action Comics 1001 (2018).cbz",
+  "source": "comictagger",
+  "expected_series": "Action Comics",
+  "expected_chapter": "1001",
+  "expected_volume": null
+ },
+ {
+  "input": "january jones #2.cbz",
+  "source": "comictagger",
+  "expected_series": "january jones",
+  "expected_chapter": "2",
+  "expected_volume": null
+ },
+ {
+  "input": "january jones 2.cbz",
+  "source": "comictagger",
+  "expected_series": "january jones",
+  "expected_chapter": "2",
+  "expected_volume": null
+ },
+ {
+  "input": "#52.cbz",
+  "source": "comictagger",
+  "expected_series": "52",
+  "expected_chapter": "52",
+  "expected_volume": null
+ },
+ {
+  "input": "52.cbz",
+  "source": "comictagger",
+  "expected_series": "52",
+  "expected_chapter": "52",
+  "expected_volume": null
+ },
+ {
+  "input": "52 Monster_Island_v1_#2__repaired__c2c.cbz",
+  "source": "comictagger",
+  "expected_series": "Monster Island",
+  "expected_chapter": "2",
+  "expected_volume": "1"
+ },
+ {
+  "input": "52 Monster_Island_v1_2__repaired__c2c.cbz",
+  "source": "comictagger",
+  "expected_series": "Monster Island",
+  "expected_chapter": "2",
+  "expected_volume": "1"
+ },
+ {
+  "input": "Monster_Island_v1_#2__repaired__c2c.cbz",
+  "source": "comictagger",
+  "expected_series": "Monster Island",
+  "expected_chapter": "2",
+  "expected_volume": "1"
+ },
+ {
+  "input": "Monster_Island_v1_2__repaired__c2c.cbz",
+  "source": "comictagger",
+  "expected_series": "Monster Island",
+  "expected_chapter": "2",
+  "expected_volume": "1"
+ },
+ {
+  "input": "Monster Island v1 #3 (1957) -- The Revenge Of King Klong (noads).cbz",
+  "source": "comictagger",
+  "expected_series": "Monster Island",
+  "expected_chapter": "3",
+  "expected_volume": "1"
+ },
+ {
+  "input": "Monster Island v1 3 (1957) -- The Revenge Of King Klong (noads).cbz",
+  "source": "comictagger",
+  "expected_series": "Monster Island",
+  "expected_chapter": "3",
+  "expected_volume": "1"
+ },
+ {
+  "input": "Foobar-Man Annual #121 - The Wrath of Foobar-Man, Part 1 of 2.cbz",
+  "source": "comictagger",
+  "expected_series": "Foobar-Man Annual",
+  "expected_chapter": "121",
+  "expected_volume": null
+ },
+ {
+  "input": "Foobar-Man Annual 121 - The Wrath of Foobar-Man, Part 1 of 2.cbz",
+  "source": "comictagger",
+  "expected_series": "Foobar-Man Annual",
+  "expected_chapter": "121",
+  "expected_volume": null
+ },
+ {
+  "input": "Plastic Man v1 #002 (1942).cbz",
+  "source": "comictagger",
+  "expected_series": "Plastic Man",
+  "expected_chapter": "2",
+  "expected_volume": "1"
+ },
+ {
+  "input": "Plastic Man v1 002 (1942).cbz",
+  "source": "comictagger",
+  "expected_series": "Plastic Man",
+  "expected_chapter": "2",
+  "expected_volume": "1"
+ },
+ {
+  "input": "Blue Beetle #02.cbr",
+  "source": "comictagger",
+  "expected_series": "Blue Beetle",
+  "expected_chapter": "2",
+  "expected_volume": null
+ },
+ {
+  "input": "Blue Beetle 02.cbr",
+  "source": "comictagger",
+  "expected_series": "Blue Beetle",
+  "expected_chapter": "2",
+  "expected_volume": null
+ },
+ {
+  "input": "Blue Beetle #½.cbr",
+  "source": "comictagger",
+  "expected_series": "Blue Beetle",
+  "expected_chapter": "½",
+  "expected_volume": null
+ },
+ {
+  "input": "Blue Beetle ½.cbr",
+  "source": "comictagger",
+  "expected_series": "Blue Beetle",
+  "expected_chapter": "½",
+  "expected_volume": null
+ },
+ {
+  "input": "Monster Island vol. 2 #2.cbz",
+  "source": "comictagger",
+  "expected_series": "Monster Island",
+  "expected_chapter": "2",
+  "expected_volume": "2"
+ },
+ {
+  "input": "Monster Island vol. 2 2.cbz",
+  "source": "comictagger",
+  "expected_series": "Monster Island",
+  "expected_chapter": "2",
+  "expected_volume": "2"
+ },
+ {
+  "input": "Crazy Weird Comics #2 (of 2) (1969).rar",
+  "source": "comictagger",
+  "expected_series": "Crazy Weird Comics",
+  "expected_chapter": "2",
+  "expected_volume": null
+ },
+ {
+  "input": "Crazy Weird Comics 2 (of 2) (1969).rar",
+  "source": "comictagger",
+  "expected_series": "Crazy Weird Comics",
+  "expected_chapter": "2",
+  "expected_volume": null
+ },
+ {
+  "input": "Super Strange Yarns (1957) #92 (1969).cbz",
+  "source": "comictagger",
+  "expected_series": "Super Strange Yarns",
+  "expected_chapter": "92",
+  "expected_volume": "1957"
+ },
+ {
+  "input": "Super Strange Yarns (1957) 92 (1969).cbz",
+  "source": "comictagger",
+  "expected_series": "Super Strange Yarns",
+  "expected_chapter": "92",
+  "expected_volume": "1957"
+ },
+ {
+  "input": "Action Spy Tales v1965 #3.cbr",
+  "source": "comictagger",
+  "expected_series": "Action Spy Tales",
+  "expected_chapter": "3",
+  "expected_volume": "1965"
+ },
+ {
+  "input": "Action Spy Tales v1965 3.cbr",
+  "source": "comictagger",
+  "expected_series": "Action Spy Tales",
+  "expected_chapter": "3",
+  "expected_volume": "1965"
+ },
+ {
+  "input": " X-Men-V1-#067.cbr",
+  "source": "comictagger",
+  "expected_series": "X-Men",
+  "expected_chapter": "67",
+  "expected_volume": "1"
+ },
+ {
+  "input": " X-Men-V1-067.cbr",
+  "source": "comictagger",
+  "expected_series": "X-Men",
+  "expected_chapter": "67",
+  "expected_volume": "1"
+ },
+ {
+  "input": "Amazing Spider-Man #078.BEY (2022) (Digital) (Zone-Empire).cbr",
+  "source": "comictagger",
+  "expected_series": "Amazing Spider-Man",
+  "expected_chapter": "78.BEY",
+  "expected_volume": null
+ },
+ {
+  "input": "Amazing Spider-Man 078.BEY (2022) (Digital) (Zone-Empire).cbr",
+  "source": "comictagger",
+  "expected_series": "Amazing Spider-Man",
+  "expected_chapter": "78.BEY",
+  "expected_volume": null
+ },
+ {
+  "input": "Angel Wings #02 - Black Widow (2015) (Scanlation) (phillywilly).cbr",
+  "source": "comictagger",
+  "expected_series": "Angel Wings",
+  "expected_chapter": "2",
+  "expected_volume": null
+ },
+ {
+  "input": "Angel Wings 02 - Black Widow (2015) (Scanlation) (phillywilly).cbr",
+  "source": "comictagger",
+  "expected_series": "Angel Wings",
+  "expected_chapter": "2",
+  "expected_volume": null
+ },
+ {
+  "input": "Aquaman - Green Arrow - Deep Target #01 (of 07) (2021) (digital) (Son of Ultron-Empire).cbr",
+  "source": "comictagger",
+  "expected_series": "Aquaman - Green Arrow - Deep Target",
+  "expected_chapter": "1",
+  "expected_volume": null
+ },
+ {
+  "input": "Aquaman - Green Arrow - Deep Target 01 (of 07) (2021) (digital) (Son of Ultron-Empire).cbr",
+  "source": "comictagger",
+  "expected_series": "Aquaman - Green Arrow - Deep Target",
+  "expected_chapter": "1",
+  "expected_volume": null
+ },
+ {
+  "input": "Aquaman 80th Anniversary 100-Page Super Spectacular (2021) #001 (2021) (Digital) (BlackManta-Empire).cbz",
+  "source": "comictagger",
+  "expected_series": "Aquaman 80th Anniversary 100-Page Super Spectacular",
+  "expected_chapter": "1",
+  "expected_volume": "2021"
+ },
+ {
+  "input": "Aquaman 80th Anniversary 100-Page Super Spectacular (2021) 001 (2021) (Digital) (BlackManta-Empire).cbz",
+  "source": "comictagger",
+  "expected_series": "Aquaman 80th Anniversary 100-Page Super Spectacular",
+  "expected_chapter": "1",
+  "expected_volume": "2021"
+ },
+ {
+  "input": "Avatar - The Last Airbender - The Legend of Korra (FCBD 2021) (Digital) (mv-DCP).cbr",
+  "source": "comictagger",
+  "expected_series": "Avatar - The Last Airbender - The Legend of Korra",
+  "expected_chapter": null,
+  "expected_volume": null
+ },
+ {
+  "input": "Avengers By Brian Michael Bendis volume 03 (2013) (Digital) (F2) (Kileko-Empire).cbz",
+  "source": "comictagger",
+  "expected_series": "Avengers By Brian Michael Bendis",
+  "expected_chapter": "3",
+  "expected_volume": "3"
+ },
+ {
+  "input": "Avengers By Brian Michael Bendis v03 (2013) (Digital) (F2) (Kileko-Empire).cbz",
+  "source": "comictagger",
+  "expected_series": "Avengers By Brian Michael Bendis",
+  "expected_chapter": "3",
+  "expected_volume": "3"
+ },
+ {
+  "input": "Batman '89 (2021) (Webrip) (The Last Kryptonian-DCP).cbr",
+  "source": "comictagger",
+  "expected_series": "Batman '89",
+  "expected_chapter": null,
+  "expected_volume": null
+ },
+ {
+  "input": "Batman_-_Superman_#020_(2021)_(digital)_(NeverAngel-Empire).cbr",
+  "source": "comictagger",
+  "expected_series": "Batman - Superman",
+  "expected_chapter": "20",
+  "expected_volume": null
+ },
+ {
+  "input": "Batman_-_Superman_020_(2021)_(digital)_(NeverAngel-Empire).cbr",
+  "source": "comictagger",
+  "expected_series": "Batman - Superman",
+  "expected_chapter": "20",
+  "expected_volume": null
+ },
+ {
+  "input": "Black Widow #009 (2021) (Digital) (Zone-Empire).cbr",
+  "source": "comictagger",
+  "expected_series": "Black Widow",
+  "expected_chapter": "9",
+  "expected_volume": null
+ },
+ {
+  "input": "Black Widow 009 (2021) (Digital) (Zone-Empire).cbr",
+  "source": "comictagger",
+  "expected_series": "Black Widow",
+  "expected_chapter": "9",
+  "expected_volume": null
+ },
+ {
+  "input": "Blade Runner 2029 #006 (2021) (3 covers) (digital) (Son of Ultron-Empire).cbr",
+  "source": "comictagger",
+  "expected_series": "Blade Runner 2029",
+  "expected_chapter": "6",
+  "expected_volume": null
+ },
+ {
+  "input": "Blade Runner 2029 006 (2021) (3 covers) (digital) (Son of Ultron-Empire).cbr",
+  "source": "comictagger",
+  "expected_series": "Blade Runner 2029",
+  "expected_chapter": "6",
+  "expected_volume": null
+ },
+ {
+  "input": "Blade Runner Free Comic Book Day 2021 (2021) (digital-Empire).cbr",
+  "source": "comictagger",
+  "expected_series": "Blade Runner Free Comic Book Day 2021",
+  "expected_chapter": null,
+  "expected_volume": null
+ },
+ {
+  "input": "Bloodshot Book 03 (2020) (digital) (Son of Ultron-Empire).cbr",
+  "source": "comictagger",
+  "expected_series": "Bloodshot",
+  "expected_chapter": "3",
+  "expected_volume": "3"
+ },
+ {
+  "input": "book of eli #1 (2020) (digital) (Son of Ultron-Empire).cbr",
+  "source": "comictagger",
+  "expected_series": "book of eli",
+  "expected_chapter": "1",
+  "expected_volume": null
+ },
+ {
+  "input": "book of eli 1 (2020) (digital) (Son of Ultron-Empire).cbr",
+  "source": "comictagger",
+  "expected_series": "book of eli",
+  "expected_chapter": "1",
+  "expected_volume": null
+ },
+ {
+  "input": "Cyberpunk 2077 - You Have My Word #02 (2021) (digital) (Son of Ultron-Empire).cbr",
+  "source": "comictagger",
+  "expected_series": "Cyberpunk 2077",
+  "expected_chapter": "2",
+  "expected_volume": null
+ },
+ {
+  "input": "Cyberpunk 2077 - You Have My Word 02 (2021) (digital) (Son of Ultron-Empire).cbr",
+  "source": "comictagger",
+  "expected_series": "Cyberpunk 2077",
+  "expected_chapter": "2",
+  "expected_volume": null
+ },
+ {
+  "input": "Elephantmen 2259 #008 - Simple Truth 03 (of 06) (2021) (digital) (Son of Ultron-Empire).cbr",
+  "source": "comictagger",
+  "expected_series": "Elephantmen 2259",
+  "expected_chapter": "8",
+  "expected_volume": "3"
+ },
+ {
+  "input": "Elephantmen 2259 008 - Simple Truth 03 (of 06) (2021) (digital) (Son of Ultron-Empire).cbr",
+  "source": "comictagger",
+  "expected_series": "Elephantmen 2259",
+  "expected_chapter": "8",
+  "expected_volume": "3"
+ },
+ {
+  "input": "Free Comic Book Day - Avengers.Hulk (2021) (2048px) (db).cbz",
+  "source": "comictagger",
+  "expected_series": "Free Comic Book Day - Avengers Hulk",
+  "expected_chapter": null,
+  "expected_volume": null
+ },
+ {
+  "input": "Goblin (2021) (digital) (Son of Ultron-Empire).cbr",
+  "source": "comictagger",
+  "expected_series": "Goblin",
+  "expected_chapter": null,
+  "expected_volume": null
+ },
+ {
+  "input": "Marvel Previews #002 (January 2022) (Digital-Empire).cbr",
+  "source": "comictagger",
+  "expected_series": "Marvel Previews",
+  "expected_chapter": "2",
+  "expected_volume": null
+ },
+ {
+  "input": "Marvel Previews 002 (January 2022) (Digital-Empire).cbr",
+  "source": "comictagger",
+  "expected_series": "Marvel Previews",
+  "expected_chapter": "2",
+  "expected_volume": null
+ },
+ {
+  "input": "Marvel Two In One V1 #090  c2c (Comixbear-DCP).cbr",
+  "source": "comictagger",
+  "expected_series": "Marvel Two In One",
+  "expected_chapter": "90",
+  "expected_volume": "1"
+ },
+ {
+  "input": "Marvel Two In One V1 090  c2c (Comixbear-DCP).cbr",
+  "source": "comictagger",
+  "expected_series": "Marvel Two In One",
+  "expected_chapter": "90",
+  "expected_volume": "1"
+ },
+ {
+  "input": "Star Wars - War of the Bounty Hunters - IG-88 (2021) (Digital) (Kileko-Empire).cbz",
+  "source": "comictagger",
+  "expected_series": "Star Wars - War of the Bounty Hunters - IG-88",
+  "expected_chapter": null,
+  "expected_volume": null
+ },
+ {
+  "input": "Star Wars - War of the Bounty Hunters - IG-88 #1 (2021) (Digital) (Kileko-Empire).cbz",
+  "source": "comictagger",
+  "expected_series": "Star Wars - War of the Bounty Hunters - IG-88",
+  "expected_chapter": "1",
+  "expected_volume": null
+ },
+ {
+  "input": "Star Wars - War of the Bounty Hunters - IG-88 1 (2021) (Digital) (Kileko-Empire).cbz",
+  "source": "comictagger",
+  "expected_series": "Star Wars - War of the Bounty Hunters - IG-88",
+  "expected_chapter": "1",
+  "expected_volume": null
+ },
+ {
+  "input": "The Defenders v1 #058 (1978) (digital).cbz",
+  "source": "comictagger",
+  "expected_series": "The Defenders",
+  "expected_chapter": "58",
+  "expected_volume": "1"
+ },
+ {
+  "input": "The Defenders v1 058 (1978) (digital).cbz",
+  "source": "comictagger",
+  "expected_series": "The Defenders",
+  "expected_chapter": "58",
+  "expected_volume": "1"
+ },
+ {
+  "input": "The Defenders v1 Annual #01 (1976) (Digital) (Minutemen-Slayer).cbr",
+  "source": "comictagger",
+  "expected_series": "The Defenders Annual",
+  "expected_chapter": "1",
+  "expected_volume": "1"
+ },
+ {
+  "input": "The Defenders v1 Annual 01 (1976) (Digital) (Minutemen-Slayer).cbr",
+  "source": "comictagger",
+  "expected_series": "The Defenders Annual",
+  "expected_chapter": "1",
+  "expected_volume": "1"
+ },
+ {
+  "input": "The Magic Order 2 #06 (2022) (Digital) (Zone-Empire)[__913302__].cbz",
+  "source": "comictagger",
+  "expected_series": "The Magic Order 2",
+  "expected_chapter": "6",
+  "expected_volume": null
+ },
+ {
+  "input": "The Magic Order 2 06 (2022) (Digital) (Zone-Empire)[__913302__].cbz",
+  "source": "comictagger",
+  "expected_series": "The Magic Order 2",
+  "expected_chapter": "6",
+  "expected_volume": null
+ },
+ {
+  "input": "Wonder Woman #001 Wonder Woman Day Special Edition (2021) (digital-Empire).cbr",
+  "source": "comictagger",
+  "expected_series": "Wonder Woman",
+  "expected_chapter": "1",
+  "expected_volume": null
+ },
+ {
+  "input": "Wonder Woman 001 Wonder Woman Day Special Edition (2021) (digital-Empire).cbr",
+  "source": "comictagger",
+  "expected_series": "Wonder Woman",
+  "expected_chapter": "1",
+  "expected_volume": null
+ },
+ {
+  "input": "Wonder Woman #49 DC Sep-Oct 1951 digital [downsized, lightened, 4 missing story pages restored] (Shadowcat-Empire).cbz",
+  "source": "comictagger",
+  "expected_series": "Wonder Woman",
+  "expected_chapter": "49",
+  "expected_volume": null
+ },
+ {
+  "input": "Wonder Woman 49 DC Sep-Oct 1951 digital [downsized, lightened, 4 missing story pages restored] (Shadowcat-Empire).cbz",
+  "source": "comictagger",
+  "expected_series": "Wonder Woman",
+  "expected_chapter": "49",
+  "expected_volume": null
+ },
+ {
+  "input": "X-Men, 2021-08-04 (#02) (digital) (Glorith-HD).cbz",
+  "source": "comictagger",
+  "expected_series": "X-Men",
+  "expected_chapter": "2",
+  "expected_volume": null
+ },
+ {
+  "input": "X-Men, 2021-08-04 (02) (digital) (Glorith-HD).cbz",
+  "source": "comictagger",
+  "expected_series": "X-Men",
+  "expected_chapter": "2",
+  "expected_volume": null
+ },
+ {
+  "input": "Cory Doctorow's Futuristic Tales of the Here and Now: Anda's Game #001 (2007).cbz",
+  "source": "comictagger",
+  "expected_series": "Cory Doctorow's Futuristic Tales of the Here and Now",
+  "expected_chapter": "1",
+  "expected_volume": null
+ },
+ {
+  "input": "Cory Doctorow's Futuristic Tales of the Here and Now: Anda's Game 001 (2007).cbz",
+  "source": "comictagger",
+  "expected_series": "Cory Doctorow's Futuristic Tales of the Here and Now",
+  "expected_chapter": "1",
+  "expected_volume": null
+ },
+ {
+  "input": "Cory Doctorow's Futuristic Tales of the Here and Now $1$2 3 #0.0.1 (2007).cbz",
+  "source": "comictagger",
+  "expected_series": "Cory Doctorow's Futuristic Tales of the Here and Now $1 $2 3",
+  "expected_chapter": "0.1",
+  "expected_volume": null
+ },
+ {
+  "input": "Cory Doctorow's Futuristic Tales of the Here and Now $1$2 3 0.0.1 (2007).cbz",
+  "source": "comictagger",
+  "expected_series": "Cory Doctorow's Futuristic Tales of the Here and Now $1 $2 3",
+  "expected_chapter": "0.1",
+  "expected_volume": null
+ }
+]

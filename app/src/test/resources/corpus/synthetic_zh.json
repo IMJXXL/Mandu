@@ -1,0 +1,1262 @@
+[
+ {
+  "input": "[汉化组]海贼王 第01卷.cbz",
+  "kind": "zh",
+  "title": "海贼王",
+  "volume": 1,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": null,
+  "chapterEnd": null
+ },
+ {
+  "input": "[汉化组]海贼王 第3话.zip",
+  "kind": "zh",
+  "title": "海贼王",
+  "volume": null,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 3.0,
+  "chapterEnd": null
+ },
+ {
+  "input": "[汉化组]海贼王 v01 c003.zip",
+  "kind": "zh",
+  "title": "海贼王",
+  "volume": 1,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 3.0,
+  "chapterEnd": null
+ },
+ {
+  "input": "[汉化组]海贼王 Vol.1.5.epub",
+  "kind": "zh",
+  "title": "海贼王",
+  "volume": 1,
+  "volumeDec": 500,
+  "volumeEnd": null,
+  "chapter": null,
+  "chapterEnd": null
+ },
+ {
+  "input": "[汉化组]海贼王 v01-v05.cbz",
+  "kind": "zh",
+  "title": "海贼王",
+  "volume": 1,
+  "volumeDec": null,
+  "volumeEnd": 5,
+  "chapter": null,
+  "chapterEnd": null
+ },
+ {
+  "input": "[汉化组]海贼王 c003-c007.rar",
+  "kind": "zh",
+  "title": "海贼王",
+  "volume": null,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 3.0,
+  "chapterEnd": 7.0
+ },
+ {
+  "input": "第1卷 海贼王",
+  "kind": "zh",
+  "title": "",
+  "volume": 1,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": null,
+  "chapterEnd": null
+ },
+ {
+  "input": "海贼王卷01",
+  "kind": "zh",
+  "title": "海贼王",
+  "volume": 1,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": null,
+  "chapterEnd": null
+ },
+ {
+  "input": "[汉化组]海贼王 Chapter 3.epub",
+  "kind": "zh",
+  "title": "海贼王",
+  "volume": null,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 3.0,
+  "chapterEnd": null
+ },
+ {
+  "input": "[汉化组]海贼王 第1卷第3话",
+  "kind": "zh",
+  "title": "海贼王",
+  "volume": 1,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 3.0,
+  "chapterEnd": null
+ },
+ {
+  "input": "汉化组_海贼王_v01_c003.cbz",
+  "kind": "zh",
+  "title": "汉化组 海贼王",
+  "volume": 1,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 3.0,
+  "chapterEnd": null
+ },
+ {
+  "input": "[汉化组]海贼王 第3話",
+  "kind": "zh",
+  "title": "海贼王",
+  "volume": null,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 3.0,
+  "chapterEnd": null
+ },
+ {
+  "input": "[HCG]进击的巨人 第02卷.cbz",
+  "kind": "zh",
+  "title": "进击的巨人",
+  "volume": 2,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": null,
+  "chapterEnd": null
+ },
+ {
+  "input": "[HCG]进击的巨人 第10话.zip",
+  "kind": "zh",
+  "title": "进击的巨人",
+  "volume": null,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 10.0,
+  "chapterEnd": null
+ },
+ {
+  "input": "[HCG]进击的巨人 v02 c010.zip",
+  "kind": "zh",
+  "title": "进击的巨人",
+  "volume": 2,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 10.0,
+  "chapterEnd": null
+ },
+ {
+  "input": "[HCG]进击的巨人 Vol.2.5.epub",
+  "kind": "zh",
+  "title": "进击的巨人",
+  "volume": 2,
+  "volumeDec": 500,
+  "volumeEnd": null,
+  "chapter": null,
+  "chapterEnd": null
+ },
+ {
+  "input": "[HCG]进击的巨人 v02-v06.cbz",
+  "kind": "zh",
+  "title": "进击的巨人",
+  "volume": 2,
+  "volumeDec": null,
+  "volumeEnd": 6,
+  "chapter": null,
+  "chapterEnd": null
+ },
+ {
+  "input": "[HCG]进击的巨人 c010-c014.rar",
+  "kind": "zh",
+  "title": "进击的巨人",
+  "volume": null,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 10.0,
+  "chapterEnd": 14.0
+ },
+ {
+  "input": "第2卷 进击的巨人",
+  "kind": "zh",
+  "title": "",
+  "volume": 2,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": null,
+  "chapterEnd": null
+ },
+ {
+  "input": "进击的巨人卷02",
+  "kind": "zh",
+  "title": "进击的巨人",
+  "volume": 2,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": null,
+  "chapterEnd": null
+ },
+ {
+  "input": "[HCG]进击的巨人 Chapter 10.epub",
+  "kind": "zh",
+  "title": "进击的巨人",
+  "volume": null,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 10.0,
+  "chapterEnd": null
+ },
+ {
+  "input": "[HCG]进击的巨人 第2卷第10话",
+  "kind": "zh",
+  "title": "进击的巨人",
+  "volume": 2,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 10.0,
+  "chapterEnd": null
+ },
+ {
+  "input": "HCG_进击的巨人_v02_c010.cbz",
+  "kind": "zh",
+  "title": "HCG 进击的巨人",
+  "volume": 2,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 10.0,
+  "chapterEnd": null
+ },
+ {
+  "input": "[HCG]进击的巨人 第10話",
+  "kind": "zh",
+  "title": "进击的巨人",
+  "volume": null,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 10.0,
+  "chapterEnd": null
+ },
+ {
+  "input": "灌篮高手 第03卷.cbz",
+  "kind": "zh",
+  "title": "灌篮高手",
+  "volume": 3,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": null,
+  "chapterEnd": null
+ },
+ {
+  "input": "灌篮高手 第17话.zip",
+  "kind": "zh",
+  "title": "灌篮高手",
+  "volume": null,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 17.0,
+  "chapterEnd": null
+ },
+ {
+  "input": "灌篮高手 v03 c017.zip",
+  "kind": "zh",
+  "title": "灌篮高手",
+  "volume": 3,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 17.0,
+  "chapterEnd": null
+ },
+ {
+  "input": "灌篮高手 Vol.3.5.epub",
+  "kind": "zh",
+  "title": "灌篮高手",
+  "volume": 3,
+  "volumeDec": 500,
+  "volumeEnd": null,
+  "chapter": null,
+  "chapterEnd": null
+ },
+ {
+  "input": "灌篮高手 v03-v07.cbz",
+  "kind": "zh",
+  "title": "灌篮高手",
+  "volume": 3,
+  "volumeDec": null,
+  "volumeEnd": 7,
+  "chapter": null,
+  "chapterEnd": null
+ },
+ {
+  "input": "灌篮高手 c017-c021.rar",
+  "kind": "zh",
+  "title": "灌篮高手",
+  "volume": null,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 17.0,
+  "chapterEnd": 21.0
+ },
+ {
+  "input": "第3卷 灌篮高手",
+  "kind": "zh",
+  "title": "",
+  "volume": 3,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": null,
+  "chapterEnd": null
+ },
+ {
+  "input": "灌篮高手卷03",
+  "kind": "zh",
+  "title": "灌篮高手",
+  "volume": 3,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": null,
+  "chapterEnd": null
+ },
+ {
+  "input": "灌篮高手 Chapter 17.epub",
+  "kind": "zh",
+  "title": "灌篮高手",
+  "volume": null,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 17.0,
+  "chapterEnd": null
+ },
+ {
+  "input": "灌篮高手 第3卷第17话",
+  "kind": "zh",
+  "title": "灌篮高手",
+  "volume": 3,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 17.0,
+  "chapterEnd": null
+ },
+ {
+  "input": "灌篮高手_v03_c017.cbz",
+  "kind": "zh",
+  "title": "灌篮高手",
+  "volume": 3,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 17.0,
+  "chapterEnd": null
+ },
+ {
+  "input": "灌篮高手 第17話",
+  "kind": "zh",
+  "title": "灌篮高手",
+  "volume": null,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 17.0,
+  "chapterEnd": null
+ },
+ {
+  "input": "[汉化组]一人之下 第04卷.cbz",
+  "kind": "zh",
+  "title": "一人之下",
+  "volume": 4,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": null,
+  "chapterEnd": null
+ },
+ {
+  "input": "[汉化组]一人之下 第24话.zip",
+  "kind": "zh",
+  "title": "一人之下",
+  "volume": null,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 24.0,
+  "chapterEnd": null
+ },
+ {
+  "input": "[汉化组]一人之下 v04 c024.zip",
+  "kind": "zh",
+  "title": "一人之下",
+  "volume": 4,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 24.0,
+  "chapterEnd": null
+ },
+ {
+  "input": "[汉化组]一人之下 Vol.4.5.epub",
+  "kind": "zh",
+  "title": "一人之下",
+  "volume": 4,
+  "volumeDec": 500,
+  "volumeEnd": null,
+  "chapter": null,
+  "chapterEnd": null
+ },
+ {
+  "input": "[汉化组]一人之下 v04-v08.cbz",
+  "kind": "zh",
+  "title": "一人之下",
+  "volume": 4,
+  "volumeDec": null,
+  "volumeEnd": 8,
+  "chapter": null,
+  "chapterEnd": null
+ },
+ {
+  "input": "[汉化组]一人之下 c024-c028.rar",
+  "kind": "zh",
+  "title": "一人之下",
+  "volume": null,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 24.0,
+  "chapterEnd": 28.0
+ },
+ {
+  "input": "第4卷 一人之下",
+  "kind": "zh",
+  "title": "",
+  "volume": 4,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": null,
+  "chapterEnd": null
+ },
+ {
+  "input": "一人之下卷04",
+  "kind": "zh",
+  "title": "一人之下",
+  "volume": 4,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": null,
+  "chapterEnd": null
+ },
+ {
+  "input": "[汉化组]一人之下 Chapter 24.epub",
+  "kind": "zh",
+  "title": "一人之下",
+  "volume": null,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 24.0,
+  "chapterEnd": null
+ },
+ {
+  "input": "[汉化组]一人之下 第4卷第24话",
+  "kind": "zh",
+  "title": "一人之下",
+  "volume": 4,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 24.0,
+  "chapterEnd": null
+ },
+ {
+  "input": "汉化组_一人之下_v04_c024.cbz",
+  "kind": "zh",
+  "title": "汉化组 一人之下",
+  "volume": 4,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 24.0,
+  "chapterEnd": null
+ },
+ {
+  "input": "[汉化组]一人之下 第24話",
+  "kind": "zh",
+  "title": "一人之下",
+  "volume": null,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 24.0,
+  "chapterEnd": null
+ },
+ {
+  "input": "[HCG]浪客行 第05卷.cbz",
+  "kind": "zh",
+  "title": "浪客行",
+  "volume": 5,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": null,
+  "chapterEnd": null
+ },
+ {
+  "input": "[HCG]浪客行 第31话.zip",
+  "kind": "zh",
+  "title": "浪客行",
+  "volume": null,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 31.0,
+  "chapterEnd": null
+ },
+ {
+  "input": "[HCG]浪客行 v05 c031.zip",
+  "kind": "zh",
+  "title": "浪客行",
+  "volume": 5,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 31.0,
+  "chapterEnd": null
+ },
+ {
+  "input": "[HCG]浪客行 Vol.5.5.epub",
+  "kind": "zh",
+  "title": "浪客行",
+  "volume": 5,
+  "volumeDec": 500,
+  "volumeEnd": null,
+  "chapter": null,
+  "chapterEnd": null
+ },
+ {
+  "input": "[HCG]浪客行 v05-v09.cbz",
+  "kind": "zh",
+  "title": "浪客行",
+  "volume": 5,
+  "volumeDec": null,
+  "volumeEnd": 9,
+  "chapter": null,
+  "chapterEnd": null
+ },
+ {
+  "input": "[HCG]浪客行 c031-c035.rar",
+  "kind": "zh",
+  "title": "浪客行",
+  "volume": null,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 31.0,
+  "chapterEnd": 35.0
+ },
+ {
+  "input": "第5卷 浪客行",
+  "kind": "zh",
+  "title": "",
+  "volume": 5,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": null,
+  "chapterEnd": null
+ },
+ {
+  "input": "浪客行卷05",
+  "kind": "zh",
+  "title": "浪客行",
+  "volume": 5,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": null,
+  "chapterEnd": null
+ },
+ {
+  "input": "[HCG]浪客行 Chapter 31.epub",
+  "kind": "zh",
+  "title": "浪客行",
+  "volume": null,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 31.0,
+  "chapterEnd": null
+ },
+ {
+  "input": "[HCG]浪客行 第5卷第31话",
+  "kind": "zh",
+  "title": "浪客行",
+  "volume": 5,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 31.0,
+  "chapterEnd": null
+ },
+ {
+  "input": "HCG_浪客行_v05_c031.cbz",
+  "kind": "zh",
+  "title": "HCG 浪客行",
+  "volume": 5,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 31.0,
+  "chapterEnd": null
+ },
+ {
+  "input": "[HCG]浪客行 第31話",
+  "kind": "zh",
+  "title": "浪客行",
+  "volume": null,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 31.0,
+  "chapterEnd": null
+ },
+ {
+  "input": "幽游白书 完全版 第06卷.cbz",
+  "kind": "zh",
+  "title": "幽游白书 完全版",
+  "volume": 6,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": null,
+  "chapterEnd": null
+ },
+ {
+  "input": "幽游白书 完全版 第38话.zip",
+  "kind": "zh",
+  "title": "幽游白书 完全版",
+  "volume": null,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 38.0,
+  "chapterEnd": null
+ },
+ {
+  "input": "幽游白书 完全版 v06 c038.zip",
+  "kind": "zh",
+  "title": "幽游白书 完全版",
+  "volume": 6,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 38.0,
+  "chapterEnd": null
+ },
+ {
+  "input": "幽游白书 完全版 Vol.6.5.epub",
+  "kind": "zh",
+  "title": "幽游白书 完全版",
+  "volume": 6,
+  "volumeDec": 500,
+  "volumeEnd": null,
+  "chapter": null,
+  "chapterEnd": null
+ },
+ {
+  "input": "幽游白书 完全版 v06-v10.cbz",
+  "kind": "zh",
+  "title": "幽游白书 完全版",
+  "volume": 6,
+  "volumeDec": null,
+  "volumeEnd": 10,
+  "chapter": null,
+  "chapterEnd": null
+ },
+ {
+  "input": "幽游白书 完全版 c038-c042.rar",
+  "kind": "zh",
+  "title": "幽游白书 完全版",
+  "volume": null,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 38.0,
+  "chapterEnd": 42.0
+ },
+ {
+  "input": "第6卷 幽游白书 完全版",
+  "kind": "zh",
+  "title": "",
+  "volume": 6,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": null,
+  "chapterEnd": null
+ },
+ {
+  "input": "幽游白书 完全版卷06",
+  "kind": "zh",
+  "title": "幽游白书",
+  "volume": 6,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": null,
+  "chapterEnd": null
+ },
+ {
+  "input": "幽游白书 完全版 Chapter 38.epub",
+  "kind": "zh",
+  "title": "幽游白书 完全版",
+  "volume": null,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 38.0,
+  "chapterEnd": null
+ },
+ {
+  "input": "幽游白书 完全版 第6卷第38话",
+  "kind": "zh",
+  "title": "幽游白书 完全版",
+  "volume": 6,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 38.0,
+  "chapterEnd": null
+ },
+ {
+  "input": "幽游白书 完全版_v06_c038.cbz",
+  "kind": "zh",
+  "title": "幽游白书 完全版",
+  "volume": 6,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 38.0,
+  "chapterEnd": null
+ },
+ {
+  "input": "幽游白书 完全版 第38話",
+  "kind": "zh",
+  "title": "幽游白书 完全版",
+  "volume": null,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 38.0,
+  "chapterEnd": null
+ },
+ {
+  "input": "[汉化组]ワンピース 第07卷.cbz",
+  "kind": "zh",
+  "title": "ワンピース",
+  "volume": 7,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": null,
+  "chapterEnd": null
+ },
+ {
+  "input": "[汉化组]ワンピース 第45话.zip",
+  "kind": "zh",
+  "title": "ワンピース",
+  "volume": null,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 45.0,
+  "chapterEnd": null
+ },
+ {
+  "input": "[汉化组]ワンピース v07 c045.zip",
+  "kind": "zh",
+  "title": "ワンピース",
+  "volume": 7,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 45.0,
+  "chapterEnd": null
+ },
+ {
+  "input": "[汉化组]ワンピース Vol.7.5.epub",
+  "kind": "zh",
+  "title": "ワンピース",
+  "volume": 7,
+  "volumeDec": 500,
+  "volumeEnd": null,
+  "chapter": null,
+  "chapterEnd": null
+ },
+ {
+  "input": "[汉化组]ワンピース v07-v11.cbz",
+  "kind": "zh",
+  "title": "ワンピース",
+  "volume": 7,
+  "volumeDec": null,
+  "volumeEnd": 11,
+  "chapter": null,
+  "chapterEnd": null
+ },
+ {
+  "input": "[汉化组]ワンピース c045-c049.rar",
+  "kind": "zh",
+  "title": "ワンピース",
+  "volume": null,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 45.0,
+  "chapterEnd": 49.0
+ },
+ {
+  "input": "第7卷 ワンピース",
+  "kind": "zh",
+  "title": "",
+  "volume": 7,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": null,
+  "chapterEnd": null
+ },
+ {
+  "input": "ワンピース卷07",
+  "kind": "zh",
+  "title": "ワンピース",
+  "volume": 7,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": null,
+  "chapterEnd": null
+ },
+ {
+  "input": "[汉化组]ワンピース Chapter 45.epub",
+  "kind": "zh",
+  "title": "ワンピース",
+  "volume": null,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 45.0,
+  "chapterEnd": null
+ },
+ {
+  "input": "[汉化组]ワンピース 第7卷第45话",
+  "kind": "zh",
+  "title": "ワンピース",
+  "volume": 7,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 45.0,
+  "chapterEnd": null
+ },
+ {
+  "input": "汉化组_ワンピース_v07_c045.cbz",
+  "kind": "zh",
+  "title": "汉化组 ワンピース",
+  "volume": 7,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 45.0,
+  "chapterEnd": null
+ },
+ {
+  "input": "[汉化组]ワンピース 第45話",
+  "kind": "zh",
+  "title": "ワンピース",
+  "volume": null,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 45.0,
+  "chapterEnd": null
+ },
+ {
+  "input": "[HCG]兴唐传 第08卷.cbz",
+  "kind": "zh",
+  "title": "兴唐传",
+  "volume": 8,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": null,
+  "chapterEnd": null
+ },
+ {
+  "input": "[HCG]兴唐传 第52话.zip",
+  "kind": "zh",
+  "title": "兴唐传",
+  "volume": null,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 52.0,
+  "chapterEnd": null
+ },
+ {
+  "input": "[HCG]兴唐传 v08 c052.zip",
+  "kind": "zh",
+  "title": "兴唐传",
+  "volume": 8,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 52.0,
+  "chapterEnd": null
+ },
+ {
+  "input": "[HCG]兴唐传 Vol.8.5.epub",
+  "kind": "zh",
+  "title": "兴唐传",
+  "volume": 8,
+  "volumeDec": 500,
+  "volumeEnd": null,
+  "chapter": null,
+  "chapterEnd": null
+ },
+ {
+  "input": "[HCG]兴唐传 v08-v12.cbz",
+  "kind": "zh",
+  "title": "兴唐传",
+  "volume": 8,
+  "volumeDec": null,
+  "volumeEnd": 12,
+  "chapter": null,
+  "chapterEnd": null
+ },
+ {
+  "input": "[HCG]兴唐传 c052-c056.rar",
+  "kind": "zh",
+  "title": "兴唐传",
+  "volume": null,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 52.0,
+  "chapterEnd": 56.0
+ },
+ {
+  "input": "第8卷 兴唐传",
+  "kind": "zh",
+  "title": "",
+  "volume": 8,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": null,
+  "chapterEnd": null
+ },
+ {
+  "input": "兴唐传卷08",
+  "kind": "zh",
+  "title": "兴唐传",
+  "volume": 8,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": null,
+  "chapterEnd": null
+ },
+ {
+  "input": "[HCG]兴唐传 Chapter 52.epub",
+  "kind": "zh",
+  "title": "兴唐传",
+  "volume": null,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 52.0,
+  "chapterEnd": null
+ },
+ {
+  "input": "[HCG]兴唐传 第8卷第52话",
+  "kind": "zh",
+  "title": "兴唐传",
+  "volume": 8,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 52.0,
+  "chapterEnd": null
+ },
+ {
+  "input": "HCG_兴唐传_v08_c052.cbz",
+  "kind": "zh",
+  "title": "HCG 兴唐传",
+  "volume": 8,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 52.0,
+  "chapterEnd": null
+ },
+ {
+  "input": "[HCG]兴唐传 第52話",
+  "kind": "zh",
+  "title": "兴唐传",
+  "volume": null,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 52.0,
+  "chapterEnd": null
+ },
+ {
+  "input": "镖人 第09卷.cbz",
+  "kind": "zh",
+  "title": "镖人",
+  "volume": 9,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": null,
+  "chapterEnd": null
+ },
+ {
+  "input": "镖人 第59话.zip",
+  "kind": "zh",
+  "title": "镖人",
+  "volume": null,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 59.0,
+  "chapterEnd": null
+ },
+ {
+  "input": "镖人 v09 c059.zip",
+  "kind": "zh",
+  "title": "镖人",
+  "volume": 9,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 59.0,
+  "chapterEnd": null
+ },
+ {
+  "input": "镖人 Vol.9.5.epub",
+  "kind": "zh",
+  "title": "镖人",
+  "volume": 9,
+  "volumeDec": 500,
+  "volumeEnd": null,
+  "chapter": null,
+  "chapterEnd": null
+ },
+ {
+  "input": "镖人 v01-v05.cbz",
+  "kind": "zh",
+  "title": "镖人",
+  "volume": 1,
+  "volumeDec": null,
+  "volumeEnd": 5,
+  "chapter": null,
+  "chapterEnd": null
+ },
+ {
+  "input": "镖人 c059-c063.rar",
+  "kind": "zh",
+  "title": "镖人",
+  "volume": null,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 59.0,
+  "chapterEnd": 63.0
+ },
+ {
+  "input": "第9卷 镖人",
+  "kind": "zh",
+  "title": "",
+  "volume": 9,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": null,
+  "chapterEnd": null
+ },
+ {
+  "input": "镖人卷09",
+  "kind": "zh",
+  "title": "镖人",
+  "volume": 9,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": null,
+  "chapterEnd": null
+ },
+ {
+  "input": "镖人 Chapter 59.epub",
+  "kind": "zh",
+  "title": "镖人",
+  "volume": null,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 59.0,
+  "chapterEnd": null
+ },
+ {
+  "input": "镖人 第9卷第59话",
+  "kind": "zh",
+  "title": "镖人",
+  "volume": 9,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 59.0,
+  "chapterEnd": null
+ },
+ {
+  "input": "镖人_v09_c059.cbz",
+  "kind": "zh",
+  "title": "镖人",
+  "volume": 9,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 59.0,
+  "chapterEnd": null
+ },
+ {
+  "input": "镖人 第59話",
+  "kind": "zh",
+  "title": "镖人",
+  "volume": null,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 59.0,
+  "chapterEnd": null
+ },
+ {
+  "input": "[汉化组]火凤燎原 第01卷.cbz",
+  "kind": "zh",
+  "title": "火凤燎原",
+  "volume": 1,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": null,
+  "chapterEnd": null
+ },
+ {
+  "input": "[汉化组]火凤燎原 第66话.zip",
+  "kind": "zh",
+  "title": "火凤燎原",
+  "volume": null,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 66.0,
+  "chapterEnd": null
+ },
+ {
+  "input": "[汉化组]火凤燎原 v01 c066.zip",
+  "kind": "zh",
+  "title": "火凤燎原",
+  "volume": 1,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 66.0,
+  "chapterEnd": null
+ },
+ {
+  "input": "[汉化组]火凤燎原 Vol.1.5.epub",
+  "kind": "zh",
+  "title": "火凤燎原",
+  "volume": 1,
+  "volumeDec": 500,
+  "volumeEnd": null,
+  "chapter": null,
+  "chapterEnd": null
+ },
+ {
+  "input": "[汉化组]火凤燎原 v02-v06.cbz",
+  "kind": "zh",
+  "title": "火凤燎原",
+  "volume": 2,
+  "volumeDec": null,
+  "volumeEnd": 6,
+  "chapter": null,
+  "chapterEnd": null
+ },
+ {
+  "input": "[汉化组]火凤燎原 c066-c070.rar",
+  "kind": "zh",
+  "title": "火凤燎原",
+  "volume": null,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 66.0,
+  "chapterEnd": 70.0
+ },
+ {
+  "input": "第1卷 火凤燎原",
+  "kind": "zh",
+  "title": "",
+  "volume": 1,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": null,
+  "chapterEnd": null
+ },
+ {
+  "input": "火凤燎原卷01",
+  "kind": "zh",
+  "title": "火凤燎原",
+  "volume": 1,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": null,
+  "chapterEnd": null
+ },
+ {
+  "input": "[汉化组]火凤燎原 Chapter 66.epub",
+  "kind": "zh",
+  "title": "火凤燎原",
+  "volume": null,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 66.0,
+  "chapterEnd": null
+ },
+ {
+  "input": "[汉化组]火凤燎原 第1卷第66话",
+  "kind": "zh",
+  "title": "火凤燎原",
+  "volume": 1,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 66.0,
+  "chapterEnd": null
+ },
+ {
+  "input": "汉化组_火凤燎原_v01_c066.cbz",
+  "kind": "zh",
+  "title": "汉化组 火凤燎原",
+  "volume": 1,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 66.0,
+  "chapterEnd": null
+ },
+ {
+  "input": "[汉化组]火凤燎原 第66話",
+  "kind": "zh",
+  "title": "火凤燎原",
+  "volume": null,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 66.0,
+  "chapterEnd": null
+ },
+ {
+  "input": "｛全角测试｝ｖｏｌ．０３",
+  "kind": "zh",
+  "title": "全角测试",
+  "volume": 3,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": null,
+  "chapterEnd": null
+ },
+ {
+  "input": "海贼王 第42话(修订v2)",
+  "kind": "zh",
+  "title": "海贼王",
+  "volume": null,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 42.0,
+  "chapterEnd": null
+ },
+ {
+  "input": "一拳超人 c42a.cbz",
+  "kind": "zh",
+  "title": "一拳超人",
+  "volume": null,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 42.1,
+  "chapterEnd": null
+ },
+ {
+  "input": "一拳超人 Ch.42extra",
+  "kind": "zh",
+  "title": "一拳超人",
+  "volume": null,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 42.99,
+  "chapterEnd": null
+ },
+ {
+  "input": "某书 024-005.zip",
+  "kind": "zh",
+  "title": "某书",
+  "volume": null,
+  "volumeDec": null,
+  "volumeEnd": null,
+  "chapter": 24.005,
+  "chapterEnd": null
+ },
+ {
+  "input": "某书 v2.5 c10.zip",
+  "kind": "zh",
+  "title": "某书",
+  "volume": 2,
+  "volumeDec": 500,
+  "volumeEnd": null,
+  "chapter": 10.0,
+  "chapterEnd": null
+ }
+]

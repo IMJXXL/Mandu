@@ -1,0 +1,272 @@
+[
+ {
+  "input": "04 - Asterix the Gladiator (1964) (Digital-Empire) (WebP by Doc MaKS)",
+  "source": "kavita-Comic::ParseComicSeriesTest",
+  "expected_series": "Asterix the Gladiator"
+ },
+ {
+  "input": "The First Asterix Frieze (WebP by Doc MaKS)",
+  "source": "kavita-Comic::ParseComicSeriesTest",
+  "expected_series": "The First Asterix Frieze"
+ },
+ {
+  "input": "Batman & Catwoman - Trail of the Gun 01",
+  "source": "kavita-Comic::ParseComicSeriesTest",
+  "expected_series": "Batman & Catwoman - Trail of the Gun"
+ },
+ {
+  "input": "Batman & Daredevil - King of New York",
+  "source": "kavita-Comic::ParseComicSeriesTest",
+  "expected_series": "Batman & Daredevil - King of New York"
+ },
+ {
+  "input": "Batman & Grendel (1996) 01 - Devil's Bones",
+  "source": "kavita-Comic::ParseComicSeriesTest",
+  "expected_series": "Batman & Grendel"
+ },
+ {
+  "input": "Batman & Robin the Teen Wonder #0",
+  "source": "kavita-Comic::ParseComicSeriesTest",
+  "expected_series": "Batman & Robin the Teen Wonder"
+ },
+ {
+  "input": "Batman & Wildcat (1 of 3)",
+  "source": "kavita-Comic::ParseComicSeriesTest",
+  "expected_series": "Batman & Wildcat"
+ },
+ {
+  "input": "Batman And Superman World's Finest #01",
+  "source": "kavita-Comic::ParseComicSeriesTest",
+  "expected_series": "Batman And Superman World's Finest"
+ },
+ {
+  "input": "Babe 01",
+  "source": "kavita-Comic::ParseComicSeriesTest",
+  "expected_series": "Babe"
+ },
+ {
+  "input": "Scott Pilgrim 01 - Scott Pilgrim's Precious Little Life (2004)",
+  "source": "kavita-Comic::ParseComicSeriesTest",
+  "expected_series": "Scott Pilgrim"
+ },
+ {
+  "input": "Teen Titans v1 001 (1966-02) (digital) (OkC.O.M.P.U.T.O.-Novus)",
+  "source": "kavita-Comic::ParseComicSeriesTest",
+  "expected_series": "Teen Titans"
+ },
+ {
+  "input": "Scott Pilgrim 02 - Scott Pilgrim vs. The World (2005)",
+  "source": "kavita-Comic::ParseComicSeriesTest",
+  "expected_series": "Scott Pilgrim"
+ },
+ {
+  "input": "Wolverine - Origins 003 (2006) (digital) (Minutemen-PhD)",
+  "source": "kavita-Comic::ParseComicSeriesTest",
+  "expected_series": "Wolverine - Origins"
+ },
+ {
+  "input": "Invincible Vol 01 Family matters (2005) (Digital).cbr",
+  "source": "kavita-Comic::ParseComicSeriesTest",
+  "expected_series": "Invincible"
+ },
+ {
+  "input": "Amazing Man Comics chapter 25",
+  "source": "kavita-Comic::ParseComicSeriesTest",
+  "expected_series": "Amazing Man Comics"
+ },
+ {
+  "input": "Amazing Man Comics issue #25",
+  "source": "kavita-Comic::ParseComicSeriesTest",
+  "expected_series": "Amazing Man Comics"
+ },
+ {
+  "input": "Teen Titans v1 038 (1972) (c2c).cbr",
+  "source": "kavita-Comic::ParseComicSeriesTest",
+  "expected_series": "Teen Titans"
+ },
+ {
+  "input": "Batman Beyond 02 (of 6) (1999)",
+  "source": "kavita-Comic::ParseComicSeriesTest",
+  "expected_series": "Batman Beyond"
+ },
+ {
+  "input": "Batman Beyond - Return of the Joker (2001)",
+  "source": "kavita-Comic::ParseComicSeriesTest",
+  "expected_series": "Batman Beyond - Return of the Joker"
+ },
+ {
+  "input": "Invincible 033.5 - Marvel Team-Up 14 (2006) (digital) (Minutemen-Slayer)",
+  "source": "kavita-Comic::ParseComicSeriesTest",
+  "expected_series": "Invincible"
+ },
+ {
+  "input": "Batman Wayne Family Adventures - Ep. 001 - Moving In",
+  "source": "kavita-Comic::ParseComicSeriesTest",
+  "expected_series": "Batman Wayne Family Adventures"
+ },
+ {
+  "input": "Saga 001 (2012) (Digital) (Empire-Zone).cbr",
+  "source": "kavita-Comic::ParseComicSeriesTest",
+  "expected_series": "Saga"
+ },
+ {
+  "input": "spawn-123",
+  "source": "kavita-Comic::ParseComicSeriesTest",
+  "expected_series": "spawn"
+ },
+ {
+  "input": "spawn-chapter-123",
+  "source": "kavita-Comic::ParseComicSeriesTest",
+  "expected_series": "spawn"
+ },
+ {
+  "input": "Spawn 062 (1997) (digital) (TLK-EMPIRE-HD).cbr",
+  "source": "kavita-Comic::ParseComicSeriesTest",
+  "expected_series": "Spawn"
+ },
+ {
+  "input": "Batman Beyond 04 (of 6) (1999)",
+  "source": "kavita-Comic::ParseComicSeriesTest",
+  "expected_series": "Batman Beyond"
+ },
+ {
+  "input": "Batman Beyond 001 (2012)",
+  "source": "kavita-Comic::ParseComicSeriesTest",
+  "expected_series": "Batman Beyond"
+ },
+ {
+  "input": "Batman Beyond 2.0 001 (2013)",
+  "source": "kavita-Comic::ParseComicSeriesTest",
+  "expected_series": "Batman Beyond 2.0"
+ },
+ {
+  "input": "Batman - Catwoman 001 (2021) (Webrip) (The Last Kryptonian-DCP)",
+  "source": "kavita-Comic::ParseComicSeriesTest",
+  "expected_series": "Batman - Catwoman"
+ },
+ {
+  "input": "Chew v1 - Taster´s Choise (2012) (Digital) (1920) (Kingpin-Empire)",
+  "source": "kavita-Comic::ParseComicSeriesTest",
+  "expected_series": "Chew"
+ },
+ {
+  "input": "Chew Script Book (2011) (digital-Empire) SP04",
+  "source": "kavita-Comic::ParseComicSeriesTest",
+  "expected_series": "Chew Script Book"
+ },
+ {
+  "input": "Batman - Detective Comics - Rebirth Deluxe Edition Book 02 (2018) (digital) (Son of Ultron-Empire)",
+  "source": "kavita-Comic::ParseComicSeriesTest",
+  "expected_series": "Batman - Detective Comics - Rebirth Deluxe Edition Book"
+ },
+ {
+  "input": "Cyberpunk 2077 - Your Voice #01",
+  "source": "kavita-Comic::ParseComicSeriesTest",
+  "expected_series": "Cyberpunk 2077 - Your Voice"
+ },
+ {
+  "input": "Cyberpunk 2077 #01",
+  "source": "kavita-Comic::ParseComicSeriesTest",
+  "expected_series": "Cyberpunk 2077"
+ },
+ {
+  "input": "Cyberpunk 2077 - Trauma Team #04.cbz",
+  "source": "kavita-Comic::ParseComicSeriesTest",
+  "expected_series": "Cyberpunk 2077 - Trauma Team"
+ },
+ {
+  "input": "Batgirl Vol.2000 #57 (December, 2004)",
+  "source": "kavita-Comic::ParseComicSeriesTest",
+  "expected_series": "Batgirl"
+ },
+ {
+  "input": "Batgirl V2000 #57",
+  "source": "kavita-Comic::ParseComicSeriesTest",
+  "expected_series": "Batgirl"
+ },
+ {
+  "input": "Fables 021 (2004) (Digital) (Nahga-Empire)",
+  "source": "kavita-Comic::ParseComicSeriesTest",
+  "expected_series": "Fables"
+ },
+ {
+  "input": "2000 AD 0366 [1984-04-28] (flopbie)",
+  "source": "kavita-Comic::ParseComicSeriesTest",
+  "expected_series": "2000 AD"
+ },
+ {
+  "input": "Daredevil - v6 - 10 - (2019)",
+  "source": "kavita-Comic::ParseComicSeriesTest",
+  "expected_series": "Daredevil"
+ },
+ {
+  "input": "Batman - The Man Who Laughs #1 (2005)",
+  "source": "kavita-Comic::ParseComicSeriesTest",
+  "expected_series": "Batman - The Man Who Laughs"
+ },
+ {
+  "input": "Demon 012 (Sep 1973) c2c",
+  "source": "kavita-Comic::ParseComicSeriesTest",
+  "expected_series": "Demon"
+ },
+ {
+  "input": "Dragon Age - Until We Sleep 01 (of 03)",
+  "source": "kavita-Comic::ParseComicSeriesTest",
+  "expected_series": "Dragon Age - Until We Sleep"
+ },
+ {
+  "input": "Green Lantern v2 017 - The Spy-Eye that doomed Green Lantern v2",
+  "source": "kavita-Comic::ParseComicSeriesTest",
+  "expected_series": "Green Lantern"
+ },
+ {
+  "input": "Green Lantern - Circle of Fire Special - Adam Strange (2000)",
+  "source": "kavita-Comic::ParseComicSeriesTest",
+  "expected_series": "Green Lantern - Circle of Fire - Adam Strange"
+ },
+ {
+  "input": "Identity Crisis Extra - Rags Morales Sketches (2005)",
+  "source": "kavita-Comic::ParseComicSeriesTest",
+  "expected_series": "Identity Crisis - Rags Morales Sketches"
+ },
+ {
+  "input": "Conquistador_-Tome_2",
+  "source": "kavita-Comic::ParseComicSeriesTest",
+  "expected_series": "Conquistador"
+ },
+ {
+  "input": "Tintin - T22 Vol 714 pour Sydney",
+  "source": "kavita-Comic::ParseComicSeriesTest",
+  "expected_series": "Tintin"
+ },
+ {
+  "input": "Fables 2010 Vol. 1 Legends in Exile",
+  "source": "kavita-Comic::ParseComicSeriesTest",
+  "expected_series": "Fables 2010"
+ },
+ {
+  "input": "Kebab Том 1 Глава 1",
+  "source": "kavita-Comic::ParseComicSeriesTest",
+  "expected_series": "Kebab"
+ },
+ {
+  "input": "Манга Глава 1",
+  "source": "kavita-Comic::ParseComicSeriesTest",
+  "expected_series": "Манга"
+ },
+ {
+  "input": "D.I.C.E[Season 001] Ep. 007",
+  "expected_chapter_f64": "7.0",
+  "source": "mihon-Chapter"
+ },
+ {
+  "input": "S3 - Chapter 20",
+  "expected_chapter_f64": "20.0",
+  "source": "mihon-Chapter"
+ },
+ {
+  "input": "One Outs 001",
+  "expected_chapter_f64": "1.0",
+  "source": "mihon-Chapter"
+ }
+]
