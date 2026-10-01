@@ -961,6 +961,15 @@ object BookTitleParser {
     private val COLLECTION_WORDS = listOf("合集", "收藏", "漫画", "杂图", "manga", "comic", "download", "下载")
 
     /**
+     * 类目夹名（**精确匹配**，不 substring——防误伤"哆啦A梦短篇集"这类真系列名）：
+     * "A/日漫/2025/哆啦a梦/短篇/第1话" 结构里 短篇/日漫 是分类词不是系列名。
+     */
+    private val CATEGORY_DIR_NAMES = setOf(
+        "短篇", "短篇集", "单行本", "未分类", "其他", "其它", "杂项", "待整理",
+        "日漫", "国漫", "韩漫", "美漫", "港漫", "连载", "完结",
+    )
+
+    /**
      * 祖先目录名（从最近到最远，不含树根本身——树根是用户选的扫描根，不是系列名）。
      * SAF d:/a: 书按 docId 层级取；z:（zip 内部）与其他路径形态返回空。
      */
@@ -1006,6 +1015,7 @@ object BookTitleParser {
                 }
             ) continue
             if (COLLECTION_WORDS.any { n.lowercase().contains(it) }) continue
+            if (n in CATEGORY_DIR_NAMES) continue                     // "短篇"/"日漫" 类目夹（精确匹配）
             return n
         }
         return null

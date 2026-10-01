@@ -161,6 +161,24 @@ class BookTitleParserTest {
         )
     }
 
+    @Test fun ancestorSeriesSkipsCategoryFolders() {
+        // 用户实库结构：A(树根)/日漫/2025/哆啦a梦/短篇/第1话 —— 类目夹（短篇/日漫）与 2025/A 全跳，取哆啦a梦
+        val anc = listOf("短篇", "哆啦a梦", "2025", "日漫", "A")
+        assertEquals("哆啦a梦", BookTitleParser.seriesFromAncestors(anc))
+        // 树根=A 时祖先不含 A：同样成立
+        assertEquals("哆啦a梦", BookTitleParser.seriesFromAncestors(listOf("短篇", "哆啦a梦", "2025", "日漫")))
+        // 短篇里还有单篇夹 → 最近可信优先（单篇名当系列名，单篇本身就是一本书）
+        assertEquals("野比大雄的恐龙", BookTitleParser.seriesFromAncestors(listOf("野比大雄的恐龙", "短篇", "哆啦a梦", "2025", "日漫")))
+        // 类目夹下面没有任何真系列 → null（退回原名+Ch.N）
+        assertEquals(null, BookTitleParser.seriesFromAncestors(listOf("短篇", "2025", "日漫")))
+        // 端到端：SAF 路径 → 原名 → 显示名（树根=A）
+        val p = "d:com.android.externalstorage.documents|primary:A|primary:A/日漫/2025/哆啦a梦/短篇/第1话"
+        assertEquals(listOf("短篇", "哆啦a梦", "2025", "日漫"), BookTitleParser.ancestorNamesOf(p))
+        assertEquals("哆啦a梦 Ch.01", BookTitleParser.displayTitle(BookTitleParser.fileNameOf(p), true, BookTitleParser.ancestorNamesOf(p)))
+        // 精确匹配不误伤真系列名："哆啦A梦短篇集"含"短篇"二字但不是类目夹
+        assertEquals("哆啦A梦短篇集", BookTitleParser.seriesFromAncestors(listOf("哆啦A梦短篇集", "日漫")))
+    }
+
     @Test fun ancestorSeriesSkipsGroupingFolders() {
         // 用户场景：合集/A/哆啦A梦/第1话新室友 —— A 和合集都不是系列名
         val anc = listOf("哆啦A梦", "A", "日本漫画合集")
