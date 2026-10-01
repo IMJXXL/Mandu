@@ -157,19 +157,21 @@ class ArchiveEngine(private val ctx: Context) {
             return sb.toString()
         }
 
+        // ★ 三兄弟都锁 debugLogBuffer：pager 预载/条漫并行预探多线程并发调用，
+        //  StringBuilder 无锁并发 append 会产错乱日志甚至 AIOOBE
         fun d(tag: String, msg: String) {
             Log.d(tag, msg)
-            debugLogBuffer.appendLine("${System.currentTimeMillis()} D/$tag: $msg")
+            synchronized(debugLogBuffer) { debugLogBuffer.appendLine("${System.currentTimeMillis()} D/$tag: $msg") }
         }
 
         fun w(tag: String, msg: String) {
             Log.w(tag, msg)
-            debugLogBuffer.appendLine("${System.currentTimeMillis()} W/$tag: $msg")
+            synchronized(debugLogBuffer) { debugLogBuffer.appendLine("${System.currentTimeMillis()} W/$tag: $msg") }
         }
 
         fun e(tag: String, msg: String) {
             Log.e(tag, msg)
-            debugLogBuffer.appendLine("${System.currentTimeMillis()} E/$tag: $msg")
+            synchronized(debugLogBuffer) { debugLogBuffer.appendLine("${System.currentTimeMillis()} E/$tag: $msg") }
         }
     }
 
@@ -1758,18 +1760,18 @@ class ArchiveEngine(private val ctx: Context) {
             val tree = makeTree(auth, treeStr)
             val logMsg = "loadCover: auth=$auth tree=$treeStr doc=$docId file=$fileName"
             Log.d(TAG, logMsg)
-            debugLogBuffer.appendLine("${System.currentTimeMillis()} $logMsg")
+            synchronized(debugLogBuffer) { debugLogBuffer.appendLine("${System.currentTimeMillis()} $logMsg") }
 
             if (fileName.endsWith(".cbz") || fileName.endsWith(".zip") || fileName.endsWith(".epub")) {
                 val bmp = loadArchiveCover(auth, treeStr, docId, tree, cover)
                 if (bmp != null) { flushLog(ctx); return bmp }
                 Log.w(TAG, "loadCover: all archive fallbacks failed for $cover")
-                debugLogBuffer.appendLine("${System.currentTimeMillis()} W loadCover: ALL archive fallbacks failed")
+                synchronized(debugLogBuffer) { debugLogBuffer.appendLine("${System.currentTimeMillis()} W loadCover: ALL archive fallbacks failed") }
             } else if (fileName.endsWith(".mobi") || fileName.endsWith(".azw") || fileName.endsWith(".azw3")) {
                 val bmp = loadMobiCover(auth, treeStr, docId, tree, cover)
                 if (bmp != null) { flushLog(ctx); return bmp }
                 Log.w(TAG, "loadCover: all mobi fallbacks failed for $cover")
-                debugLogBuffer.appendLine("${System.currentTimeMillis()} W loadCover: ALL mobi fallbacks failed")
+                synchronized(debugLogBuffer) { debugLogBuffer.appendLine("${System.currentTimeMillis()} W loadCover: ALL mobi fallbacks failed") }
             } else if (fileName.endsWith(".cbr") || fileName.endsWith(".rar") ||
                        fileName.endsWith(".cb7") || fileName.endsWith(".7z") ||
                        fileName.endsWith(".tar") || fileName.endsWith(".cbt") ||
@@ -1886,7 +1888,7 @@ class ArchiveEngine(private val ctx: Context) {
     private fun loadArchiveCover(auth: String, treeStr: String, docId: String, tree: Uri, coverKey: String): Bitmap? {
         val uri = DocumentsContract.buildDocumentUriUsingTree(tree, docId)
         Log.d(TAG, "loadArchiveCover: uri=$uri")
-        debugLogBuffer.appendLine("${System.currentTimeMillis()} loadArchiveCover: uri=$uri")
+        synchronized(debugLogBuffer) { debugLogBuffer.appendLine("${System.currentTimeMillis()} loadArchiveCover: uri=$uri") }
 
         // EPUB专用：用OPF manifest的properties="cover-image"找封面
         if (coverKey.contains(".epub", ignoreCase = true)) {
@@ -1921,7 +1923,7 @@ class ArchiveEngine(private val ctx: Context) {
                     saveCoverToDisk(coverKey, bmp)
                     synchronized(coverCache) { coverCache[coverKey] = bmp }
                     Log.d(TAG, "loadArchiveCover: OK via FD direct read")
-                    debugLogBuffer.appendLine("${System.currentTimeMillis()} loadArchiveCover: OK via FD direct read")
+                    synchronized(debugLogBuffer) { debugLogBuffer.appendLine("${System.currentTimeMillis()} loadArchiveCover: OK via FD direct read") }
                     flushLog(ctx)
                     return bmp
                 } else {
@@ -1932,7 +1934,7 @@ class ArchiveEngine(private val ctx: Context) {
             }
         } catch (e: Exception) {
             Log.d(TAG, "loadArchiveCover FD: ${e.message}")
-            debugLogBuffer.appendLine("${System.currentTimeMillis()} loadArchiveCover FD ERR: ${e.message}")
+            synchronized(debugLogBuffer) { debugLogBuffer.appendLine("${System.currentTimeMillis()} loadArchiveCover FD ERR: ${e.message}") }
         }
 
         // 第二步：getRealFile直接读
@@ -1952,7 +1954,7 @@ class ArchiveEngine(private val ctx: Context) {
                             saveCoverToDisk(coverKey, bmp)
                             synchronized(coverCache) { coverCache[coverKey] = bmp }
                             Log.d(TAG, "loadArchiveCover: OK via realFile")
-                            debugLogBuffer.appendLine("${System.currentTimeMillis()} loadArchiveCover: OK via realFile")
+                            synchronized(debugLogBuffer) { debugLogBuffer.appendLine("${System.currentTimeMillis()} loadArchiveCover: OK via realFile") }
                             flushLog(ctx)
                             return bmp
                         }
@@ -1964,7 +1966,7 @@ class ArchiveEngine(private val ctx: Context) {
         }
 
         Log.w(TAG, "loadArchiveCover: ALL fallbacks failed for $coverKey")
-        debugLogBuffer.appendLine("${System.currentTimeMillis()} loadArchiveCover: ALL FAILED for $coverKey")
+        synchronized(debugLogBuffer) { debugLogBuffer.appendLine("${System.currentTimeMillis()} loadArchiveCover: ALL FAILED for $coverKey") }
         flushLog(ctx)
         return null
     }
@@ -3074,29 +3076,29 @@ class ArchiveEngine(private val ctx: Context) {
     private fun loadFromZip(uri: Uri, targetIndex: Int, treeStr: String = ""): ByteArray? {
         try {
             val cacheKey = uri.toString()
-            debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: START target=$targetIndex key=${cacheKey.takeLast(40)}")
+            synchronized(debugLogBuffer) { debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: START target=$targetIndex key=${cacheKey.takeLast(40)}") }
             if (!com.mangareader.native.NativeEngine.isOpenZip(cacheKey)) {
-                debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: zip not open, opening...")
+                synchronized(debugLogBuffer) { debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: zip not open, opening...") }
                 flushLog(ctx)
                 val realFile = getRealFile(uri)
                 val realPath = realFile?.absolutePath ?: ""
                 val pfd = ctx.contentResolver.openFileDescriptor(uri, "r")
                 if (pfd != null) {
                     val fd = pfd.detachFd()
-                    debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: fd=$fd realPath=$realPath")
+                    synchronized(debugLogBuffer) { debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: fd=$fd realPath=$realPath") }
                     flushLog(ctx)
                     pfdKeepAlive[cacheKey] = pfd
                     try {
                         com.mangareader.native.NativeEngine.openZipWithFd(cacheKey, fd, realPath)
-                        debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: openZipWithFd OK")
+                        synchronized(debugLogBuffer) { debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: openZipWithFd OK") }
                     } catch (e: Exception) {
-                        debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: openZipWithFd FAILED: ${e.message}")
+                        synchronized(debugLogBuffer) { debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: openZipWithFd FAILED: ${e.message}") }
                     }
                 } else {
-                    debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: pfd is null!")
+                    synchronized(debugLogBuffer) { debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: pfd is null!") }
                 }
             } else {
-                debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: zip already open")
+                synchronized(debugLogBuffer) { debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: zip already open") }
             }
             // 优先用 sortedImageNamesCache 中的 spine 顺序直接查找（避免 Kotlin/C++ 排序不一致）
             var zipIdx = -1
@@ -3115,34 +3117,34 @@ class ArchiveEngine(private val ctx: Context) {
             if (zipIdx < 0) {
                 zipIdx = com.mangareader.native.NativeEngine.findZipImageEntry(cacheKey, targetIndex)
             }
-            debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: targetIndex=$targetIndex zipIdx=$zipIdx")
+            synchronized(debugLogBuffer) { debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: targetIndex=$targetIndex zipIdx=$zipIdx") }
             flushLog(ctx)
             if (zipIdx < 0) {
                 val entryCount = com.mangareader.native.NativeEngine.getZipEntryCount(cacheKey)
-                debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: entryCount=$entryCount")
+                synchronized(debugLogBuffer) { debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: entryCount=$entryCount") }
                 if (entryCount > 0) {
                     val allNames = com.mangareader.native.NativeEngine.getZipEntryNames(cacheKey)
                     val preview = allNames?.take(10)?.joinToString(", ") ?: "null"
-                    debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: first10=$preview")
+                    synchronized(debugLogBuffer) { debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: first10=$preview") }
                 }
                 flushLog(ctx)
             }
             if (zipIdx >= 0) {
                 val raw = com.mangareader.native.NativeEngine.readZipEntry(cacheKey, zipIdx)
-                debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: readZipEntry ${raw?.size ?: 0} bytes")
+                synchronized(debugLogBuffer) { debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: readZipEntry ${raw?.size ?: 0} bytes") }
                 if (raw != null && raw.isNotEmpty()) { flushLog(ctx); return raw }
             } else {
-                debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: findZipImageEntry=-1, trying fallbacks")
+                synchronized(debugLogBuffer) { debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: findZipImageEntry=-1, trying fallbacks") }
             }
 
             val commonsResult = CommonsZipHelper.readImageEntry(ctx, uri, targetIndex)
-            debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: commonsResult=${commonsResult?.size ?: "null"}")
+            synchronized(debugLogBuffer) { debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: commonsResult=${commonsResult?.size ?: "null"}") }
             flushLog(ctx)
             if (commonsResult != null) { flushLog(ctx); return commonsResult }
 
             // ★ B12：补 put——原"只 get 不 put"假缓存永远 miss；null 不缓存（与原语义一致）
             val realFile = realFileCache2[cacheKey] ?: getRealFile(uri)?.also { realFileCache2[cacheKey] = it }
-            debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: realFile=${realFile?.absolutePath ?: "null"} isFile=${realFile?.isFile}")
+            synchronized(debugLogBuffer) { debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: realFile=${realFile?.absolutePath ?: "null"} isFile=${realFile?.isFile}") }
             flushLog(ctx)
             if (realFile != null && realFile.isFile) {
                 try {
@@ -3154,7 +3156,7 @@ class ArchiveEngine(private val ctx: Context) {
                                 if (!entry.isDirectory && isImg(entry.name)) {
                                     if (idx == targetIndex) {
                                         val data = zis.readBytes()
-                                        debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: realFile read ${data.size} bytes for idx=$idx")
+                                        synchronized(debugLogBuffer) { debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: realFile read ${data.size} bytes for idx=$idx") }
                                         if (data.isNotEmpty()) { flushLog(ctx); return data }
                                     }
                                     idx++
@@ -3187,7 +3189,7 @@ class ArchiveEngine(private val ctx: Context) {
                 if (targetData != null) { flushLog(ctx); return targetData }
             } catch (e: Exception) { Log.w(TAG, "loadFromZip SAF fallback: ${e.message}") }
         } catch (e: Exception) { debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip EXCEPTION: ${e.message}") }
-        debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: ALL FAILED for target=$targetIndex")
+        synchronized(debugLogBuffer) { debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: ALL FAILED for target=$targetIndex") }
         flushLog(ctx)
         return null
     }

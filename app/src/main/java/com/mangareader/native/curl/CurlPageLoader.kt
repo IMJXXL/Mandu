@@ -129,6 +129,7 @@ class CurlPageLoader(
                     }
                     // ★ 纸张纹理烘焙：管线末端、入缓存前（纸随页翻动，替代旧屏幕覆盖层）
                     bmp = com.mangareader.filter.PaperPageTexture.apply(bmp)
+                    synchronized(bakedFrom) { bakedFrom[idx] = System.identityHashCode(bmp) }
                     cache.put(idx, bmp)
                     withContext(Dispatchers.Main) { onLoaded(idx) }
                 } else {
@@ -165,6 +166,7 @@ class CurlPageLoader(
                         }
                         // ★ 纸张纹理烘焙：管线末端、入缓存前
                         bmp = com.mangareader.filter.PaperPageTexture.apply(bmp)
+                        synchronized(bakedFrom) { bakedFrom[idx] = System.identityHashCode(bmp) }
                         cache.put(idx, bmp)
                         withContext(Dispatchers.Main) { onLoaded(idx) }
                     }

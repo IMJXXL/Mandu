@@ -19,6 +19,7 @@ import com.mangareader.native.ViewerNavigation
 import com.mangareader.native.DefaultNavigation
 import com.mangareader.native.AllMenuNavigation
 import com.mangareader.native.LNavigation
+import com.mangareader.native.InvertedNavigation
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -94,15 +95,18 @@ class CurlReaderView(context: Context) : FrameLayout(context), ReaderViewDelegat
     private var navigation: ViewerNavigation = DefaultNavigation
 
     private fun applyNavigation() {
-        navigation = when (clickFlipType) {
+        val base = when (clickFlipType) {
             0 -> AllMenuNavigation
             4 -> LNavigation
             else -> DefaultNavigation
         }
+        navigation = if (clickFlipInvertH) InvertedNavigation(base) else base
     }
 
     override fun setClickFlipInvert(invert: Boolean) {
+        if (clickFlipInvertH == invert) return
         clickFlipInvertH = invert
+        applyNavigation()
     }
 
     override fun setClickFlipTypeLive(type: Int) {

@@ -81,7 +81,9 @@ object VirtualPageExpander {
         }
         for ((origIdx, meta) in pages.withIndex()) {
             if (meta.segmentIndex > 0 || meta.source !in SPLIT_SOURCES) {
-                result.add(meta)
+                // 透传页统一盖 originalPageIdx（段页保持原值）——Reader 侧切模式映射页号用；
+                // 对 WebtoonReaderView 的同组段页判隙（segmentIndex>0 双条件）无影响
+                result.add(if (meta.segmentIndex > 0) meta else meta.copy(originalPageIdx = origIdx))
                 continue
             }
             var size: IntArray? = null
@@ -112,13 +114,13 @@ object VirtualPageExpander {
             if (pw <= 0f || ph <= 0f) {
                 // 动图（0,0）/探测失败/未知 → 原样透传，永不阻塞
                 if (meta.source in SPLIT_SOURCES) unprobedCount++
-                result.add(meta)
+                result.add(meta.copy(originalPageIdx = origIdx))
                 continue
             }
             val splitH = PdfTallSplitCalculator.splitHeightPdf(screenMax, screenWidth, pw)
             if (!PdfTallSplitCalculator.isTallPage(pw, ph, splitH)) {
                 if (!fromStore) pending["${meta.localIdx}|${meta.source}"] = intArrayOf(pw.toInt(), ph.toInt())
-                result.add(meta)
+                result.add(meta.copy(originalPageIdx = origIdx))
                 continue
             }
             val n = PdfTallSplitCalculator.segmentCount(ph, splitH)

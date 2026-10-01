@@ -91,15 +91,18 @@ class CurlDoublePageView(context: Context) : FrameLayout(context), ReaderViewDel
     private var navigation: com.mangareader.native.ViewerNavigation = com.mangareader.native.DefaultNavigation
 
     private fun applyNavigation() {
-        navigation = when (clickFlipType) {
+        val base = when (clickFlipType) {
             0 -> com.mangareader.native.AllMenuNavigation
             4 -> com.mangareader.native.LNavigation
             else -> com.mangareader.native.DefaultNavigation
         }
+        navigation = if (clickFlipInvertH) com.mangareader.native.InvertedNavigation(base) else base
     }
 
     override fun setClickFlipInvert(invert: Boolean) {
+        if (clickFlipInvertH == invert) return
         clickFlipInvertH = invert
+        applyNavigation()
     }
 
     override fun setClickFlipTypeLive(type: Int) {

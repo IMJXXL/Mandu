@@ -2754,37 +2754,34 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                 // ★ v1.13 C-2：mode state 提交【前】同步截图——此刻旧 delegate 还在屏上，
                 //   拿到的是切换前的真实画面（Compose 重组在下一帧，同步 draw 零竞态）
                 showSwitchMask()
-                mode = newMode
-                prefs.edit().putInt("read_mode_$bookId", newMode.ordinal).apply()
-                // ★ 会话内切到条漫族：入口展开只在进入时就是 VERT/WEBTOON_GAP 才做（enterReader 内），
-                //   FLIP 进入后中途切条漫 → pageList 仍是原始页表，视图 setup 再展开（allowProbe=false、
-                //   只读不探）出混合页表 → 页号空间与 Reader 分叉（进度条/书签错位）。此处补齐与入口
-                //   同款展开（含探测落表），并用 originalPageIdx 把当前页映射到展开列表保持阅读位置；
-                //   已展开列表（含 segmentIndex>0）不重复展开
+                // ★ 会话内切到条漫族：与视图 setup 同款【只读不探】展开先在 Reader 侧做掉——
+                //   Reader 与视图跑同一份尺寸表 → 两侧页表恒一致，消除"视图本地展开 vs Reader
+                //   原始表"的页号分叉（进度条/书签/保存错位）。allowProbe=false 主线程只有一次
+                //   小 JSON 读（视图 setup 本来也做）；未探测过的长图本会话不拆，下次进入由入口
+                //   探测补齐。已展开表（含 segmentIndex>0）不重复展开。当前页按 originalPageIdx
+                //   映射进展开表保持阅读位置
                 if ((newMode == Mode.VERT || newMode == Mode.WEBTOON_GAP) &&
                     config.tallSplitEnabled && pageList.isNotEmpty() && pageList.all { it.segmentIndex == 0 }
                 ) {
                     val tree = navStack.lastOrNull() ?: book?.filePath
                     if (tree != null) {
                         val rawCur = cur
-                        scope.launch {
-                            val sm = maxOf(ctx.resources.displayMetrics.widthPixels, ctx.resources.displayMetrics.heightPixels)
-                            val sw = ctx.resources.displayMetrics.widthPixels
-                            val expanded = try {
-                                withContext(Dispatchers.IO) {
-                                    com.mangareader.engine.pdf.VirtualPageExpander.expand(
-                                        pageList, true, true, sm, sw, engine, tree, allowProbe = true
-                                    )
-                                }
-                            } catch (_: Exception) { null }
-                            if (expanded != null && expanded.size > pageList.size) {
-                                val mapped = expanded.indexOfFirst { it.originalPageIdx == rawCur }
-                                pageList = expanded
-                                if (mapped >= 0) cur = mapped
-                            }
+                        val sm = maxOf(ctx.resources.displayMetrics.widthPixels, ctx.resources.displayMetrics.heightPixels)
+                        val sw = ctx.resources.displayMetrics.widthPixels
+                        val expanded = try {
+                            com.mangareader.engine.pdf.VirtualPageExpander.expand(
+                                pageList, true, true, sm, sw, engine, tree, allowProbe = false
+                            )
+                        } catch (_: Exception) { null }
+                        if (expanded != null && expanded.size > pageList.size) {
+                            val mapped = expanded.indexOfFirst { it.originalPageIdx == rawCur }
+                            pageList = expanded
+                            if (mapped >= 0) cur = mapped
                         }
                     }
                 }
+                mode = newMode
+                prefs.edit().putInt("read_mode_$bookId", newMode.ordinal).apply()
                 configVersion++
                 // 切换模式时显示导航区域提示，3秒后自动消失
                 showNavOverlay = true
