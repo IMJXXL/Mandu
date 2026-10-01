@@ -25,7 +25,7 @@ private val horizontalZones = listOf(
 
 // 竖向模式：上=上一页，中=菜单，下=下一页（与 VerticalPagerNavigation 真实分区严格一致）
 private val verticalZones = listOf(
-    NavZone(Rect(0f, 0f, 1f, 0.4f), COLOR_PREV, "上一页"),
+    NavZone(Rect(0f, 0.05f, 1f, 0.4f), COLOR_PREV, "上一页"),
     NavZone(Rect(0f, 0.4f, 1f, 0.6f), COLOR_MENU, "菜单"),
     NavZone(Rect(0f, 0.6f, 1f, 1f), COLOR_NEXT, "下一页"),
 )
@@ -60,8 +60,8 @@ fun ReaderNavigationOverlay(
     }
 
     Canvas(modifier = modifier.fillMaxSize()) {
-        // 顶部5%安全区（仅横向模式有顶部 MENU 边；竖向分区从 0 起，不画该条）
-        if (!isVertical) drawRect(
+        // 顶部5%安全区（横向/竖向真实行为一致：ViewerNavigation.getAction 对 y<5% 恒判 MENU）
+        drawRect(
             color = COLOR_MENU.copy(alpha = 0.3f),
             topLeft = Offset(0f, 0f),
             size = Size(size.width, size.height * 0.05f)

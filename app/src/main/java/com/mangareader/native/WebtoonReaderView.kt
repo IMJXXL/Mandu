@@ -1018,6 +1018,35 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
 
     inner class PageAdapter : RecyclerView.Adapter<PageVH>() {
         override fun getItemCount() = pageList.size
+        // ★ 1001 UI 审查补漏（方案承诺 pager+webtoon 双管，pager 已做）：平板条漫限宽 720dp 居中——
+        //   平板全宽单列把页面放大到超原生分辨率（糊）且阅读列过宽；手机路径 MATCH_PARENT 零变化
+        private fun contentLp(parent: android.view.ViewGroup): android.widget.FrameLayout.LayoutParams =
+            if (parent.context.resources.configuration.smallestScreenWidthDp >= 600) {
+                val dm = parent.context.resources.displayMetrics
+                val cap = (dm.density * 720f).toInt().coerceAtMost(dm.widthPixels)
+                android.widget.FrameLayout.LayoutParams(cap, android.widget.FrameLayout.LayoutParams.WRAP_CONTENT).apply {
+                    gravity = android.view.Gravity.CENTER_HORIZONTAL
+                }
+            } else android.widget.FrameLayout.LayoutParams(
+                android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                android.widget.FrameLayout.LayoutParams.WRAP_CONTENT)
+
+        // 平板限宽随旋转刷新：configChanges 自处理不重建，回收复用的旧 holder 带着旋转前的宽度
+        private fun refreshTabletWidth(h: PageVH) {
+            val ctx = h.itemView.context
+            if (ctx.resources.configuration.smallestScreenWidthDp < 600) return
+            val dm = ctx.resources.displayMetrics
+            val cap = (dm.density * 720f).toInt().coerceAtMost(dm.widthPixels)
+            val frame = h.itemView as? android.widget.FrameLayout ?: return
+            for (i in 0 until frame.childCount) {
+                val ch = frame.getChildAt(i)
+                val lp = ch.layoutParams as? android.widget.FrameLayout.LayoutParams ?: continue
+                if (lp.width != cap) {
+                    lp.width = cap; lp.gravity = android.view.Gravity.CENTER_HORIZONTAL
+                    ch.layoutParams = lp
+                }
+            }
+        }
         override fun onCreateViewHolder(parent: android.view.ViewGroup, vt: Int): PageVH {
             val frame = android.widget.FrameLayout(parent.context).apply {
                 // 初值给基础页隙；per-position 的段关系间隙在 onBindViewHolder 修正
@@ -1047,12 +1076,8 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
                     adjustViewBounds = true
                     visibility = android.view.View.VISIBLE
                 }
-                frame.addView(iv, android.widget.FrameLayout.LayoutParams(
-                    android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
-                    android.widget.FrameLayout.LayoutParams.WRAP_CONTENT))
-                frame.addView(ssiv, android.widget.FrameLayout.LayoutParams(
-                    android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
-                    android.widget.FrameLayout.LayoutParams.WRAP_CONTENT))
+                frame.addView(iv, contentLp(parent))
+                frame.addView(ssiv, contentLp(parent))
                 return PageVH(frame, iv, ssiv)
             }
             val iv = android.widget.ImageView(parent.context).apply {
@@ -1060,12 +1085,11 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
                 com.mangareader.filter.PaperBgDrawable.apply(this, parent.context.applicationContext, pageBgColor, com.mangareader.filter.PaperPageTexture.overlayMode, com.mangareader.filter.PaperPageTexture.presetId, com.mangareader.filter.PaperPageTexture.concentration)
                 adjustViewBounds = true
             }
-            frame.addView(iv, android.widget.FrameLayout.LayoutParams(
-                android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
-                android.widget.FrameLayout.LayoutParams.WRAP_CONTENT))
+            frame.addView(iv, contentLp(parent))
             return PageVH(frame, iv)
         }
         override fun onBindViewHolder(h: PageVH, pos: Int, payloads: MutableList<Any>) {
+            refreshTabletWidth(h)
             if (payloads.contains("ld")) {
                 val tileFile = tileFileCache[pos]
                 if (tileFile != null && tileFile.exists()) {
