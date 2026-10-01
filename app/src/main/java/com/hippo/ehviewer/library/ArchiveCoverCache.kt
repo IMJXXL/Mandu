@@ -555,28 +555,61 @@ object ArchiveCoverCache {
                                     }
                                 }
                                 currentCoroutineContext().ensureActive()
-                                when {
-                                    n <= 0 -> {
-                                        val empty = zeroImagesResult(
-                                            archiveSize,
-                                            if (isZip) 0L else scanCapNonZip,
-                                        )
-                                        if (empty is CoverEnsureResult.NoImages && isZip && !openedFromDisk) {
-                                            persistEmptyZipIndex(cacheKey, archiveSize)
+                                var outcome: StreamExtractOutcome? = null
+                                run {
+                                    when {
+                                        n <= 0 -> {
+                                            val empty = zeroImagesResult(
+                                                archiveSize,
+                                                if (isZip) 0L else scanCapNonZip,
+                                            )
+                                            if (empty is CoverEnsureResult.NoImages && isZip && !openedFromDisk) {
+                                                persistEmptyZipIndex(cacheKey, archiveSize)
+                                            }
+                                            outcome = StreamExtractOutcome.Terminal(empty)
                                         }
-                                        StreamExtractOutcome.Terminal(empty)
-                                    }
-                                    // ★ 静默吃记忆库：命中则 native passwd 已就位，落入 else 继续取第 0 页封面
-                                    needPassword() && !archivePasswdTryKnown() -> StreamExtractOutcome.Terminal(CoverEnsureResult.Skip)
-                                    else -> {
-                                        if (!openedFromDisk && isZip) {
-                                            persistZipSeekIndex(cacheKey, archiveSize, n)
+                                        // ★ 静默吃记忆库：命中则 native passwd 已就位，落入 else 继续取第 0 页封面
+                                        needPassword() && !archivePasswdTryKnown() -> outcome = StreamExtractOutcome.Terminal(CoverEnsureResult.Skip)
+                                        else -> {
+                                            if (!openedFromDisk && isZip) {
+                                                persistZipSeekIndex(cacheKey, archiveSize, n)
+                                            }
+                                            currentCoroutineContext().ensureActive()
+                                            var page0 = runCatching { extractPage0Bytes(bridge) }.getOrNull()
+                                            // ★ seek-index 命中但第 0 页提取失败（典型：加密包——索引路径 native
+                                            //   need_encrypt 恒 false，密码死角）：关掉句柄改走完整 CD 解析兜底，
+                                            //   让 needPassword/记忆密码有机会工作，封面不再永久缺失
+                                            if (page0 == null && openedFromDisk) {
+                                                runCatching { closeArchive() }
+                                                currentCoroutineContext().ensureActive()
+                                                val n2 = bridge.checkedNative {
+                                                    openArchiveStream(
+                                                        bridge,
+                                                        archiveSize,
+                                                        /* sortEntries = */ false,
+                                                        /* coverOnly = */ !isZip,
+                                                        /* progressiveTar = */ false,
+                                                        /* maxScanBytes = */ if (isZip) 0L else scanCapNonZip,
+                                                    )
+                                                }
+                                                if (n2 > 0) {
+                                                    if (isZip) persistZipSeekIndex(cacheKey, archiveSize, n2)
+                                                    if (needPassword() && !archivePasswdTryKnown()) {
+                                                        outcome = StreamExtractOutcome.Terminal(CoverEnsureResult.Skip)
+                                                        return@run
+                                                    }
+                                                    page0 = runCatching { extractPage0Bytes(bridge) }.getOrNull()
+                                                }
+                                            }
+                                            outcome = if (page0 != null) {
+                                                StreamExtractOutcome.Page0(page0.bytes, page0.extHint)
+                                            } else {
+                                                StreamExtractOutcome.Terminal(CoverEnsureResult.Skip)
+                                            }
                                         }
-                                        currentCoroutineContext().ensureActive()
-                                        val page0 = extractPage0Bytes(bridge)
-                                        StreamExtractOutcome.Page0(page0.bytes, page0.extHint)
                                     }
                                 }
+                                outcome!!
                             } finally {
                                 closeArchive()
                                 bridge.close()

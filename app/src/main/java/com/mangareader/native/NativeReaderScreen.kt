@@ -344,6 +344,15 @@ fun NativeReaderScreen(
             delegate.setClickFlipTypeLive(clickFlip)
             delegate.setClickFlipInvert(clickFlipInvert)
         }
+        // ★ curl 双视图同款接线（此前 setup 收参零使用、实时通道缺失 → 点击区域设置在仿真翻页静默失效）
+        if (delegate is com.mangareader.native.curl.CurlReaderView) {
+            delegate.setClickFlipTypeLive(clickFlip)
+            delegate.setClickFlipInvert(clickFlipInvert)
+        }
+        if (delegate is com.mangareader.native.curl.CurlDoublePageView) {
+            delegate.setClickFlipTypeLive(clickFlip)
+            delegate.setClickFlipInvert(clickFlipInvert)
+        }
         if (delegate is com.mangareader.native.curl.CurlDoublePageView) {
             // ★ 背面=镜像内容（透出滑条）+纯色纸底；纸纹位图已退役（0930 用户裁定：镜像图还要，
             //   纹理不要）——presetId 仅供整屏幕纸纹背景用，背面不再烘位图

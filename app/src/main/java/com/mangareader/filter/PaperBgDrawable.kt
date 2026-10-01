@@ -37,17 +37,28 @@ class PaperBgDrawable(private val appContext: Context) : Drawable() {
 
     private fun load() {
         val p = presetId
+        val main = android.os.Handler(android.os.Looper.getMainLooper())
         PaperTexture.load(appContext, p) { id, bmp ->
-            if (id != presetId || bmp == null || bmp.isRecycled) return@load
-            paint = Paint().apply {
-                shader = BitmapShader(bmp, Shader.TileMode.MIRROR, Shader.TileMode.MIRROR)
-                isFilterBitmap = true
-                xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.MULTIPLY)
+            // 异步回调可能跑在 PaperTexture 的加载线程（appContext 无 Activity 分发）——
+            // paint/invalidateSelf 必须回主线程，否则已 attach 视图抛 CalledFromWrongThreadException
+            if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
+                applyLoaded(id, bmp)
+            } else {
+                main.post { applyLoaded(id, bmp) }
             }
-            loadedPreset = id
-            rebuild(PaperPageTexture.concentration)
-            invalidateSelf()
         }
+    }
+
+    private fun applyLoaded(id: Int, bmp: android.graphics.Bitmap?) {
+        if (id != presetId || bmp == null || bmp.isRecycled) return
+        paint = Paint().apply {
+            shader = BitmapShader(bmp, Shader.TileMode.MIRROR, Shader.TileMode.MIRROR)
+            isFilterBitmap = true
+            xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.MULTIPLY)
+        }
+        loadedPreset = id
+        rebuild(PaperPageTexture.concentration)
+        invalidateSelf()
     }
 
     private fun rebuild(concentration: Int) {

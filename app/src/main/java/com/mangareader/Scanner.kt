@@ -290,9 +290,7 @@ class Scanner(private val ctx: Context, private val dao: MangaDao) {
         return try {
             val stream = java.io.ByteArrayInputStream(data)
             val decoder = tachiyomi.decoder.ImageDecoder.newInstance(stream) ?: return null
-            val bmp = decoder.decode()
-            decoder.recycle()
-            bmp
+            try { decoder.decode() } finally { decoder.recycle() }   // decode 抛异常也不能漏回收 native 资源
         } catch (_: Throwable) { null }
     }
 
@@ -562,15 +560,16 @@ class Scanner(private val ctx: Context, private val dao: MangaDao) {
                 ctx.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE)
                     .getBoolean("scan_verify_zip_content", false)
             } catch (_: Exception) { false }
-            // ★ 智能解析文件名（默认开）：干净书名+v01 短缀+繁转简；关=旧行为
+            // ★ 智能解析文件名（默认关，d0f6a68）：干净书名+v01 短缀+繁转简；关=旧行为。
+            //   catch 兜底与默认值一致（false）——读取异常时静默变开会重扫改写全库书名
             val smartTitle = try {
                 ctx.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE)
                     .getBoolean("smart_title", false)
-            } catch (_: Exception) { true }
+            } catch (_: Exception) { false }
             val t2sEnabled = try {
                 ctx.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE)
                     .getBoolean("t2s_enabled", false)
-            } catch (_: Exception) { true }
+            } catch (_: Exception) { false }
             val existingPaths = mutableSetOf<String>()
             try {
                 // ★ C1 补丁：查重数据源改全量（含隐藏书）——旧 getAllBooksList 只查未隐藏，

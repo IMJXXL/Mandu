@@ -8,6 +8,7 @@ import com.mangareader.metadata.ComicInfo
 import com.mangareader.metadata.ComicInfoReader
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import androidx.room.withTransaction
 
 /**
  * 自动打标签（替代旧 AutoCategorizer 的"自动建书架"，spec: .codeartsdoer/specs/tag_system）：
@@ -28,7 +29,8 @@ object AutoTagger {
         if (!config.enableSeries && !config.enableWriter && !config.enableGenre && !config.enablePublisher && config.enabledCustomFields.isEmpty()) {
             return
         }
-        val dao = MangaDatabase.getDatabase(ctx).mangaDao()
+        val db = MangaDatabase.getDatabase(ctx)
+            val dao = db.mangaDao()
         for (book in books) {
             try {
                 val info = ComicInfoReader.read(ctx, book.filePath) ?: continue
@@ -93,7 +95,8 @@ object AutoTagger {
     suspend fun rebuildAll(ctx: Context, onProgress: (Int, Int) -> Unit, isCancelled: () -> Boolean) = withContext(Dispatchers.IO) {
         val config = AutoCategorizeConfig.load(ctx)
         if (config.enableSeries || config.enableWriter || config.enableGenre || config.enablePublisher || config.enabledCustomFields.isNotEmpty()) {
-            val dao = MangaDatabase.getDatabase(ctx).mangaDao()
+            val db = MangaDatabase.getDatabase(ctx)
+            val dao = db.mangaDao()
             val books = try { dao.getAllVisibleBooksList() } catch (e: Exception) {
                 Log.w(TAG, "rebuild load books failed: ${e.message}"); return@withContext
             }
@@ -101,9 +104,13 @@ object AutoTagger {
             for (book in books) {
                 if (isCancelled()) break
                 try {
-                    dao.deleteAutoTagsForBook(book.id)
+                    // 先读后删：XML 不可读的书保留既有自动标签（旧流程先删后建，读失败=标签永久丢失）；
+                    // 删+建包进同一事务，中途取消/崩溃不留"已删未建"半态
                     val info = ComicInfoReader.read(ctx, book.filePath)
-                    if (info != null) applyToBook(dao, book, info, config)
+                    db.withTransaction {
+                        dao.deleteAutoTagsForBook(book.id)
+                        if (info != null) applyToBook(dao, book, info, config)
+                    }
                 } catch (e: Exception) {
                     Log.w(TAG, "rebuild skip ${book.title}: ${e.message}")
                 }

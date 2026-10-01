@@ -317,7 +317,11 @@ object SrPipeline {
         if (!isApplicable(meta) || callerBitmap == null) return null
 
         val cid = sessionChapterId
-        synchronized(originals) { originals.putIfAbsent("$cid:$pageIndex", callerBitmap) }
+        // 烘焙图（纸纹副本）不得注册为超分原图：缓存/批量产物路径传来的可能是烘焙副本，
+        // 误注册后重算以它为源 = 纹理平方（明显加深）
+        if (!com.mangareader.filter.PaperPageTexture.isBaked(callerBitmap)) {
+            synchronized(originals) { originals.putIfAbsent("$cid:$pageIndex", callerBitmap) }
+        }
         lastUserPage = pageIndex
 
         if (allowSyncDisk) {

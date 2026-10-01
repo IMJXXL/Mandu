@@ -77,8 +77,15 @@ object PaperPageTexture {
         } catch (_: Throwable) {
             return bmp
         }
+        // 登记烘焙产物实例：SrPipeline 据此拒绝把烘焙图注册进 originals（防纹理平方）
+        synchronized(bakedInstances) { bakedInstances.add(target) }
         return target
     }
+
+    /** 该位图是否为烘焙产物（弱引用登记，位图回收后条目自动清除） */
+    fun isBaked(bmp: Bitmap): Boolean = synchronized(bakedInstances) { bakedInstances.contains(bmp) }
+
+    private val bakedInstances = java.util.Collections.newSetFromMap(java.util.WeakHashMap<Bitmap, Boolean>())
 
     private fun texture(): Bitmap? {
         val id = presetId.coerceIn(0, PaperTexture.PRESETS.size - 1)

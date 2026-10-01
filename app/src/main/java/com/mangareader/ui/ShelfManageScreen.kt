@@ -52,6 +52,7 @@ fun ShelfManageScreen(onBack: () -> Unit) {
     var selectedShelves by remember { mutableStateOf(setOf<Long>()) }
     var showSettings by remember { mutableStateOf(false) }
     var showMergePicker by remember { mutableStateOf(false) }
+    var showBatchDeleteConfirm by remember { mutableStateOf(false) }
     var manageTab by remember { mutableStateOf(0) }
     var showCreateTag by remember { mutableStateOf(false) }
     var newTagName by remember { mutableStateOf("") }
@@ -112,13 +113,7 @@ fun ShelfManageScreen(onBack: () -> Unit) {
                                 isMultiSelect = false; selectedShelves = emptySet()
                             }
                         }) { Text("隐藏") }
-                        TextButton(onClick = {
-                            scope.launch {
-                                withContext(Dispatchers.IO) { dao.deleteBookshelvesBatch(selectedShelves.toList()) }
-                                isMultiSelect = false; selectedShelves = emptySet()
-                            }
-                        }) { Text("删除", color = MaterialTheme.colorScheme.error) }
-                    }
+                        TextButton(onClick = { showBatchDeleteConfirm = true }) { Text("删除", color = MaterialTheme.colorScheme.error) }                    }
                 }
             }
         }
@@ -244,6 +239,21 @@ fun ShelfManageScreen(onBack: () -> Unit) {
             dismissButton = { TextButton(onClick = { showDeleteShelf = null }) { Text("取消") } })
     }
 
+    if (showBatchDeleteConfirm) {
+        AlertDialog(onDismissRequest = { showBatchDeleteConfirm = false }, title = { Text("删除 ${selectedShelves.size} 个书架？") },
+            text = { Text("书架内的漫画不受影响，仅移除分组。此操作不可撤销。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    scope.launch {
+                        withContext(Dispatchers.IO) { dao.deleteBookshelvesBatch(selectedShelves.toList()) }
+                        isMultiSelect = false; selectedShelves = emptySet()
+                        showBatchDeleteConfirm = false
+                    }
+                }) { Text("删除", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { showBatchDeleteConfirm = false }) { Text("取消") } })
+    }
+
     if (editShelf != null) {
         AlertDialog(onDismissRequest = { editShelf = null }, title = { Text("编辑书架名称") },
             text = { OutlinedTextField(value = editShelfName, onValueChange = { editShelfName = it }, singleLine = true, modifier = Modifier.fillMaxWidth()) },
@@ -323,14 +333,20 @@ fun ShelfManageScreen(onBack: () -> Unit) {
                 TextButton(onClick = {
                     if (newTagName.isNotBlank()) {
                         val color = createTagColor
+                        val name = newTagName.trim()
                         scope.launch {
-                            withContext(Dispatchers.IO) {
-                                val id = dao.ensureTag(newTagName.trim())
-                                if (id != -1L && color != null) dao.setTagColor(id, color)
+                            val dup = withContext(Dispatchers.IO) { dao.findTagByName(name) != null }
+                            if (dup) {
+                                android.widget.Toast.makeText(ctx, "已有同名标签，换个名字或直接使用它", android.widget.Toast.LENGTH_SHORT).show()
+                            } else {
+                                withContext(Dispatchers.IO) {
+                                    val id = dao.ensureTag(name)
+                                    if (id != -1L && color != null) dao.setTagColor(id, color)
+                                }
+                                newTagName = ""
+                                createTagColor = null
+                                showCreateTag = false
                             }
-                            newTagName = ""
-                            createTagColor = null
-                            showCreateTag = false
                         }
                     }
                 }) { Text("创建") }

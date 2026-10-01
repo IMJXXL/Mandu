@@ -366,7 +366,7 @@ private fun CacheDrawScope.prepareCurl(
     val drawShadow = prepareShadow(config, polygon, angle)
 
     return result@{
-        CurlGeomProbe.mark(
+        CurlGeomProbe.markLazy {
             // g=2：几何代码代际标识（1=右中参照点钳位/半平面裁切，2=书脊锚点判据）——
             // 日志自证跑的是哪代绘制代码，避免"装了新包却按旧代码排查"的空转
             "curlgeom g=2 node=${size.width.toInt()}x${size.height.toInt()}" +
@@ -374,7 +374,7 @@ private fun CacheDrawScope.prepareCurl(
                 " a=${config.backPageContentAlpha}" +
                 " pivot=(${bottomCurlOffset.x.toInt()},${bottomCurlOffset.y.toInt()})" +
                 " poly=${polygon.vertices.joinToString(prefix = "[", postfix = "]") { "(${it.x.toInt()},${it.y.toInt()})" }}"
-        )
+        }
         withTransform({
             // Mirror in X axis the drawing as back-page should be mirrored
             scale(-1f, 1f, pivot = bottomCurlOffset)
@@ -464,17 +464,22 @@ private fun prepareShadowApi28(
     }
 }
 
+// ★ API<28 阴影草稿位图复用：缓存块读 Animatable.value 每帧重执行，原实现每帧
+//   createBitmap ~13MB 无回收 = 翻页期间 GC 风暴。阴影形状逐帧变（随多边形），
+//   不能缓存产物——改为同尺寸复用草稿、每帧重画内容（视觉不变，分配归零）
+private var shadowScratch: Triple<Int, Int, Bitmap>? = null
+
 private fun CacheDrawScope.prepareShadowImage(
     radius: Float,
     paint: Paint,
     polygon: Polygon,
 ): ContentDrawScope.() -> Unit {
     // Increase the size a little bit so that shadow is not clipped
-    val bitmap = Bitmap.createBitmap(
-        (size.width + radius * 4).toInt(),
-        (size.height + radius * 4).toInt(),
-        Bitmap.Config.ARGB_8888
-    )
+    val bw = (size.width + radius * 4).toInt()
+    val bh = (size.height + radius * 4).toInt()
+    val bitmap = shadowScratch?.takeIf { it.first == bw && it.second == bh && !it.third.isRecycled }?.third
+        ?: Bitmap.createBitmap(bw, bh, Bitmap.Config.ARGB_8888).also { shadowScratch = Triple(bw, bh, it) }
+    bitmap.eraseColor(android.graphics.Color.TRANSPARENT)
     Canvas(bitmap).apply {
         drawPath(
             polygon

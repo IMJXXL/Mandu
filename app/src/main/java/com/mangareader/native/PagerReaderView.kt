@@ -640,6 +640,9 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         val rtlChanged = this.isRtl != rtl
         val engineChanged = this.engine != engine
         this.engine = engine; this.treePath = treePath; this.pageList = pages; this.isRtl = rtl
+        // ★ 上报本视图真实页数：expandedPageCount 只被条漫视图回调更新，pager/curl 章
+        //   setup 不上报会让上一章条漫的展开页数残留 → 进度条越界、goToPage 吞页、done 误标读完
+        onPageCountChanged?.invoke(pageList.size)
         // SMB/WebDAV solid archive: page count grows as extract progresses
         remotePageSupply?.onPageCountGrow?.add { newCount ->
             if (newCount > pageList.size) {

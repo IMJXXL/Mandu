@@ -33,6 +33,13 @@ enum class AnimKind { NONE, GIF, WEBP, APNG }
 class ArchiveEngine(private val ctx: Context) {
     companion object {
         private const val TAG = "ArchiveEngine"
+        // ★ listPages 近期触达路径（容量 32 LRU）：PageIndexWarmer 避让用——
+        //   正在被打开的书/刚被扫描的书不再被预热重复全量扫（慢 SD 上双扫 25s×2 抢 IO）
+        private val recentListPaths = object : LinkedHashMap<String, Unit>(64, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Unit>): Boolean = size > 32
+        }
+        fun isRecentlyListed(path: String): Boolean = synchronized(recentListPaths) { recentListPaths.containsKey(path) }
+
         private var debugLogBuffer = StringBuilder()
         private var debugLogFile: File? = null
         // ★ B7：落盘节流——buffer 未满 8KB 且距上次落盘 <3s 时攒着，热路径不再每次 open/write/close
@@ -710,6 +717,16 @@ class ArchiveEngine(private val ctx: Context) {
         if (!f.isFile || f.length() <= 0L) return null
         return try {
             val obj = org.json.JSONObject(f.readText())
+            // ★ 尺寸戳校验：文件被替换（size 变了）→ 旧页表作废回退真扫（真扫分支会重写索引）。
+            //   此前只读 pages 不验戳，后台"重建"经本函数磁盘命中又拿回旧表盖新戳 = 空转固化永生
+            val p0 = parsePath(path)
+            if (p0 != null) {
+                val stored = obj.optLong("size", -1L)
+                if (stored > 0L) {
+                    val live = archiveSizeStamp(makeTree(p0.auth, p0.tree), p0.doc)
+                    if (live > 0L && live != stored) return null
+                }
+            }
             val arr = obj.getJSONArray("pages")
             val out = ArrayList<PageMeta>(arr.length())
             for (i in 0 until arr.length()) {
@@ -755,7 +772,8 @@ class ArchiveEngine(private val ctx: Context) {
                 put("size", archiveSizeStamp(tree, doc))
                 put("pages", arr)
             }
-            val tmp = File(dir, sha1Hex(path) + ".tmp")
+            // tmp 名带唯一后缀：warmer 与阅读器是不同 engine 实例，固定名会并发互踩产坏 JSON
+            val tmp = File(dir, sha1Hex(path) + "-" + System.nanoTime() + ".tmp")
             tmp.writeText(obj.toString())
             val dest = archiveIndexFile(path)
             if (!tmp.renameTo(dest)) {
@@ -776,12 +794,10 @@ class ArchiveEngine(private val ctx: Context) {
                     try { org.json.JSONObject(f.readText()).optLong("size", -1L) } catch (_: Exception) { -1L }
                 } else -1L
                 if (live <= 0L || stored <= 0L || stored == live) return@launch  // 未知/一致：不动
-                // 文件尺寸变了（换文件/更新版本）：后台重建页表，当前会话保持旧页表，下次打开生效。
-                // 先踢内存缓存再走 listPages——否则命中缓存拿到的还是旧页表，白重建
+                // 尺寸变了：旧索引已由 readArchivePageIndex 的尺寸戳校验判定失效，
+                // 下次 listPages 直接走真扫并重写索引——这里只踢内存缓存防当前会话续用旧表
                 synchronized(pageListCache) { pageListCache.remove(path) }
-                val fresh = listPages(path)
-                if (fresh.isNotEmpty()) writeArchivePageIndex(path, tree, doc, fresh)
-                d(TAG, "arcPageIndex refreshed total=${fresh.size} path=${path.takeLast(30)}")
+                d(TAG, "arcPageIndex stale total=- path=${path.takeLast(30)}")
             } catch (_: Exception) {
             }
         }
@@ -830,6 +846,7 @@ class ArchiveEngine(private val ctx: Context) {
 
     fun listPages(path: String): List<PageMeta> {
         requireNotRemote(path)
+        synchronized(recentListPaths) { recentListPaths[path] = Unit }
         synchronized(pageListCache) {
             val cached = pageListCache[path]
             if (cached != null) {
@@ -1579,8 +1596,7 @@ class ArchiveEngine(private val ctx: Context) {
                 e(TAG, "decodeWithLibAvif: newInstance returned null bytes=${data.size}")
                 return null
             }
-            val bmp = decoder.decode()
-            decoder.recycle()
+            val bmp = try { decoder.decode() } finally { decoder.recycle() }
             if (bmp != null) android.util.Log.i(TAG, "decodeWithLibAvif OK bytes=${data.size} ${bmp.width}x${bmp.height}")
             else e(TAG, "decodeWithLibAvif: decode returned null bytes=${data.size}")
             bmp

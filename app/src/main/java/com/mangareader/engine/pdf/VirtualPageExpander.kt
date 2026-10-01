@@ -49,6 +49,36 @@ object VirtualPageExpander {
         }
         val result = mutableListOf<ArchiveEngine.PageMeta>()
         var unprobedCount = 0
+        // ★ 并行预探（并发 4，仅 allowProbe=true 的入口路径）：几百页未探测章的串行头部探测
+        //   最坏数十秒（rar/7z 每页全量解压 ×2 次重试 + 失败页 sleep 120ms），全程挡在"正在打开…"。
+        //   预探只提前发起 IO，结果仍走下方 pending 合并落盘——输出与串行版本完全一致
+        val preProbed = HashMap<String, IntArray?>()
+        if (allowProbe) {
+            val stamp0 = sizeStamp(pages)
+            val store0 = engine.loadPageSizeCache(treePath, stamp0)
+            storeStamp = stamp0
+            storeSizes = store0
+            val needProbe = pages.filter { it.segmentIndex <= 0 && it.source in SPLIT_SOURCES && it.source != "pdf" }
+                .distinctBy { "${it.localIdx}|${it.source}" }
+                .filter { (store0 ?: emptyMap())["${it.localIdx}|${it.source}"] == null }
+            if (needProbe.size > 1) {
+                val pool = java.util.concurrent.Executors.newFixedThreadPool(minOf(4, needProbe.size))
+                try {
+                    val futures = needProbe.map { meta ->
+                        pool.submit {
+                            val b = try { engine.loadPageBounds(meta, treePath) } catch (_: Exception) { null }
+                            synchronized(preProbed) {
+                                preProbed["${meta.localIdx}|${meta.source}"] = b?.let { intArrayOf(it.width, it.height) }
+                            }
+                        }
+                    }
+                    futures.forEach { it.get() }
+                } catch (_: Exception) {
+                } finally {
+                    pool.shutdown()
+                }
+            }
+        }
         for ((origIdx, meta) in pages.withIndex()) {
             if (meta.segmentIndex > 0 || meta.source !in SPLIT_SOURCES) {
                 result.add(meta)
@@ -64,9 +94,13 @@ object VirtualPageExpander {
                 when {
                     cached != null -> { size = cached; fromStore = true }
                     allowProbe -> {
-                        val b = try { engine.loadPageBounds(meta, treePath) } catch (_: Exception) { null }
+                        // 预探结果优先；预探未跑（≤1 页缺尺寸）才就地探测
+                        val pre = synchronized(preProbed) { preProbed[key] }
+                        val b: IntArray? = pre ?: (try {
+                            engine.loadPageBounds(meta, treePath)?.let { intArrayOf(it.width, it.height) }
+                        } catch (_: Exception) { null })
                         if (b != null) {
-                            size = intArrayOf(b.width, b.height)
+                            size = b
                             pending[key] = size
                         }
                     }

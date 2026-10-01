@@ -161,7 +161,6 @@ private fun UpdateDownloadDialog(
     onDismiss: () -> Unit,
 ) {
     val ctx = LocalContext.current
-    val scope = rememberCoroutineScope()
     var progress by remember { mutableStateOf(0f) }
     var status by remember { mutableStateOf("准备下载…") }
     var done by remember { mutableStateOf(false) }
@@ -170,39 +169,39 @@ private fun UpdateDownloadDialog(
     var selectedMirror by remember { mutableStateOf(0) }
     val startTime = remember { System.currentTimeMillis() }
 
+    // 下载直接跑在 LaunchedEffect 协程里：切线路时 effect 重启自动取消旧下载
+    // （原 scope.launch 逃逸取消 → 两协程并发写同一 tmp，cleanOldApks 删对方在写文件 → rename 失败静默双装）
     LaunchedEffect(selectedMirror) {
         if (done) return@LaunchedEffect
-        scope.launch {
-            progress = 0f
-            status = "正在连接…"
-            failed = false
-            var downloading = false
-            val mirror = UpdateConstants.MIRRORS.getOrNull(selectedMirror)?.first ?: ""
-            val file = ApkDownloader.download(info.downloadUrl, ctx, info.version, info.apkSize, mirror) { p ->
-                progress = p
-                if (!downloading) {
-                    downloading = true
-                    status = "下载中…"
-                }
-                if (!slowHintShown && p < 0.2f &&
-                    System.currentTimeMillis() - startTime > 30_000
-                ) {
-                    slowHintShown = true
-                    status = "下载较慢，可切换线路或用浏览器下载"
-                }
+        progress = 0f
+        status = "正在连接…"
+        failed = false
+        var downloading = false
+        val mirror = UpdateConstants.MIRRORS.getOrNull(selectedMirror)?.first ?: ""
+        val file = ApkDownloader.download(info.downloadUrl, ctx, info.version, info.apkSize, mirror) { p ->
+            progress = p
+            if (!downloading) {
+                downloading = true
+                status = "下载中…"
             }
-            if (file != null) {
-                status = "下载完成，正在调起安装…"
-                done = true
-                val ok = ApkInstaller.install(ctx, file)
-                if (!ok) {
-                    Toast.makeText(ctx, "安装失败，请重试", Toast.LENGTH_SHORT).show()
-                }
-                onDismiss()
-            } else {
-                status = "下载失败，可换线路重试"
-                failed = true
+            if (!slowHintShown && p < 0.2f &&
+                System.currentTimeMillis() - startTime > 30_000
+            ) {
+                slowHintShown = true
+                status = "下载较慢，可切换线路或用浏览器下载"
             }
+        }
+        if (file != null) {
+            status = "下载完成，正在调起安装…"
+            done = true
+            val ok = ApkInstaller.install(ctx, file)
+            if (!ok) {
+                Toast.makeText(ctx, "安装失败，请重试", Toast.LENGTH_SHORT).show()
+            }
+            onDismiss()
+        } else {
+            status = "下载失败，可换线路重试"
+            failed = true
         }
     }
 

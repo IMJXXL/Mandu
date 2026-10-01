@@ -42,7 +42,8 @@ object ColorMatrixBuilder {
             )))
         }
 
-        if (grayscale) matrix.setSaturation(0f)
+        // 后_concat 而非 set：setSaturation 内部是全量覆写，会冲掉上面的伽马近似（灰度+伽马同开时伽马失效）
+        if (grayscale) matrix.postConcat(ColorMatrix().apply { setSaturation(0f) })
 
         if (invert) {
             matrix.postConcat(ColorMatrix(floatArrayOf(

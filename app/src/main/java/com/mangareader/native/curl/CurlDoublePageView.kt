@@ -86,14 +86,38 @@ class CurlDoublePageView(context: Context) : FrameLayout(context), ReaderViewDel
     override var onPageCountChanged: ((Int) -> Unit)? = null
     override var onToggleUi: (() -> Unit)? = null
 
+    private var clickFlipType: Int = 1
+    private var clickFlipInvertH = false
+    private var navigation: com.mangareader.native.ViewerNavigation = com.mangareader.native.DefaultNavigation
+
+    private fun applyNavigation() {
+        navigation = when (clickFlipType) {
+            0 -> com.mangareader.native.AllMenuNavigation
+            4 -> com.mangareader.native.LNavigation
+            else -> com.mangareader.native.DefaultNavigation
+        }
+    }
+
+    override fun setClickFlipInvert(invert: Boolean) {
+        clickFlipInvertH = invert
+    }
+
+    override fun setClickFlipTypeLive(type: Int) {
+        if (clickFlipType == type) return
+        clickFlipType = type
+        applyNavigation()
+    }
+
     private val gestureDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
         override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
             if (width == 0 || height == 0) return false
             val fx = e.x / width
-            when {
-                fx in 0.33f..0.67f -> onToggleUi?.invoke()
-                (if (isRtl) fx < 0.33f else fx > 0.67f) -> tapForwardTrigger.intValue++
-                else -> tapBackwardTrigger.intValue++
+            val fy = e.y / height
+            // RTL 与 pager 同款：区域固定（左 PREV/右 NEXT），RTL 在动作层翻转
+            when (navigation.getAction(fx, fy)) {
+                com.mangareader.native.NavigationAction.PREV -> if (isRtl) tapForwardTrigger.intValue++ else tapBackwardTrigger.intValue++
+                com.mangareader.native.NavigationAction.NEXT -> if (isRtl) tapBackwardTrigger.intValue++ else tapForwardTrigger.intValue++
+                com.mangareader.native.NavigationAction.MENU -> onToggleUi?.invoke()
             }
             return true
         }
@@ -147,6 +171,7 @@ class CurlDoublePageView(context: Context) : FrameLayout(context), ReaderViewDel
     /** ★ 纸张纹理即时生效：全局 PaperPageTexture 已由 NES 先行更新（含升代），清缓存重载当前 spread */
     fun applyPaperTextureNow() {
         cache.clear()
+        loader.clearBakeTracking()   // 换纹理后旧"已烘焙"标记作废，否则新浓度不会重烘
         reloadTrigger.intValue++
         preloadSpread(currentPage)
     }
@@ -177,6 +202,13 @@ class CurlDoublePageView(context: Context) : FrameLayout(context), ReaderViewDel
         this.pageList = pages
         this.currentPage = startPage
         this.isRtl = rtl
+        // ★ 点击翻页区域接线（同 CurlReaderView）
+        if (clickFlipType != clickFlip) {
+            clickFlipType = clickFlip
+            applyNavigation()
+        }
+        // ★ 上报真实页数，防上一章条漫的展开页数残留（见 PagerReaderView.setup 同注）
+        onPageCountChanged?.invoke(pageList.size)
         loader.bind(engine, treePath, pages, remotePageSupply)
         loader.setCurrentPage(startPage)
         renderCompose()

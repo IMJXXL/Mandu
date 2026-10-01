@@ -2756,6 +2756,35 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                 showSwitchMask()
                 mode = newMode
                 prefs.edit().putInt("read_mode_$bookId", newMode.ordinal).apply()
+                // ★ 会话内切到条漫族：入口展开只在进入时就是 VERT/WEBTOON_GAP 才做（enterReader 内），
+                //   FLIP 进入后中途切条漫 → pageList 仍是原始页表，视图 setup 再展开（allowProbe=false、
+                //   只读不探）出混合页表 → 页号空间与 Reader 分叉（进度条/书签错位）。此处补齐与入口
+                //   同款展开（含探测落表），并用 originalPageIdx 把当前页映射到展开列表保持阅读位置；
+                //   已展开列表（含 segmentIndex>0）不重复展开
+                if ((newMode == Mode.VERT || newMode == Mode.WEBTOON_GAP) &&
+                    config.tallSplitEnabled && pageList.isNotEmpty() && pageList.all { it.segmentIndex == 0 }
+                ) {
+                    val tree = navStack.lastOrNull() ?: book?.filePath
+                    if (tree != null) {
+                        val rawCur = cur
+                        scope.launch {
+                            val sm = maxOf(ctx.resources.displayMetrics.widthPixels, ctx.resources.displayMetrics.heightPixels)
+                            val sw = ctx.resources.displayMetrics.widthPixels
+                            val expanded = try {
+                                withContext(Dispatchers.IO) {
+                                    com.mangareader.engine.pdf.VirtualPageExpander.expand(
+                                        pageList, true, true, sm, sw, engine, tree, allowProbe = true
+                                    )
+                                }
+                            } catch (_: Exception) { null }
+                            if (expanded != null && expanded.size > pageList.size) {
+                                val mapped = expanded.indexOfFirst { it.originalPageIdx == rawCur }
+                                pageList = expanded
+                                if (mapped >= 0) cur = mapped
+                            }
+                        }
+                    }
+                }
                 configVersion++
                 // 切换模式时显示导航区域提示，3秒后自动消失
                 showNavOverlay = true

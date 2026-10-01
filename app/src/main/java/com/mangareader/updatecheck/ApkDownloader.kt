@@ -33,6 +33,37 @@ object ApkDownloader {
         } catch (_: Exception) {}
     }
 
+    /**
+     * ★ 下载包与当前应用签名比对：不一致/解析失败一律 false。
+     * 防线：镜像侧或公共 Downloads/漫读/ 被塞假包时，不同包名的 APK 会被系统当"新应用"装成功——
+     * 同签名校验是我们自己的最后一道闸（系统安装器只拒"换签名的同包名"，管不了不同包名）。
+     */
+    fun verifyOwnSignature(ctx: Context, apkFile: File): Boolean = try {
+        val pm = ctx.packageManager
+        val newSigs: List<List<Byte>> = if (android.os.Build.VERSION.SDK_INT >= 28) {
+            val info = pm.getPackageArchiveInfo(apkFile.absolutePath, android.content.pm.PackageManager.GET_SIGNING_CERTIFICATES)
+                ?: return false
+            info.signingInfo?.apkContentsSigners?.map { it.toByteArray().toList() } ?: return false
+        } else {
+            @Suppress("DEPRECATION")
+            val info = pm.getPackageArchiveInfo(apkFile.absolutePath, android.content.pm.PackageManager.GET_SIGNATURES)
+                ?: return false
+            @Suppress("DEPRECATION")
+            info.signatures?.map { it.toByteArray().toList() } ?: return false
+        }
+        val curSigs: List<List<Byte>> = if (android.os.Build.VERSION.SDK_INT >= 28) {
+            val cur = pm.getPackageInfo(ctx.packageName, android.content.pm.PackageManager.GET_SIGNING_CERTIFICATES)
+            cur.signingInfo?.apkContentsSigners?.map { it.toByteArray().toList() } ?: return false
+        } else {
+            @Suppress("DEPRECATION")
+            pm.getPackageInfo(ctx.packageName, android.content.pm.PackageManager.GET_SIGNATURES)
+                .signatures?.map { it.toByteArray().toList() } ?: return false
+        }
+        newSigs.toSet() == curSigs.toSet()
+    } catch (_: Throwable) {
+        false
+    }
+
     fun downloadInBackground(ctx: Context, info: UpdateInfo) {
         val appCtx = ctx.applicationContext
         (appCtx as? com.mangareader.App)?.appScope?.launch(Dispatchers.IO) {
@@ -60,6 +91,12 @@ object ApkDownloader {
             if (apkFile.exists() && apkFile.length() > 0 &&
                 (expectSize <= 0 || apkFile.length() == expectSize)
             ) {
+                // 复用缓存也要过签名校验：公共目录里同尺寸的假包会被 size 判定放进来
+                if (!verifyOwnSignature(ctx, apkFile)) {
+                    android.util.Log.e("ApkDownloader", "cached apk signature MISMATCH, deleted")
+                    apkFile.delete()
+                    return@withContext null
+                }
                 android.util.Log.i("ApkDownloader", "reuse cached apk ${apkFile.length()} bytes")
                 onProgress(1f)
                 return@withContext apkFile
@@ -98,7 +135,17 @@ object ApkDownloader {
             }
             response.close()
             if (apkFile.exists()) apkFile.delete()
-            tmpFile.renameTo(apkFile)
+            if (!tmpFile.renameTo(apkFile)) {
+                android.util.Log.e("ApkDownloader", "rename FAILED, tmp=${tmpFile.length()} bytes")
+                try { tmpFile.delete() } catch (_: Exception) {}
+                return@withContext null
+            }
+            // 下载后签名校验：镜像侧篡改/截断在此拦截（不同包名的假包系统安装器拦不住）
+            if (!verifyOwnSignature(ctx, apkFile)) {
+                android.util.Log.e("ApkDownloader", "downloaded apk signature MISMATCH, deleted")
+                apkFile.delete()
+                return@withContext null
+            }
             onProgress(1f)
             android.util.Log.i("ApkDownloader", "download done ${apkFile.length()} bytes")
             apkFile
@@ -112,6 +159,11 @@ object ApkDownloader {
 object ApkInstaller {
     fun install(ctx: Context, apkFile: File): Boolean {
         return try {
+            // 汇聚点强制校验：所有安装路径（弹窗/后台下载/主界面）都必须过签名这道闸
+            if (!apkFile.exists() || !ApkDownloader.verifyOwnSignature(ctx, apkFile)) {
+                try { apkFile.delete() } catch (_: Exception) {}
+                return false
+            }
             val uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.fileprovider", apkFile)
             val intent = Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(uri, "application/vnd.android.package-archive")

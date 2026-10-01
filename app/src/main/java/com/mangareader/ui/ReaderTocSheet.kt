@@ -39,7 +39,12 @@ import com.mangareader.data.ReadingProgress
 import com.mangareader.viewer.ArchiveEngine
 import com.mangareader.viewer.NaturalComparator
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+
+// ★ 缩略图并发闸：每个格子各自 LaunchedEffect 触发全页字节读（loadPageRaw 阻塞不可取消），
+//   长章快速滑动几十个并发 5-30MB 字节数组 = 内存/IO 尖峰。上限 3 足够填满滚动预取
+private val thumbLoadSemaphore = kotlinx.coroutines.sync.Semaphore(3)
 
 /**
  * §36 目录子项阅读状态徽章。
@@ -438,7 +443,7 @@ fun ReaderTocSheet(
                             var bitmap by remember(idx) { mutableStateOf<Bitmap?>(null) }
                             LaunchedEffect(idx) {
                                 thumbCache.get(idx)?.let { bitmap = it; return@LaunchedEffect }
-                                val bmp = withContext(Dispatchers.IO) { thumbLoader?.invoke(idx) }
+                                val bmp = withContext(Dispatchers.IO) { thumbLoadSemaphore.withPermit { thumbLoader?.invoke(idx) } }
                                 if (bmp != null) thumbCache.put(idx, bmp)
                                 bitmap = bmp
                             }

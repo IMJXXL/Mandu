@@ -208,14 +208,16 @@ class SmbPageAdapter(
             runCatching { loader.navigate(ReaderNavigation(index, index..index, NavigationKind.Settled)) }
         }, "smb-nav").apply { isDaemon = true; start() }
         t.join(timeoutMs)
+        if (t.isAlive) t.interrupt()   // 超时弃线程前先打断：阻塞在可中断点的线程立即退出，不再占连接
     }
 
     private fun isPageAvailable(loader: PageLoader, index: Int, timeoutMs: Long = PROBE_TIMEOUT_MS): Boolean {
         var result = false
         val t = Thread({
-            try { loader.openSource(index).close(); result = true } catch (_: Exception) {}
+            try { loader.openSource(index).close(); result = true } catch (_: Throwable) {}
         }, "smb-probe").apply { isDaemon = true; start() }
         t.join(timeoutMs)
+        if (t.isAlive) t.interrupt()
         return result
     }
 
@@ -223,6 +225,7 @@ class SmbPageAdapter(
         var result: ByteArray? = null
         val t = Thread({ result = readPageBytesInternal(loader, index) }, "smb-read").apply { isDaemon = true; start() }
         t.join(timeoutMs)
+        if (t.isAlive) t.interrupt()
         return result
     }
 

@@ -18,11 +18,11 @@ import kotlinx.coroutines.launch
  */
 object PageIndexWarmer {
 
-    @Volatile private var running = false
+    private val running = java.util.concurrent.atomic.AtomicBoolean(false)
 
     fun kick(ctx: Context, dao: com.mangareader.data.MangaDao) {
-        if (running) return
-        running = true
+        // CAS 原子单飞：启动 kick 与重扫 kick 并发时只放行一个（@Volatile check-then-act 会双通过）
+        if (!running.compareAndSet(false, true)) return
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             try {
                 val engine = ArchiveEngine(ctx.applicationContext)
@@ -37,16 +37,19 @@ object PageIndexWarmer {
                 DiagMark.mark("pageIndex warm begin n=${targets.size}")
                 var ok = 0
                 targets.forEach { p ->
-                    try {
-                        val pages = engine.listPages(p)
-                        if (pages.isNotEmpty()) ok++
-                    } catch (_: Throwable) {}
+                    // 避让：这本书刚被阅读器/扫描触达过（或正在打开）→ 跳过，不与用户抢慢 SD IO
+                    if (!ArchiveEngine.isRecentlyListed(p)) {
+                        try {
+                            val pages = engine.listPages(p)
+                            if (pages.isNotEmpty()) ok++
+                        } catch (_: Throwable) {}
+                    }
                     delay(2500L)  // 慢 SD 上留喘息，不与用户操作抢 IO
                 }
                 DiagMark.mark("pageIndex warm done ok=$ok/${targets.size}")
             } catch (_: Throwable) {
             } finally {
-                running = false
+                running.set(false)
             }
         }
     }

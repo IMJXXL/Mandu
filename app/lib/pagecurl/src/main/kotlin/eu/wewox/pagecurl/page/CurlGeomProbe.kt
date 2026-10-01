@@ -18,4 +18,14 @@ object CurlGeomProbe {
         val s = sink ?: return
         try { s(msg) } catch (_: Throwable) {}
     }
+
+    /** 节流通过才构建消息：翻页动画每帧调用本方法，msg 构建含 joinToString，
+     *  放在节流前 = 每帧白付 ~200B 字符串成本 */
+    fun markLazy(build: () -> String) {
+        val now = android.os.SystemClock.uptimeMillis()
+        if (now - lastAt < 600L) return
+        lastAt = now
+        val s = sink ?: return
+        try { s(build()) } catch (_: Throwable) {}
+    }
 }

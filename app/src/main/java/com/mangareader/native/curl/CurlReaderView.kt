@@ -14,6 +14,11 @@ import androidx.compose.ui.platform.ComposeView
 import com.mangareader.viewer.ArchiveEngine
 import com.mangareader.native.ReaderViewDelegate
 import com.mangareader.native.RemotePageSupply
+import com.mangareader.native.NavigationAction
+import com.mangareader.native.ViewerNavigation
+import com.mangareader.native.DefaultNavigation
+import com.mangareader.native.AllMenuNavigation
+import com.mangareader.native.LNavigation
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -84,14 +89,38 @@ class CurlReaderView(context: Context) : FrameLayout(context), ReaderViewDelegat
     var onChapterEnd: ((Boolean) -> Unit)? = null
     private val flipSound = CurlFlipSound(context)
 
+    private var clickFlipType: Int = 1
+    private var clickFlipInvertH = false
+    private var navigation: ViewerNavigation = DefaultNavigation
+
+    private fun applyNavigation() {
+        navigation = when (clickFlipType) {
+            0 -> AllMenuNavigation
+            4 -> LNavigation
+            else -> DefaultNavigation
+        }
+    }
+
+    override fun setClickFlipInvert(invert: Boolean) {
+        clickFlipInvertH = invert
+    }
+
+    override fun setClickFlipTypeLive(type: Int) {
+        if (clickFlipType == type) return
+        clickFlipType = type
+        applyNavigation()
+    }
+
     private val gestureDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
         override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
             if (width == 0 || height == 0) return false
             val fx = e.x / width
-            when {
-                fx in 0.33f..0.67f -> onToggleUi?.invoke()
-                (if (isRtl) fx < 0.33f else fx > 0.67f) -> tapForwardTrigger.intValue++
-                else -> tapBackwardTrigger.intValue++
+            val fy = e.y / height
+            // RTL 与 pager 同款：区域固定（左 PREV/右 NEXT），RTL 在动作层翻转
+            when (navigation.getAction(fx, fy)) {
+                NavigationAction.PREV -> if (isRtl) tapForwardTrigger.intValue++ else tapBackwardTrigger.intValue++
+                NavigationAction.NEXT -> if (isRtl) tapBackwardTrigger.intValue++ else tapForwardTrigger.intValue++
+                NavigationAction.MENU -> onToggleUi?.invoke()
             }
             return true
         }
@@ -139,6 +168,7 @@ class CurlReaderView(context: Context) : FrameLayout(context), ReaderViewDelegat
     /** ★ 纸张纹理即时生效：全局 PaperPageTexture 已由 NES 先行更新（含升代），清缓存重载 */
     fun applyPaperTextureNow() {
         cache.clear()
+        loader.clearBakeTracking()   // 换纹理后旧"已烘焙"标记作废，否则新浓度不会重烘
         reloadTrigger.intValue++
         loader.preloadAround(currentPage, pageList.size) { reloadTrigger.intValue++ }
     }
@@ -161,6 +191,13 @@ class CurlReaderView(context: Context) : FrameLayout(context), ReaderViewDelegat
         this.pageList = pages
         this.currentPage = startPage
         this.isRtl = rtl
+        // ★ 点击翻页区域接线（此前参数收下零使用、硬编码三分——设置静默失效）
+        if (clickFlipType != clickFlip) {
+            clickFlipType = clickFlip
+            applyNavigation()
+        }
+        // ★ 上报真实页数，防上一章条漫的展开页数残留（见 PagerReaderView.setup 同注）
+        onPageCountChanged?.invoke(pageList.size)
         loader.bind(engine, treePath, pages, remotePageSupply)
         loader.setCurrentPage(startPage)
         renderCompose()

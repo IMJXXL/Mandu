@@ -30,8 +30,18 @@ object SpreadMapping {
             page / 2
         }
 
+    // ★ curl 双页合并产物缓存（对齐 pager mergedCache，64MB 字节预算）：
+    //   PageCurl 的 key(updatedCurrent) 每次落地整树重建，remember(leftBmp,rightBmp) 随之重跑
+    //   → 主线程每次落地 2-3 张 ~19.5MB createBitmap 分配突发掉帧。键=源位图 identity
+    //  （页解码/纹理重烘换实例自动 miss），淘汰不 recycle（同 pager 策略，byteCount 恒定无失配）
+    private val mergedCache = object : androidx.collection.LruCache<String, Bitmap>(64 * 1024 * 1024) {
+        override fun sizeOf(key: String, value: Bitmap) = value.byteCount
+    }
+
     fun mergeBitmaps(left: Bitmap, right: Bitmap?, gapPx: Int = 0, bgColor: Int = android.graphics.Color.WHITE): Bitmap {
         if (right == null || right.isRecycled) return left
+        val key = "${System.identityHashCode(left)}:${System.identityHashCode(right)}:$gapPx:$bgColor"
+        mergedCache.get(key)?.let { if (!it.isRecycled) return it }
         val leftSw = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O && left.config == Bitmap.Config.HARDWARE) left.copy(Bitmap.Config.ARGB_8888, false) else left
         val rightSw = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O && right.config == Bitmap.Config.HARDWARE) right.copy(Bitmap.Config.ARGB_8888, false) else right
         val w = leftSw.width + rightSw.width + gapPx
@@ -41,6 +51,7 @@ object SpreadMapping {
         canvas.drawColor(bgColor)
         canvas.drawBitmap(leftSw, 0f, (h - leftSw.height) / 2f, null)
         canvas.drawBitmap(rightSw, (leftSw.width + gapPx).toFloat(), (h - rightSw.height) / 2f, null)
+        mergedCache.put(key, merged)
         return merged
     }
 

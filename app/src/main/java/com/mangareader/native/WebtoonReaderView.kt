@@ -748,9 +748,17 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
                 val sharedKey = engine?.getPdfSharedKey(treePath, meta.index)
                 if (sharedKey != null) {
                     engine?.getCachedBitmap(sharedKey)?.let { bmp ->
-                        // 版本戳防重：共享位图可能已贴纹（代数不匹配才会再贴）
-                        synchronized(bitmapCache) { bitmapCache.put(idx, com.mangareader.filter.PaperPageTexture.apply(bmp)) }
-                        onResult?.invoke(bmp)
+                        // 共享位图是引擎级原图（多视图共用），不可原地处理——复制后走同一处理管线，
+                        // 否则墨水屏抖动在此早退被跳过（同一本 PDF 部分页无抖动、观感斑驳）
+                        var out = bmp
+                        if (einkDither && !out.isRecycled) {
+                            try {
+                                out = out.copy(Bitmap.Config.ARGB_8888, false)
+                                    ?.applyEinkDither(einkDitherAlgorithm, einkDitherLevels, einkEndpointPassthrough) ?: bmp
+                            } catch (_: Exception) { out = bmp }
+                        }
+                        synchronized(bitmapCache) { bitmapCache.put(idx, com.mangareader.filter.PaperPageTexture.apply(out)) }
+                        onResult?.invoke(out)
                         return
                     }
                 }

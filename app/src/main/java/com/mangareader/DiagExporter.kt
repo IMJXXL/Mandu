@@ -51,12 +51,16 @@ object DiagExporter {
         val ts = java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.getDefault()).format(java.util.Date())
 
         // ★ 大文件防护：只读末尾 N KB（RandomAccessFile seek），防膨胀文件拖垮导出
-        // ★ 脱敏：包内类名 → 模块码（防从崩溃堆栈读出技术路线）；用户文件路径 → <book>（防暴露浏览内容）
+        // ★ 脱敏：包内类名（含根包/全部子包）→ 模块码；用户文件路径 → <book>；服务器地址/URL/IP → <server>
         fun sanitize(text: String): String = text
-            .replace(Regex("""com\.mangareader\.(sr|native|viewer|engine|webdavbridge|smbbridge|komgabridge|opdsbridge|filter|data|ui|backup|updatecheck|autocat)\.[A-Za-z0-9_$]+"""), "m.*")
-            .replace(Regex("""com\.hippo\.ehviewer\.(webdav|library)\.[A-Za-z0-9_$]+"""), "h.*")
+            .replace(Regex("""com\.mangareader\.[A-Za-z0-9_$.]+"""), "m.*")
+            .replace(Regex("""com\.hippo\.[A-Za-z0-9_$.]+"""), "h.*")
             .replace(Regex("""/storage/[^\s"]*"""), "<book>")
             .replace(Regex("""/data/user/\d+/[^\s"]*"""), "<app>")
+            .replace(Regex("""\b(?:https?|smb|ftp|ftps|webdav|webdavs)://[^\s"'）)\\]+"""), "<server>")
+            .replace(Regex("""\\\\[\w.-]+[^\s"']*"""), "<server>")
+            .replace(Regex("""\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?::\d+)?\b"""), "<server>")
+            .replace(Regex("""\b[\w-]+\.local\b"""), "<server>")
 
         fun tailOf(f: java.io.File, maxKb: Int): String {
             val max = maxKb * 1024

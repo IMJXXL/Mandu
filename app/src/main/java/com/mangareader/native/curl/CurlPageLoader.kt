@@ -37,6 +37,12 @@ class CurlPageLoader(
     private val inflightLoads = ConcurrentHashMap<Int, Long>()
     private val loadJobs = ConcurrentHashMap<Int, Job>()
     private val preloadSemaphore = Semaphore(1)
+    /** idx → 已烘焙的源位图 identity：源没换不重烘（清缓存换纹理时由 clearBakeTracking 复位） */
+    private val bakedFrom = HashMap<Int, Int>()
+
+    fun clearBakeTracking() {
+        synchronized(bakedFrom) { bakedFrom.clear() }
+    }
 
     fun bind(
         engine: ArchiveEngine,
@@ -48,6 +54,7 @@ class CurlPageLoader(
         this.treePath = treePath
         this.pageList = pages
         this.remoteSupply = remoteSupply
+        synchronized(bakedFrom) { bakedFrom.clear() }
     }
 
     fun setCurrentPage(idx: Int) {
@@ -67,8 +74,15 @@ class CurlPageLoader(
             try {
                 val srHit = com.mangareader.sr.SrPipeline.attachOrScheduleFast(idx, cached)
                 if (srHit != null && !srHit.isRecycled && srHit !== cached) {
-                    cache.put(idx, com.mangareader.filter.PaperPageTexture.apply(srHit))
-                    onLoaded(idx)
+                    // ★ 烘焙一次化：cached 恒为烘焙副本 → srHit !== cached 恒真，无标记则每次落地
+                    //   对整个预载窗口逐页整页 copy+MULTIPLY（主线程 50-75ms）。源实例没换就跳过重烘
+                    val srcId = System.identityHashCode(srHit)
+                    val already = synchronized(bakedFrom) { bakedFrom[idx] }
+                    if (already != srcId) {
+                        cache.put(idx, com.mangareader.filter.PaperPageTexture.apply(srHit))
+                        synchronized(bakedFrom) { bakedFrom[idx] = srcId }
+                        onLoaded(idx)
+                    }
                 }
             } catch (_: Exception) {}
             return
