@@ -2336,6 +2336,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                             //   背面纸纹位图已退役）
                             paperBackPresetId = if (config.textureEnabled) config.texturePresetId else -1,
                             curlShadowAlpha = config.curlShadowAlpha,
+                            spineShadowAlpha = config.spineShadowAlpha,
                             einkDither = config.isEinkDither,
                             einkDitherAlgorithm = config.einkDitherAlgorithm,
                             einkDitherLevels = config.einkDitherLevels,

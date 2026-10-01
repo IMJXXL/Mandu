@@ -322,6 +322,9 @@ private fun ReadingModeTab(config: ReaderConfig, mode: Mode, onConfigChange: (Re
                 SliderItem("翻页阴影浓度（0=关闭，默认20%）", config.curlShadowAlpha, 0f..0.5f, 9, "${(config.curlShadowAlpha * 100).toInt()}%") {
                     onConfigChange(config.copy(curlShadowAlpha = it))
                 }
+                SliderItem("书脊阴影浓度（双页书脊装订沟，0=关闭，默认9%）", config.spineShadowAlpha, 0f..0.3f, 29, "${(config.spineShadowAlpha * 100).toInt()}%") {
+                    onConfigChange(config.copy(spineShadowAlpha = it))
+                }
             }
         }
         GroupTitle("画面")
@@ -337,10 +340,19 @@ private fun ReadingModeTab(config: ReaderConfig, mode: Mode, onConfigChange: (Re
             listOf("贴合" to 0, "窄缝" to 1, "中缝" to 2, "宽缝" to 3).forEach { (label, value) ->
                 FilterChip(
                     selected = value == config.centerGapType,
+                    // 仿真翻页双页的中缝写死贴合（拟真书脊靠书脊阴影过渡，无物理白缝），置灰防误配
+                    enabled = !config.isPageCurlAnimation,
                     onClick = { onConfigChange(config.copy(centerGapType = value)) },
                     label = { Text(label, fontSize = 13.sp) },
                 )
             }
+        }
+        if (config.isPageCurlAnimation) {
+            Text(
+                "仿真翻页下中缝不生效：书页在书脊处贴合，由书脊阴影过渡",
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f), fontSize = 11.sp,
+                modifier = Modifier.padding(start = 4.dp)
+            )
         }
 
 
@@ -579,7 +591,7 @@ private fun FilterTab(config: ReaderConfig, onConfigChange: (ReaderConfig) -> Un
             onConfigChange(config.copy(textureConcentration = it.toInt()))
         }
         SettingsChipRow("生效范围") {
-            listOf("仅图片" to 0, "整屏幕" to 1).forEach { (label, value) ->
+            listOf("仅图片" to 0, "全屏幕" to 1).forEach { (label, value) ->
                 FilterChip(
                     selected = value == config.textureScope,
                     onClick = { onConfigChange(config.copy(textureScope = value)) },
@@ -589,7 +601,7 @@ private fun FilterTab(config: ReaderConfig, onConfigChange: (ReaderConfig) -> Un
         }
         Text(
             if (config.textureScope == 1)
-                "整屏幕：画面与页面外的留边背景都铺纸纹；背景纸纹固定不随页动"
+                "全屏幕：画面与页面外的留边背景都铺纸纹；背景纸纹固定不随页动"
             else
                 "仅图片：纸纹随页面翻动缩放，只作用于画面本身；动图页与瓦片模式不生效",
             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f), fontSize = 11.sp,

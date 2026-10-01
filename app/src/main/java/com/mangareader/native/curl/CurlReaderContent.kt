@@ -37,6 +37,7 @@ fun CurlPageContent(
     pageBgColor: Int,
     landscapeZoom: Boolean,
     fitScreen: Boolean,
+    bgTexPaint: android.graphics.Paint? = null,
 ) {
     // 缩放语义与双页 SpreadImage / pager applyScale 对齐：fitScreen（漫画完整显示）=contain；
     // 否则贴满宽度；landscapeZoom（自动放大横向图片，仅 fitScreen 关闭时插手）宽图贴满高度。
@@ -51,16 +52,22 @@ fun CurlPageContent(
     }
     val mirror = if (isRtl) Modifier.graphicsLayer { scaleX = -1f } else Modifier
     val baseModifier = Modifier.fillMaxSize().clipToBounds().then(mirror)
+    // ★ 整屏幕纸纹（textureScope=1）：纸面留边用外层算好的 bgPaint 铺纸纹（同配方同相位），
+    //   平涂背景曾把外层纸纹背景整块盖死；关=平涂原样
+    val bgMod = if (bgTexPaint != null) Modifier.drawBehind {
+        drawContext.canvas.nativeCanvas.drawColor(pageBgColor)
+        drawContext.canvas.nativeCanvas.drawRect(0f, 0f, size.width, size.height, bgTexPaint)
+    } else Modifier.background(Color(pageBgColor))
 
     if (bmp == null || bmp.isRecycled) {
-        Box(modifier = Modifier.fillMaxSize().background(Color(pageBgColor)))
+        Box(modifier = Modifier.fillMaxSize().then(bgMod))
         return
     }
 
     Image(
         bitmap = bmp.asImageBitmap(),
         contentDescription = null,
-        modifier = baseModifier.background(Color(pageBgColor)),
+        modifier = baseModifier.then(bgMod),
         contentScale = contentScale,
     )
 }
@@ -262,6 +269,7 @@ fun CurlReaderContent(
                 pageBgColor = pageBgColor,
                 landscapeZoom = landscapeZoom,
                 fitScreen = fitScreen,
+                bgTexPaint = bgPaint,
             )
         }
     }

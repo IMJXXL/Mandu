@@ -65,6 +65,11 @@ class CurlDoublePageView(context: Context) : FrameLayout(context), ReaderViewDel
     var curlShadowAlpha: Float
         get() = curlShadowAlphaState.floatValue
         set(value) { curlShadowAlphaState.floatValue = value }
+    // 书脊沟阴影浓度同上（0=关闭；仅双页 curl 的书脊贴合过渡渐变）
+    private val spineShadowAlphaState = mutableFloatStateOf(0.09f)
+    var spineShadowAlpha: Float
+        get() = spineShadowAlphaState.floatValue
+        set(value) { spineShadowAlphaState.floatValue = value }
     // ★ 纸背纹理 preset（-1=不启用；NES SideEffect 写入）
     private val paperBackPresetIdState = mutableIntStateOf(-1)
     var paperBackPresetId: Int
@@ -253,6 +258,7 @@ class CurlDoublePageView(context: Context) : FrameLayout(context), ReaderViewDel
                 curlContentAreaOnly = curlContentAreaOnly,
                 backContentAlpha = curlBackContentAlpha,
                 shadowAlpha = curlShadowAlpha,
+                spineShadowAlpha = spineShadowAlpha,
                 paperBackPresetId = paperBackPresetId,
                 bgTextureOn = paperBgOn,
                 bgTextureConcentration = paperBgConcentration,

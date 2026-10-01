@@ -47,6 +47,8 @@ fun CurlDoublePageContent(
     curlContentAreaOnly: Boolean,
     backContentAlpha: Float,
     shadowAlpha: Float,
+    /** 书脊沟阴影浓度 0~0.3（0=关闭，默认 0.09）：双页书脊贴合处的装订沟暗渐变 */
+    spineShadowAlpha: Float = 0.09f,
     paperBackPresetId: Int = -1,
     /** ★ 整屏幕纸纹背景开关/浓度（textureScope=1 时由视图传入） */
     bgTextureOn: Boolean = false,
@@ -239,7 +241,7 @@ fun CurlDoublePageContent(
                 val targetSpread = if (forward) current + 1 else current - 1
                 Box {
                     if (targetSpread < 0 || targetSpread >= totalSpreads) {
-                        SpreadImage(null, null, doublePageReverse, pageBgColor, isRtl, landscapeZoom, fitScreen)
+                        SpreadImage(null, null, doublePageReverse, pageBgColor, isRtl, landscapeZoom, fitScreen, bgTexPaint = bgPaint)
                     } else {
                         val tLeftIdx = SpreadMapping.leftPage(targetSpread, totalPages, shift)
                         val tRightIdx = SpreadMapping.rightPage(targetSpread, totalPages, shift)
@@ -251,10 +253,11 @@ fun CurlDoublePageContent(
                             isRtl,
                             landscapeZoom,
                             fitScreen,
+                            bgTexPaint = bgPaint,
                         )
                     }
                     // 沟阴影画进页面内容层：随纸翻动，不会悬在翻起的纸上方
-                    SpineGutterShadow()
+                    SpineGutterShadow(spineShadowAlpha)
                 }
             },
         ) { spreadIdx ->
@@ -272,17 +275,19 @@ fun CurlDoublePageContent(
                     isRtl,
                     landscapeZoom,
                     fitScreen,
+                    bgTexPaint = bgPaint,
                 )
-                SpineGutterShadow()
+                SpineGutterShadow(spineShadowAlpha)
             }
         }
     }
 }
 
-/** 书脊沟阴影：中缝恒定低强度暗渐变，模拟装订沟。画在页面内容层（静态一层渐变零性能成本），
- *  翻起的纸会盖住阴影而不是被阴影盖住。 */
+/** 书脊沟阴影：中缝暗渐变模拟装订沟（浓度可调，0=关闭）。画在页面内容层（静态一层渐变
+ *  零性能成本），翻起的纸会盖住阴影而不是被阴影盖住。 */
 @Composable
-private fun SpineGutterShadow() {
+private fun SpineGutterShadow(alpha: Float) {
+    if (alpha <= 0f) return
     Canvas(Modifier.fillMaxSize()) {
         val w = size.width
         if (w > 0f) {
@@ -292,7 +297,7 @@ private fun SpineGutterShadow() {
                 brush = Brush.horizontalGradient(
                     0f to Color.Transparent,
                     ((cx - half) / w).coerceIn(0f, 1f) to Color.Transparent,
-                    0.5f to Color.Black.copy(alpha = 0.09f),
+                    0.5f to Color.Black.copy(alpha = alpha),
                     ((cx + half) / w).coerceIn(0f, 1f) to Color.Transparent,
                     1f to Color.Transparent,
                 )
@@ -310,6 +315,7 @@ private fun SpreadImage(
     isRtl: Boolean,
     landscapeZoom: Boolean,
     fitScreen: Boolean,
+    bgTexPaint: android.graphics.Paint? = null,
 ) {
     val emptyBmp = remember { Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888).asImageBitmap() }
 
@@ -354,10 +360,17 @@ private fun SpreadImage(
 
     val mirror = if (isRtl) Modifier.graphicsLayer { scaleX = -1f } else Modifier
 
+    // ★ 整屏幕纸纹（textureScope=1）：画面外留边用外层算好的 bgPaint 铺纸纹（同配方同相位），
+    //   平涂背景曾把外层纸纹背景整块盖死；关=平涂原样
+    val bgMod = if (bgTexPaint != null) Modifier.drawBehind {
+        drawContext.canvas.nativeCanvas.drawColor(pageBgColor)
+        drawContext.canvas.nativeCanvas.drawRect(0f, 0f, size.width, size.height, bgTexPaint)
+    } else Modifier.background(Color(pageBgColor))
+
     Image(
         bitmap = imgBmp ?: emptyBmp,
         contentDescription = null,
-        modifier = Modifier.fillMaxSize().clipToBounds().background(Color(pageBgColor)).then(mirror),
+        modifier = Modifier.fillMaxSize().clipToBounds().then(bgMod).then(mirror),
         contentScale = contentScale,
     )
 }

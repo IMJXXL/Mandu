@@ -1373,7 +1373,8 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         val h = maxOf(leftSw.height, rightSw.height)
         val merged = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         val canvas = android.graphics.Canvas(merged)
-        canvas.drawColor(pageBgColor)
+        // ★ 整屏幕：中缝/高度差留边随纸纹（页面各自已烘焙，只填空档不重复烘），关=纯平涂原样
+        com.mangareader.filter.PaperPageTexture.fillMergeBackground(canvas, w, h, pageBgColor)
         canvas.drawBitmap(leftSw, 0f, (h - leftSw.height) / 2f, null)
         canvas.drawBitmap(rightSw, (leftSw.width + gapPx).toFloat(), (h - rightSw.height) / 2f, null)
         return merged

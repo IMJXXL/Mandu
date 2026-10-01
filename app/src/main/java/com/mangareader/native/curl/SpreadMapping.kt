@@ -48,7 +48,8 @@ object SpreadMapping {
         val h = maxOf(leftSw.height, rightSw.height)
         val merged = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(merged)
-        canvas.drawColor(bgColor)
+        // ★ 整屏幕：两页高度差留边随纸纹（页面各自已烘焙，只填空档不重复烘），关=纯平涂原样
+        com.mangareader.filter.PaperPageTexture.fillMergeBackground(canvas, w, h, bgColor)
         canvas.drawBitmap(leftSw, 0f, (h - leftSw.height) / 2f, null)
         canvas.drawBitmap(rightSw, (leftSw.width + gapPx).toFloat(), (h - rightSw.height) / 2f, null)
         mergedCache.put(key, merged)

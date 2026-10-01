@@ -82,6 +82,34 @@ object PaperPageTexture {
         return target
     }
 
+    /**
+     * ★ 合并位图留白填充（双页中缝/左右页高度差留边专用）：背景色打底，整屏幕模式
+     *   再叠一层与 PaperBgDrawable 同配方的纸纹正片叠底。页面位图在解码管线已各自
+     *   烘焙过，此处只填页面之外的空档，绝不可整张再烘（纹理平方）。
+     *   关纹理/仅图片模式=纯 drawColor（与旧行为逐像素一致）；纹理未就绪回退平涂
+     *   （页面烘焙早已把纹理缓存焐热，实际几乎不发生）。合并在主线程调用，
+     *   texture() 内部 loadSync 走共享缓存，无阻塞风险。
+     */
+    fun fillMergeBackground(canvas: Canvas, w: Int, h: Int, bgColor: Int) {
+        canvas.drawColor(bgColor)
+        if (!enabled || !overlayMode) return
+        val texBmp = texture() ?: return
+        val s = concentration.coerceIn(0, 100) / 100f
+        val wOff = 255f * (1 - s)
+        val paint = Paint().apply {
+            shader = BitmapShader(texBmp, Shader.TileMode.MIRROR, Shader.TileMode.MIRROR)
+            isFilterBitmap = true
+            xfermode = PorterDuffXfermode(PorterDuff.Mode.MULTIPLY)
+            colorFilter = ColorMatrixColorFilter(ColorMatrix(floatArrayOf(
+                s, 0f, 0f, 0f, wOff,
+                0f, s, 0f, 0f, wOff,
+                0f, 0f, s, 0f, wOff,
+                0f, 0f, 0f, 1f, 0f
+            )))
+        }
+        canvas.drawRect(0f, 0f, w.toFloat(), h.toFloat(), paint)
+    }
+
     /** 该位图是否为烘焙产物（弱引用登记，位图回收后条目自动清除） */
     fun isBaked(bmp: Bitmap): Boolean = synchronized(bakedInstances) { bakedInstances.contains(bmp) }
 

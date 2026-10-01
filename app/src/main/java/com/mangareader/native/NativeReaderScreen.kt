@@ -138,6 +138,8 @@ fun NativeReaderScreen(
     paperBackPresetId: Int = 0,
     /** 仿真翻页投影阴影浓度 0~0.5（0=关闭阴影，默认 0.2），单页/双页 curl 共用 */
     curlShadowAlpha: Float = 0.2f,
+    /** 双页 curl 书脊沟阴影浓度 0~0.3（0=关闭，默认 0.09）：书脊贴合处装订沟暗渐变 */
+    spineShadowAlpha: Float = 0.09f,
     /** ★ 墨水屏灰阶抖动（256级模拟）：解码管线参数，变更经 appliedDither SideEffect 即时生效 */
     einkDither: Boolean = false,
     einkDitherAlgorithm: Int = 0,
@@ -358,6 +360,7 @@ fun NativeReaderScreen(
             //   纹理不要）——presetId 仅供整屏幕纸纹背景用，背面不再烘位图
             delegate.curlBackContentAlpha = curlBackContentAlpha
             delegate.curlShadowAlpha = curlShadowAlpha
+            delegate.spineShadowAlpha = spineShadowAlpha
             delegate.paperBackPresetId = paperBackPresetId
             delegate.paperBgOn = textureEnabled && textureScope == 1
             delegate.paperBgConcentration = textureConcentration
