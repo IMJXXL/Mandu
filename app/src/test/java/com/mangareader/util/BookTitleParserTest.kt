@@ -161,6 +161,31 @@ class BookTitleParserTest {
         )
     }
 
+    // ===== 空格形态 CJK 标记 + 中文标题保护（全面审查 1001 补） =====
+    @Test fun spacedCjkMarkerForms() {
+        // "第 N 卷"/"第 N 话"/"卷 N" 空格形态：标题不带"第"/"卷"尾巴
+        assertEquals("海贼王", t("海贼王 第 03 卷.cbz")); assertEquals(3, v("海贼王 第 03 卷.cbz"))
+        assertEquals("海贼王", t("海贼王 第 25 话.zip"))
+        assertEquals(25.0, BookTitleParser.parse("海贼王 第 25 话.zip").chapter!!, 1e-9)
+        assertEquals("海贼王", t("海贼王 卷 03.cbz"))
+        // 标题含"第 N"的真书名不被撕碎、不误判章
+        assertEquals("第 8 号当铺", t("第 8 号当铺.epub"))
+        assertEquals(null, BookTitleParser.parse("第 8 号当铺.epub").chapter)
+        // "第N"纯前缀词是标记："第1-3卷" 范围 + 标题无尾巴
+        assertEquals("火凤燎原", t("火凤燎原 第1-3卷.cbz"))
+        assertEquals(1, v("火凤燎原 第1-3卷.cbz")); assertEquals(3, BookTitleParser.parse("火凤燎原 第1-3卷.cbz").volumeEnd)
+        // 裸数字+CJK 词不是元数据："12 月特别篇"是标题不是章
+        assertEquals("海贼王 12 月特别篇", t("海贼王 12 月特别篇.cbz"))
+        assertEquals(null, BookTitleParser.parse("海贼王 12 月特别篇.cbz").chapter)
+        // 守卫：mihon 空格规则只认 ASCII 词，"浪客行 31"（串尾裸数字）仍是章
+        assertEquals("Bleach", t("Bleach 567 Down With Snowwhite"))
+        assertEquals("浪客行", t("浪客行 31.cbz")); assertEquals(31.0, BookTitleParser.parse("浪客行 31.cbz").chapter!!, 1e-9)
+        // 裸词胶着特殊话："123extra" → 123.99
+        assertEquals(123.99, BookTitleParser.parse("Solo Leveling 123extra").chapter!!, 1e-9)
+        // 2字书名含标记字符（回顾）不误伤
+        assertEquals("回顾", t("回顾 第01卷.cbz")); assertEquals(1, v("回顾 第01卷.cbz"))
+    }
+
     @Test fun ancestorSeriesSkipsCategoryFolders() {
         // 用户实库结构：A(树根)/日漫/2025/哆啦a梦/短篇/第1话 —— 类目夹（短篇/日漫）与 2025/A 全跳，取哆啦a梦
         val anc = listOf("短篇", "哆啦a梦", "2025", "日漫", "A")

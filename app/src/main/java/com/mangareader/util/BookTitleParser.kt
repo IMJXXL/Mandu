@@ -603,8 +603,9 @@ object BookTitleParser {
                 }
                 is Tok.B, is Tok.P, is Tok.C -> return true
                 is Tok.W -> return isGroupCodeWord(t.s) || isChKeyword(t.s) || isVolKeyword(t.s) || specialDecimal(t.s) != null ||
-                    // mihon：裸数字后空格+正文词 → 章节标题续文（"Bleach 567 Down With Snowwhite" → 567）
-                    (prevDelim == ' ' && t.s.any { it.isLetter() })
+                    // mihon：裸数字后空格+正文词 → 章节标题续文（"Bleach 567 Down With Snowwhite" → 567）。
+                    // 只认 ASCII 词——CJK 词（"第 8 号当铺"的"号当铺"、"12 月特别篇"）不是元数据，否则撕碎中文书名
+                    (prevDelim == ' ' && t.s.any { it.code < 128 && it.isLetter() })
             }
         }
         return true   // 串尾
@@ -633,17 +634,12 @@ object BookTitleParser {
             ) {
                 return buildRange(tokens, i + 1, Num(n), true)
             }
-            // 贴身字母/序数/修订裸词（"153b"→153.5、"2nd"→2、"011v002"→11）
+            // 贴身字母/序数/修订/特殊话裸词（"153b"→153.5、"2nd"→2、"011v002"→11、"123extra"→123.99）
             if (i >= minIdx && !allDigits && sawNonNumeric && !prevWasVolKeyword) {
-                val isOrdinal = w.length > 2 && w.substring(w.length - 2) in setOf("st", "nd", "rd", "th") &&
-                    w.dropLast(2).isNotEmpty() && w.dropLast(2).all { it in '0'..'9' }
-                if (isOrdinal) {
-                    parseExtendedNumber(w)?.let { return Rng(it) }
-                } else {
-                    val ext = parseExtendedNumber(w)
-                    if (ext != null && followedByMetadata(tokens, i + 1)) {
-                        return buildRange(tokens, i + 1, ext, true)
-                    }
+                val cbw = chapterBareWord(w)
+                if (cbw != null && (cbw.second != null || cbw.third || followedByMetadata(tokens, i + 1))) {
+                    // 修订/范围吞噬语义（"5v"/"011v002"）直接成立；其余要跟元数据
+                    return buildRange(tokens, i + 1, cbw.first, true, cbw.third)
                 }
             }
             if (!allDigits) sawNonNumeric = true
@@ -657,8 +653,35 @@ object BookTitleParser {
 
     private fun isMarkerWord(w: String): Boolean =
         stripVolumePrefix(w) != null || stripCjkVolPrefix(w) != null || isVolKeyword(w) ||
-            parseChapterWord(w) != null || isChKeyword(w) ||
+            parseChapterWord(w) != null || isChKeyword(w) || DAI_NUM.matches(w) ||
             cjkMarkerNumberInWord(w, CJK_VOL_MARKERS) != null || cjkMarkerNumberInWord(w, CJK_CH_MARKERS) != null
+
+    /** 纯"第+数字"词（"第1-3卷" 的 W("第1")）——书名里的"第8号当铺"整词不匹配（后面还有字） */
+    private val DAI_NUM = Regex("第\\d+")
+
+    /**
+     * 空格形态的 CJK 标记单元（"海贼王 第 03 卷"、"第 25 话"、"卷 03"）→ 标题在此词处切：
+     * - "第" + 数字 + 裸标记词（话/卷）三连
+     * - 裸标记词 + 数字（"卷 03"；"回顾"后面无数字不切，防 2 字书名含 回/话/卷 误伤）
+     */
+    private fun spacedCjkMarkerEndsAt(toks: List<Tok>, i: Int): Boolean {
+        val w = (toks[i] as? Tok.W)?.s ?: return false
+        fun nextWordIdx(from: Int): Int {
+            var k = from
+            while (k < toks.size && toks[k] is Tok.D) k++
+            return k
+        }
+        val nw = (toks.getOrNull(nextWordIdx(i + 1)) as? Tok.W)?.s
+        if (w == "第") {
+            val nw2 = (toks.getOrNull(nextWordIdx(nextWordIdx(i + 1) + 1)) as? Tok.W)?.s
+            return nw != null && nw.all { it in '0'..'9' } &&
+                nw2 != null && (isBareMarkerWord(nw2, CJK_VOL_MARKERS) || isBareMarkerWord(nw2, CJK_CH_MARKERS))
+        }
+        if (isBareMarkerWord(w, CJK_VOL_MARKERS) || isBareMarkerWord(w, CJK_CH_MARKERS)) {
+            return nw != null && nw.all { it in '0'..'9' }
+        }
+        return false
+    }
 
     /**
      * 词内 CJK 标记的切点（返回词内下标；0=整词都是标记）：
@@ -728,7 +751,7 @@ object BookTitleParser {
             when (t) {
                 is Tok.W -> {
                     seenWord = true
-                    if (isMarkerWord(t.s)) {
+                    if (isMarkerWord(t.s) || spacedCjkMarkerEndsAt(toks, i)) {
                         // 词内 CJK 标记：标记前的文字仍属标题（"海贼王卷01"→"海贼王"、"幽游白书 完全版卷06"→"幽游白书 完全版"）
                         return t.pos + cjkMarkerCutIndex(t.s)
                     }
