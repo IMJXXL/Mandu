@@ -205,6 +205,9 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     var errorMsg by remember { mutableStateOf<String?>(null) }
 
     var navStack by remember { mutableStateOf(listOf<String>()) }
+    // ★ 条漫展开前的原始页表备份（章节路径配对防串章）：段页只有条漫视图能渲染，
+    //   切回 pager 族时必须还原原始表（否则每个段=整页重复显示 N 遍）
+    var preExpandPages by remember { mutableStateOf<Pair<String, List<ArchiveEngine.PageMeta>>?>(null) }
     var effectiveRootPath by remember { mutableStateOf("") }
     var items by remember { mutableStateOf(listOf<ArchiveEngine.Item>()) }
     var tocItems by remember { mutableStateOf(listOf<ArchiveEngine.Item>()) }
@@ -988,6 +991,8 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             catch (_: Exception) { pages }
         } else pages
         pageList = expandedPages
+        // ★ 展开生效即备份原始表：切回 pager 族时还原（段页只在条漫视图可渲染）
+        preExpandPages = if (expandedPages.size > pages.size) path to pages else null
         // ★ 分割诊断取证：入口展开统计进诊断日志（unprobed>0 = 有页探测失败被整页透传）
         try { com.mangareader.DiagTracer.mark(ctx, "seg expand ${com.mangareader.engine.pdf.VirtualPageExpander.lastStats}") } catch (_: Exception) {}
         // ★ B1：分割实际生效（存在展开段）时提升共享位图缓存额度（仅大内存设备）
@@ -2760,25 +2765,32 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                 //   小 JSON 读（视图 setup 本来也做）；未探测过的长图本会话不拆，下次进入由入口
                 //   探测补齐。已展开表（含 segmentIndex>0）不重复展开。当前页按 originalPageIdx
                 //   映射进展开表保持阅读位置
-                if ((newMode == Mode.VERT || newMode == Mode.WEBTOON_GAP) &&
-                    config.tallSplitEnabled && pageList.isNotEmpty() && pageList.all { it.segmentIndex == 0 }
-                ) {
-                    val tree = navStack.lastOrNull() ?: book?.filePath
-                    if (tree != null) {
+                val toWebtoon = newMode == Mode.VERT || newMode == Mode.WEBTOON_GAP
+                val curTree = navStack.lastOrNull() ?: book?.filePath ?: ""
+                if (toWebtoon && config.tallSplitEnabled && pageList.isNotEmpty() && pageList.all { it.segmentIndex == 0 }) {
+                    if (curTree.isNotEmpty()) {
                         val rawCur = cur
                         val sm = maxOf(ctx.resources.displayMetrics.widthPixels, ctx.resources.displayMetrics.heightPixels)
                         val sw = ctx.resources.displayMetrics.widthPixels
                         val expanded = try {
                             com.mangareader.engine.pdf.VirtualPageExpander.expand(
-                                pageList, true, true, sm, sw, engine, tree, allowProbe = false
+                                pageList, true, true, sm, sw, engine, curTree, allowProbe = false
                             )
                         } catch (_: Exception) { null }
                         if (expanded != null && expanded.size > pageList.size) {
+                            preExpandPages = curTree to pageList
                             val mapped = expanded.indexOfFirst { it.originalPageIdx == rawCur }
                             pageList = expanded
                             if (mapped >= 0) cur = mapped
                         }
                     }
+                } else if (!toWebtoon && preExpandPages?.first == curTree) {
+                    // 切回 pager 族：还原原始页表（段页只在条漫视图可渲染），页号按 originalPageIdx 映回
+                    val raw = preExpandPages!!.second
+                    val back = pageList.getOrNull(cur)?.originalPageIdx ?: -1
+                    pageList = raw
+                    cur = if (back in raw.indices) back else cur.coerceIn(0, raw.lastIndex.coerceAtLeast(0))
+                    preExpandPages = null
                 }
                 mode = newMode
                 prefs.edit().putInt("read_mode_$bookId", newMode.ordinal).apply()
