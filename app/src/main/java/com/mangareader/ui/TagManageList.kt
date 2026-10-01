@@ -350,7 +350,7 @@ fun TagManageList(
             onDismissRequest = { showMergePicker = false },
             title = { Text("合并到哪个标签？") },
             text = {
-                Column(Modifier.heightIn(max = dialogContentMaxHeight()).verticalScroll(rememberScrollState())) {
+                Column(Modifier.heightIn(max = minOf(400.dp, dialogContentMaxHeight())).verticalScroll(rememberScrollState())) {
                     if (candidates.isEmpty()) Text("没有其他标签可作为目标", fontSize = 13.sp)
                     candidates.forEach { t ->
                         Row(Modifier.fillMaxWidth().clickable {

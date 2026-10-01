@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.ui.platform.LocalConfiguration
 import com.mangareader.ui.dialogContentMaxHeight
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
@@ -213,7 +214,7 @@ fun WebDavPathPickerDialog(
                     if (dirs.isEmpty()) {
                         Text("无子目录", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     } else {
-                        LazyColumn(modifier = Modifier.heightIn(max = dialogContentMaxHeight() - 120.dp)) {
+                        LazyColumn(modifier = Modifier.height(minOf(280, LocalConfiguration.current.screenHeightDp - 220).coerceAtLeast(120).dp)) {
                             items(dirs) { dir ->
                                 TextButton(onClick = {
                                     currentPath = if (currentPath.isEmpty()) dir.relativeName else "${currentPath}/${dir.relativeName}"

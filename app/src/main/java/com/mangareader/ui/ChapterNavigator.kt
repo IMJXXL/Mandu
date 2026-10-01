@@ -12,7 +12,6 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -53,10 +52,6 @@ private fun HorizontalNavigator(
     //   参考项目用 collectLatest + animateScrollToPage 隐式防抖，
     //   我们用 Compose 批量状态更新 + 异步页面加载实现同样效果。
     val pendingRef = remember { intArrayOf(currentPage) }
-    // ★ 1001 UI 审查 Phase3：拖动页码气泡接线（组件此前已定义但从未调用=死代码）
-    var bubblePage by remember { mutableIntStateOf(-1) }
-    var bubbleFrac by remember { mutableFloatStateOf(0f) }
-    var trackW by remember { mutableIntStateOf(0) }
 
     Surface(color = surfaceColor, shape = RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp), modifier = modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -72,18 +67,15 @@ private fun HorizontalNavigator(
                 color = textColor, fontSize = 13.sp, modifier = Modifier.width(36.dp)
             )
             val sliderValue = if (isRtl) ((totalPages - 1 - currentPage).coerceAtLeast(0)).toFloat() else currentPage.toFloat()
-            Box(Modifier.weight(1f).onSizeChanged { trackW = it.width }) {
+            Box(Modifier.weight(1f)) {
                 Slider(
                     value = sliderValue,
                     onValueChange = { v ->
                         val newPage = if (isRtl) (totalPages - 1 - v.toInt()).coerceIn(0, (totalPages - 1).coerceAtLeast(0)) else v.toInt().coerceIn(0, (totalPages - 1).coerceAtLeast(0))
                         pendingRef[0] = newPage
-                        bubblePage = newPage
-                        bubbleFrac = if (totalPages > 1) (v / (totalPages - 1).toFloat()).coerceIn(0f, 1f) else 0f
                         onPageChange(newPage)
                     },
                     onValueChangeFinished = {
-                        bubblePage = -1
                         onPageChange(pendingRef[0])
                         onSliderFinished()
                     },
@@ -91,10 +83,6 @@ private fun HorizontalNavigator(
                     modifier = Modifier.fillMaxWidth(),
                     colors = SliderDefaults.colors(thumbColor = Color(0xFF7C8CF8), activeTrackColor = Color(0xFF7C8CF8))
                 )
-                // 拖动中跟随拇指显示目标页号（isRtl=false：frac 取滑条原始位置=拇指真实位置）
-                if (bubblePage >= 0 && trackW > 0) {
-                    SliderBubble(bubblePage, bubbleFrac, trackW, isRtl = false)
-                }
             }
             if (isShowPageNum) Text(
                 if (isRtl) "${currentPage + 1}" else "$totalPages",
@@ -111,27 +99,3 @@ private fun HorizontalNavigator(
     }
 }
 
-
-/** 跟随拇指的页码气泡（对齐 mhark/Material Slider 的 label；独立组件=拖动时只有它重组） */
-@Composable
-private fun SliderBubble(page: Int, frac: Float, trackWidth: Int, isRtl: Boolean) {
-    if (page < 0 || trackWidth <= 0) return
-    val density = androidx.compose.ui.platform.LocalDensity.current
-    val xPx = with(density) {
-        val fx = if (isRtl) 1f - frac else frac
-        (fx * trackWidth).toInt().coerceIn(0, trackWidth - 1)
-    }
-    val yPx = with(density) { (-30).dp.roundToPx() }
-    Surface(
-        shape = RoundedCornerShape(6.dp),
-        color = Color(0xFF7C8CF8),
-        modifier = Modifier.offset { IntOffset(xPx, yPx) }
-    ) {
-        Text(
-            text = "${page + 1}",
-            color = Color.White,
-            fontSize = 11.sp,
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-        )
-    }
-}

@@ -17,23 +17,23 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 
 /**
  * ★ 横屏阅读器侧边胶囊 chrome（1001 UI 审查 Phase 3）。
  *
  * 横屏高度稀缺、宽度富余：竖屏的"顶栏+底栏+进度条"纵向 chrome 会吃掉 200~260dp
- * （屏高的 2/3），改为左右两侧悬浮竖排胶囊 + 顶部标题胶囊 + 底部限宽进度条，
- * 画面恢复全高。仅由 Reader 在 [viewing && 横屏 && UI可见] 时挂载；
+ * （屏高的 2/3），改为左右两侧悬浮竖排胶囊 + 底部限宽进度条，画面恢复全高。
+ * （原顶部标题胶囊经真机验证观感不佳，已移除——1001 反馈）仅由 Reader 在 [viewing && 横屏 && UI可见] 时挂载；
  * 竖屏永远走 Scaffold 顶底栏原路径，两条路径零交集。
  */
 @Composable
@@ -71,9 +71,25 @@ fun LandscapeReaderChrome(
     }
 
     Box(Modifier.fillMaxSize()) {
-        // 左侧胶囊：返回 / 重命名 / 加入书架（隐藏书）/ 收藏 —— 顶栏动作镜像
+        // 左侧胶囊：信息头（书名+页码，真机反馈"不能看不到信息"——嵌入胶囊头部而非独立浮层）
+        //          + 返回 / 重命名 / 加入书架（隐藏书）/ 收藏 —— 顶栏动作镜像
         Surface(color = pillColor, shape = railShape, modifier = Modifier.align(Alignment.TopStart).padding(start = 10.dp, top = 10.dp)) {
             Column(Modifier.padding(vertical = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                if (title.isNotEmpty() || subtitle.isNotEmpty()) {
+                    Column(
+                        Modifier.padding(horizontal = 8.dp, vertical = 2.dp).widthIn(max = 180.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        if (title.isNotEmpty()) Text(
+                            title, color = textColor, fontSize = 11.sp, maxLines = 1,
+                            overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium
+                        )
+                        if (subtitle.isNotEmpty()) Text(
+                            subtitle, color = textColor.copy(alpha = 0.6f), fontSize = 9.sp,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
                 railButton(Icons.AutoMirrored.Filled.ArrowBack, "返回") { onBack() }
                 railButton(Icons.Default.Edit, "重命名") { onRename() }
                 if (isHidden) railButton(Icons.Default.LibraryAdd, "加入书架") { onAddToShelf() }
@@ -88,13 +104,6 @@ fun LandscapeReaderChrome(
                 railButton(Icons.Default.AutoFixHigh, "画质增强") { onSrPanel() }
                 if (showCompare) railButton(Icons.Default.CompareArrows, if (compareActive) "退出对比" else "对比", active = compareActive) { onCompare() }
                 railButton(Icons.Default.Settings, "设置") { onSettings() }
-            }
-        }
-        // 顶部居中标题胶囊
-        Surface(color = pillColor, shape = railShape, modifier = Modifier.align(Alignment.TopCenter).padding(top = 10.dp).widthIn(max = 320.dp)) {
-            Column(Modifier.padding(horizontal = 14.dp, vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(title, color = textColor, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
-                if (subtitle.isNotEmpty()) Text(subtitle, color = textColor.copy(alpha = 0.6f), fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
         // 底部进度条：限宽 480dp 居中贴底（拖动精确度回升；竖屏仍全宽不受影响）

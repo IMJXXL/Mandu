@@ -2487,10 +2487,16 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                             }
 
                             val showVisual = ui || showLockIcon
+                            // ★ 1001 UI 真机反馈：横屏下此锁位与左侧胶囊重叠 → 横屏挪到左下角；
+                            //   竖屏保持原位（top=80 避开顶栏）
+                            val lockAtBottomStart = landscapeReading
                             Box(
                                 modifier = Modifier
-                                    .align(Alignment.TopStart)
-                                    .padding(top = 80.dp, start = 4.dp)
+                                    .align(if (lockAtBottomStart) Alignment.BottomStart else Alignment.TopStart)
+                                    .padding(
+                                        if (lockAtBottomStart) PaddingValues(start = 10.dp, bottom = 12.dp)
+                                        else PaddingValues(top = 80.dp, start = 4.dp)
+                                    )
                                     // 命中区始终 40dp 圆（沉浸态无视觉时点击落此区域也能唤锁图标）
                                     .size(40.dp)
                                     .pointerInput(isLocked, showLockIcon) {
