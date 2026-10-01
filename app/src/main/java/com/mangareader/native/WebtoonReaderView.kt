@@ -478,6 +478,7 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
         val screenMax = maxOf(context.resources.displayMetrics.widthPixels, context.resources.displayMetrics.heightPixels)
         val screenWidth = context.resources.displayMetrics.widthPixels
         val cfg = com.mangareader.data.ReaderConfig.load(context)
+        tabletWebtoonWidthPct = context.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE).getInt("webtoon_tablet_cap_pct", 100).coerceIn(50, 100)
         this.pageList = com.mangareader.engine.pdf.VirtualPageExpander.expand(pages, cfg.tallSplitEnabled, true, screenMax, screenWidth, engine, treePath)
         this.currentPage = startPage
         onPageCountChanged?.invoke(this.pageList.size)
@@ -1016,14 +1017,17 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
         }
     }
 
+    // ★ 平板条漫栏宽百分比（50~100，100=铺满原状）：阅读设置滑条，setup 时读取
+    var tabletWebtoonWidthPct = 100
+
     inner class PageAdapter : RecyclerView.Adapter<PageVH>() {
         override fun getItemCount() = pageList.size
-        // ★ 1001 UI 审查补漏（方案承诺 pager+webtoon 双管，pager 已做）：平板条漫限宽 720dp 居中——
-        //   平板全宽单列把页面放大到超原生分辨率（糊）且阅读列过宽；手机路径 MATCH_PARENT 零变化
+        // ★ 平板条漫栏宽（用户滑条 50%~100%，100/手机 = MATCH_PARENT 铺满原状）：
+        //   比例越小放大越轻越清晰、越贴近条漫按手机屏绘制的原生阅读宽度
         private fun contentLp(parent: android.view.ViewGroup): android.widget.FrameLayout.LayoutParams =
-            if (parent.context.resources.configuration.smallestScreenWidthDp >= 600) {
+            if (tabletWebtoonWidthPct < 100 && parent.context.resources.configuration.smallestScreenWidthDp >= 600) {
                 val dm = parent.context.resources.displayMetrics
-                val cap = (dm.density * 720f).toInt().coerceAtMost(dm.widthPixels)
+                val cap = dm.widthPixels * tabletWebtoonWidthPct / 100
                 android.widget.FrameLayout.LayoutParams(cap, android.widget.FrameLayout.LayoutParams.WRAP_CONTENT).apply {
                     gravity = android.view.Gravity.CENTER_HORIZONTAL
                 }
@@ -1031,18 +1035,23 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
                 android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
                 android.widget.FrameLayout.LayoutParams.WRAP_CONTENT)
 
-        // 平板限宽随旋转刷新：configChanges 自处理不重建，回收复用的旧 holder 带着旋转前的宽度
+        // 平板限宽随旋转/开关刷新：configChanges 自处理不重建，回收复用的旧 holder 可能带着过期宽度；
+        // 开关关闭时负责还原 MATCH_PARENT（setup 重读偏好，换章/切模式即生效）
         private fun refreshTabletWidth(h: PageVH) {
             val ctx = h.itemView.context
-            if (ctx.resources.configuration.smallestScreenWidthDp < 600) return
+            val tablet = ctx.resources.configuration.smallestScreenWidthDp >= 600
             val dm = ctx.resources.displayMetrics
-            val cap = (dm.density * 720f).toInt().coerceAtMost(dm.widthPixels)
+            val desired = if (tabletWebtoonWidthPct < 100 && tablet)
+                dm.widthPixels * tabletWebtoonWidthPct / 100
+            else android.widget.FrameLayout.LayoutParams.MATCH_PARENT
             val frame = h.itemView as? android.widget.FrameLayout ?: return
             for (i in 0 until frame.childCount) {
                 val ch = frame.getChildAt(i)
                 val lp = ch.layoutParams as? android.widget.FrameLayout.LayoutParams ?: continue
-                if (lp.width != cap) {
-                    lp.width = cap; lp.gravity = android.view.Gravity.CENTER_HORIZONTAL
+                if (lp.width != desired) {
+                    lp.width = desired
+                    lp.gravity = if (desired != android.widget.FrameLayout.LayoutParams.MATCH_PARENT)
+                        android.view.Gravity.CENTER_HORIZONTAL else android.view.Gravity.NO_GRAVITY
                     ch.layoutParams = lp
                 }
             }
