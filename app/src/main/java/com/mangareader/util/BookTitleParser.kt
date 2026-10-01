@@ -193,8 +193,10 @@ object BookTitleParser {
         return null
     }
 
-    /** 章词：chapter/chp/ch/c + 数字（可带 v修订号/x噪声尾巴，"Chapter11v2"→11+rev2、"c006x1"→6） */
-    private fun parseChapterWord(w: String): Pair<Int, Int?>? {
+    /** 章词：chapter/chp/ch/c + 数字（"Chapter11"→11、"c006x1"→6）；尾巴支持 v修订（"Chapter11v2"→11 rev2）、
+     *  贴身字母（"c42a"→42.1，a 取衡 .1 其余 .5，同 chapterBareWord）、特殊话（"c42extra"→42.99） */
+    private fun parseChapterWord(w: String): Pair<Num, Int?>? {
+        if (w.equals("c2c", ignoreCase = true)) return null   // 封面到封底扫描标签，不是章（c+2+c 恰好撞章词形态）
         for (p in CH_PREFIXES) {
             if (w.length > p.length && w.startsWith(p, ignoreCase = true)) {
                 val rest = w.substring(p.length)
@@ -203,14 +205,18 @@ object BookTitleParser {
                 if (de == 0) continue
                 val num = rest.substring(0, de).toIntOrNull() ?: continue
                 val after = rest.substring(de)
-                if (after.isEmpty()) return Pair(num, null)
+                if (after.isEmpty()) return Pair(Num(num), null)
                 if (after.length > 1 && (after[0] == 'v' || after[0] == 'V')) {
                     val rv = after.substring(1)
-                    if (rv.isNotEmpty() && rv.all { it in '0'..'9' }) return Pair(num, rv.toIntOrNull())
+                    if (rv.isNotEmpty() && rv.all { it in '0'..'9' }) return Pair(Num(num), rv.toIntOrNull())
                 }
                 if (after.length > 1 && (after[0] == 'x' || after[0] == 'X')) {
                     val xv = after.substring(1)
-                    if (xv.isNotEmpty() && xv.all { it in '0'..'9' }) return Pair(num, null)
+                    if (xv.isNotEmpty() && xv.all { it in '0'..'9' }) return Pair(Num(num), null)
+                }
+                specialDecimal(after)?.let { return Pair(Num(num, it), null) }
+                if (after.length == 1 && after[0] in 'a'..'z') {
+                    return Pair(Num(num, if (after[0] == 'a') 100 else 500), null)
                 }
                 continue   // 其它尾巴 → 不认（chaptr 同语义）
             }
@@ -260,6 +266,7 @@ object BookTitleParser {
             // mihon "19a"→19.1 与 Kavita "153b"→153.5 的字母约定在语料里并存：a→.1、其余→.5 取衡
             return Triple(Num(whole, if (tail[0] == 'a') 100 else 500), null, false)
         }
+        specialDecimal(tail)?.let { return Triple(Num(whole, it), null, false) }   // "42extra" → 42.99（胶着尾巴）
         if (tail == "st" || tail == "nd" || tail == "rd" || tail == "th") return Triple(Num(whole), null, false)
         return null
     }
@@ -346,7 +353,8 @@ object BookTitleParser {
         if (d.c != '-' && d.c != '~') return null
         val w = (tokens.getOrNull(pos + 1) as? Tok.W)?.s ?: return null
         var end: Num = parseExtendedNumber(w)
-            ?: (if (chapterContext) parseChapterWord(w)?.let { Num(it.first) } else null)
+            ?: (if (chapterContext) parseChapterWord(w)?.let { it.first } else null)
+            ?: stripVolumePrefix(w)?.let { Num(it) }   // 卷范围尾带前缀："v01-v05"
             ?: return null
         if (end.dec == null) {
             parseDecimalSuffix(tokens, pos + 2, chapterContext)?.let { (n, _) -> if (n.dec != null) end = Num(end.whole, n.dec) }
@@ -530,7 +538,7 @@ object BookTitleParser {
             val w = (t as? Tok.W)?.s ?: continue
             // 冒号后的 "Chapter N" 是章节副标题而非编号（"Tokyo ESP 027: Part 002: Chapter 001" → 27）
             if (sawColon && isChKeyword(w)) continue
-            parseChapterWord(w)?.let { (num, _) -> return buildRange(tokens, i + 1, Num(num), true) }
+            parseChapterWord(w)?.let { (num, _) -> return buildRange(tokens, i + 1, num, true) }
             if (isChKeyword(w)) {
                 parseNumberAfterMarker(tokens, i + 1, true)?.let { return it }
             }
@@ -652,6 +660,25 @@ object BookTitleParser {
             parseChapterWord(w) != null || isChKeyword(w) ||
             cjkMarkerNumberInWord(w, CJK_VOL_MARKERS) != null || cjkMarkerNumberInWord(w, CJK_CH_MARKERS) != null
 
+    /**
+     * 词内 CJK 标记的切点（返回词内下标；0=整词都是标记）：
+     * - 标记字符后带数字（"海贼王卷01"）→ 标记从字符本身开始，前面是标题
+     * - 标记字符前带数字（"海贼王01卷"/"第03卷"/"12巻"）→ 标记从数字串开始，再让掉一个'第'前缀
+     */
+    private fun cjkMarkerCutIndex(w: String): Int {
+        for ((mi, c) in w.withIndex()) {
+            if (!CJK_VOL_MARKERS.contains(c) && !CJK_CH_MARKERS.contains(c)) continue
+            var de = mi + 1
+            while (de < w.length && w[de] in '0'..'9') de++
+            if (de > mi + 1) return mi
+            var ds = mi
+            while (ds > 0 && w[ds - 1] in '0'..'9') ds--
+            if (ds < mi) return if (ds > 0 && w[ds - 1] == '第') ds - 1 else ds
+            return 0
+        }
+        return 0
+    }
+
     private fun containsVolumeKeyword(content: String): Boolean {
         val lower = content.lowercase()
         if (lower.contains("volume") || lower.startsWith("vol ") || lower.startsWith("vol.")) return true
@@ -701,7 +728,10 @@ object BookTitleParser {
             when (t) {
                 is Tok.W -> {
                     seenWord = true
-                    if (isMarkerWord(t.s)) return t.pos
+                    if (isMarkerWord(t.s)) {
+                        // 词内 CJK 标记：标记前的文字仍属标题（"海贼王卷01"→"海贼王"、"幽游白书 完全版卷06"→"幽游白书 完全版"）
+                        return t.pos + cjkMarkerCutIndex(t.s)
+                    }
                     val allDigits = t.s.isNotEmpty() && t.s.all { it in '0'..'9' }
                     if (!hasLaterMarker && allDigits && sawNonNumeric && !prevVolKeyword &&
                         followedByMetadata(toks, i + 1)
@@ -899,6 +929,8 @@ object BookTitleParser {
                 c == '～' -> sb.append('~')
                 c == '：' -> sb.append(':')
                 c == '．' -> sb.append('.')
+                c == '｛' -> sb.append('{')
+                c == '｝' -> sb.append('}')
                 c in '０'..'９' -> sb.append(('0' + (c - '０')))
                 c in 'Ａ'..'Ｚ' -> sb.append(('A' + (c - 'Ａ')))
                 c in 'ａ'..'ｚ' -> sb.append(('a' + (c - 'ａ')))
