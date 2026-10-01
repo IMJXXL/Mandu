@@ -1,0 +1,1777 @@
+[
+  {
+    "input": "Killing Bites Vol. 0001 Ch. 0001 - Galactica Scanlations (gb)",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "1"
+  },
+  {
+    "input": "My Girlfriend Is Shobitch v01 - ch. 09 - pg. 008.png",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "1"
+  },
+  {
+    "input": "Historys Strongest Disciple Kenichi_v11_c90-98.zip",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "11"
+  },
+  {
+    "input": "B_Gata_H_Kei_v01[SlowManga&OverloadScans]",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "1"
+  },
+  {
+    "input": "BTOOOM! v01 (2013) (Digital) (Shadowcat-Empire)",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "1"
+  },
+  {
+    "input": "Gokukoku no Brynhildr - c001-008 (v01) [TrinityBAKumA]",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "1"
+  },
+  {
+    "input": "Dance in the Vampire Bund v16-17 (Digital) (NiceDragon)",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "16-17"
+  },
+  {
+    "input": "Akame ga KILL! ZERO v01 (2016) (Digital) (LuCaZ).cbz",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "1"
+  },
+  {
+    "input": "v001",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "1"
+  },
+  {
+    "input": "Vol 1",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "1"
+  },
+  {
+    "input": "vol_356-1",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "356"
+  },
+  {
+    "input": "No Volume",
+    "_sentinel": "LooseLeafVolume",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": null
+  },
+  {
+    "input": "U12 (Under 12) Vol. 0001 Ch. 0001 - Reiwa Scans (gb)",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "1"
+  },
+  {
+    "input": "[Suihei Kiki]_Kasumi_Otoko_no_Ko_[Taruby]_v1.1.zip",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "1.1"
+  },
+  {
+    "input": "Tonikaku Cawaii [Volume 11].cbz",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "11"
+  },
+  {
+    "input": "[WS]_Ichiban_Ushiro_no_Daimaou_v02_ch10.zip",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "2"
+  },
+  {
+    "input": "[xPearse] Kyochuu Rettou Volume 1 [English] [Manga] [Volume Scans]",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "1"
+  },
+  {
+    "input": "Tower Of God S01 014 (CBT) (digital).cbz",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "1"
+  },
+  {
+    "input": "Tenjou_Tenge_v17_c100[MT].zip",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "17"
+  },
+  {
+    "input": "Shimoneta - Manmaru Hen - c001-006 (v01) [Various].zip",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "1"
+  },
+  {
+    "input": "Future Diary v02 (2009) (Digital) (Viz).cbz",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "2"
+  },
+  {
+    "input": "Mujaki no Rakuen Vol12 ch76",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "12"
+  },
+  {
+    "input": "Ichinensei_ni_Nacchattara_v02_ch11_[Taruby]_v1.3.zip",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "2"
+  },
+  {
+    "input": "Dorohedoro v01 (2010) (Digital) (LostNerevarine-Empire).cbz",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "1"
+  },
+  {
+    "input": "Dorohedoro v11 (2013) (Digital) (LostNerevarine-Empire).cbz",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "11"
+  },
+  {
+    "input": "Yumekui_Merry_v01_c01[Bakayarou-Kuu].rar",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "1"
+  },
+  {
+    "input": "Yumekui-Merry_DKThias_Chapter11v2.zip",
+    "_sentinel": "LooseLeafVolume",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": null
+  },
+  {
+    "input": "Itoshi no Karin - c001-006x1 (v01) [Renzokusei Scans]",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "1"
+  },
+  {
+    "input": "Kedouin Makoto - Corpse Party Musume, Chapter 12",
+    "_sentinel": "LooseLeafVolume",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": null
+  },
+  {
+    "input": "VanDread-v01-c001[MD].zip",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "1"
+  },
+  {
+    "input": "Ichiban_Ushiro_no_Daimaou_v04_ch27_[VISCANS].zip",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "4"
+  },
+  {
+    "input": "Mob Psycho 100 v02 (2019) (Digital) (Shizu).cbz",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "2"
+  },
+  {
+    "input": "Kodomo no Jikan vol. 1.cbz",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "1"
+  },
+  {
+    "input": "Kodomo no Jikan vol. 10.cbz",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "10"
+  },
+  {
+    "input": "Kedouin Makoto - Corpse Party Musume, Chapter 12 [Dametrans][v2]",
+    "_sentinel": "LooseLeafVolume",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": null
+  },
+  {
+    "input": "Vagabond_v03",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "3"
+  },
+  {
+    "input": "Mujaki No Rakune Volume 10.cbz",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "10"
+  },
+  {
+    "input": "Umineko no Naku Koro ni - Episode 3 - Banquet of the Golden Witch #02.cbz",
+    "_sentinel": "LooseLeafVolume",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": null
+  },
+  {
+    "input": "Volume 12 - Janken Boy is Coming!.cbz",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "12"
+  },
+  {
+    "input": "[dmntsf.net] One Piece - Digital Colored Comics Vol. 20 Ch. 177 - 30 Million vs 81 Million.cbz",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "20"
+  },
+  {
+    "input": "Gantz.V26.cbz",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "26"
+  },
+  {
+    "input": "NEEDLESS_Vol.4_-Simeon_6_v2[SugoiSugoi].rar",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "4"
+  },
+  {
+    "input": "[Hidoi]_Amaenaideyo_MS_vol01_chp02.rar",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "1"
+  },
+  {
+    "input": "NEEDLESS_Vol.4_-_Simeon_6_v2_[SugoiSugoi].rar",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "4"
+  },
+  {
+    "input": "Okusama wa Shougakusei c003 (v01) [bokuwaNEET]",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "1"
+  },
+  {
+    "input": "Sword Art Online Vol 10 - Alicization Running [Yen Press] [LuCaZ] {r2}.epub",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "10"
+  },
+  {
+    "input": "Noblesse - Episode 406 (52 Pages).7z",
+    "_sentinel": "LooseLeafVolume",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": null
+  },
+  {
+    "input": "X-Men v1 #201 (September 2007).cbz",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "1"
+  },
+  {
+    "input": "Hentai Ouji to Warawanai Neko. - Vol. 06 Ch. 034.5",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "6"
+  },
+  {
+    "input": "The 100 Girlfriends Who Really, Really, Really, Really, Really Love You - Vol. 03 Ch. 023.5 - Volume 3 Extras.cbz",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "3"
+  },
+  {
+    "input": "The 100 Girlfriends Who Really, Really, Really, Really, Really Love You - Vol. 03.5 Ch. 023.5 - Volume 3 Extras.cbz",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "3.5"
+  },
+  {
+    "input": "幽游白书完全版 第03卷 天下",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "3"
+  },
+  {
+    "input": "阿衰online 第1册",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "1"
+  },
+  {
+    "input": "【TFO汉化&Petit汉化】迷你偶像漫画卷2第25话",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "2"
+  },
+  {
+    "input": "スライム倒して300年、知らないうちにレベルMAXになってました 1巻",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "1"
+  },
+  {
+    "input": "スライム倒して300年、知らないうちにレベルMAXになってました 1-3巻",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "1-3"
+  },
+  {
+    "input": "Dance in the Vampire Bund {Special Edition} v03.5 (2019) (Digital) (KG Manga)",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "3.5"
+  },
+  {
+    "input": "Kebab Том 1 Глава 3",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "1"
+  },
+  {
+    "input": "Манга Глава 2",
+    "_sentinel": "LooseLeafVolume",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": null
+  },
+  {
+    "input": "Манга Тома 1-4",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "1-4"
+  },
+  {
+    "input": "Манга Том 1-4",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "1-4"
+  },
+  {
+    "input": "동의보감 13장",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "13"
+  },
+  {
+    "input": "몰?루 아카이브 7.5권",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "7.5"
+  },
+  {
+    "input": "63권#200",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "63"
+  },
+  {
+    "input": "시즌34삽화2",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "34"
+  },
+  {
+    "input": "시즌3-4삽화2",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "3-4"
+  },
+  {
+    "input": "Accel World Chapter 001 Volume 002",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "2"
+  },
+  {
+    "input": "Accel World Volume 2",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "2"
+  },
+  {
+    "input": "Nagasarete Airantou - Vol. 30 Ch. 187.5 - Vol.31 Omake",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "30"
+  },
+  {
+    "input": "Zom 100 - Bucket List of the Dead v01",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "1"
+  },
+  {
+    "input": "Daredevil - t6 - 10 - (2019)",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "6"
+  },
+  {
+    "input": "Batgirl T2000 #57",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "2000"
+  },
+  {
+    "input": "Teen Titans t1 001 (1966-02) (digital) (OkC.O.M.P.U.T.O.-Novus)",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "1"
+  },
+  {
+    "input": "Conquistador_Tome_2",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "2"
+  },
+  {
+    "input": "Max_l_explorateur-_Tome_0",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "0"
+  },
+  {
+    "input": "Chevaliers d'Héliopolis T3 - Rubedo, l'oeuvre au rouge (Jodorowsky & Jérémy)",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "3"
+  },
+  {
+    "input": "Adventure Time (2012)/Adventure Time  Ch 1 (2012)",
+    "_sentinel": "LooseLeafVolume",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": null
+  },
+  {
+    "input": "Adventure Time TPB (2012)/Adventure Time v01 (2012).cbz",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "1"
+  },
+  {
+    "input": "Monster Ch. 001 [MangaPlus] [Digital] [amit34521]",
+    "_sentinel": "LooseLeafVolume",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": null
+  },
+  {
+    "input": "Alter Ego (2020) (Digital) (v3dio)",
+    "_sentinel": "LooseLeafVolume",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": null
+  },
+  {
+    "input": "Alter Ego (2020) (Digital) (t3dio)",
+    "_sentinel": "LooseLeafVolume",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": null
+  },
+  {
+    "input": "The Space Pirate COBRA v11 - Magic Doll Vol.1 [MDKM] (Creek & River)",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "11"
+  },
+  {
+    "input": "Pokémon Adventures v04 - Yellow v01 (AnHeroGold-Empire)",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "4"
+  },
+  {
+    "input": "조선왕조실톡 106권",
+    "source": "kavita-MangaParsingTests::ParseVolumeTest",
+    "expected_volume": "106"
+  },
+  {
+    "input": "One Piece - Vol 2 Ch 1.1 - Volume 4 Omakes",
+    "source": "kavita-MangaParsingTests::ParseDuplicateVolumeTest",
+    "expected_volume": "2"
+  },
+  {
+    "input": "Attack on Titan - Vol. 5 Ch. 20 - Vol.10 Special",
+    "source": "kavita-MangaParsingTests::ParseDuplicateVolumeTest",
+    "expected_volume": "5"
+  },
+  {
+    "input": "Naruto - Volume 1 Chapter 1 - Volume 2 Preview",
+    "source": "kavita-MangaParsingTests::ParseDuplicateVolumeTest",
+    "expected_volume": "1"
+  },
+  {
+    "input": "My Hero Academia - Vol 15 - Vol 20 Extras",
+    "source": "kavita-MangaParsingTests::ParseDuplicateVolumeTest",
+    "expected_volume": "15"
+  },
+  {
+    "input": "Series - Vol 1 - Not Vol but Voldemort",
+    "source": "kavita-MangaParsingTests::ParseDuplicateVolumeTest",
+    "expected_volume": "1"
+  },
+  {
+    "input": "Volume Wars - Vol 1 vs Vol 2",
+    "source": "kavita-MangaParsingTests::ParseDuplicateVolumeTest",
+    "expected_volume": "1"
+  },
+  {
+    "input": "Vol 3 - The Volume Chronicles - Vol 5",
+    "source": "kavita-MangaParsingTests::ParseDuplicateVolumeTest",
+    "expected_volume": "3"
+  },
+  {
+    "input": "เล่ม 5 - Chapter 1",
+    "source": "kavita-MangaParsingTests::ParseDuplicateVolumeTest",
+    "expected_volume": "5"
+  },
+  {
+    "input": "เล่มที่ 12 Test",
+    "source": "kavita-MangaParsingTests::ParseDuplicateVolumeTest",
+    "expected_volume": "12"
+  },
+  {
+    "input": "幽游白书完全版 第03卷 天下",
+    "source": "kavita-MangaParsingTests::ParseDuplicateVolumeTest",
+    "expected_volume": "3"
+  },
+  {
+    "input": "阿衰online 第1册",
+    "source": "kavita-MangaParsingTests::ParseDuplicateVolumeTest",
+    "expected_volume": "1"
+  },
+  {
+    "input": "卷5 Test",
+    "source": "kavita-MangaParsingTests::ParseDuplicateVolumeTest",
+    "expected_volume": "5"
+  },
+  {
+    "input": "册10 Test",
+    "source": "kavita-MangaParsingTests::ParseDuplicateVolumeTest",
+    "expected_volume": "10"
+  },
+  {
+    "input": "제5권 Test",
+    "source": "kavita-MangaParsingTests::ParseDuplicateVolumeTest",
+    "expected_volume": "5"
+  },
+  {
+    "input": "10화 Test",
+    "_sentinel": "LooseLeafVolume",
+    "source": "kavita-MangaParsingTests::ParseDuplicateVolumeTest",
+    "expected_volume": null
+  },
+  {
+    "input": "10장 Test",
+    "source": "kavita-MangaParsingTests::ParseDuplicateVolumeTest",
+    "expected_volume": "10"
+  },
+  {
+    "input": "시즌3 Test",
+    "source": "kavita-MangaParsingTests::ParseDuplicateVolumeTest",
+    "expected_volume": "3"
+  },
+  {
+    "input": "5시즌 Test",
+    "_sentinel": "LooseLeafVolume",
+    "source": "kavita-MangaParsingTests::ParseDuplicateVolumeTest",
+    "expected_volume": null
+  },
+  {
+    "input": "Test 5巻",
+    "source": "kavita-MangaParsingTests::ParseDuplicateVolumeTest",
+    "expected_volume": "5"
+  },
+  {
+    "input": "Series 10-15巻",
+    "source": "kavita-MangaParsingTests::ParseDuplicateVolumeTest",
+    "expected_volume": "10-15"
+  },
+  {
+    "input": "Том 5 Test",
+    "source": "kavita-MangaParsingTests::ParseDuplicateVolumeTest",
+    "expected_volume": "5"
+  },
+  {
+    "input": "Тома 10 Test",
+    "source": "kavita-MangaParsingTests::ParseDuplicateVolumeTest",
+    "expected_volume": "10"
+  },
+  {
+    "input": "5 Том Test",
+    "source": "kavita-MangaParsingTests::ParseDuplicateVolumeTest",
+    "expected_volume": "5"
+  },
+  {
+    "input": "Killing Bites Vol. 0001 Ch. 0001 - Galactica Scanlations (gb)",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Killing Bites"
+  },
+  {
+    "input": "My Girlfriend Is Shobitch v01 - ch. 09 - pg. 008.png",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "My Girlfriend Is Shobitch"
+  },
+  {
+    "input": "Historys Strongest Disciple Kenichi_v11_c90-98.zip",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Historys Strongest Disciple Kenichi"
+  },
+  {
+    "input": "B_Gata_H_Kei_v01[SlowManga&OverloadScans]",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "B Gata H Kei"
+  },
+  {
+    "input": "BTOOOM! v01 (2013) (Digital) (Shadowcat-Empire)",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "BTOOOM!"
+  },
+  {
+    "input": "Gokukoku no Brynhildr - c001-008 (v01) [TrinityBAKumA]",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Gokukoku no Brynhildr"
+  },
+  {
+    "input": "Dance in the Vampire Bund v16-17 (Digital) (NiceDragon)",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Dance in the Vampire Bund"
+  },
+  {
+    "input": "v001",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": ""
+  },
+  {
+    "input": "U12 (Under 12) Vol. 0001 Ch. 0001 - Reiwa Scans (gb)",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "U12"
+  },
+  {
+    "input": "Akame ga KILL! ZERO (2016-2019) (Digital) (LuCaZ)",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Akame ga KILL! ZERO"
+  },
+  {
+    "input": "APOSIMZ 017 (2018) (Digital) (danke-Empire).cbz",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "APOSIMZ"
+  },
+  {
+    "input": "Akiiro Bousou Biyori - 01.jpg",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Akiiro Bousou Biyori"
+  },
+  {
+    "input": "Beelzebub_172_RHS.zip",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Beelzebub"
+  },
+  {
+    "input": "Dr. STONE 136 (2020) (Digital) (LuCaZ).cbz",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Dr. STONE"
+  },
+  {
+    "input": "Cynthia the Mission 29.rar",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Cynthia the Mission"
+  },
+  {
+    "input": "Darling in the FranXX - Volume 01.cbz",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Darling in the FranXX"
+  },
+  {
+    "input": "Darwin's Game - Volume 14 (F).cbz",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Darwin's Game"
+  },
+  {
+    "input": "[BAA]_Darker_than_Black_c7.zip",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Darker than Black"
+  },
+  {
+    "input": "Kedouin Makoto - Corpse Party Musume, Chapter 19 [Dametrans].zip",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Kedouin Makoto - Corpse Party Musume"
+  },
+  {
+    "input": "Kedouin Makoto - Corpse Party Musume, Chapter 01",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Kedouin Makoto - Corpse Party Musume"
+  },
+  {
+    "input": "[WS]_Ichiban_Ushiro_no_Daimaou_v02_ch10.zip",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Ichiban Ushiro no Daimaou"
+  },
+  {
+    "input": "[xPearse] Kyochuu Rettou Volume 1 [English] [Manga] [Volume Scans]",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Kyochuu Rettou"
+  },
+  {
+    "input": "Loose_Relation_Between_Wizard_and_Apprentice_c07[AN].zip",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Loose Relation Between Wizard and Apprentice"
+  },
+  {
+    "input": "Tower Of God S01 014 (CBT) (digital).cbz",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Tower Of God"
+  },
+  {
+    "input": "Tenjou_Tenge_c106[MT].zip",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Tenjou Tenge"
+  },
+  {
+    "input": "Tenjou_Tenge_v17_c100[MT].zip",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Tenjou Tenge"
+  },
+  {
+    "input": "Shimoneta - Manmaru Hen - c001-006 (v01) [Various].zip",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Shimoneta - Manmaru Hen"
+  },
+  {
+    "input": "Future Diary v02 (2009) (Digital) (Viz).cbz",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Future Diary"
+  },
+  {
+    "input": "Tonikaku Cawaii [Volume 11].cbz",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Tonikaku Cawaii"
+  },
+  {
+    "input": "Mujaki no Rakuen Vol12 ch76",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Mujaki no Rakuen"
+  },
+  {
+    "input": "Knights of Sidonia c000 (S2 LE BD Omake - BLAME!) [Habanero Scans]",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Knights of Sidonia"
+  },
+  {
+    "input": "Vol 1.cbz",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": ""
+  },
+  {
+    "input": "Ichinensei_ni_Nacchattara_v01_ch01_[Taruby]_v1.1.zip",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Ichinensei ni Nacchattara"
+  },
+  {
+    "input": "Chrno_Crusade_Dragon_Age_All_Stars[AS].zip",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": ""
+  },
+  {
+    "input": "Ichiban_Ushiro_no_Daimaou_v04_ch34_[VISCANS].zip",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Ichiban Ushiro no Daimaou"
+  },
+  {
+    "input": "Rent a Girlfriend v01.cbr",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Rent a Girlfriend"
+  },
+  {
+    "input": "Yumekui_Merry_v01_c01[Bakayarou-Kuu].rar",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Yumekui Merry"
+  },
+  {
+    "input": "Itoshi no Karin - c001-006x1 (v01) [Renzokusei Scans]",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Itoshi no Karin"
+  },
+  {
+    "input": "Tonikaku Kawaii Vol-1 (Ch 01-08)",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Tonikaku Kawaii"
+  },
+  {
+    "input": "Tonikaku Kawaii (Ch 59-67) (Ongoing)",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Tonikaku Kawaii"
+  },
+  {
+    "input": "7thGARDEN v01 (2016) (Digital) (danke).cbz",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "7thGARDEN"
+  },
+  {
+    "input": "Kedouin Makoto - Corpse Party Musume, Chapter 12",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Kedouin Makoto - Corpse Party Musume"
+  },
+  {
+    "input": "Kedouin Makoto - Corpse Party Musume, Chapter 09",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Kedouin Makoto - Corpse Party Musume"
+  },
+  {
+    "input": "Goblin Slayer Side Story - Year One 025.5",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Goblin Slayer Side Story - Year One"
+  },
+  {
+    "input": "Goblin Slayer - Brand New Day 006.5 (2019) (Digital) (danke-Empire)",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Goblin Slayer - Brand New Day"
+  },
+  {
+    "input": "Kedouin Makoto - Corpse Party Musume, Chapter 01 [Dametrans][v2]",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Kedouin Makoto - Corpse Party Musume"
+  },
+  {
+    "input": "Vagabond_v03",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Vagabond"
+  },
+  {
+    "input": "[AN] Mahoutsukai to Deshi no Futekisetsu na Kankei Chp. 1",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Mahoutsukai to Deshi no Futekisetsu na Kankei"
+  },
+  {
+    "input": "Beelzebub_Side_Story_02_RHS.zip",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Beelzebub Side Story"
+  },
+  {
+    "input": "Baketeriya ch01-05.zip",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Baketeriya"
+  },
+  {
+    "input": "[PROzess]Kimi_ha_midara_na_Boku_no_Joou_-_Ch01",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Kimi ha midara na Boku no Joou"
+  },
+  {
+    "input": "[SugoiSugoi]_NEEDLESS_Vol.2_-_Disk_The_Informant_5_[ENG].rar",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "NEEDLESS"
+  },
+  {
+    "input": "Fullmetal Alchemist chapters 101-108.cbz",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Fullmetal Alchemist"
+  },
+  {
+    "input": "To Love Ru v09 Uncensored (Ch.071-079).cbz",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "To Love Ru"
+  },
+  {
+    "input": "[dmntsf.net] One Piece - Digital Colored Comics Vol. 20 Ch. 177 - 30 Million vs 81 Million.cbz",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "One Piece - Digital Colored Comics"
+  },
+  {
+    "input": "Corpse Party -The Anthology- Sachikos game of love Hysteric Birthday 2U Chapter 01",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Corpse Party -The Anthology- Sachikos game of love Hysteric Birthday 2U"
+  },
+  {
+    "input": "Vol03_ch15-22.rar",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": ""
+  },
+  {
+    "input": "Love Hina - Special.cbz",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": ""
+  },
+  {
+    "input": "Ani-Hina Art Collection.cbz",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": ""
+  },
+  {
+    "input": "Magi - Ch.252-005.cbz",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Magi"
+  },
+  {
+    "input": "Umineko no Naku Koro ni - Episode 1 - Legend of the Golden Witch #1",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Umineko no Naku Koro ni"
+  },
+  {
+    "input": "Kimetsu no Yaiba - Digital Colored Comics c162 Three Victorious Stars.cbz",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Kimetsu no Yaiba - Digital Colored Comics"
+  },
+  {
+    "input": "[Hidoi]_Amaenaideyo_MS_vol01_chp02.rar",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Amaenaideyo MS"
+  },
+  {
+    "input": "NEEDLESS_Vol.4_-_Simeon_6_v2_[SugoiSugoi].rar",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "NEEDLESS"
+  },
+  {
+    "input": "Okusama wa Shougakusei c003 (v01) [bokuwaNEET]",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Okusama wa Shougakusei"
+  },
+  {
+    "input": "VanDread-v01-c001[MD].zip",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "VanDread"
+  },
+  {
+    "input": "Momo The Blood Taker - Chapter 027 Violent Emotion.cbz",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Momo The Blood Taker"
+  },
+  {
+    "input": "Kiss x Sis - Ch.15 - The Angst of a 15 Year Old Boy.cbz",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Kiss x Sis"
+  },
+  {
+    "input": "Green Worldz - Chapter 112 Final Chapter (End).cbz",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Green Worldz"
+  },
+  {
+    "input": "Noblesse - Episode 406 (52 Pages).7z",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Noblesse"
+  },
+  {
+    "input": "X-Men v1 #201 (September 2007).cbz",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "X-Men"
+  },
+  {
+    "input": "Kodoja #001 (March 2016)",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Kodoja"
+  },
+  {
+    "input": "Boku No Kokoro No Yabai Yatsu - Chapter 054 I Prayed At The Shrine (V0).cbz",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Boku No Kokoro No Yabai Yatsu"
+  },
+  {
+    "input": "Kiss x Sis - Ch.36 - A Cold Home Visit.cbz",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Kiss x Sis"
+  },
+  {
+    "input": "Seraph of the End - Vampire Reign 093 (2020) (Digital) (LuCaZ)",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Seraph of the End - Vampire Reign"
+  },
+  {
+    "input": "Grand Blue Dreaming - SP02 Extra (2019) (Digital) (danke-Empire).cbz",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Grand Blue Dreaming"
+  },
+  {
+    "input": "Yuusha Ga Shinda! - Vol.tbd Chapter 27.001 V2 Infection ①.cbz",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Yuusha Ga Shinda!"
+  },
+  {
+    "input": "Seraph of the End - Vampire Reign 093 (2020) (Digital) (LuCaZ).cbz",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Seraph of the End - Vampire Reign"
+  },
+  {
+    "input": "Getsuyoubi no Tawawa - Ch. 001 - Ai-chan, Part 1",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Getsuyoubi no Tawawa"
+  },
+  {
+    "input": "Please Go Home, Akutsu-San! - Chapter 038.5 - Volume Announcement.cbz",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Please Go Home, Akutsu-San!"
+  },
+  {
+    "input": "Killing Bites - Vol 11 Chapter 050 Save Me, Nunupi!.cbz",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Killing Bites"
+  },
+  {
+    "input": "Mad Chimera World - Volume 005 - Chapter 026.cbz",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Mad Chimera World"
+  },
+  {
+    "input": "Hentai Ouji to Warawanai Neko. - Vol. 06 Ch. 034.5",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Hentai Ouji to Warawanai Neko."
+  },
+  {
+    "input": "The 100 Girlfriends Who Really, Really, Really, Really, Really Love You - Vol. 03 Ch. 023.5 - Volume 3 Extras.cbz",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "The 100 Girlfriends Who Really, Really, Really, Really, Really Love You"
+  },
+  {
+    "input": "Kimi no Koto ga Daidaidaidaidaisuki na 100-nin no Kanojo Chapter 1-10",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Kimi no Koto ga Daidaidaidaidaisuki na 100-nin no Kanojo"
+  },
+  {
+    "input": "The Duke of Death and His Black Maid - Ch. 177 - The Ball (3).cbz",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "The Duke of Death and His Black Maid"
+  },
+  {
+    "input": "The Duke of Death and His Black Maid - Vol. 04 Ch. 054.5 - V4 Omake",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "The Duke of Death and His Black Maid"
+  },
+  {
+    "input": "Vol. 04 Ch. 054.5",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": ""
+  },
+  {
+    "input": "Great_Teacher_Onizuka_v16[TheSpectrum]",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Great Teacher Onizuka"
+  },
+  {
+    "input": "[Renzokusei]_Kimi_wa_Midara_na_Boku_no_Joou_Ch5_Final_Chapter",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Kimi wa Midara na Boku no Joou"
+  },
+  {
+    "input": "Battle Royale, v01 (2000) [TokyoPop] [Manga-Sketchbook]",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Battle Royale"
+  },
+  {
+    "input": "Kaiju No. 8 036 (2021) (Digital)",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Kaiju No. 8"
+  },
+  {
+    "input": "Seraph of the End - Vampire Reign 093  (2020) (Digital) (LuCaZ).cbz",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Seraph of the End - Vampire Reign"
+  },
+  {
+    "input": "Love Hina - Volume 01 [Scans].pdf",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Love Hina"
+  },
+  {
+    "input": "It's Witching Time! 001 (Digital) (Anonymous1234)",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "It's Witching Time!"
+  },
+  {
+    "input": "Zettai Karen Children v02 c003 - The Invisible Guardian (2) [JS Scans]",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Zettai Karen Children"
+  },
+  {
+    "input": "My Charms Are Wasted on Kuroiwa Medaka - Ch. 37.5 - Volume Extras",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "My Charms Are Wasted on Kuroiwa Medaka"
+  },
+  {
+    "input": "Highschool of the Dead - Full Color Edition v02 [Uasaha] (Yen Press)",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Highschool of the Dead - Full Color Edition"
+  },
+  {
+    "input": "諌山創] 進撃の巨人 第23巻",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "諌山創] 進撃の巨人"
+  },
+  {
+    "input": "(一般コミック) [奥浩哉] いぬやしき 第09巻",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "いぬやしき"
+  },
+  {
+    "input": "Highschool of the Dead - 02",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Highschool of the Dead"
+  },
+  {
+    "input": "Kebab Том 1 Глава 3",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Kebab"
+  },
+  {
+    "input": "Манга Глава 2",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Манга"
+  },
+  {
+    "input": "Манга Глава 2-2",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Манга"
+  },
+  {
+    "input": "Манга Том 1 3-4 Глава",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Манга"
+  },
+  {
+    "input": "Esquire 6권 2021년 10월호",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Esquire"
+  },
+  {
+    "input": "Accel World: Vol 1",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Accel World"
+  },
+  {
+    "input": "Accel World Chapter 001 Volume 002",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Accel World"
+  },
+  {
+    "input": "Bleach 001-003",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Bleach"
+  },
+  {
+    "input": "Accel World Volume 2",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Accel World"
+  },
+  {
+    "input": "죠시라쿠! 2년 후 v01",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "죠시라쿠! 2년 후"
+  },
+  {
+    "input": "죠시라쿠! 2년 후 1권",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "죠시라쿠! 2년 후"
+  },
+  {
+    "input": "test 2 years 1권",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "test 2 years"
+  },
+  {
+    "input": "test 2 years 1화",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "test 2 years"
+  },
+  {
+    "input": "Nagasarete Airantou - Vol. 30 Ch. 187.5 - Vol.30 Omake",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Nagasarete Airantou"
+  },
+  {
+    "input": "Cynthia The Mission - c000 - c006 (v06)",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Cynthia The Mission"
+  },
+  {
+    "input": "เด็กคนนี้ขอลาออกจากการเป็นเจ้าของปราสาท เล่ม 1",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "เด็กคนนี้ขอลาออกจากการเป็นเจ้าของปราสาท"
+  },
+  {
+    "input": "Max Level Returner เล่มที่ 5",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Max Level Returner"
+  },
+  {
+    "input": "หนึ่งความคิด นิจนิรันดร์ เล่ม 2",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "หนึ่งความคิด นิจนิรันดร์"
+  },
+  {
+    "input": "不安の種\\uff0b - 01",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "不安の種\\uff0b"
+  },
+  {
+    "input": "Giant Ojou-sama - Ch. 33.5 - Volume 04 Bonus Chapter",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Giant Ojou-sama"
+  },
+  {
+    "input": "[218565]-(C92) [BRIO (Puyocha)] Mika-nee no Tanryoku Shidou - Mika s Guide to Self-Confidence (THE IDOLM@STE",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": ""
+  },
+  {
+    "input": "Monster #8 Ch. 001",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Monster #8"
+  },
+  {
+    "input": "Zom 100 - Bucket List of the Dead v01",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Zom 100 - Bucket List of the Dead"
+  },
+  {
+    "input": "Zom 100 - Tome 2",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Zom 100"
+  },
+  {
+    "input": "Max_l_explorateur Tome 0",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Max l explorateur"
+  },
+  {
+    "input": "Chevaliers d'Héliopolis T3 - Rubedo, l'oeuvre au rouge (Jodorowsky & Jérémy)",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Chevaliers d'Héliopolis"
+  },
+  {
+    "input": "Bd Fr-Aldebaran-Antares-t6",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Bd Fr-Aldebaran-Antares"
+  },
+  {
+    "input": "Monster Ch. 001 [MangaPlus] [Digital] [amit34521]",
+    "source": "kavita-MangaParsingTests::ParseSeriesTest",
+    "expected_series": "Monster"
+  },
+  {
+    "input": "Killing Bites Vol. 0001 Ch. 0001 - Galactica Scanlations (gb)",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "1"
+  },
+  {
+    "input": "My Girlfriend Is Shobitch v01 - ch. 09 - pg. 008.png",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "9"
+  },
+  {
+    "input": "Historys Strongest Disciple Kenichi_v11_c90-98.zip",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "90-98"
+  },
+  {
+    "input": "B_Gata_H_Kei_v01[SlowManga&OverloadScans]",
+    "_sentinel": "DefaultChapter",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": null
+  },
+  {
+    "input": "BTOOOM! v01 (2013) (Digital) (Shadowcat-Empire)",
+    "_sentinel": "DefaultChapter",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": null
+  },
+  {
+    "input": "Gokukoku no Brynhildr - c001-008 (v01) [TrinityBAKumA]",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "1-8"
+  },
+  {
+    "input": "Dance in the Vampire Bund v16-17 (Digital) (NiceDragon)",
+    "_sentinel": "DefaultChapter",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": null
+  },
+  {
+    "input": "c001",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "1"
+  },
+  {
+    "input": "[Suihei Kiki]_Kasumi_Otoko_no_Ko_[Taruby]_v1.12.zip",
+    "_sentinel": "DefaultChapter",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": null
+  },
+  {
+    "input": "Adding volume 1 with File: Ana Satsujin Vol. 1 Ch. 5 - Manga Box (gb).cbz",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "5"
+  },
+  {
+    "input": "Hinowa ga CRUSH! 018 (2019) (Digital) (LuCaZ).cbz",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "18"
+  },
+  {
+    "input": "Cynthia The Mission - c000-006 (v06) [Desudesu&Brolen].zip",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "0-6"
+  },
+  {
+    "input": "[WS]_Ichiban_Ushiro_no_Daimaou_v02_ch10.zip",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "10"
+  },
+  {
+    "input": "Loose_Relation_Between_Wizard_and_Apprentice_c07[AN].zip",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "7"
+  },
+  {
+    "input": "Tower Of God S01 014 (CBT) (digital).cbz",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "14"
+  },
+  {
+    "input": "Tenjou_Tenge_c106[MT].zip",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "106"
+  },
+  {
+    "input": "Tenjou_Tenge_v17_c100[MT].zip",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "100"
+  },
+  {
+    "input": "Shimoneta - Manmaru Hen - c001-006 (v01) [Various].zip",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "1-6"
+  },
+  {
+    "input": "Mujaki no Rakuen Vol12 ch76",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "76"
+  },
+  {
+    "input": "Beelzebub_01_[Noodles].zip",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "1"
+  },
+  {
+    "input": "Yumekui-Merry_DKThias_Chapter21.zip",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "21"
+  },
+  {
+    "input": "Yumekui_Merry_v01_c01[Bakayarou-Kuu].rar",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "1"
+  },
+  {
+    "input": "Yumekui-Merry_DKThias_Chapter11v2.zip",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "11"
+  },
+  {
+    "input": "Yumekui-Merry DKThiasScanlations Chapter51v2",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "51"
+  },
+  {
+    "input": "Yumekui-Merry_DKThiasScanlations&RenzokuseiScans_Chapter61",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "61"
+  },
+  {
+    "input": "Goblin Slayer Side Story - Year One 017.5",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "17.5"
+  },
+  {
+    "input": "Beelzebub_53[KSH].zip",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "53"
+  },
+  {
+    "input": "Black Bullet - v4 c20.5 [batoto]",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "20.5"
+  },
+  {
+    "input": "Itoshi no Karin - c001-006x1 (v01) [Renzokusei Scans]",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "1-6"
+  },
+  {
+    "input": "APOSIMZ 040 (2020) (Digital) (danke-Empire).cbz",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "40"
+  },
+  {
+    "input": "Kedouin Makoto - Corpse Party Musume, Chapter 12",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "12"
+  },
+  {
+    "input": "Vol 1",
+    "_sentinel": "DefaultChapter",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": null
+  },
+  {
+    "input": "VanDread-v01-c001[MD].zip",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "1"
+  },
+  {
+    "input": "Goblin Slayer Side Story - Year One 025.5",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "25.5"
+  },
+  {
+    "input": "Kedouin Makoto - Corpse Party Musume, Chapter 01",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "1"
+  },
+  {
+    "input": "To Love Ru v11 Uncensored (Ch.089-097+Omake)",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "89-97"
+  },
+  {
+    "input": "To Love Ru v18 Uncensored (Ch.153-162.5)",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "153-162.5"
+  },
+  {
+    "input": "[AN] Mahoutsukai to Deshi no Futekisetsu na Kankei Chp. 1",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "1"
+  },
+  {
+    "input": "Beelzebub_Side_Story_02_RHS.zip",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "2"
+  },
+  {
+    "input": "[PROzess]Kimi_ha_midara_na_Boku_no_Joou_-_Ch01",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "1"
+  },
+  {
+    "input": "Fullmetal Alchemist chapters 101-108.cbz",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "101-108"
+  },
+  {
+    "input": "Umineko no Naku Koro ni - Episode 3 - Banquet of the Golden Witch #02.cbz",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "2"
+  },
+  {
+    "input": "To Love Ru v09 Uncensored (Ch.071-079).cbz",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "71-79"
+  },
+  {
+    "input": "Corpse Party -The Anthology- Sachikos game of love Hysteric Birthday 2U Extra Chapter.rar",
+    "_sentinel": "DefaultChapter",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": null
+  },
+  {
+    "input": "Beelzebub_153b_RHS.zip",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "153.5"
+  },
+  {
+    "input": "Beelzebub_150-153b_RHS.zip",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "150-153.5"
+  },
+  {
+    "input": "Transferred to another world magical swordsman v1.1",
+    "_sentinel": "DefaultChapter",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": null
+  },
+  {
+    "input": "Kiss x Sis - Ch.15 - The Angst of a 15 Year Old Boy.cbz",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "15"
+  },
+  {
+    "input": "Kiss x Sis - Ch.12 - 1 , 2 , 3P!.cbz",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "12"
+  },
+  {
+    "input": "Umineko no Naku Koro ni - Episode 1 - Legend of the Golden Witch #1",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "1"
+  },
+  {
+    "input": "Kiss x Sis - Ch.00 - Let's Start from 0.cbz",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "0"
+  },
+  {
+    "input": "[Hidoi]_Amaenaideyo_MS_vol01_chp02.rar",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "2"
+  },
+  {
+    "input": "Okusama wa Shougakusei c003 (v01) [bokuwaNEET]",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "3"
+  },
+  {
+    "input": "Tomogui Kyoushitsu - Chapter 006 Game 005 - Fingernails On Right Hand (Part 002).cbz",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "6"
+  },
+  {
+    "input": "Noblesse - Episode 406 (52 Pages).7z",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "406"
+  },
+  {
+    "input": "X-Men v1 #201 (September 2007).cbz",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "201"
+  },
+  {
+    "input": "Kodoja #001 (March 2016)",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "1"
+  },
+  {
+    "input": "Noblesse - Episode 429 (74 Pages).7z",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "429"
+  },
+  {
+    "input": "Boku No Kokoro No Yabai Yatsu - Chapter 054 I Prayed At The Shrine (V0).cbz",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "54"
+  },
+  {
+    "input": "Ijousha No Ai - Vol.01 Chapter 029 8 Years Ago",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "29"
+  },
+  {
+    "input": "Kedouin Makoto - Corpse Party Musume, Chapter 09.cbz",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "9"
+  },
+  {
+    "input": "Hentai Ouji to Warawanai Neko. - Vol. 06 Ch. 034.5",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "34.5"
+  },
+  {
+    "input": "Kimi no Koto ga Daidaidaidaidaisuki na 100-nin no Kanojo Chapter 1-10",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "1-10"
+  },
+  {
+    "input": "Deku_&_Bakugo_-_Rising_v1_c1.1.cbz",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "1.1"
+  },
+  {
+    "input": "Chapter 63 - The Promise Made for 520 Cenz.cbr",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "63"
+  },
+  {
+    "input": "Harrison, Kim - The Good, The Bad, and the Undead - Hollows Vol 2.5.epub",
+    "_sentinel": "DefaultChapter",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": null
+  },
+  {
+    "input": "Kaiju No. 8 036 (2021) (Digital)",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "36"
+  },
+  {
+    "input": "Samurai Jack Vol. 01 - The threads of Time",
+    "_sentinel": "DefaultChapter",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": null
+  },
+  {
+    "input": "【TFO汉化&Petit汉化】迷你偶像漫画第25话",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "25"
+  },
+  {
+    "input": "자유록 13회#2",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "13"
+  },
+  {
+    "input": "이세계에서 고아원을 열었지만, 어째서인지 아무도 독립하려 하지 않는다 38-1화 ",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "38"
+  },
+  {
+    "input": "[ハレム]ナナとカオル ～高校生のSMごっこ～　第10話",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "10"
+  },
+  {
+    "input": "Dance in the Vampire Bund {Special Edition} v03.5 (2019) (Digital) (KG Manga)",
+    "_sentinel": "DefaultChapter",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": null
+  },
+  {
+    "input": "Kebab Том 1 Глава 3",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "3"
+  },
+  {
+    "input": "Манга Глава 2",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "2"
+  },
+  {
+    "input": "Манга 2 Глава",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "2"
+  },
+  {
+    "input": "Манга Том 1 2 Глава",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "2"
+  },
+  {
+    "input": "Accel World Chapter 001 Volume 002",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "1"
+  },
+  {
+    "input": "Bleach 001-003",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "1-3"
+  },
+  {
+    "input": "Accel World Volume 2",
+    "_sentinel": "DefaultChapter",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": null
+  },
+  {
+    "input": "Historys Strongest Disciple Kenichi_v11_c90-98",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "90-98"
+  },
+  {
+    "input": "Historys Strongest Disciple Kenichi c01-c04",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "1-4"
+  },
+  {
+    "input": "Adabana c00-02",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "0-2"
+  },
+  {
+    "input": "เด็กคนนี้ขอลาออกจากการเป็นเจ้าของปราสาท เล่ม 1 ตอนที่ 3",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "3"
+  },
+  {
+    "input": "Max Level Returner ตอนที่ 5",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "5"
+  },
+  {
+    "input": "หนึ่งความคิด นิจนิรันดร์ บทที่ 112",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "112"
+  },
+  {
+    "input": "Monster #8 Ch. 001",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "1"
+  },
+  {
+    "input": "Monster Ch. 001 [MangaPlus] [Digital] [amit34521]",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "1"
+  },
+  {
+    "input": "Naruto v2.5",
+    "_sentinel": "DefaultChapter",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": null
+  },
+  {
+    "input": "조선왕조실톡 106화",
+    "source": "kavita-MangaParsingTests::ParseChaptersTest",
+    "expected_chapter": "106"
+  },
+  {
+    "input": "Manga Title - Ch.1 - The 22 beers",
+    "source": "kavita-MangaParsingTests::ParseExtraNumberChaptersTest",
+    "expected_chapter": "1"
+  },
+  {
+    "input": "Manga Title - Ch.1 Part.A - Ch.2 Omake",
+    "source": "kavita-MangaParsingTests::ParseDuplicateChapterTest",
+    "expected_chapter": "1"
+  },
+  {
+    "input": "Another Series - Chapter 10 Something - Chapter 15 Extra",
+    "source": "kavita-MangaParsingTests::ParseDuplicateChapterTest",
+    "expected_chapter": "10"
+  },
+  {
+    "input": "Test_Ch_3_Content_Ch_7_Bonus",
+    "source": "kavita-MangaParsingTests::ParseDuplicateChapterTest",
+    "expected_chapter": "3"
+  },
+  {
+    "input": "One Piece - Ch 5 Part 1 - Chapter 10 Omakes",
+    "source": "kavita-MangaParsingTests::ParseDuplicateChapterTest",
+    "expected_chapter": "5"
+  },
+  {
+    "input": "Attack on Titan - Chapter 20 Content - Ch 25 Special",
+    "source": "kavita-MangaParsingTests::ParseDuplicateChapterTest",
+    "expected_chapter": "20"
+  },
+  {
+    "input": "Naruto - Ch. 1 Story - Ch. 5 Preview",
+    "source": "kavita-MangaParsingTests::ParseDuplicateChapterTest",
+    "expected_chapter": "1"
+  },
+  {
+    "input": "My Hero Academia - Chapter 15 - Chapter 20 Extras",
+    "source": "kavita-MangaParsingTests::ParseDuplicateChapterTest",
+    "expected_chapter": "15"
+  },
+  {
+    "input": "Series Name - c2 Content - c5 Bonus",
+    "source": "kavita-MangaParsingTests::ParseDuplicateChapterTest",
+    "expected_chapter": "2"
+  },
+  {
+    "input": "Test Series - c1 Part1 - Chapter 3 Extra",
+    "source": "kavita-MangaParsingTests::ParseDuplicateChapterTest",
+    "expected_chapter": "1"
+  },
+  {
+    "input": "Another Test - Chapter 7 - c10 Omake",
+    "source": "kavita-MangaParsingTests::ParseDuplicateChapterTest",
+    "expected_chapter": "7"
+  },
+  {
+    "input": "Series - Ch 1 - Not Ch but Chaos",
+    "source": "kavita-MangaParsingTests::ParseDuplicateChapterTest",
+    "expected_chapter": "1"
+  },
+  {
+    "input": "Chapter Wars - Ch 1 vs Ch 2",
+    "source": "kavita-MangaParsingTests::ParseDuplicateChapterTest",
+    "expected_chapter": "1"
+  },
+  {
+    "input": "Ch 3 - The Chapter Chronicles - Ch 5",
+    "source": "kavita-MangaParsingTests::ParseDuplicateChapterTest",
+    "expected_chapter": "3"
+  },
+  {
+    "input": "Tenjou Tenge Omnibus",
+    "source": "kavita-MangaParsingTests::ParseEditionTest",
+    "expected_edition": "Omnibus"
+  },
+  {
+    "input": "Tenjou Tenge {Full Contact Edition}",
+    "source": "kavita-MangaParsingTests::ParseEditionTest",
+    "expected_edition": ""
+  },
+  {
+    "input": "Tenjo Tenge {Full Contact Edition} v01 (2011) (Digital) (ASTC).cbz",
+    "source": "kavita-MangaParsingTests::ParseEditionTest",
+    "expected_edition": ""
+  },
+  {
+    "input": "Wotakoi - Love is Hard for Otaku Omnibus v01 (2018) (Digital) (danke-Empire)",
+    "source": "kavita-MangaParsingTests::ParseEditionTest",
+    "expected_edition": "Omnibus"
+  },
+  {
+    "input": "To Love Ru v01 Uncensored (Ch.001-007)",
+    "source": "kavita-MangaParsingTests::ParseEditionTest",
+    "expected_edition": "Uncensored"
+  },
+  {
+    "input": "Chobits Omnibus Edition v01 [Dark Horse]",
+    "source": "kavita-MangaParsingTests::ParseEditionTest",
+    "expected_edition": "Omnibus Edition"
+  },
+  {
+    "input": "Chobits_Omnibus_Edition_v01_[Dark_Horse]",
+    "source": "kavita-MangaParsingTests::ParseEditionTest",
+    "expected_edition": "Omnibus Edition"
+  },
+  {
+    "input": "[dmntsf.net] One Piece - Digital Colored Comics Vol. 20 Ch. 177 - 30 Million vs 81 Million.cbz",
+    "source": "kavita-MangaParsingTests::ParseEditionTest",
+    "expected_edition": ""
+  },
+  {
+    "input": "AKIRA - c003 (v01) [Full Color] [Darkhorse].cbz",
+    "source": "kavita-MangaParsingTests::ParseEditionTest",
+    "expected_edition": ""
+  },
+  {
+    "input": "Love Hina Omnibus v05 (2015) (Digital-HD) (Asgard-Empire).cbz",
+    "source": "kavita-MangaParsingTests::ParseEditionTest",
+    "expected_edition": "Omnibus"
+  }
+]

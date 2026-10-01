@@ -1,0 +1,272 @@
+[
+  {
+    "input": "Mokushiroku Alice Vol.1 Ch.4: Misrepresentation",
+    "expected_chapter_f64": 4.0,
+    "source": "mihon-ChapterRecognitionTest"
+  },
+  {
+    "input": "Mokushiroku Alice Vol. 1 Ch. 4: Misrepresentation",
+    "expected_chapter_f64": 4.0,
+    "source": "mihon-ChapterRecognitionTest"
+  },
+  {
+    "input": "Mokushiroku Alice Vol.1 Ch.4.1: Misrepresentation",
+    "expected_chapter_f64": 4.1,
+    "source": "mihon-ChapterRecognitionTest"
+  },
+  {
+    "input": "Mokushiroku Alice Vol.1 Ch.4.4: Misrepresentation",
+    "expected_chapter_f64": 4.4,
+    "source": "mihon-ChapterRecognitionTest"
+  },
+  {
+    "input": "Mokushiroku Alice Vol.1 Ch.4.a: Misrepresentation",
+    "expected_chapter_f64": 4.1,
+    "source": "mihon-ChapterRecognitionTest"
+  },
+  {
+    "input": "Mokushiroku Alice Vol.1 Ch.4.b: Misrepresentation",
+    "expected_chapter_f64": 4.2,
+    "source": "mihon-ChapterRecognitionTest"
+  },
+  {
+    "input": "Mokushiroku Alice Vol.1 Ch.4.extra: Misrepresentation",
+    "expected_chapter_f64": 4.99,
+    "source": "mihon-ChapterRecognitionTest"
+  },
+  {
+    "input": "Bleach 567 Down With Snowwhite",
+    "expected_chapter_f64": 567.0,
+    "source": "mihon-ChapterRecognitionTest"
+  },
+  {
+    "input": "Bleach 567.1 Down With Snowwhite",
+    "expected_chapter_f64": 567.1,
+    "source": "mihon-ChapterRecognitionTest"
+  },
+  {
+    "input": "Bleach 567.4 Down With Snowwhite",
+    "expected_chapter_f64": 567.4,
+    "source": "mihon-ChapterRecognitionTest"
+  },
+  {
+    "input": "Bleach 567.a Down With Snowwhite",
+    "expected_chapter_f64": 567.1,
+    "source": "mihon-ChapterRecognitionTest"
+  },
+  {
+    "input": "Bleach 567.b Down With Snowwhite",
+    "expected_chapter_f64": 567.2,
+    "source": "mihon-ChapterRecognitionTest"
+  },
+  {
+    "input": "Bleach 567.extra Down With Snowwhite",
+    "expected_chapter_f64": 567.99,
+    "source": "mihon-ChapterRecognitionTest"
+  },
+  {
+    "input": "Solanin 028 Vol. 2",
+    "expected_chapter_f64": 28.0,
+    "source": "mihon-ChapterRecognitionTest"
+  },
+  {
+    "input": "Solanin 028.1 Vol. 2",
+    "expected_chapter_f64": 28.1,
+    "source": "mihon-ChapterRecognitionTest"
+  },
+  {
+    "input": "Solanin 028.4 Vol. 2",
+    "expected_chapter_f64": 28.4,
+    "source": "mihon-ChapterRecognitionTest"
+  },
+  {
+    "input": "Solanin 028.a Vol. 2",
+    "expected_chapter_f64": 28.1,
+    "source": "mihon-ChapterRecognitionTest"
+  },
+  {
+    "input": "Solanin 028.b Vol. 2",
+    "expected_chapter_f64": 28.2,
+    "source": "mihon-ChapterRecognitionTest"
+  },
+  {
+    "input": "Solanin 028.extra Vol. 2",
+    "expected_chapter_f64": 28.99,
+    "source": "mihon-ChapterRecognitionTest"
+  },
+  {
+    "input": "Onepunch-Man Punch Ver002 028",
+    "expected_chapter_f64": 28.0,
+    "source": "mihon-ChapterRecognitionTest"
+  },
+  {
+    "input": "Onepunch-Man Punch Ver002 028.1",
+    "expected_chapter_f64": 28.1,
+    "source": "mihon-ChapterRecognitionTest"
+  },
+  {
+    "input": "Onepunch-Man Punch Ver002 028.4",
+    "expected_chapter_f64": 28.4,
+    "source": "mihon-ChapterRecognitionTest"
+  },
+  {
+    "input": "Onepunch-Man Punch Ver002 028.a",
+    "expected_chapter_f64": 28.1,
+    "source": "mihon-ChapterRecognitionTest"
+  },
+  {
+    "input": "Onepunch-Man Punch Ver002 028.b",
+    "expected_chapter_f64": 28.2,
+    "source": "mihon-ChapterRecognitionTest"
+  },
+  {
+    "input": "Onepunch-Man Punch Ver002 028.extra",
+    "expected_chapter_f64": 28.99,
+    "source": "mihon-ChapterRecognitionTest"
+  },
+  {
+    "input": "Vol.1 Ch.5v.2: Alones",
+    "expected_chapter_f64": 5.0,
+    "source": "mihon-ChapterRecognitionTest"
+  },
+  {
+    "input": "Ayame 14 1 - The summer of 14",
+    "expected_chapter_f64": 1.0,
+    "source": "mihon-ChapterRecognitionTest"
+  },
+  {
+    "input": "Mokushiroku Alice Vol.1 Ch. 4: Misrepresentation",
+    "expected_chapter_f64": 4.0,
+    "source": "mihon-ChapterRecognitionTest"
+  },
+  {
+    "input": "Vol.1 Ch.1: March 25 (First Day Cohabiting)",
+    "expected_chapter_f64": 1.0,
+    "source": "mihon-ChapterRecognitionTest"
+  },
+  {
+    "input": "Vol.001 Ch.003: Kaguya Doesn't Know Much",
+    "expected_chapter_f64": 3.0,
+    "source": "mihon-ChapterRecognitionTest"
+  },
+  {
+    "input": "Onepunch-Man Punch Ver002 086 : Creeping Darkness [3]",
+    "expected_chapter_f64": 86.0,
+    "source": "mihon-ChapterRecognitionTest"
+  },
+  {
+    "input": "Ansatsu Kyoushitsu 011v002: Assembly Time",
+    "expected_chapter_f64": 11.0,
+    "source": "mihon-ChapterRecognitionTest"
+  },
+  {
+    "input": "Tokyo ESP 027: Part 002: Chapter 001",
+    "expected_chapter_f64": 27.0,
+    "source": "mihon-ChapterRecognitionTest"
+  },
+  {
+    "input": "Mag Version 195.5",
+    "expected_chapter_f64": 195.5,
+    "source": "mihon-ChapterRecognitionTest"
+  },
+  {
+    "input": "Foo",
+    "expected_chapter_f64": -1.0,
+    "source": "mihon-ChapterRecognitionTest"
+  },
+  {
+    "input": "Fairy Tail 404: 00:00",
+    "expected_chapter_f64": 404.0,
+    "source": "mihon-ChapterRecognitionTest"
+  },
+  {
+    "input": "Asu No Yoichi 19a",
+    "expected_chapter_f64": 19.1,
+    "source": "mihon-ChapterRecognitionTest"
+  },
+  {
+    "input": "Fairy Tail 404.extravol002",
+    "expected_chapter_f64": 404.99,
+    "source": "mihon-ChapterRecognitionTest"
+  },
+  {
+    "input": "Fairy Tail 404 extravol002",
+    "expected_chapter_f64": 404.99,
+    "source": "mihon-ChapterRecognitionTest"
+  },
+  {
+    "input": "Fairy Tail 404.omakevol002",
+    "expected_chapter_f64": 404.98,
+    "source": "mihon-ChapterRecognitionTest"
+  },
+  {
+    "input": "Fairy Tail 404 omakevol002",
+    "expected_chapter_f64": 404.98,
+    "source": "mihon-ChapterRecognitionTest"
+  },
+  {
+    "input": "Fairy Tail 404.specialvol002",
+    "expected_chapter_f64": 404.97,
+    "source": "mihon-ChapterRecognitionTest"
+  },
+  {
+    "input": "Fairy Tail 404 specialvol002",
+    "expected_chapter_f64": 404.97,
+    "source": "mihon-ChapterRecognitionTest"
+  },
+  {
+    "input": "One Piece 300,a",
+    "expected_chapter_f64": 300.1,
+    "source": "mihon-ChapterRecognitionTest"
+  },
+  {
+    "input": "One Piece Ch,123,extra",
+    "expected_chapter_f64": 123.99,
+    "source": "mihon-ChapterRecognitionTest"
+  },
+  {
+    "input": "One Piece the sunny, goes swimming 024,005",
+    "expected_chapter_f64": 24.005,
+    "source": "mihon-ChapterRecognitionTest"
+  },
+  {
+    "input": "ch 122-a",
+    "expected_chapter_f64": 122.1,
+    "source": "mihon-ChapterRecognitionTest"
+  },
+  {
+    "input": "Solo Leveling Ch.123-extra",
+    "expected_chapter_f64": 123.99,
+    "source": "mihon-ChapterRecognitionTest"
+  },
+  {
+    "input": "Solo Leveling, 024-005",
+    "expected_chapter_f64": 24.005,
+    "source": "mihon-ChapterRecognitionTest"
+  },
+  {
+    "input": "Ch.191-200 Read Online",
+    "expected_chapter_f64": 191.2,
+    "source": "mihon-ChapterRecognitionTest"
+  },
+  {
+    "input": "The 1st Night",
+    "expected_chapter_f64": 1.0,
+    "source": "mihon-ChapterRecognitionTest"
+  },
+  {
+    "input": "The 2nd Night",
+    "expected_chapter_f64": 2.0,
+    "source": "mihon-ChapterRecognitionTest"
+  },
+  {
+    "input": "The 3rd Night",
+    "expected_chapter_f64": 3.0,
+    "source": "mihon-ChapterRecognitionTest"
+  },
+  {
+    "input": "The 4th Night",
+    "expected_chapter_f64": 4.0,
+    "source": "mihon-ChapterRecognitionTest"
+  }
+]

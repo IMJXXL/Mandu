@@ -68,8 +68,9 @@ class BookTitleParserTest {
         assertEquals(null, v("浪客行.cbz"))
     }
     @Test fun numericFileFallsBack() {
-        // 纯数字文件名不当书名 → 回退原名
-        assertEquals("03", t("03.cbz"))
+        // 纯数字文件名无结构 → parse 标题为空（Kavita 语义），displayTitle 兜底原名
+        assertEquals("", t("03.cbz"))
+        assertEquals("03", d("03.cbz"))
     }
     @Test fun dotInTitlePreserved() {
         // 名字含点但非扩展名 → 不截断
