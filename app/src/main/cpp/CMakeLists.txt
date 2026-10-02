@@ -93,6 +93,20 @@ target_link_libraries(sr_engine
     android log jnigraphics vulkan
 )
 
+# ── QNN/HTP（高通 NPU）后端 ──
+# 头文件 vendor 在 include/QNN（QAIRT 2.49 官方 API 头，MIT 许可）；运行时 .so 一律
+# 运行期 dlopen（Gradle 从 Maven 拉 com.qualcomm.qti:qnn-runtime 打进 APK），绝不链接。
+# 仅 arm64-v8a 编入（QNN 运行时只有 arm64）；其余 ABI 走桩：探测不可用、process 返回 null。
+# JNI 胶水始终编入（桩版函数齐全），Kotlin 侧无需感知差异。
+target_sources(sr_engine PRIVATE sr/qnn_jni.cpp)
+if(ANDROID_ABI STREQUAL "arm64-v8a" AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/include/QNN/QnnInterface.h")
+    target_compile_definitions(sr_engine PRIVATE MIHON_ENABLE_QNN=1)
+    target_include_directories(sr_engine PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include/QNN")
+    target_sources(sr_engine PRIVATE sr/qnn_backend.cpp)
+else()
+    target_compile_definitions(sr_engine PRIVATE MIHON_ENABLE_QNN=0)
+endif()
+
 # ── libarchive stream (SMB archive reading, from reference project LocalViewer 1.19) ──
 # archive.c provides JNI bridge for stream-based archive extraction (openArchiveStream/extractToByteBuffer etc.)
 # Links to libarchive-jni.so (from zhanghai libarchive-android.aar) which contains libarchive C API symbols.

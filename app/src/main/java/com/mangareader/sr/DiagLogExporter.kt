@@ -57,8 +57,11 @@ object DiagLogExporter {
         runCatching {
             if (!SrCore.initialized) SrCore.init(context)
             val s = SrCore.settings
-            sb.appendLine("设置: 总开关=${s.enabled} 放大=${s.upscaleEnabled} 模型=${s.model.key}(${s.model.displayName}) 降噪=${s.denoise} GPU优先=${s.enableGpu} 黑白=${s.bwEnabled}")
+            sb.appendLine("设置: 总开关=${s.enabled} 放大=${s.upscaleEnabled} 模型=${s.model.key}(${s.model.displayName}) 降噪=${s.denoise} 引擎=${s.engine.key} 黑白=${s.bwEnabled}")
         }.onFailure { sb.appendLine("设置读取失败: ${it.message}") }
+        // NPU 侧状态（探测只读不改配置；CDSP/代号来自 QNN 运行时，非 Qualcomm 报 0）
+        sb.appendLine("NPU: so加载=${QnnEngine.nativeLoaded} CDSP=${runCatching { QnnEngine.isCdspAvailable }.getOrDefault("?")} HTP代号=${runCatching { QnnEngine.architecture }.getOrDefault(-1)}")
+        sb.appendLine("NPU插件模型: ${runCatching { NpuModelRegistry.all().joinToString { "${it.stem}@${it.arches.joinToString("/")}" } }.getOrDefault("?").ifEmpty { "（无）" }}")
         sb.appendLine("可用档位: ${runCatching { NativeLibraryStatus.getAvailableModels().joinToString { it.displayName } }.getOrDefault("?")}")
         sb.appendLine("已解包模型目录: ${runCatching { File(context.filesDir, "models").list()?.joinToString() ?: "（无）" }.getOrDefault("?")}")
     }

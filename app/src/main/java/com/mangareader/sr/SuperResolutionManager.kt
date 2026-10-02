@@ -50,23 +50,78 @@ class SuperResolutionManager(
     private var gpuFused: Boolean = false
     private val gpuFailStreak = java.util.concurrent.atomic.AtomicInteger(0)
 
-    private fun gpuCurrentlyUsed(): Boolean =
-        !forceCpu && !gpuFused && SrCore.settings.enableGpu && isVulkanAvailable && currentModel?.requiresVulkan == true
+    // ★ NPU（2026-10 引入）：会话级熔断语义与 GPU 相同；回落链 NPU→GPU→CPU
+    @Volatile
+    private var npuFused: Boolean = false
+    private val npuFailStreak = java.util.concurrent.atomic.AtomicInteger(0)
+
+    /** 当前在位引擎（loadPendingModel 决定；诊断与面板展示用） */
+    @Volatile
+    var activeEngine: SrEngine = SrEngine.CPU
+        private set
+
+    /**
+     * 引擎解析（唯一路由）：看门狗强制 CPU > 用户所选引擎可用性（NPU 需设备可探到 HTP
+     * 代 + 插件里有该档位/降噪/代号的 context）> GPU（需 Vulkan 且档位是神经网络档）> CPU。
+     */
+    private fun resolveEngine(model: SRModel): SrEngine {
+        if (forceCpu) return SrEngine.CPU
+        val want = SrCore.settings.engine
+        if (want == SrEngine.NPU && !npuFused && QnnEngine.isDeviceCapable &&
+            NpuModelRegistry.resolve(model, currentDenoiseLevel, QnnEngine.architecture) != null
+        ) {
+            return SrEngine.NPU
+        }
+        // NPU 选了但不可用 → 依回落链先试 GPU（含 engine=GPU 的正常路径）
+        if (!gpuFused && want != SrEngine.CPU && isVulkanAvailable && model.requiresVulkan) {
+            return SrEngine.GPU
+        }
+        return SrEngine.CPU
+    }
+
+    /** 本会话熔断复位（面板"恢复加速"按钮；切档也会自动解除） */
+    fun resetSessionFuses() {
+        gpuFused = false
+        gpuFailStreak.set(0)
+        npuFused = false
+        npuFailStreak.set(0)
+    }
 
     /** 每次真实推理（版本未变的）结束后由管线回报结果；returnedInput=true 视为一次失败 */
     fun recordInferenceOutcome(returnedInput: Boolean) {
-        if (!gpuCurrentlyUsed()) { gpuFailStreak.set(0); return }
-        if (returnedInput) {
-            val n = gpuFailStreak.incrementAndGet()
-            if (n in 1..2) runCatching { com.mangareader.DiagTracer.markStatic("enhance: acc fail n=$n") }
-            if (n >= 3) {
-                gpuFused = true
-                gpuFailStreak.set(0)
-                Log.w(TAG, "GPU 连续失败 3 次，本会话熔断强制 CPU（重新切档自动恢复）")
-                runCatching { com.mangareader.DiagTracer.markStatic("enhance: acc off n=3") }
+        when (activeEngine) {
+            SrEngine.NPU -> {
+                if (returnedInput) {
+                    val n = npuFailStreak.incrementAndGet()
+                    if (n in 1..2) runCatching { com.mangareader.DiagTracer.markStatic("enhance: npu fail n=$n") }
+                    if (n >= 3) {
+                        npuFused = true
+                        npuFailStreak.set(0)
+                        Log.w(TAG, "NPU 连续失败 3 次，本会话熔断回落 GPU/CPU（重新切档自动恢复）")
+                        runCatching { com.mangareader.DiagTracer.markStatic("enhance: npu off n=3") }
+                    }
+                } else {
+                    npuFailStreak.set(0)
+                }
             }
-        } else {
-            gpuFailStreak.set(0)
+            SrEngine.GPU -> {
+                if (returnedInput) {
+                    val n = gpuFailStreak.incrementAndGet()
+                    if (n in 1..2) runCatching { com.mangareader.DiagTracer.markStatic("enhance: acc fail n=$n") }
+                    if (n >= 3) {
+                        gpuFused = true
+                        gpuFailStreak.set(0)
+                        Log.w(TAG, "GPU 连续失败 3 次，本会话熔断强制 CPU（重新切档自动恢复）")
+                        runCatching { com.mangareader.DiagTracer.markStatic("enhance: acc off n=3") }
+                    }
+                } else {
+                    gpuFailStreak.set(0)
+                }
+            }
+            SrEngine.CPU -> {
+                gpuFailStreak.set(0)
+                npuFailStreak.set(0)
+            }
         }
     }
 
@@ -156,9 +211,11 @@ class SuperResolutionManager(
         pendingModelKey = model.key
         cancelProcessingJobs()
         onModelSwitching?.invoke()
-        // ★ F4.7②：切档解除本会话的 GPU 失败熔断（看门狗 forceCpu 不受影响，仍等用户手动恢复）
+        // ★ F4.7②：切档解除本会话的引擎失败熔断（看门狗 forceCpu 不受影响，仍等用户手动恢复）
         gpuFused = false
         gpuFailStreak.set(0)
+        npuFused = false
+        npuFailStreak.set(0)
         currentProcessor?.release()
         currentProcessor = null
         currentModel = model
@@ -188,23 +245,45 @@ class SuperResolutionManager(
             // 幂等保底：模型文件未解包时先解包再加载（首次启动如果 applySettings 先于后台解包也能用）
             try { ensureModelsExtracted() } catch (_: Exception) {}
             val modelPath = getModelPath(model)
+            val engine = resolveEngine(model)
+            val loadStart = System.currentTimeMillis()
             try {
-                // 规则：用户没手动开 GPU 就用 CPU（默认更安全）；崩溃防护已加 forceCpu 逻辑
-                val useGpu = com.mangareader.sr.SrCore.settings.enableGpu && isVulkanAvailable && model.requiresVulkan
-                val gpuid = if (!forceCpu && !gpuFused && useGpu) 0 else -1
-                val loadStart = System.currentTimeMillis()
-                processor.initialize(modelPath, gpuid)
-                currentProcessor = processor
+                when (engine) {
+                    SrEngine.NPU -> {
+                        // 先解析插件 context；失败（包被卸载/换包）直接抛出走 NoOp 兜底
+                        val arch = QnnEngine.architecture
+                        val qnn = QnnProcessor.create(context, model, currentDenoiseLevel, arch)
+                            ?: throw IllegalStateException("no NPU context for ${model.key} v$arch")
+                        // ncnn 占位处理器未 initialize 即无资源，release 幂等
+                        try { processor.release() } catch (_: Throwable) {}
+                        qnn.initialize("", 0)
+                        currentProcessor = qnn
+                    }
+                    else -> {
+                        // 规则：engine=GPU 走 Vulkan；CPU/回落路径 gpuid=-1 纯 CPU（默认更安全）
+                        val gpuid = if (engine == SrEngine.GPU) 0 else -1
+                        processor.initialize(modelPath, gpuid)
+                        currentProcessor = processor
+                    }
+                }
+                activeEngine = engine
                 currentModel = model
-                Log.i(TAG, "SR: ${model.key} loaded in ${System.currentTimeMillis() - loadStart}ms, ready=${processor.isReady}, gpu=${gpuid})")
-                // ★ 诊断打点（中性措辞）：引擎档位/是否图形加速/耗时——远端排障关键证据
-                runCatching { com.mangareader.DiagTracer.markStatic("enhance: on acc=${gpuid >= 0} ${System.currentTimeMillis() - loadStart}ms") }
+                Log.i(TAG, "SR: ${model.key} loaded in ${System.currentTimeMillis() - loadStart}ms, " +
+                    "ready=${currentProcessor?.isReady}, engine=$engine")
+                // ★ 诊断打点（中性措辞）：引擎/是否图形加速/耗时——远端排障关键证据
+                runCatching {
+                    com.mangareader.DiagTracer.markStatic(
+                        "enhance: on engine=${engine.key} acc=${engine == SrEngine.GPU} " +
+                            "${System.currentTimeMillis() - loadStart}ms"
+                    )
+                }
             } catch (e: Exception) {
-                Log.e(TAG, "SR: init ${model.key} failed, fallback NoOp: ${e.message}")
+                Log.e(TAG, "SR: init ${model.key} failed ($engine), fallback NoOp: ${e.message}")
                 runCatching { com.mangareader.DiagTracer.markStatic("enhance: off (init)") }
                 try { processor.release() } catch (_: Exception) {}
                 currentProcessor = NoOpProcessor()
                 currentModel = model
+                activeEngine = SrEngine.CPU
             }
         }
         pendingModelKey = null
@@ -315,7 +394,9 @@ class SuperResolutionManager(
         val bw = currentBwConfig
         val bwPart = if (bw != null) "_bw${bw.grayLevels}${if (bw.densityCorrection) "d" else ""}" else ""
         val denoise = currentDenoiseLevel.key
-        return "page_${chapterId}_${pageIndex}_${modelKey}_${activeScale}_${denoise}$bwPart"
+        // 引擎指纹：NPU 与 GPU/CPU 产物不混用（同一档位两边产物存在差异）
+        return "page_${chapterId}_${pageIndex}_${modelKey}_${activeScale}_${denoise}$bwPart" +
+            "_e${activeEngine.key}"
     }
 
     fun ensureModelsExtracted() {

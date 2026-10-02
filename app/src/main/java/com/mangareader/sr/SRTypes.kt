@@ -1,5 +1,16 @@
 package com.mangareader.sr
 
+/** 处理引擎（画质增强面板三选一）。NPU 仅在骁龙设备且装了对应代模型包时生效。 */
+enum class SrEngine(val key: String, val displayName: String) {
+    CPU("cpu", "CPU"),
+    GPU("gpu", "GPU"),
+    NPU("npu", "NPU");
+
+    companion object {
+        fun fromKey(key: String): SrEngine = entries.firstOrNull { it.key == key } ?: CPU
+    }
+}
+
 enum class DenoiseLevel(val key: String, val displayName: String) {
     OFF("off", "关闭"),
     LIGHT("light", "轻度"),

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 漫读 NPU 模型包 APK：纯资产。无代码、无组件——主程序按 applicationId 前缀
+     com.mangareader.model.* 发现、校验签名（同 manga-reader.jks）、直读 assets。 -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application
+        android:hasCode="false"
+        android:allowBackup="false"
+        android:label="${modelLabel}" />
+
+</manifest>

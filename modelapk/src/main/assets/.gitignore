@@ -1,0 +1,3 @@
+# context/models.json 是打包暂存区（tools/npupack/package_model_apk.py 生成/复制），不入库
+*
+!.gitignore

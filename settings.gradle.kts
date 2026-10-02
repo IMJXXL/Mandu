@@ -32,3 +32,7 @@ project(":gif").projectDir = file("app/lib/apng4android/gif")
 include(":pagecurl")
 project(":pagecurl").projectDir = file("app/lib/pagecurl")
 
+// NPU 模型插件包：纯资产 APK（context + models.json），按需 assembleRelease（见 modelapk/build.gradle.kts 头注释）。
+// 平时 :app 构建不受影响；不打 -PmodelId 时产出的是 template 占位包，不要分发。
+include(":modelapk")
+

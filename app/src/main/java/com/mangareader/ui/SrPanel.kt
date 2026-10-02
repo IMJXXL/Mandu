@@ -163,9 +163,10 @@ private fun SrPanelContent(
                     )
                     TextButton(onClick = {
                         SrCore.clearForceCpu()
+                        SrCore.manager.resetSessionFuses()
                         onDismiss()
-                        android.widget.Toast.makeText(ctx, "已恢复 GPU 模式，若再崩溃会再次自动切 CPU", android.widget.Toast.LENGTH_LONG).show()
-                    }) { Text("恢复GPU", fontSize = 12.sp) }
+                        android.widget.Toast.makeText(ctx, "已恢复加速（GPU/NPU），若再崩溃会再次自动切 CPU", android.widget.Toast.LENGTH_LONG).show()
+                    }) { Text("恢复加速", fontSize = 12.sp) }
                 }
             }
         }
@@ -339,25 +340,71 @@ private fun SrPanelContent(
             }
         }
 
-        // ── GPU 加速开关（默认关，不稳定机别盲目开）──
-        var gpuOn by remember { mutableStateOf(settings.enableGpu) }
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.weight(1f)) {
-                Text("GPU 加速（Vulkan）", fontSize = 14.sp)
-                Text(
-                    if (SrCore.isVulkanMissing()) "此设备不支持"
-                    else "默认关。若发热/卡顿请关闭，崩溃后自动切 CPU",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+        // ── 处理引擎（CPU / GPU / NPU 三选一，2026-10 NPU 引入）──
+        // NPU：骁龙 AI 芯片跑同款模型，最快最省电；需要装对应代的模型包插件。
+        // 设备探测（QNN 代号 + CDSP 节点）在 IO 线程做一次；非骁龙设备整行不出现 NPU 项。
+        var engine by remember { mutableStateOf(settings.engine) }
+        var npuProbed by remember { mutableStateOf(false) }
+        var npuArch by remember { mutableStateOf(0) }
+        var npuModelsReady by remember { mutableStateOf(false) }
+        LaunchedEffect(Unit) {
+            if (!QnnEngine.nativeLoaded) {
+                npuProbed = true
+                return@LaunchedEffect
+            }
+            val (arch, hasPkg) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                NpuModelRegistry.ensureScanned(ctx)
+                val a = QnnEngine.probe(QnnEngine.libraryDir(ctx))
+                a to NpuModelRegistry.hasPackageFor(a)
+            }
+            npuArch = arch
+            npuModelsReady = hasPkg
+            npuProbed = true
+        }
+        val npuTierOk = npuArch > 0 && NpuModelRegistry.supports(model, denoise, npuArch)
+        val npuDeviceOk = npuProbed && npuArch > 0
+
+        Text("处理引擎", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf(
+                Triple(SrEngine.CPU, "CPU 稳妥", true),
+                Triple(SrEngine.GPU, "GPU 加速", !SrCore.isVulkanMissing()),
+                Triple(SrEngine.NPU, "NPU 极速", npuDeviceOk && npuModelsReady && npuTierOk),
+            ).forEach { (e, label, enabled) ->
+                if (e == SrEngine.NPU && !npuDeviceOk) return@forEach // 非骁龙/无 CDSP：不显示
+                FilterChip(
+                    selected = engine == e,
+                    onClick = {
+                        engine = e; settings.engine = e
+                        scope.launch { SrCore.applySettings(bookId) }
+                    },
+                    label = { Text(label, fontSize = 12.sp) },
+                    enabled = enabled,
                 )
             }
-            Switch(
-                checked = gpuOn,
-                onCheckedChange = {
-                    gpuOn = it; settings.enableGpu = it
-                    scope.launch { SrCore.applySettings(bookId) }
+        }
+        Text(
+            when (engine) {
+                SrEngine.CPU -> "默认。所有手机可用，速度最慢但最稳；上次崩溃会自动回到这里"
+                SrEngine.GPU -> "交给显卡（Vulkan）处理，比 CPU 快数倍；发热明显时切回 CPU"
+                SrEngine.NPU ->
+                    if (!npuDeviceOk) "本机未检测到可用 NPU，将自动用 GPU/CPU 处理"
+                    else "交给骁龙 AI 芯片（v$npuArch）：最快最省电；个别页可能有轻微偏色"
+            },
+            fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (npuDeviceOk) {
+            Text(
+                when {
+                    npuModelsReady && npuTierOk ->
+                        "NPU 模型包已就绪（v$npuArch）：当前档位走 NPU 处理"
+                    npuModelsReady ->
+                        "已装 NPU 模型包，但当前档位/降噪无 NPU 版（支持：CUGAN 2x 保守、动漫V3 2x 极速）——自动用 GPU/CPU 处理"
+                    else ->
+                        "检测到 NPU（v$npuArch，${QnnEngine.archDisplayName(npuArch)}）。" +
+                            "把「漫读-NPU模型-v$npuArch.apk」拷到手机点安装，回到本页立即生效"
                 },
-                enabled = !SrCore.isVulkanMissing(),
+                fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
 
@@ -458,15 +505,16 @@ private fun SrPanelContent(
         Text(
             "⚡ 快速优化 1x：不放大。毫秒级去掉噪点脏斑、拉锐线条。图够大、只想要干净时选它。\n" +
                 "✨ 无损放大 2x：放大 2 倍。Lanczos3 纯 CPU 重采样，线条锐利不吃配置，没有 Vulkan 也能用。\n" +
-                "🛡 CUGAN 2x 保守：放大 2 倍。漫画特化，线条最稳。画质优先选它。\n" +
-                "⚡ 动漫V3 2x 极速：放大 2 倍。比保守档快约一倍，线条略软。省电/批量选它。\n" +
+                "🛡 CUGAN 2x 保守：放大 2 倍。漫画特化，线条最稳。画质优先选它。装 NPU 模型包后可走 NPU。\n" +
+                "⚡ 动漫V3 2x 极速：放大 2 倍。比保守档快约一倍，线条略软。省电/批量选它。装 NPU 模型包后可走 NPU。\n" +
                 "🔍 动漫V3 4x 大屏：放大 4 倍。平板大屏细看用，手机上过剩。\n" +
                 "🎨 waifu2x 1x 清理：不放大。神经网络级去噪，快速优化不够干净时选它。",
             fontSize = 12.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Text(
-            "实际速度与你的设备、是否开 GPU 有关；放大倍数越高图越大越清晰，但更慢、更占缓存。",
+            "实际速度与设备、处理引擎（CPU/GPU/NPU）有关：NPU 最快最省电（需装模型包，见处理引擎一行）、" +
+                "GPU 其次、CPU 最稳；放大倍数越高图越大越清晰，但更慢、更占缓存。",
             fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }

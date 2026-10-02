@@ -32,10 +32,23 @@ class SrSettings(context: Context) {
         get() = Quality.fromKey(prefs.getString("sr_quality", Quality.BALANCED.key)!!)
         set(v) = prefs.edit().putString("sr_quality", v.key).apply()
 
-    /** 是否启用 GPU（Vulkan）推理（默认关 = 纯 CPU，最稳；发热/电量敏感时保持关闭） */
+    /** 处理引擎：CPU 稳妥 / GPU(Vulkan) / NPU(骁龙)。默认 CPU（与旧 sr_enable_gpu=false 等价）。
+     *  迁移：老版本只有 sr_enable_gpu 开关，true→GPU、false→CPU，见到 sr_engine 键之前按旧键解释。 */
+    var engine: SrEngine
+        get() {
+            if (!prefs.contains("sr_engine")) {
+                return if (prefs.getBoolean("sr_enable_gpu", false)) SrEngine.GPU else SrEngine.CPU
+            }
+            return SrEngine.fromKey(prefs.getString("sr_engine", SrEngine.CPU.key)!!)
+        }
+        set(v) = prefs.edit().putString("sr_engine", v.key).apply()
+
+    /** 兼容旧引用：GPU 开关语义 = 引擎是否为 GPU */
     var enableGpu: Boolean
-        get() = prefs.getBoolean("sr_enable_gpu", false)
-        set(v) = prefs.edit().putBoolean("sr_enable_gpu", v).apply()
+        get() = engine == SrEngine.GPU
+        set(v) {
+            engine = if (v) SrEngine.GPU else SrEngine.CPU
+        }
 
     /** 黑白优化开关（默认关；打开后按 grayLevels/density 生效） */
     var bwEnabled: Boolean

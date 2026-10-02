@@ -28,7 +28,9 @@ versionName = "1.36"
                 // ★ Rust 动图 WebP 解码器（task 8 自研）：libwebp-sys2 需 nightly 工具链，
                 //   stable 构建报 E0554——待装 nightly 后再启用；当前动图走 v1.2 弹窗+AnimPager 方案
                 // arguments += "-DENABLE_RUST_WEBP=ON"
-                // QNN SDK 路径（可选；不存在则编译无 NPU 的 sr_engine）
+                // QNN（NPU）：API 头文件已 vendor 在 cpp/include/QNN（CMake 按存在性自动启用，
+                // 见 CMakeLists QNN 段）。此路径仅在给 cpp 提供转换期参考时保留，构建不再依赖 SDK 安装。
+                // QAIRT SDK 本体在 X:/115/manduAAAAAAA/v2.49.0.260730/…，只用于模型转换流水线。
                 val qnnCandidates = listOfNotNull(
                     properties["QNN_SDK_DIR"] as? String,
                     System.getenv("QNN_SDK_DIR"),
@@ -98,6 +100,19 @@ versionName = "1.36"
     packaging {
         jniLibs {
             keepDebugSymbols += setOf("**/libzip.so", "**/libpdfium.so")
+            // ★ QNN（NPU）必需：FastRPC/DSP 侧加载 libQnnHtpV<arch>Skel.so 走 nativeLibraryDir，
+            //   useLegacyPackaging=false（AGP 默认）时该目录为空 → NPU 初始化必败（Komiho 实测结论）。
+            //   代价是装机后 .so 落盘一份，下载体积几乎不变（.so 压缩率高）。
+            useLegacyPackaging = true
+            // qnn-runtime AAR 里 context 加载路径用不到的后端/大件：
+            // Prepare(79MB 离线编译器)、Dlc(量化图)、Gpu/Dsp 备用后端（我们只走 HTP）、
+            // V68(8 Gen1 不在打包代列表)。五代 Skel/Stub（69/73/75/79/81）+ Htp + System 保留。
+            excludes += setOf(
+                "**/libQnnHtpPrepare.so", "**/libQnnModelDlc.so",
+                "**/libQnnGpu.so", "**/libQnnDsp.so",
+                "**/libQnnDspV66Skel.so", "**/libQnnDspV66Stub.so",
+                "**/libQnnHtpV68Skel.so", "**/libQnnHtpV68Stub.so",
+            )
         }
     }
 }
@@ -197,6 +212,11 @@ dependencies {
 
     // kotlinx-serialization-cbor (GalleryPreview CborArray)
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-cbor:1.11.0")
+
+    // QNN/HTP（高通 NPU）运行时库：Maven Central 公网，免注册。版本必须与 cpp/include/QNN
+    // vendor 头文件同源（QAIRT 2.49）。context 加载路径只用到 libQnnHtp/libQnnSystem +
+    // 五代 Skel/Stub；libQnnHtpPrepare/libQnnModelDlc 在 packaging.excludes 裁掉。
+    implementation("com.qualcomm.qti:qnn-runtime:2.49.0")
 
     // ktor (WebDAV + Komga HTTP client)
     implementation("io.ktor:ktor-client-core:3.5.0")
