@@ -31,10 +31,16 @@ class QnnProcessor(
         Log.i(TAG, "QNN init ${entry.stem} ok=$ok padding=${entry.padding}")
         if (!ok) {
             // 中性打点（对照表 enq）：s=初始化失败阶段码，0=插件 context 提取失败、1-9=native 各阶段
+            val stage = QnnEngine.lastInitStage()
+            val status = QnnEngine.lastInitStatus()
             runCatching {
                 com.mangareader.DiagTracer.markStatic(
-                    "enhance: npu load s=${QnnEngine.lastInitStage()}"
+                    "enhance: npu load s=$stage c=$status"
                 )
+            }
+            // DSP 传输层被拒（14001）＝厂商封锁 CDSP 无签名域，重试无意义——记住结论供面板明示
+            if (stage == 7 && status == 14001L) {
+                runCatching { SrCore.settings.npuDeviceBlock = true }
             }
             throw IllegalStateException("QNN init failed for ${entry.stem}")
         }

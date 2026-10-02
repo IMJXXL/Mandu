@@ -343,10 +343,15 @@ private fun SrPanelContent(
         // ── 处理引擎（CPU / GPU / NPU 三选一，2026-10 NPU 引入）──
         // NPU：骁龙 AI 芯片跑同款模型，最快最省电；需要装对应代的模型包插件。
         // 设备探测（QNN 代号 + CDSP 节点）在 IO 线程做一次；非骁龙设备整行不出现 NPU 项。
+        // 用户主动制（2026-10-02）：CPU 侧探测到芯片≠能用（厂商可封锁 CDSP），必须点
+        // 「测试 NPU」真实加载模型试水通过后，NPU 档才解锁；被封锁机型面板明示不再空试。
         var engine by remember { mutableStateOf(settings.engine) }
         var npuProbed by remember { mutableStateOf(false) }
         var npuArch by remember { mutableStateOf(0) }
         var npuModelsReady by remember { mutableStateOf(false) }
+        var npuTestOk by remember { mutableStateOf(settings.npuTestOk) }
+        var npuBlocked by remember { mutableStateOf(settings.npuDeviceBlock) }
+        var npuTesting by remember { mutableStateOf(false) }
         LaunchedEffect(Unit) {
             if (!QnnEngine.nativeLoaded) {
                 npuProbed = true
@@ -363,15 +368,16 @@ private fun SrPanelContent(
         }
         val npuTierOk = npuArch > 0 && NpuModelRegistry.supports(model, denoise, npuArch)
         val npuDeviceOk = npuProbed && npuArch > 0
+        val npuChipOk = npuDeviceOk && npuModelsReady && npuTierOk && npuTestOk && !npuBlocked
 
         Text("处理引擎", fontSize = 14.sp, fontWeight = FontWeight.Medium)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf(
                 Triple(SrEngine.CPU, "CPU 稳妥", true),
                 Triple(SrEngine.GPU, "GPU 加速", !SrCore.isVulkanMissing()),
-                Triple(SrEngine.NPU, "NPU 极速", npuDeviceOk && npuModelsReady && npuTierOk),
+                Triple(SrEngine.NPU, "NPU 极速", npuChipOk),
             ).forEach { (e, label, enabled) ->
-                if (e == SrEngine.NPU && !npuDeviceOk) return@forEach // 非骁龙/无 CDSP：不显示
+                if (e == SrEngine.NPU && !npuDeviceOk) return@forEach // 非骁龙：不显示
                 FilterChip(
                     selected = engine == e,
                     onClick = {
@@ -388,24 +394,61 @@ private fun SrPanelContent(
                 SrEngine.CPU -> "默认。所有手机可用，速度最慢但最稳；上次崩溃会自动回到这里"
                 SrEngine.GPU -> "交给显卡（Vulkan）处理，比 CPU 快数倍；发热明显时切回 CPU"
                 SrEngine.NPU ->
-                    if (!npuDeviceOk) "本机未检测到可用 NPU，将自动用 GPU/CPU 处理"
-                    else "交给骁龙 AI 芯片（v$npuArch）：最快最省电；个别页可能有轻微偏色"
+                    when {
+                        npuBlocked -> "本机实测被系统拦截：厂商不给应用开放加速芯片，自动用 GPU/CPU"
+                        npuTestOk -> "实测通过（v$npuArch）：交给骁龙 AI 芯片，最快最省电；个别页可能有轻微偏色"
+                        else -> "先点下方「测试 NPU」，实测通过前选了 NPU 也会自动用 GPU/CPU"
+                    }
             },
             fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         if (npuDeviceOk) {
             Text(
                 when {
-                    npuModelsReady && npuTierOk ->
-                        "NPU 模型包已就绪（v$npuArch）：当前档位走 NPU 处理"
+                    npuBlocked ->
+                        "实测结果：系统拒绝建立加速会话（厂商封锁，部分小米机型如此）。" +
+                            "日后系统更新后可点「重新测试」再试"
+                    npuTesting ->
+                        "正在实测：真实加载一次 NPU 模型试水，约 1-3 秒，请稍候…"
+                    npuModelsReady && npuTestOk && npuTierOk ->
+                        "实测通过，NPU 模型包已就绪（v$npuArch）：当前档位走 NPU 处理"
+                    npuModelsReady && npuTestOk ->
+                        "实测通过，已装 NPU 模型包，但当前档位/降噪无 NPU 版（支持：CUGAN 2x 保守、动漫V3 2x 极速）——自动用 GPU/CPU 处理"
                     npuModelsReady ->
-                        "已装 NPU 模型包，但当前档位/降噪无 NPU 版（支持：CUGAN 2x 保守、动漫V3 2x 极速）——自动用 GPU/CPU 处理"
+                        "检测到 NPU（v$npuArch，${QnnEngine.archDisplayName(npuArch)}），模型包已装。" +
+                            "点「测试 NPU」实测通过后，当前档位才会真正走 NPU"
                     else ->
                         "检测到 NPU（v$npuArch，${QnnEngine.archDisplayName(npuArch)}）。" +
-                            "把「漫读-NPU模型-v$npuArch.apk」拷到手机点安装，回到本页立即生效"
+                            "先安装「漫读-NPU模型-v$npuArch.apk」，装好后点「测试 NPU」"
                 },
                 fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            // 测试按钮：探到芯片代 + 已装模型包（有 context 才能试水）；封锁后仍可重测
+            if (npuModelsReady) {
+                OutlinedButton(
+                    onClick = {
+                        npuTesting = true
+                        scope.launch {
+                            val r = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                NpuTransportProbe.run(ctx)
+                            }
+                            npuTestOk = r == NpuTransportProbe.Result.PASS
+                            npuBlocked = settings.npuDeviceBlock
+                            npuTesting = false
+                        }
+                    },
+                    enabled = !npuTesting,
+                ) {
+                    Text(
+                        when {
+                            npuTesting -> "正在实测…"
+                            npuTestOk -> "重新测试 NPU"
+                            else -> "测试 NPU"
+                        },
+                        fontSize = 12.sp,
+                    )
+                }
+            }
         }
 
         // （2026-08-28 去掉"自动选最快模型"：只剩两个模型，手动选即可，实测反而费电耗时）

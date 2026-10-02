@@ -75,16 +75,19 @@ class SuperResolutionManager(
             val cdsp = QnnEngine.isCdspAvailable
             val arch = QnnEngine.architecture
             val entry = NpuModelRegistry.resolve(model, currentDenoiseLevel, arch)
-            if (!npuFused && arch > 0 && entry != null) {
+            // npuTestOk＝用户在面板「测试 NPU」实测通过（用户主动制）：
+            // 没实测过/被系统封锁时选了 NPU 也不生效，自动回 GPU。
+            val tested = SrCore.settings.npuTestOk && !SrCore.settings.npuDeviceBlock
+            if (!npuFused && tested && arch > 0 && entry != null) {
                 return SrEngine.NPU
             }
             if (!npuFused) {
                 // 中性打点（对应表 enq）：cdsp=/dev 节点预检（ROM 命名差异可假阴性，仅提示
                 // 不作门）；arch=QNN 报的 HTP 代号（0=探不到/不受支持）；reg=当前档位+降噪+
-                // 代号有无插件 context。reg=false → 装对应代模型包；arch=0 → 探测失败。
+                // 代号有无插件 context；t=实测通过。reg=false → 装对应代模型包；t=false → 先测试。
                 runCatching {
                     com.mangareader.DiagTracer.markStatic(
-                        "enhance: npu skip cdsp=$cdsp arch=$arch reg=${entry != null}"
+                        "enhance: npu skip cdsp=$cdsp arch=$arch reg=${entry != null} t=$tested"
                     )
                 }
             }

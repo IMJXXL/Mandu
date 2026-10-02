@@ -62,6 +62,7 @@ object DiagLogExporter {
         // NPU 侧状态（探测只读不改配置；CDSP/代号来自 QNN 运行时，非 Qualcomm 报 0）
         sb.appendLine("NPU: so加载=${QnnEngine.nativeLoaded} CDSP=${runCatching { QnnEngine.isCdspAvailable }.getOrDefault("?")} HTP代号=${runCatching { QnnEngine.architecture }.getOrDefault(-1)}")
         sb.appendLine("NPU插件模型: ${runCatching { NpuModelRegistry.all().joinToString { "${it.stem}@${it.arches.joinToString("/")}" } }.getOrDefault("?").ifEmpty { "（无）" }}")
+        sb.appendLine("NPU实测: 通过=${runCatching { SrCore.settings.npuTestOk }.getOrDefault("?")} 封锁=${runCatching { SrCore.settings.npuDeviceBlock }.getOrDefault("?")}")
         sb.appendLine("可用档位: ${runCatching { NativeLibraryStatus.getAvailableModels().joinToString { it.displayName } }.getOrDefault("?")}")
         sb.appendLine("已解包模型目录: ${runCatching { File(context.filesDir, "models").list()?.joinToString() ?: "（无）" }.getOrDefault("?")}")
     }

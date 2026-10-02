@@ -106,6 +106,8 @@ object QnnEngine {
     @JvmStatic external fun nativeShutdownQnn()
     /** 最近一次 NPU 初始化的失败阶段码（0=成功/未开始，1-9 见对照表） */
     @JvmStatic external fun nativeGetLastInitStage(): Int
+    /** 阶段 7/8 时 QNN 的原始错误句柄（0=无） */
+    @JvmStatic external fun nativeGetLastInitStatus(): Long
 
     // Kotlin 侧便捷封装（初始化/处理/释放走 QnnProcessor；这里只暴露探测与生命周期）
 
@@ -117,6 +119,10 @@ object QnnEngine {
     /** 最近一次 NPU 初始化失败阶段码；JNI 不可用时 -1（见对照表 npu load s=） */
     fun lastInitStage(): Int =
         if (!nativeLoaded) -1 else try { nativeGetLastInitStage() } catch (_: Throwable) { -1 }
+
+    /** 阶段 7/8 的 QNN 原始错误句柄；JNI 不可用时 -1 */
+    fun lastInitStatus(): Long =
+        if (!nativeLoaded) -1L else try { nativeGetLastInitStatus() } catch (_: Throwable) { -1L }
 
     fun process(input: android.graphics.Bitmap): android.graphics.Bitmap? = nativeProcessQnn(input)
 

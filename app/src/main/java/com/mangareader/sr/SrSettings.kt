@@ -50,6 +50,19 @@ class SrSettings(context: Context) {
             engine = if (v) SrEngine.GPU else SrEngine.CPU
         }
 
+    /** 设备封锁标记：NPU 实测死在 DSP 传输层（s=7 + 错误 14001）＝厂商不给应用开
+     *  CDSP 无签名域（MIUI 部分机型实锤），再试多少次都一样——记住结论直接在面板明示，
+     *  不再每次会话空跑三连败熔断。重新实测通过后自动清除。 */
+    var npuDeviceBlock: Boolean
+        get() = prefs.getBoolean("sr_npu_block", false)
+        set(v) = prefs.edit().putBoolean("sr_npu_block", v).apply()
+
+    /** NPU 实测通过标记：面板「测试 NPU」真实加载一次模型成功后置位（用户主动制）。
+     *  路由硬性要求它为 true 才走 NPU——没测过/没装插件选了 NPU 也自动回 GPU。 */
+    var npuTestOk: Boolean
+        get() = prefs.getBoolean("sr_npu_test_ok", false)
+        set(v) = prefs.edit().putBoolean("sr_npu_test_ok", v).apply()
+
     /** 黑白优化开关（默认关；打开后按 grayLevels/density 生效） */
     var bwEnabled: Boolean
         get() = prefs.getBoolean("sr_bw_enabled", false)
