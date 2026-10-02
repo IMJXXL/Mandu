@@ -104,11 +104,13 @@ versionName = "1.36"
             //   useLegacyPackaging=false（AGP 默认）时该目录为空 → NPU 初始化必败（Komiho 实测结论）。
             //   代价是装机后 .so 落盘一份，下载体积几乎不变（.so 压缩率高）。
             useLegacyPackaging = true
-            // qnn-runtime AAR 里 context 加载路径用不到的后端/大件：
-            // Prepare(79MB 离线编译器)、Dlc(量化图)、Gpu/Dsp 备用后端（我们只走 HTP）、
-            // V68(8 Gen1 不在打包代列表)。五代 Skel/Stub（69/73/75/79/81）+ Htp + System 保留。
+            // qnn-runtime AAR 里真正用不到的后端：Gpu/Dsp 备用后端（我们只走 HTP）、
+            // V68（8 Gen1 不在打包代列表）。五代 Skel/Stub（69/73/75/79/81）+ Htp + System
+            // + **Prepare + ModelDlc 保留**——参考项目（同设备可用）APK 里二者齐全；
+            // 曾裁掉它们省体积，真机报 loadRemoteSymbols 4000/Transport 14001，与参考
+            // 逐项对齐库清单后确认差异就在这两个库（Android 16 新平台上 Prepare 参与
+            // DSP 会话/图装载），勿再裁。
             excludes += setOf(
-                "**/libQnnHtpPrepare.so", "**/libQnnModelDlc.so",
                 "**/libQnnGpu.so", "**/libQnnDsp.so",
                 "**/libQnnDspV66Skel.so", "**/libQnnDspV66Stub.so",
                 "**/libQnnHtpV68Skel.so", "**/libQnnHtpV68Stub.so",
@@ -214,12 +216,10 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-cbor:1.11.0")
 
     // QNN/HTP（高通 NPU）运行时库：Maven Central 公网，免注册。客户端代码按 cpp/include/QNN
-    // 的 QAIRT 2.49 vendor 头编译（API 向后兼容）。**运行时必须 ≥ context 编译版本**：
-    // mihon v1.3.10 的 context 内嵌 2.49.0.260730 构建，Maven 2.49.0 构建号更旧会被
-    // contextCreateFromBinary 拒载（真机 s=7 实锤），升 2.50.0 解决（Komiho 同款做法）。
-    // context 加载路径只用到 libQnnHtp/libQnnSystem + 五代 Skel/Stub；
-    // libQnnHtpPrepare/libQnnModelDlc 在 packaging.excludes 裁掉。
-    implementation("com.qualcomm.qti:qnn-runtime:2.50.0")
+    // 的 QAIRT 2.49 vendor 头编译（API 向后兼容）。**与参考项目同款 2.49.0**——参考 APK
+    // 在 Android 16 小机上实测可用（2026-10-02），曾试 2.50.0 无助益；库清单对齐后
+    // Prepare/ModelDlc 已恢复打包（见 packaging.excludes 注释）。
+    implementation("com.qualcomm.qti:qnn-runtime:2.49.0")
 
     // ktor (WebDAV + Komga HTTP client)
     implementation("io.ktor:ktor-client-core:3.5.0")
