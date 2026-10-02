@@ -352,6 +352,7 @@ private fun SrPanelContent(
         var npuTestOk by remember { mutableStateOf(settings.npuTestOk) }
         var npuBlocked by remember { mutableStateOf(settings.npuDeviceBlock) }
         var npuTesting by remember { mutableStateOf(false) }
+        var npuTestNote by remember { mutableStateOf<String?>(null) }
         LaunchedEffect(Unit) {
             if (!QnnEngine.nativeLoaded) {
                 npuProbed = true
@@ -434,6 +435,7 @@ private fun SrPanelContent(
                             }
                             npuTestOk = r == NpuTransportProbe.Result.PASS
                             npuBlocked = settings.npuDeviceBlock
+                            npuTestNote = if (r == NpuTransportProbe.Result.BUSY) "正在处理页面，请稍后再测" else null
                             npuTesting = false
                         }
                     },
@@ -447,6 +449,9 @@ private fun SrPanelContent(
                         },
                         fontSize = 12.sp,
                     )
+                }
+                npuTestNote?.let {
+                    Text(it, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }

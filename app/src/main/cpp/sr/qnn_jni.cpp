@@ -71,6 +71,15 @@ Java_com_mangareader_sr_QnnEngine_nativeGetLastInitStage(JNIEnv * /*env*/, jobje
 #endif
 }
 
+extern "C" JNIEXPORT jlong JNICALL
+Java_com_mangareader_sr_QnnEngine_nativeGetLastInitStatus(JNIEnv * /*env*/, jobject /*thiz*/) {
+#if MIHON_ENABLE_QNN
+  return static_cast<jlong>(qnn_backend::last_init_status());
+#else
+  return 0;
+#endif
+}
+
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_mangareader_sr_QnnEngine_nativeInitQnn(JNIEnv *env, jobject /*thiz*/,
                                                 jstring contextPath, jstring libDir,
@@ -180,10 +189,17 @@ Java_com_mangareader_sr_QnnEngine_nativeProcessQnn(JNIEnv *env, jobject /*thiz*/
 
   g_progress.store(0);
   const auto start = std::chrono::steady_clock::now();
-  const int ret = qnn_backend::process_rgba(
-      packed.data(), w, h, w * 4,
-      static_cast<uint8_t *>(outPixels), static_cast<int>(outInfo.stride),
-      &g_progress, &g_abort);
+  // process 与 init/shutdown 互斥（g_lock）：否则面板「测试 NPU」的 shutdown 会在
+  // graphExecute 执行中拆掉 context（use-after-free 崩溃）。abort 走原子 g_abort，
+  // 不依赖本锁，取消路径不受影响；代价是 init/shutdown 要等当前瓦片循环结束。
+  int ret;
+  {
+    std::lock_guard<std::mutex> lock(g_lock);
+    ret = qnn_backend::process_rgba(
+        packed.data(), w, h, w * 4,
+        static_cast<uint8_t *>(outPixels), static_cast<int>(outInfo.stride),
+        &g_progress, &g_abort);
+  }
   AndroidBitmap_unlockPixels(env, outBitmap);
   const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                       std::chrono::steady_clock::now() - start).count();

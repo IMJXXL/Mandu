@@ -12,9 +12,17 @@ import android.content.Context
  */
 object NpuTransportProbe {
 
-    enum class Result { PASS, BLOCKED, FAILED, NO_MODEL }
+    enum class Result { PASS, BLOCKED, FAILED, NO_MODEL, BUSY }
 
     fun run(context: Context): Result {
+        // 礼让正在进行的 NPU 推理（native 层虽有 g_lock 兜底，这里主动避让，
+        // 免得探测按钮卡在"正在实测"等长任务跑完）
+        var waited = 0
+        while (SrCore.inferenceInFlight && waited < 5000) {
+            Thread.sleep(100)
+            waited += 100
+        }
+        if (SrCore.inferenceInFlight) return Result.BUSY
         val arch = QnnEngine.architecture
         if (arch <= 0) return Result.FAILED
         val entry = NpuModelRegistry.forDevice(arch).firstOrNull() ?: return Result.NO_MODEL
