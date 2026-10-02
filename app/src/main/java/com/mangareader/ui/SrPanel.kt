@@ -22,19 +22,28 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mangareader.sr.*
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private const val ANIM_DURATION = 300
 private val SHEET_SHAPE = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
 private val SIDE_PANEL_SHAPE = RoundedCornerShape(topStart = 28.dp, bottomStart = 28.dp)
 
 /**
- * 阅读器底栏【超分】面板。
- * 交互约定（按用户要求）：
+ * 阅读器底栏【画质增强】面板。
+ *
+ * 布局（2026-10-03 四视角重构，自上而下）：
+ *  ① 本书离线增强——状态卡（已增强 N 章 M 页 / 处理中 X/Y 页，点击进队列页）+「加入增强队列」；
+ *     原先该入口埋在面板 60% 深处（用户以为被删了），现提为第一区块。
+ *  ② 本次阅读（实时增强）——作用域、启用开关、档位（选中即显示一句话说明）、降噪、整本预载。
+ *  ③ 黑白漫画优化——可单独开启。
+ *  ④ 处理引擎——CPU/GPU/NPU 三选一，NPU 状态收敛为最多两行。
+ *  ⑤ 高级与缓存——测速、实时缓存上限、清空实时缓存。
+ * 交互约定（不变）：
  *  - 面板里所有功能任何时候都可见、都能设置（不因作用域关闭而隐藏）；只是"作用域=关闭"时它们不生效；
- *  - 作用域（关闭/仅当前页/当前整本）控制"处理哪些页"，每本书每次进阅读默认关闭；
- *  - 「启用超分放大」控制处理时放不放大；关掉也能单独用「黑白漫画优化」（原尺寸、毫秒级）；
- *  - 已批量离线超分的内容无需任何开关，阅读时自动生效。
+ *  - 已离线增强的内容无需任何开关，阅读时自动生效；
+ *  - 档位说明的唯一事实源在 SRModel.description，面板底部不再维护大段说明文字。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -71,7 +80,7 @@ fun SrPanel(bookId: Long, bookTitle: String, onOpenQueue: () -> Unit, onDismiss:
                         .widthIn(max = 520.dp)
                         .fillMaxWidth()
                         .heightIn(max = with(LocalDensity.current) {
-                            (LocalConfiguration.current.screenHeightDp * 0.60f).dp
+                            (LocalConfiguration.current.screenHeightDp * 0.70f).dp
                         })
                         .clickable(interactionSource = null, indication = null, onClick = {})
                 },
@@ -90,6 +99,33 @@ fun SrPanel(bookId: Long, bookTitle: String, onOpenQueue: () -> Unit, onDismiss:
     }
 }
 
+/** 本书离线增强状态快照（队列条目=进行中；产物 metadata=已完成） */
+private data class BookOfflineStatus(
+    val queuedChapters: Int,
+    val queuedProcessed: Int,
+    val queuedTotal: Int,
+    val doneChapters: Int,
+    val donePages: Int,
+)
+
+private suspend fun loadBookOfflineStatus(bookId: Long): BookOfflineStatus? =
+    withContext(Dispatchers.IO) {
+        if (bookId < 0) return@withContext null
+        try {
+            val queued = SrCore.queueStore.load().filter { it.bookId == bookId }
+            val done = SrCore.diskCache.getCompletedBatchChapters().filter { it.bookId == bookId }
+            BookOfflineStatus(
+                queuedChapters = queued.size,
+                queuedProcessed = queued.sumOf { it.processedPages },
+                queuedTotal = queued.sumOf { it.totalPages },
+                doneChapters = done.size,
+                donePages = done.sumOf { it.pageCount },
+            )
+        } catch (_: Exception) {
+            null
+        }
+    }
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SrPanelContent(
@@ -102,6 +138,7 @@ private fun SrPanelContent(
 ) {
     val settings = SrCore.settings
 
+    // ── 全部状态集中声明（原先散落在 UI 中段，难维护）──
     var upscaleOn by remember { mutableStateOf(settings.upscaleEnabled) }
     var model by remember { mutableStateOf(settings.effectiveModel(bookId)) }
     var denoise by remember { mutableStateOf(settings.denoise) }
@@ -112,8 +149,19 @@ private fun SrPanelContent(
     var benchText by remember { mutableStateOf(SrCore.profileManager.describe()) }
     var benchRunning by remember { mutableStateOf(false) }
     var cacheText by remember { mutableStateOf(cacheUsageText()) }
-    // （原"自动选最快模型"功能 2026-08-28 已下线：只剩两个模型，手动选即可）
+    // （原"自动选最快模型"功能 2026-08-28 已下线：手动选即可）
     var cacheMbInput by remember { mutableStateOf(settings.realtimeCacheLimitMb.toString()) }
+    var includeUnread by remember { mutableStateOf(false) }
+    var bookStatus by remember { mutableStateOf<BookOfflineStatus?>(null) }
+
+    var engine by remember { mutableStateOf(settings.engine) }
+    var npuProbed by remember { mutableStateOf(false) }
+    var npuArch by remember { mutableStateOf(0) }
+    var npuModelsReady by remember { mutableStateOf(false) }
+    var npuTestOk by remember { mutableStateOf(settings.npuTestOk) }
+    var npuBlocked by remember { mutableStateOf(settings.npuDeviceBlock) }
+    var npuTesting by remember { mutableStateOf(false) }
+    var npuTestNote by remember { mutableStateOf<String?>(null) }
 
     val scopeState = SrUiState.scope.intValue
 
@@ -124,6 +172,33 @@ private fun SrPanelContent(
         !engineAvailable -> "画质增强组件加载失败，功能不可用"
         !vulkanOk -> "此设备不支持 Vulkan 图形加速，画质增强不可用"
         else -> null
+    }
+
+    // 本书离线状态：打开面板查一次；队列页事件驱动刷新（3 秒节流，避免每页都全量扫产物目录）
+    LaunchedEffect(bookId) { bookStatus = loadBookOfflineStatus(bookId) }
+    LaunchedEffect(bookId) {
+        var lastRefresh = 0L
+        SrCore.queueProgress.collect {
+            val now = System.currentTimeMillis()
+            if (now - lastRefresh > 3000) {
+                lastRefresh = now
+                bookStatus = loadBookOfflineStatus(bookId)
+            }
+        }
+    }
+    LaunchedEffect(Unit) {
+        if (!QnnEngine.nativeLoaded) {
+            npuProbed = true
+            return@LaunchedEffect
+        }
+        val (arch, hasPkg) = withContext(Dispatchers.IO) {
+            NpuModelRegistry.ensureScanned(ctx)
+            val a = QnnEngine.probe(QnnEngine.libraryDir(ctx))
+            a to NpuModelRegistry.hasPackageFor(a)
+        }
+        npuArch = arch
+        npuModelsReady = hasPkg
+        npuProbed = true
     }
 
     Column(
@@ -171,8 +246,87 @@ private fun SrPanelContent(
             }
         }
 
-        // ── 作用域 ──
-        Text("本次阅读处理哪些页", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+        // ════ ① 离线增强本书（第一区块：状态一眼可见，加入队列一键直达）════
+        if (bookId >= 0) {
+            val st = bookStatus
+            Card(
+                onClick = onOpenQueue,
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                ),
+            ) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "本书离线增强",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                        Text(
+                            when {
+                                st == null -> "查看本书已增强的章节与页数"
+                                st.queuedChapters > 0 && st.doneChapters > 0 ->
+                                    "已增强 ${st.doneChapters} 章 · ${st.donePages} 页；处理中 ${st.queuedProcessed}/${st.queuedTotal} 页"
+                                st.queuedChapters > 0 ->
+                                    "处理中：${st.queuedProcessed}/${st.queuedTotal} 页（空闲时自动继续）"
+                                st.doneChapters > 0 ->
+                                    "已增强 ${st.doneChapters} 章 · ${st.donePages} 页，阅读时自动生效"
+                                else -> "本书还没有离线增强产物"
+                            },
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Text("队列 ›", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+                }
+            }
+            Text("离线增强本书", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+            Text(
+                "提前把整本书增强存进手机：阅读零等待、结果永久生效，空闲时后台自动跑（通知栏有进度）。" +
+                    "改档位/降噪后重进队列即可按新档重算。",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(checked = includeUnread, onCheckedChange = { includeUnread = it })
+                Text(
+                    "包含未读章节（整本跑完，占用更多存储）",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            FilledTonalButton(
+                onClick = {
+                    SrBatchRunner.enqueueBook(ctx, bookId, bookTitle, includeUnread) { r ->
+                        (ctx as? android.app.Activity)?.runOnUiThread {
+                            android.widget.Toast.makeText(
+                                ctx,
+                                when {
+                                    r.chapters > 0 -> "已加入队列：${r.chapters} 章 ${r.pages} 页，空闲时自动逐章处理（通知栏可看进度）"
+                                    else -> "本书已在队列中"
+                                },
+                                android.widget.Toast.LENGTH_LONG,
+                            ).show()
+                        }
+                        scope.launch { bookStatus = loadBookOfflineStatus(bookId) }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("加入增强队列") }
+        }
+
+        HorizontalDivider()
+
+        // ════ ② 本次阅读（实时增强）════
+        Text("本次阅读（实时增强）", fontSize = 14.sp, fontWeight = FontWeight.Medium)
         if (blockReason != null) {
             Text(blockReason, fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
         }
@@ -211,14 +365,10 @@ private fun SrPanelContent(
             }
         }
         Text(
-            "作用域关闭时下面功能都不会生效，但都能提前设置好（“重算本页”同样需要先选作用域）；" +
-                "已批量离线增强过的内容无需开关，阅读时自动用增强图。",
+            "作用域=关闭时下面的设置可提前选好但不生效；已离线增强过的页无需开关，阅读时自动用增强图。",
             fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
-        HorizontalDivider()
-
-        // ── 超分放大 ──
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.weight(1f)) {
                 Text("启用画质增强", fontSize = 14.sp, fontWeight = FontWeight.Medium)
@@ -232,7 +382,7 @@ private fun SrPanelContent(
                 },
             )
         }
-        // ★ 处理档位：始终可见可预选（作用域关闭时也能提前设置好），主开关仍控制是否生效
+
         Text("处理档位", fontSize = 14.sp, fontWeight = FontWeight.Medium)
         // ★ 内层 Column 包成一个整体子项：外层 Column 的 spacedBy(10dp) 不再对每行重复计费；
         //   关闭 chip 的 48dp 最小触摸目标强制 + 固定 32dp 高，行距精确 2dp
@@ -257,6 +407,13 @@ private fun SrPanelContent(
                 }
             }
         }
+        // ★ 选中档位下方即显示一句话说明（唯一事实源 SRModel.description，替代原底部大段"档位说明"）
+        Text(
+            model.description,
+            fontSize = 11.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
         // ★ 降噪强度仅对支持的档位生效（V3 无降噪输入→灰掉+说明；CUGAN/waifu2x 按强度换变体模型）
         val denoiseCapable = model.denoiseCapable
         Text(
@@ -297,7 +454,7 @@ private fun SrPanelContent(
 
         HorizontalDivider()
 
-        // ── 黑白漫画优化（可单独开启）──
+        // ════ ③ 黑白漫画优化（可单独开启）════
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.weight(1f)) {
                 Text("黑白漫画优化（可单独开启）", fontSize = 14.sp, fontWeight = FontWeight.Medium)
@@ -340,37 +497,15 @@ private fun SrPanelContent(
             }
         }
 
-        // ── 处理引擎（CPU / GPU / NPU 三选一，2026-10 NPU 引入）──
+        HorizontalDivider()
+
+        // ════ ④ 处理引擎 ════
         // NPU：骁龙 AI 芯片跑同款模型，最快最省电；需要装对应代的模型包插件。
         // 设备探测（QNN 代号 + CDSP 节点）在 IO 线程做一次；非骁龙设备整行不出现 NPU 项。
-        // 用户主动制（2026-10-02）：CPU 侧探测到芯片≠能用（厂商可封锁 CDSP），必须点
-        // 「测试 NPU」真实加载模型试水通过后，NPU 档才解锁；被封锁机型面板明示不再空试。
-        var engine by remember { mutableStateOf(settings.engine) }
-        var npuProbed by remember { mutableStateOf(false) }
-        var npuArch by remember { mutableStateOf(0) }
-        var npuModelsReady by remember { mutableStateOf(false) }
-        var npuTestOk by remember { mutableStateOf(settings.npuTestOk) }
-        var npuBlocked by remember { mutableStateOf(settings.npuDeviceBlock) }
-        var npuTesting by remember { mutableStateOf(false) }
-        var npuTestNote by remember { mutableStateOf<String?>(null) }
-        LaunchedEffect(Unit) {
-            if (!QnnEngine.nativeLoaded) {
-                npuProbed = true
-                return@LaunchedEffect
-            }
-            val (arch, hasPkg) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                NpuModelRegistry.ensureScanned(ctx)
-                val a = QnnEngine.probe(QnnEngine.libraryDir(ctx))
-                a to NpuModelRegistry.hasPackageFor(a)
-            }
-            npuArch = arch
-            npuModelsReady = hasPkg
-            npuProbed = true
-        }
+        // 用户主动制（2026-10-02）：实测为参考信息——未实测/实测失败也允许选 NPU，
+        // 真不支持时装载失败就地自动回 GPU/CPU。
         val npuTierOk = npuArch > 0 && NpuModelRegistry.supports(model, denoise, npuArch)
         val npuDeviceOk = npuProbed && npuArch > 0
-        // 用户要求（2026-10-02）：实测不拦截——「测试 NPU」降级为参考信息，
-        // 未实测/实测失败也允许选 NPU，真不支持时装载失败就地自动回 GPU/CPU
         val npuChipOk = npuDeviceOk && npuModelsReady && npuTierOk
 
         Text("处理引擎", fontSize = 14.sp, fontWeight = FontWeight.Medium)
@@ -394,44 +529,43 @@ private fun SrPanelContent(
         }
         Text(
             when (engine) {
-                SrEngine.CPU -> "默认。所有手机可用，速度最慢但最稳；上次崩溃会自动回到这里"
+                SrEngine.CPU -> "所有手机可用，最稳但最慢；上次崩溃会自动回到这里"
                 SrEngine.GPU -> "交给显卡（Vulkan）处理，比 CPU 快数倍；发热明显时切回 CPU"
                 SrEngine.NPU ->
                     when {
-                        npuBlocked -> "本机实测被系统拦截（厂商封锁）：选 NPU 实际会自动用 GPU/CPU"
-                        npuTestOk -> "实测通过（v$npuArch）：交给骁龙 AI 芯片，最快最省电；个别页可能有轻微偏色"
-                        else -> "尚未实测：本机不支持时会自动用 GPU/CPU；建议先点下方「测试 NPU」"
+                        npuBlocked -> "本机被系统拦截（厂商封锁）：实际自动用 GPU/CPU；系统更新后可重测"
+                        npuTestOk -> "实测通过（v$npuArch）：最快最省电；个别页可能有轻微偏色"
+                        npuModelsReady && npuTierOk -> "模型包就绪（v$npuArch），尚未实测——不支持时会自动回 GPU/CPU"
+                        npuModelsReady -> "当前档位无 NPU 版（支持 CUGAN 2x 保守、动漫V3 2x 极速），自动用 GPU/CPU"
+                        else -> "先安装「漫读-NPU模型-v$npuArch.apk」再选 NPU"
                     }
             },
             fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         if (npuDeviceOk) {
-            Text(
-                when {
-                    npuBlocked ->
-                        "实测结果：系统拒绝建立加速会话（厂商封锁，部分小米机型如此）——" +
-                            "仍可选 NPU，实际自动回 GPU/CPU；日后系统更新可「重新测试」"
-                    npuTesting ->
-                        "正在实测：真实加载一次 NPU 模型试水，约 1-3 秒，请稍候…"
-                    npuModelsReady && npuTierOk && npuTestOk ->
-                        "实测通过，NPU 模型包已就绪（v$npuArch）：当前档位走 NPU 处理"
-                    npuModelsReady && npuTierOk ->
-                        "NPU 模型包已就绪（v$npuArch）：未实测，若机型不支持会自动回 GPU/CPU。建议先点「测试 NPU」"
-                    npuModelsReady ->
-                        "已装 NPU 模型包，但当前档位/降噪无 NPU 版（支持：CUGAN 2x 保守、动漫V3 2x 极速）——自动用 GPU/CPU 处理"
-                    else ->
-                        "检测到 NPU（v$npuArch，${QnnEngine.archDisplayName(npuArch)}）。" +
-                            "先安装「漫读-NPU模型-v$npuArch.apk」，装好后点「测试 NPU」"
-                },
-                fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            // 测试按钮：探到芯片代 + 已装模型包（有 context 才能试水）；封锁后仍可重测
-            if (npuModelsReady) {
+            // 状态/引导补充行：只在有信息量时出现（选了 NPU，或还没装模型包）
+            if (engine == SrEngine.NPU || !npuModelsReady) {
+                Text(
+                    when {
+                        engine == SrEngine.NPU && npuTesting ->
+                            "正在实测：真实加载一次 NPU 模型试水，约 1-3 秒…"
+                        engine == SrEngine.NPU && npuModelsReady && npuTierOk && npuTestOk ->
+                            "当前档位（${model.displayName}）走 NPU 处理；${QnnEngine.archDisplayName(npuArch)}"
+                        !npuModelsReady ->
+                            "检测到 NPU（v$npuArch，${QnnEngine.archDisplayName(npuArch)}）。" +
+                                "安装「漫读-NPU模型-v$npuArch.apk」后，支持的档位可切换 NPU 极速"
+                        else -> "${QnnEngine.archDisplayName(npuArch)}（v$npuArch）"
+                    },
+                    fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            // 测试按钮：选了 NPU 且模型包就绪时出现（探到芯片代+有 context 才能试水；封锁后仍可重测）
+            if (engine == SrEngine.NPU && npuModelsReady) {
                 OutlinedButton(
                     onClick = {
                         npuTesting = true
                         scope.launch {
-                            val r = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                            val r = withContext(Dispatchers.IO) {
                                 NpuTransportProbe.run(ctx)
                             }
                             npuTestOk = r == NpuTransportProbe.Result.PASS
@@ -457,48 +591,10 @@ private fun SrPanelContent(
             }
         }
 
-        // （2026-08-28 去掉"自动选最快模型"：只剩两个模型，手动选即可，实测反而费电耗时）
-
         HorizontalDivider()
 
-        // ── 批量离线 ──
-        if (bookId >= 0) {
-            // ★ 整本入队（2026-10-02）：默认只入"读过的章"（旧行为），勾上后枚举书根下
-            //   全部章节（含没读过的）逐章排队——用户诉求"多选几章放着超分/自动下一章"
-            var includeUnread by remember { mutableStateOf(false) }
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                Checkbox(checked = includeUnread, onCheckedChange = { includeUnread = it })
-                Text(
-                    "包含未读章节（整本跑完，占用更多存储）",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-            OutlinedButton(
-                onClick = {
-                    SrBatchRunner.enqueueBook(ctx, bookId, bookTitle, includeUnread) { r ->
-                        (ctx as? android.app.Activity)?.runOnUiThread {
-                            android.widget.Toast.makeText(
-                                ctx,
-                                when {
-                                    r.chapters > 0 -> "已加入队列：${r.chapters} 章 ${r.pages} 页，空闲时自动逐章处理（通知栏可看进度）"
-                                    else -> "本书已在队列中"
-                                },
-                                android.widget.Toast.LENGTH_LONG,
-                            ).show()
-                        }
-                    }
-                },
-                modifier = Modifier.fillMaxWidth(),
-            ) { Text("批量增强本书（离线慢慢算，之后永久生效）") }
-        }
-        TextButton(onClick = onOpenQueue, modifier = Modifier.fillMaxWidth()) {
-            Text("查看增强队列与缓存管理")
-        }
-
-
-        // ── 测速 / 缓存 ──
+        // ════ ⑤ 高级与缓存 ════
+        Text("高级与缓存", fontSize = 14.sp, fontWeight = FontWeight.Medium)
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.weight(1f)) {
                 Text("设备档位：$benchText", fontSize = 13.sp)
@@ -547,7 +643,7 @@ private fun SrPanelContent(
             )
         }
         Text(
-            "实时看图时临时算的增强图缓存，超上限自动清最旧（16–4096 MB，默认 100）；批量产物不受此限",
+            "实时看图时临时算的增强图缓存，超上限自动清最旧（16–4096 MB，默认 100）；离线增强的产物不受此限",
             fontSize = 11.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -558,29 +654,7 @@ private fun SrPanelContent(
                 android.widget.Toast.makeText(ctx, "实时缓存已清空（批量产物保留）", android.widget.Toast.LENGTH_SHORT).show()
             },
             modifier = Modifier.fillMaxWidth(),
-        ) { Text("清空实时缓存（不动批量产物）", color = MaterialTheme.colorScheme.error) }
-
-        HorizontalDivider()
-        Spacer(Modifier.height(8.dp))
-
-        // ── 档位说明（帮助用户直白理解选哪个）──
-        Text("档位说明", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-        Spacer(Modifier.height(4.dp))
-        Text(
-            "⚡ 快速优化 1x：不放大。毫秒级去掉噪点脏斑、拉锐线条。图够大、只想要干净时选它。\n" +
-                "✨ 无损放大 2x：放大 2 倍。Lanczos3 纯 CPU 重采样，线条锐利不吃配置，没有 Vulkan 也能用。\n" +
-                "🛡 CUGAN 2x 保守：放大 2 倍。漫画特化，线条最稳。画质优先选它。装 NPU 模型包后可走 NPU。\n" +
-                "⚡ 动漫V3 2x 极速：放大 2 倍。比保守档快约一倍，线条略软。省电/批量选它。装 NPU 模型包后可走 NPU。\n" +
-                "🔍 动漫V3 4x 大屏：放大 4 倍。平板大屏细看用，手机上过剩。\n" +
-                "🎨 waifu2x 1x 清理：不放大。神经网络级去噪，快速优化不够干净时选它。",
-            fontSize = 12.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Text(
-            "实际速度与设备、处理引擎（CPU/GPU/NPU）有关：NPU 最快最省电（需装模型包，见处理引擎一行）、" +
-                "GPU 其次、CPU 最稳；放大倍数越高图越大越清晰，但更慢、更占缓存。",
-            fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        ) { Text("清空实时缓存（不动离线增强产物）", color = MaterialTheme.colorScheme.error) }
     }
 }
 

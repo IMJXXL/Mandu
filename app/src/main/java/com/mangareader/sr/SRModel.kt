@@ -4,6 +4,8 @@ package com.mangareader.sr
 enum class SRModel(
     val key: String,
     val displayName: String,
+    /** 一句话人话说明：面板里选中该档位时显示（原面板底部大段"档位说明"的唯一事实源） */
+    val description: String,
     val scale: Int,
     val requiresVulkan: Boolean,
     val modelDirName: String,
@@ -14,6 +16,7 @@ enum class SRModel(
         key = "quick_optimize",
         // 快速优化档（默认）：非神经网络，无权重文件——纯 CPU 双边滤波+锐化，原图尺寸毫秒级。
         displayName = "快速优化 1x（算法）",
+        description = "不放大。毫秒级去噪点脏斑、拉锐线条；图够大、只想要干净时选它。",
         scale = 1,
         requiresVulkan = false,
         modelDirName = "",
@@ -23,6 +26,7 @@ enum class SRModel(
     LANCZOS_2X(
         key = "lanczos_2x",
         displayName = "无损放大 2x",
+        description = "放大 2 倍。纯 CPU 重采样，线条锐利不吃配置，没有 Vulkan 也能用。",
         scale = 2,
         requiresVulkan = false,
         modelDirName = "",
@@ -32,6 +36,7 @@ enum class SRModel(
     REALCUGAN_2X_CONSERVATIVE(
         key = "realcugan_2x_conservative",
         displayName = "CUGAN 2x 保守",
+        description = "放大 2 倍。漫画特化、线条最稳，画质优先；装 NPU 模型包后可走 NPU。",
         scale = 2,
         requiresVulkan = true,
         modelDirName = "realcugan-2x-conservative",
@@ -43,6 +48,7 @@ enum class SRModel(
         // 与 4x 档同一套权重（md5 一致），走 Interp 2x 上采样分支。
         // 实算 0.62 vs CUGAN 1.42 MMACs/px：比 2x 保守少 2.3 倍算力；与 4x 档推理同速（卷积都在输入分辨率），省的是输出内存/IO
         displayName = "动漫V3 2x 极速",
+        description = "放大 2 倍。比保守档快约一倍，线条略软；省电、批量首选，可走 NPU。",
         scale = 2,
         requiresVulkan = true,
         modelDirName = "animevideov3-2x",
@@ -52,6 +58,7 @@ enum class SRModel(
     REALESRGAN_ANIME_FAST(
         key = "realesrgan_anime_fast",
         displayName = "动漫V3 4x 大屏",
+        description = "放大 4 倍。平板大屏细看用，手机上过剩；倍数越高越慢越占缓存。",
         scale = 4,
         requiresVulkan = true,
         modelDirName = "realesrgan-anime-fast",
@@ -62,6 +69,7 @@ enum class SRModel(
         key = "waifu2x_cunet_1x",
         // waifu2x cunet 1x 降噪（固定 312 输入/256 业务区/28 贴边，blob Input1→Eltwise4）
         displayName = "waifu2x 1x 清理",
+        description = "不放大。神经网络级去噪，快速优化不够干净时选它。",
         scale = 1,
         requiresVulkan = true,
         modelDirName = "waifu2x-cunet-1x",
