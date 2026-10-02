@@ -17,6 +17,8 @@ bool is_initialized();
 int scale();
 // 初始化失败阶段码（诊断日志中性化用）：0=未开始/最近一次成功，1-9 定义见 qnn_backend.cpp
 int last_init_stage();
+// 阶段 7/8 时 QNN 的原始错误句柄（0=无）
+uint32_t last_init_status();
 int process_rgba(const uint8_t *input, int width, int height, int input_stride,
                  uint8_t *output, int output_stride,
                  std::atomic<int> *progress,

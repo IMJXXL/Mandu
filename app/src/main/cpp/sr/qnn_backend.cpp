@@ -34,6 +34,8 @@ namespace qnn_backend {
 // 6=布局或倍率校验 7=context 装载(contextCreateFromBinary) 8=图检索(graphRetrieve)
 // 9=推理缓冲分配。定义在命名空间头部——Runtime::load 内部要写它。
 std::atomic<int> g_init_stage{0};
+// s=7/8 时 QNN 返回的原始错误句柄（十进制进日志；0=无），对照 QNN 错误码分段定位
+std::atomic<uint32_t> g_init_status{0};
 
 // ── Komiho (2026-09-18): ADSP_LIBRARY_PATH 必须在「首次 dlopen libQnnHtp.so」之前就位 ──
 //
@@ -448,6 +450,7 @@ public:
     if (status != QNN_SUCCESS) {
       LOGE("QNN contextCreateFromBinary failed: %u", static_cast<unsigned>(status));
       g_init_stage.store(7, std::memory_order_relaxed);
+      g_init_status.store(static_cast<uint32_t>(status), std::memory_order_relaxed);
       deactivate();
       return false;
     }
@@ -456,6 +459,7 @@ public:
       LOGE("QNN graphRetrieve failed for %s: %u", graph_name_.c_str(),
            static_cast<unsigned>(status));
       g_init_stage.store(8, std::memory_order_relaxed);
+      g_init_status.store(static_cast<uint32_t>(status), std::memory_order_relaxed);
       deactivate();
       return false;
     }
@@ -494,6 +498,7 @@ public:
     configure_performance();
     initialized_ = true;
     g_init_stage.store(0, std::memory_order_relaxed);
+    g_init_status.store(0, std::memory_order_relaxed);
     LOGD("Loaded QNN graph %s with tile %dx%d, scale %dx, %s IO and padding %d",
          graph_name_.c_str(), tile_size_, tile_size_, scale_,
          is_fp16_tensor(input_) ? "FP16" : (is_quant16_tensor(input_) ? "INT16" : "INT8"),
@@ -1224,6 +1229,10 @@ bool initialize(const std::string &context_path, int padding) {
 
 int last_init_stage() {
   return g_init_stage.load(std::memory_order_relaxed);
+}
+
+uint32_t last_init_status() {
+  return g_init_status.load(std::memory_order_relaxed);
 }
 
 bool is_initialized() {
