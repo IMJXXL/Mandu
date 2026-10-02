@@ -230,14 +230,14 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
                         Switch(checked = config.tallSplitEnabled, onCheckedChange = { config = config.copy(tallSplitEnabled = it); config.save(ctx) })
                     }
 
-                    // ★ 平板条漫栏宽滑条：50%~100% 档位（5% 一档），默认 100=铺满原状；仅平板生效
+                    // ★ 平板条漫页宽滑条：50%~100% 档位（5% 一档），默认 100=铺满原状；仅平板生效
                     var webtoonCapPct by remember { mutableStateOf(ctx.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE).getInt("webtoon_tablet_cap_pct", 100)) }
                     Column(Modifier.fillMaxWidth().padding(vertical = 10.dp)) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                            Text("条漫栏宽（平板）", fontSize = 16.sp)
+                            Text("条漫页宽（平板）", fontSize = 16.sp)
                             Text(if (webtoonCapPct >= 100) "铺满" else "$webtoonCapPct%", fontSize = 14.sp, color = MaterialTheme.colorScheme.primary)
                         }
-                        Text("平板上条漫页面占屏幕宽度的比例，居中显示；比例越小放大越轻越清晰、越贴近条漫原本的手机阅读宽度，100% 即铺满全屏。手机不受影响，重新进入阅读后生效", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("限制平板上条漫画面占屏幕宽度的最大比例：100% 即铺满全屏（原样）；调窄后画面居中、两侧留背景，放大更轻、更清晰。手机不受影响，重新进入阅读后生效", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Slider(
                             value = webtoonCapPct.toFloat(),
                             onValueChange = { v -> webtoonCapPct = (v / 5f).toInt() * 5 },
