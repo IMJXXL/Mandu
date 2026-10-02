@@ -1,9 +1,10 @@
-// ==============================================================================
+//==============================================================================
 //
-// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
-// SPDX-License-Identifier: BSD-3-Clause-Clear
+// Copyright (c) 2020, 2023 Qualcomm Technologies, Inc.
+// All Rights Reserved.
+// Confidential and Proprietary - Qualcomm Technologies, Inc.
 //
-// ==============================================================================
+//==============================================================================
 
 #ifndef OP_PACKAGE_FEATURE_SUPPORT_H
 #define OP_PACKAGE_FEATURE_SUPPORT_H
@@ -123,18 +124,9 @@ API_EXPORT void add_package_per_channel_ops(std::set<std::string> &oset, const c
         return per_channel_ops;                                                                                        \
     }                                                                                                                  \
     extern "C" {                                                                                                       \
-    void clearPackageParamOrderStorageMapFunc()                                                                        \
-    {                                                                                                                  \
-        current_package_param_order_storage_map_func().clear();                                                        \
-    }                                                                                                                  \
-    void clearPackageParamAxesSetFunc()                                                                                \
-    {                                                                                                                  \
-        currentPackageParamAxesSetFunc().clear();                                                                      \
-    }                                                                                                                  \
-    void clearPackagePerChannelQuantizedOpsSetFunc()                                                                   \
-    {                                                                                                                  \
-        currentPackagePerChannelQuantizedOpsSetFunc().clear();                                                         \
-    }                                                                                                                  \
+    void clearPackageParamOrderStorageMapFunc() { current_package_param_order_storage_map_func().clear(); }            \
+    void clearPackageParamAxesSetFunc() { currentPackageParamAxesSetFunc().clear(); }                                  \
+    void clearPackagePerChannelQuantizedOpsSetFunc() { currentPackagePerChannelQuantizedOpsSetFunc().clear(); }        \
     }                                                                                                                  \
     std::unordered_map<std::string, hnnx::ParamMap_t *> &getPkgParamTmpMap();                                          \
     std::unordered_map<std::string, std::set<std::string> *> &getPkgParamAxesTmpMap();                                 \

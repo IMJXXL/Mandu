@@ -1,9 +1,10 @@
-// ==============================================================================
+//==============================================================================
 //
-// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
-// SPDX-License-Identifier: BSD-3-Clause-Clear
+// Copyright (c) 2018, 2023 Qualcomm Technologies, Inc.
+// All Rights Reserved.
+// Confidential and Proprietary - Qualcomm Technologies, Inc.
 //
-// ==============================================================================
+//==============================================================================
 
 #ifndef AFUNCS_H
 #define AFUNCS_H 1
@@ -29,25 +30,10 @@ struct tile_data {
 
 // Define order: .addr, .offset_t_col, .offset_t_row, .width, .height, .depth
 #define TILEDATA(adrtab, next_tab_col, next_tab_row, h, w, d)                                                          \
-    {(uint8_t **)(adrtab),                                                                                             \
-     static_cast<uint32_t>(next_tab_col),                                                                              \
-     static_cast<uint32_t>(next_tab_row),                                                                              \
-     static_cast<uint32_t>(w),                                                                                         \
-     static_cast<uint32_t>(h),                                                                                         \
-     static_cast<uint32_t>(d)}
-
-struct tile_data_conv1x1 {
-    uint8_t **i_addr;
-    uint8_t **o_addr;
-    uint32_t i_depth;
-    uint32_t o_depth;
-    uint32_t ncroutons;
-};
-
-// Define order: .i_addr, .o_addr, .height, .width, .i_depth, .o_depth
-#define TILEDATA_CONV1x1(in_adrtab, out_adrtab, idepth, odepth, ncroutons)                                             \
-    {(uint8_t **)(in_adrtab), (uint8_t **)(out_adrtab), static_cast<uint32_t>(idepth), static_cast<uint32_t>(odepth),  \
-     static_cast<uint32_t>(ncroutons)}
+    {                                                                                                                  \
+        (uint8_t **)(adrtab), static_cast<uint32_t>(next_tab_col), static_cast<uint32_t>(next_tab_row),                \
+                static_cast<uint32_t>(w), static_cast<uint32_t>(h), static_cast<uint32_t>(d)                           \
+    }
 
 /*=======================================*/
 /* Auxiliary functions                   */

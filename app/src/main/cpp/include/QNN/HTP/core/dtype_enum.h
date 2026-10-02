@@ -1,9 +1,10 @@
-// ==============================================================================
+//==============================================================================
 //
-// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
-// SPDX-License-Identifier: BSD-3-Clause-Clear
+// Copyright (c) 2020, 2023 Qualcomm Technologies, Inc.
+// All Rights Reserved.
+// Confidential and Proprietary - Qualcomm Technologies, Inc.
 //
-// ==============================================================================
+//==============================================================================
 
 #ifndef DTYPE_ENUM_H
 #define DTYPE_ENUM_H 1
@@ -43,7 +44,10 @@ enum DType {
 };
 
 #define DTYPE_NAMETABLE_INIT                                                                                           \
-    {"UNKNOWN", "QUInt8", "QUInt16", "QInt16", "Float32", "Int32", "QInt32", "QInt8", "Float16", "Int64", "BFloat16"}
+    {                                                                                                                  \
+        "UNKNOWN", "QUInt8", "QUInt16", "QInt16", "Float32", "Int32", "QInt32", "QInt8", "Float16", "Int64",           \
+                "BFloat16"                                                                                             \
+    }
 
 #ifdef __cplusplus
 namespace hnnx {

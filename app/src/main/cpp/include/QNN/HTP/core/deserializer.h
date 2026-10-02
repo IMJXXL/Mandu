@@ -1,9 +1,10 @@
-// ==============================================================================
+//==============================================================================
 //
-// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
-// SPDX-License-Identifier: BSD-3-Clause-Clear
+// Copyright (c) Qualcomm Technologies, Inc.
+// All Rights Reserved.
+// Confidential and Proprietary - Qualcomm Technologies, Inc.
 //
-// ==============================================================================
+//==============================================================================
 
 #ifndef DESERIALIZER_H
 #define DESERIALIZER_H 1
@@ -21,14 +22,11 @@
 #include <typeinfo>
 #include <typeindex>
 #include <string_view>
-#include <stdexcept>
-
 #include "limits.h"
 #include "dtype.h"
 #include "log.h"
 #include "allocator.h"
 #include "op_extra_info.h"
-#include "qhpi_internal.h"
 
 #include "serialize_defs.h"
 #include "forward_classes.h"
@@ -44,32 +42,6 @@
 namespace hnnx {
 class DMA_Manager;
 class Crate;
-
-class deser_error : public std::runtime_error {
-  public:
-    using std::runtime_error::runtime_error;
-    ~deser_error() = default;
-    deser_error(deser_error const &) = default;
-    deser_error(deser_error &&) = default;
-    deser_error &operator=(deser_error const &) = default;
-    deser_error &operator=(deser_error &&) = default;
-};
-// This is 'inline' here so that control flow analysis (including
-// static checkers) can see that it always throws; but it's
-// NOINLINE since a function call is a fair bit smaller than
-// a 'throw'.
-NOINLINE inline void throw_deser_error(char const *msg)
-{
-    throw deser_error(msg);
-}
-
-inline void throw_deser_error_unless(bool req, char const *msg)
-{
-    if (!req) {
-        throw_deser_error(msg);
-    }
-}
-
 /**
  * @brief \ref Serializer and \ref Deserializer modules that provides
  * a mechanism to flatten (serialize) and reconstruct (deserialize)
@@ -81,33 +53,22 @@ inline void throw_deser_error_unless(bool req, char const *msg)
  */
 using tensor_deserializer_fn = uptr_Tensor (*)(Deserz &);
 
-using deserialize_op_func = void *(*)(void *, Deserz &);
+using deserialize_op_func = void *(*)(void *, Deserz &); // Allocation function
 using deserialize_dtor_func = void (*)(Graph *, void *); // Deallocation function
-
-struct plugin_info_t {
-    const QHPI_Kernel *kernel = nullptr;
-    const char *package = nullptr;
-};
 
 struct op_deserializer_fn {
     op_deserializer_fn(deserialize_op_func init_func_in, const size_align_code_t sizeal_in)
         : init_func(init_func_in), size_align_code(sizeal_in)
     {
     }
-    op_deserializer_fn(deserialize_op_func init_func_in, plugin_info_t plugin_info_in,
-                       const size_align_code_t sizeal_in)
-        : init_func(init_func_in), plugin_info(plugin_info_in), size_align_code(sizeal_in)
-    {
-    }
     op_deserializer_fn(deserialize_op_func init_func_in, deserialize_dtor_func dtor_func_in,
                        const size_align_code_t sizeal_in)
-        : dtor_func(dtor_func_in), init_func(init_func_in), size_align_code(sizeal_in) {};
+        : dtor_func(dtor_func_in), init_func(init_func_in), size_align_code(sizeal_in){};
     op_deserializer_fn(const op_deserializer_fn &) = default;
     op_deserializer_fn(op_deserializer_fn &&) = default;
     op_deserializer_fn &operator=(const op_deserializer_fn &) = delete;
     deserialize_dtor_func dtor_func = nullptr;
-    deserialize_op_func init_func;
-    plugin_info_t plugin_info{};
+    deserialize_op_func init_func = nullptr;
     const size_align_code_t size_align_code{};
     inline constexpr size_t get_size() const { return size_align_code.size(); }
     inline constexpr size_t get_align() const { return size_align_code.align(); }
@@ -135,15 +96,7 @@ struct trick_stringview_lt {
 };
 
 using op_deserializer_map_t = std::map<std::string_view, std::pair<op_deserializer_fn, bool>, trick_stringview_lt>;
-
-struct op_file_location {
-    std::string_view filename;
-    int line_number;
-    op_file_location() : filename(""), line_number(0) {}
-    op_file_location(std::string_view fn, int ln) : filename(fn), line_number(ln) {}
-};
-
-using op_filename_map_t = std::map<std::string_view, op_file_location>;
+using op_filename_map_t = std::map<std::string_view, std::string_view>;
 using tensor_deserializer_map_t = std::map<std::string_view, tensor_deserializer_fn, trick_stringview_lt>;
 using cexdesc_deserializer_map = std::map<std::string, ConstExtentDesc>;
 
@@ -184,8 +137,7 @@ class Deserz : public DeSerError {
     // true if this Deserz is really an instance of Deserializer.
     constexpr bool is_base_deser() const;
 
-    using op_deserialize_info_ptr_t = op_deserializer_map_t::const_iterator;
-    using op_deserialize_fn_list_t = std::vector<op_deserialize_info_ptr_t>;
+    using op_deserialize_fn_list_t = std::vector<op_deserializer_map_t::const_iterator>;
     using tensor_deserialize_fn_list_t = std::vector<tensor_deserializer_fn>;
 
     op_deserialize_fn_list_t &get_op_deserialize_fn_list();
@@ -223,7 +175,7 @@ class Deserz : public DeSerError {
     bool is_aligned_const_format() const;
     bool has_pending_tensor_updates();
 
-    op_deserializer_fn const *current_op_deser_fn_p{};
+    bool is_shared_dynamic_tensor_shape_format() const;
 
     fa::RuntimeAllocator *allocator;
     DCrate d_crate; // contains a crate pointer
@@ -241,6 +193,7 @@ class Deserz : public DeSerError {
     char const *buf_limit; // <= bufend; where 'fill_buffer' needs to be called.
     size_t bytes_filled; // bytes previously filled
 
+    uint32_t op_flags;
     OpExtraInfo op_extra_info;
 
     unsigned next_tensordef_index = 1; // belongs to 'tensorconn' but needs to be in Deserz.
@@ -338,11 +291,13 @@ class Deserz : public DeSerError {
     // **NOTE** will throe runtime error if called in a Deserz which is not really a Deserialize.
     API_EXPORT std::string_view deserialize_str();
 
-    const OpExtraInfo &get_op_extra_info() { return op_extra_info; };
-    // Non-const: callers may patch fields (e.g. redirecting chkpts.second for RESOURCE_EXCLUSIVE ops).
-    void reset_checkpoint(unsigned value) { op_extra_info.chkpts.second = value; };
-    template <typename T> void set_op_extra_info(T OpExtraInfo::*fld, T const &val) { op_extra_info.*fld = val; }
+    uint32_t get_op_flags() const { return op_flags; };
+    void clear_op_flags() { op_flags = 0; };
+    void set_op_flags(uint32_t f) { op_flags = f; };
+
+    const OpExtraInfo &get_op_extra_info() const { return op_extra_info; };
     void clear_extra_info() { op_extra_info.clear(); };
+    void set_op_extra_info(OpExtraInfo in_op_extra_info) { op_extra_info = in_op_extra_info; };
 
     /**
 	 * @brief deserialize buffer for specified size
@@ -492,6 +447,9 @@ class Deserializer : public Deserz {
     constexpr bool is_aligned_const_format() const { return aligned_const_format_flag; }
     void set_aligned_const_format(const bool v = true) { aligned_const_format_flag = v; }
 
+    constexpr bool is_shared_dynamic_tensor_shape_format() const { return shared_dynamic_tensor_shape; }
+    void set_shared_dynamic_tensor_shape_format(const bool v = true) { shared_dynamic_tensor_shape = v; }
+
     void set_shared_io_buffer(const bool v = true) { shared_io_buffer = v; }
 
     PUSH_WARNING()
@@ -529,6 +487,7 @@ class Deserializer : public Deserz {
     // the state of the 'tensor connectivity' deserialize engine.
     DeserTensorConn tensorconn;
     bool aligned_const_format_flag = false;
+    bool shared_dynamic_tensor_shape = false;
     bool shared_io_buffer = false;
 
     // this is used in 'deserialize_str', so it ideally should be in Deserz; but
@@ -587,7 +546,9 @@ class Deserializer : public Deserz {
 
     // helper func for above. return -1 if name not present.
     std::string get_name(hexagon_nn_wide_address_const_t weight_data, const uint64_t weight_length);
-
+    // give a vector of weight_data buffers, stores them all in the appropriate map
+    void store_named_weight_bufs(const hexagon_nn_wide_address_const_t *const buffers, const uint64_t *const lengths,
+                                 const unsigned num_buffers);
     void store_named_weight_bufs(std::vector<hexagon_nn_wide_iovec_t const *> const &named_weights);
     //
     // copy 'len' bytes of data at offset offs_bytes in the pickle into location dstp.
@@ -633,6 +594,10 @@ inline constexpr bool Deserz::is_base_deser() const
 inline bool Deserz::is_aligned_const_format() const
 {
     return full_deser->aligned_const_format_flag;
+}
+inline bool Deserz::is_shared_dynamic_tensor_shape_format() const
+{
+    return full_deser->shared_dynamic_tensor_shape;
 }
 inline Deserz::op_deserialize_fn_list_t &Deserz::get_op_deserialize_fn_list()
 {
@@ -748,8 +713,7 @@ PUSH_VISIBILITY(default)
  */
 API_EXPORT void deserialize_op_register(std::type_info const *tinf, const std::string_view type_tag,
                                         const op_deserializer_fn &fn, bool is_external = false,
-                                        std::string_view filename = "", int line_number = 0);
-
+                                        std::string_view filename = "");
 /**
  * @brief register the deserialization function for each \ref Tensor
  * Since \ref Tensor derived classes are instantiated via templates, there

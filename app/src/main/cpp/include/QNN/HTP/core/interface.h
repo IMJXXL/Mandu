@@ -1,9 +1,10 @@
-// ==============================================================================
+//==============================================================================
 //
-// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
-// SPDX-License-Identifier: BSD-3-Clause-Clear
+// Copyright (c) Qualcomm Technologies, Inc.
+// All Rights Reserved.
+// Confidential and Proprietary - Qualcomm Technologies, Inc.
 //
-// ==============================================================================
+//==============================================================================
 
 #ifndef HEXNN_INTERFACE_H
 #define HEXNN_INTERFACE_H 1
@@ -103,10 +104,10 @@ class Interface {
 
   public:
     // Base class can read this info directly from the 'dtinfo' field:
-    constexpr dtype_info get_dt_info() const noexcept { return dtinfo; }
-    constexpr unsigned element_size() const noexcept { return dtinfo.elbytes; }
-    constexpr DType get_dtype() const noexcept { return dtinfo.dtype; }
-    constexpr bool is_quantized() const noexcept { return dtinfo.is_quant; }
+    constexpr inline dtype_info get_dt_info() const noexcept { return dtinfo; }
+    constexpr inline unsigned element_size() const noexcept { return dtinfo.elbytes; }
+    constexpr inline DType get_dtype() const noexcept { return dtinfo.dtype; }
+    constexpr inline bool is_quantized() const noexcept { return dtinfo.is_quant; }
 
     struct qparms {
         int offset;
@@ -132,7 +133,7 @@ class Interface {
     template <DType DT> static intfc_methods const &methods_for(); // inline is below
 
     API_EXPORT static constexpr qparms null_parms = {0, 1.0f, 1.0f};
-    static qparms const *get_null_qparms(Interface const *) noexcept { return &null_parms; }
+    static inline qparms const *get_null_qparms(Interface const *) noexcept { return &null_parms; }
 };
 
 namespace hnnx {
@@ -229,11 +230,11 @@ class InterfaceRef {
     API_EXPORT DType get_dtype() const noexcept { return methods_p->exemplar.get_dtype(); }
     API_EXPORT bool is_quantized() const noexcept { return methods_p->exemplar.is_quantized(); }
     // might as well have get_refobj() method, for consistency of interface...
-    API_EXPORT InterfaceRef get_refobj() const { return *this; }
+    API_EXPORT inline InterfaceRef get_refobj() const { return *this; }
 
     // this is used as a 'pseudo-ctor' to make a null InterfaceRef, in a few places.
     // (null ctor is currently private)
-    static constexpr InterfaceRef make_null() { return InterfaceRef{}; }
+    static inline constexpr InterfaceRef make_null() { return InterfaceRef{}; }
 
     Interface const *get_intfc_ptr() const { return intfc_p; }
     intfc_methods const *get_methods_ptr() const { return methods_p; }
@@ -256,9 +257,18 @@ class InterfaceRef {
         auto fp = methods_p->ifc_compare;
         return (fp == nullptr) ? true : ((*fp)(intfc_p, rhs.intfc_p) == 0);
     }
-    friend bool operator==(InterfaceRef const &lhs, InterfaceRef const &rhs) noexcept { return lhs.compare_eq(rhs); }
-    friend bool operator!=(InterfaceRef const &lhs, InterfaceRef const &rhs) noexcept { return !lhs.compare_eq(rhs); }
-    friend bool operator<(InterfaceRef const &lhs, InterfaceRef const &rhs) noexcept { return lhs.compare(rhs) < 0; }
+    friend inline bool operator==(InterfaceRef const &lhs, InterfaceRef const &rhs) noexcept
+    {
+        return lhs.compare_eq(rhs);
+    }
+    friend inline bool operator!=(InterfaceRef const &lhs, InterfaceRef const &rhs) noexcept
+    {
+        return !lhs.compare_eq(rhs);
+    }
+    friend inline bool operator<(InterfaceRef const &lhs, InterfaceRef const &rhs) noexcept
+    {
+        return lhs.compare(rhs) < 0;
+    }
 };
 
 template <typename IFCT> Interface::qparms &qparms_for_interface_patch(size_t);
@@ -300,15 +310,15 @@ class GenericAccessorRO {
           read_fp(interface_in.get_methods_ptr()->read_float)
     {
     }
-    ALWAYSINLINE GenericAccessorRO(GenericAccessorRO const &) = default;
-    ALWAYSINLINE GenericAccessorRO(GenericAccessorRO &&) = default;
+    ALWAYSINLINE inline GenericAccessorRO(GenericAccessorRO const &) = default;
+    ALWAYSINLINE inline GenericAccessorRO(GenericAccessorRO &&) = default;
     GenericAccessorRO &operator=(GenericAccessorRO const &) = delete;
     GenericAccessorRO &operator=(GenericAccessorRO &&) = delete;
-    ALWAYSINLINE ~GenericAccessorRO() = default;
+    ALWAYSINLINE inline ~GenericAccessorRO() = default;
 
     typedef GenericAccessorRO AccessorRO;
-    ALWAYSINLINE float as_float() const { return (*read_fp)(&interface, data); }
-    ALWAYSINLINE operator float() const { return as_float(); }
+    ALWAYSINLINE inline float as_float() const { return (*read_fp)(&interface, data); }
+    ALWAYSINLINE inline operator float() const { return as_float(); }
 };
 class GenericAccessor : public GenericAccessorRO {
     Interface::write_float_fp write_fp;
@@ -318,23 +328,23 @@ class GenericAccessor : public GenericAccessorRO {
         : GenericAccessorRO(data_in, interface_in), write_fp(interface_in.get_methods_ptr()->write_float)
     {
     }
-    ALWAYSINLINE GenericAccessor(GenericAccessor const &) = default;
-    ALWAYSINLINE GenericAccessor(GenericAccessor &&) = default;
-    ALWAYSINLINE ~GenericAccessor() = default;
+    ALWAYSINLINE inline GenericAccessor(GenericAccessor const &) = default;
+    ALWAYSINLINE inline GenericAccessor(GenericAccessor &&) = default;
+    ALWAYSINLINE inline ~GenericAccessor() = default;
 
-    ALWAYSINLINE void set_float(float v) { write_fp(&interface, data, v); }
-    ALWAYSINLINE float operator=(float v)
+    ALWAYSINLINE inline void set_float(float v) { write_fp(&interface, data, v); }
+    ALWAYSINLINE inline float operator=(float v)
     {
         set_float(v);
         return v;
     }
-    ALWAYSINLINE float operator=(GenericAccessorRO const &rhs)
+    ALWAYSINLINE inline float operator=(GenericAccessorRO const &rhs)
     {
         float const v = rhs.as_float();
         set_float(v);
         return v;
     }
-    ALWAYSINLINE float operator=(GenericAccessor const &rhs)
+    ALWAYSINLINE inline float operator=(GenericAccessor const &rhs)
     {
         if (this != &rhs) {
             return operator=(static_cast<GenericAccessorRO const &>(rhs));
@@ -342,7 +352,7 @@ class GenericAccessor : public GenericAccessorRO {
         return this->as_float();
     }
     // only needed for SA; forward to 'const &' operator=
-    ALWAYSINLINE float operator=(GenericAccessor &&rhs) { return this->operator=(rhs); }
+    ALWAYSINLINE inline float operator=(GenericAccessor &&rhs) { return this->operator=(rhs); }
 };
 // this is returned by Tensor::get_dtype_intfc()
 //
@@ -408,14 +418,14 @@ class NullInterface final : public Interface {
     friend constexpr hnnx::ifc_method_table_t hnnx::construct_ifc_method_table();
 
   public:
-    API_EXPORT constexpr NullInterface() : Interface(hnnx::dtype_info_v<DType::UNKNOWN>) {}
+    API_EXPORT inline constexpr NullInterface() : Interface(hnnx::dtype_info_v<DType::UNKNOWN>) {}
 
-    static constexpr dtype_info get_dt_info() noexcept { return hnnx::dtype_info_v<DType::UNKNOWN>; }
-    static qparms const *get_qparms() noexcept { return &Interface::null_parms; }
-    static constexpr DType get_dtype() noexcept { return get_dt_info().dtype; }
-    static constexpr unsigned element_size() noexcept { return get_dt_info().elbytes; }
-    static constexpr bool is_quantized() noexcept { return get_dt_info().is_quant; }
-    static uint32_t interface_hash() noexcept { return uint32_t(DType::UNKNOWN); }
+    static inline constexpr dtype_info get_dt_info() noexcept { return hnnx::dtype_info_v<DType::UNKNOWN>; }
+    static inline qparms const *get_qparms() noexcept { return &Interface::null_parms; }
+    static inline constexpr DType get_dtype() noexcept { return get_dt_info().dtype; }
+    static inline constexpr unsigned element_size() noexcept { return get_dt_info().elbytes; }
+    static inline constexpr bool is_quantized() noexcept { return get_dt_info().is_quant; }
+    static inline uint32_t interface_hash() noexcept { return uint32_t(DType::UNKNOWN); }
 
   private:
     static void write_float(Interface const *, void *ptr, const float in) noexcept {}
@@ -430,17 +440,17 @@ class NullInterface final : public Interface {
 
   public:
     // hide the slower implementations in the base class...
-    API_EXPORT float get_scale() const noexcept { return 1.0f; }
-    API_EXPORT float get_scale_recip() const noexcept { return 1.0f; }
-    API_EXPORT int32_t get_offset() const noexcept { return 0; }
+    API_EXPORT inline float get_scale() const noexcept { return 1.0f; }
+    API_EXPORT inline float get_scale_recip() const noexcept { return 1.0f; }
+    API_EXPORT inline int32_t get_offset() const noexcept { return 0; }
     API_EXPORT int compare(const NullInterface &rhs) const { return 0; };
 
-    static hnnx::InterfaceRef get_refobj() noexcept
+    static inline hnnx::InterfaceRef get_refobj() noexcept
     {
         return hnnx::InterfaceRef(methods_for<DType::UNKNOWN>(), Interface::canonical_instance_for<NullInterface>());
     }
     // NullInterface has a null DTypeScaleOff
-    static DTypeScaleOff get_dtype_scaleoff() noexcept { return DTypeScaleOff(); }
+    static inline DTypeScaleOff get_dtype_scaleoff() noexcept { return DTypeScaleOff(); }
 
   private:
     // Accessor for NullInterface - empty class.
@@ -451,32 +461,32 @@ class NullInterface final : public Interface {
       public:
         using element_type = nullval;
         using AccessorRO = AcsrRO;
-        ALWAYSINLINE AcsrRO() {}
-        ALWAYSINLINE AcsrRO(void const *, NullInterface const *) {}
-        ALWAYSINLINE AcsrRO(AcsrRO const &) = default;
-        ALWAYSINLINE AcsrRO(AcsrRO &&) = default;
-        ALWAYSINLINE ~AcsrRO() = default;
+        ALWAYSINLINE inline AcsrRO() {}
+        ALWAYSINLINE inline AcsrRO(void const *, NullInterface const *) {}
+        ALWAYSINLINE inline AcsrRO(AcsrRO const &) = default;
+        ALWAYSINLINE inline AcsrRO(AcsrRO &&) = default;
+        ALWAYSINLINE inline ~AcsrRO() = default;
         AcsrRO &operator=(AcsrRO const &) = delete;
         AcsrRO &operator=(AcsrRO &&) = delete;
 
-        ALWAYSINLINE element_type value() const { return nullval{}; }
-        ALWAYSINLINE float as_float() const { return 0.0f; }
-        ALWAYSINLINE operator float() const { return 0.0f; }
+        ALWAYSINLINE inline element_type value() const { return nullval{}; }
+        ALWAYSINLINE inline float as_float() const { return 0.0f; }
+        ALWAYSINLINE inline operator float() const { return 0.0f; }
     };
     class Acsr : public AcsrRO {
       public:
         using element_type = nullval;
         using AccessorRO = AcsrRO;
-        ALWAYSINLINE Acsr(void *, const NullInterface *) {}
-        ALWAYSINLINE Acsr(Acsr const &) = default;
-        ALWAYSINLINE Acsr(Acsr &&) = default;
-        ALWAYSINLINE ~Acsr() = default;
-        ALWAYSINLINE void set_float(float v) {}
-        ALWAYSINLINE void set_value(element_type v) {}
-        ALWAYSINLINE float operator=(float v) { return 0.0f; }
-        ALWAYSINLINE float operator=(AcsrRO const &rhs) { return 0.0f; }
-        ALWAYSINLINE float operator=(Acsr const &rhs) { return 0.0f; }
-        ALWAYSINLINE float operator=(Acsr const &&) { return 0.0f; }
+        ALWAYSINLINE inline Acsr(void *, const NullInterface *) {}
+        ALWAYSINLINE inline Acsr(Acsr const &) = default;
+        ALWAYSINLINE inline Acsr(Acsr &&) = default;
+        ALWAYSINLINE inline ~Acsr() = default;
+        ALWAYSINLINE inline void set_float(float v) {}
+        ALWAYSINLINE inline void set_value(element_type v) {}
+        ALWAYSINLINE inline float operator=(float v) { return 0.0f; }
+        ALWAYSINLINE inline float operator=(AcsrRO const &rhs) { return 0.0f; }
+        ALWAYSINLINE inline float operator=(Acsr const &rhs) { return 0.0f; }
+        ALWAYSINLINE inline float operator=(Acsr const &&) { return 0.0f; }
     };
 
   public:
@@ -487,11 +497,11 @@ class NullInterface final : public Interface {
 // make_interface for NullInterface; easy, just have one
 // and return a pointer to it.
 template <> struct hnnx::make_interface<NullInterface> {
-    API_EXPORT static Interface const *from_odef(Graph &, OutputDef const &odef)
+    API_EXPORT static inline Interface const *from_odef(Graph &, OutputDef const &odef)
     {
         return Interface::canonical_instance_for<NullInterface>();
     }
-    API_EXPORT static Interface const *from_deser(Deserz &dctx, Interface const **)
+    API_EXPORT static inline Interface const *from_deser(Deserz &dctx, Interface const **)
     {
         return Interface::canonical_instance_for<NullInterface>();
     }
@@ -513,21 +523,21 @@ template <typename T> class PlainInterface final : public Interface {
     API_EXPORT explicit constexpr PlainInterface(const OutputDef &def) : Interface(get_dt_info()) {}
     API_EXPORT constexpr PlainInterface() : Interface(get_dt_info()) {}
     API_EXPORT explicit constexpr PlainInterface(hnnx::Deserz &) : PlainInterface() {}
-    API_EXPORT static constexpr T convert_from_float(const float &in)
+    API_EXPORT static inline constexpr T convert_from_float(const float &in)
     {
         return saturate_round<T>(in);
     } // except for T=float!
-    API_EXPORT static constexpr float convert_to_float(const T &in) { return float(in); }
+    API_EXPORT static inline constexpr float convert_to_float(const T &in) { return float(in); }
 
-    static qparms const *get_qparms() noexcept { return &Interface::null_parms; }
-    static constexpr dtype_info get_dt_info() noexcept { return hnnx::dtype_info_v<dtype>; }
-    static constexpr DType get_dtype() noexcept { return dtype; }
-    static constexpr unsigned element_size() noexcept { return get_dt_info().elbytes; }
-    static constexpr bool is_quantized() noexcept { return get_dt_info().is_quant; }
+    static inline qparms const *get_qparms() noexcept { return &Interface::null_parms; }
+    static inline constexpr dtype_info get_dt_info() noexcept { return hnnx::dtype_info_v<dtype>; }
+    static inline constexpr DType get_dtype() noexcept { return dtype; }
+    static inline constexpr unsigned element_size() noexcept { return get_dt_info().elbytes; }
+    static inline constexpr bool is_quantized() noexcept { return get_dt_info().is_quant; }
 
   private:
     static void write_float(Interface const *self, void *ptr, const float in) noexcept; // inlined below
-    static float read_float(Interface const *, const void *ptr) noexcept
+    static inline float read_float(Interface const *, const void *ptr) noexcept
     {
         auto p = static_cast<const T *>(ptr);
         return convert_to_float(*p);
@@ -540,17 +550,17 @@ template <typename T> class PlainInterface final : public Interface {
     // LCOV_EXCL_STOP
 
   public:
-    static uint32_t interface_hash() noexcept { return uint32_t(dtype); }
-    static hnnx::InterfaceRef get_refobj() noexcept
+    static inline uint32_t interface_hash() noexcept { return uint32_t(dtype); }
+    static inline hnnx::InterfaceRef get_refobj() noexcept
     {
         return hnnx::InterfaceRef(methods_for<dtype>(), Interface::canonical_instance_for<PlainInterface>());
     }
-    static DTypeScaleOff get_dtype_scaleoff() noexcept { return DTypeScaleOff(dtype); }
+    static inline DTypeScaleOff get_dtype_scaleoff() noexcept { return DTypeScaleOff(dtype); }
 
-    API_EXPORT static int compare(const PlainInterface &rhs) noexcept { return 0; }
-    API_EXPORT static float get_scale() noexcept { return 1.0f; }
-    API_EXPORT static float get_scale_recip() noexcept { return 1.0f; }
-    API_EXPORT static int32_t get_offset() noexcept { return 0; }
+    API_EXPORT static inline int compare(const PlainInterface &rhs) noexcept { return 0; }
+    API_EXPORT static inline float get_scale() noexcept { return 1.0f; }
+    API_EXPORT static inline float get_scale_recip() noexcept { return 1.0f; }
+    API_EXPORT static inline int32_t get_offset() noexcept { return 0; }
 
   private:
     // Accessor for PlainInterface
@@ -565,16 +575,16 @@ template <typename T> class PlainInterface final : public Interface {
       public:
         using element_type = T;
         using AccessorRO = AcsrRO;
-        AcsrRO(void const *data_in, PlainInterface const *) : val(*static_cast<T const *>(data_in)) {}
-        AcsrRO(AcsrRO const &) = default;
-        AcsrRO(AcsrRO &&) = default;
+        inline AcsrRO(void const *data_in, PlainInterface const *) : val(*static_cast<T const *>(data_in)) {}
+        inline AcsrRO(AcsrRO const &) = default;
+        inline AcsrRO(AcsrRO &&) = default;
         AcsrRO &operator=(AcsrRO const &) = delete;
         AcsrRO &operator=(AcsrRO &&) = delete;
-        ~AcsrRO() = default;
+        inline ~AcsrRO() = default;
         ALWAYSINLINE AcsrRO(Acsr const &a) : val(a.value()) {}
-        ALWAYSINLINE element_type value() const { return val; }
-        ALWAYSINLINE float as_float() const { return convert_to_float(val); }
-        ALWAYSINLINE operator float() const { return as_float(); }
+        ALWAYSINLINE inline element_type value() const { return val; }
+        ALWAYSINLINE inline float as_float() const { return convert_to_float(val); }
+        ALWAYSINLINE inline operator float() const { return as_float(); }
     };
     class Acsr {
       protected:
@@ -583,17 +593,17 @@ template <typename T> class PlainInterface final : public Interface {
       public:
         using element_type = T;
         using AccessorRO = AcsrRO;
-        ALWAYSINLINE Acsr(void *data_in, PlainInterface const *) : data(static_cast<T *>(data_in)) {}
-        ALWAYSINLINE Acsr(Acsr const &) = default;
-        ALWAYSINLINE Acsr(Acsr &&) = default;
-        ALWAYSINLINE ~Acsr() = default;
-        ALWAYSINLINE element_type value() const { return *data; }
-        ALWAYSINLINE float as_float() const { return convert_to_float(*data); }
-        ALWAYSINLINE operator float() const { return as_float(); }
+        ALWAYSINLINE inline Acsr(void *data_in, PlainInterface const *) : data(static_cast<T *>(data_in)) {}
+        ALWAYSINLINE inline Acsr(Acsr const &) = default;
+        ALWAYSINLINE inline Acsr(Acsr &&) = default;
+        ALWAYSINLINE inline ~Acsr() = default;
+        ALWAYSINLINE inline element_type value() const { return *data; }
+        ALWAYSINLINE inline float as_float() const { return convert_to_float(*data); }
+        ALWAYSINLINE inline operator float() const { return as_float(); }
 
-        ALWAYSINLINE void set_float(float v) { *data = convert_from_float(v); }
-        ALWAYSINLINE void set_value(element_type v) { *data = v; }
-        ALWAYSINLINE float operator=(float v)
+        ALWAYSINLINE inline void set_float(float v) { *data = convert_from_float(v); }
+        ALWAYSINLINE inline void set_value(element_type v) { *data = v; }
+        ALWAYSINLINE inline float operator=(float v)
         {
             set_float(v);
             return v;
@@ -602,7 +612,7 @@ template <typename T> class PlainInterface final : public Interface {
         // convert to float and back.
         // @@we could also define operator= for other cases, e.g.
         //  int32 from int16, to do the operation without going to float.
-        ALWAYSINLINE AcsrRO operator=(Acsr const &rhs)
+        ALWAYSINLINE inline AcsrRO operator=(Acsr const &rhs)
         {
             if (this != &rhs) {
                 T v = rhs.value();
@@ -611,9 +621,9 @@ template <typename T> class PlainInterface final : public Interface {
             return AcsrRO(*this);
         }
         // only needed for SA; forward to 'const &' operator=
-        ALWAYSINLINE AcsrRO operator=(Acsr &&rhs) { return this->operator=(rhs); }
+        ALWAYSINLINE inline AcsrRO operator=(Acsr &&rhs) { return this->operator=(rhs); }
 
-        ALWAYSINLINE AcsrRO operator=(AcsrRO const &rhs)
+        ALWAYSINLINE inline AcsrRO operator=(AcsrRO const &rhs)
         {
             T v = rhs.value();
             set_value(v);
@@ -635,6 +645,11 @@ template <> API_EXPORT inline constexpr float PlainInterface<float>::convert_fro
 //PlainInterface<Float16>::convert_from_float: no-op for values in Float16 range, clamp to max otherwise.
 template <> API_EXPORT inline constexpr Float16 PlainInterface<Float16>::convert_from_float(const float &in)
 {
+    Float16 const max_as_fp16 = std::numeric_limits<Float16>::max();
+    float const max_as_fp32 = static_cast<float>(max_as_fp16);
+
+    if (in > max_as_fp32) return std::numeric_limits<Float16>::infinity();
+    if (in < -max_as_fp32) return -std::numeric_limits<Float16>::infinity();
     return static_cast<Float16>(in);
 }
 
@@ -655,11 +670,11 @@ template <typename T> inline void PlainInterface<T>::write_float(Interface const
 // and return a pointer to it.
 
 template <typename T> struct hnnx::make_interface<PlainInterface<T>> {
-    API_EXPORT static Interface const *from_odef(Graph &, OutputDef const &odef)
+    API_EXPORT static inline Interface const *from_odef(Graph &, OutputDef const &odef)
     {
         return Interface::canonical_instance_for<PlainInterface<T>>();
     }
-    API_EXPORT static Interface const *from_deser(Deserz &dctx, Interface const **)
+    API_EXPORT static inline Interface const *from_deser(Deserz &dctx, Interface const **)
     {
         return Interface::canonical_instance_for<PlainInterface<T>>();
     }
@@ -702,25 +717,25 @@ class SOIfcBase : public Interface { // base of ScaleOffsetInterface<T>
 
     // these two are protected here (they only make sense in comparing same type)
     // but are exposed in subclass via wrappers
-    API_EXPORT int compare(const SOIfcBase &rhs) const noexcept
+    API_EXPORT inline int compare(const SOIfcBase &rhs) const noexcept
     {
         if (qp.offset != rhs.qp.offset) return (qp.offset < rhs.qp.offset) ? -1 : 1;
         if (qp.scale != rhs.qp.scale) return (qp.scale < rhs.qp.scale) ? -1 : 1;
         return 0;
     }
-    API_EXPORT bool compare_eq(const SOIfcBase &rhs) const noexcept
+    API_EXPORT inline bool compare_eq(const SOIfcBase &rhs) const noexcept
     {
         return qp.offset == rhs.qp.offset && qp.scale == rhs.qp.scale;
     }
 
   public:
-    API_EXPORT float get_scale() const noexcept { return qp.scale; }
-    API_EXPORT float get_scale_recip() const noexcept { return qp.scale_recip; }
-    API_EXPORT int32_t get_offset() const noexcept { return qp.offset; }
-    API_EXPORT qparms const *get_qparms() const noexcept { return &qp; }
+    API_EXPORT inline float get_scale() const noexcept { return qp.scale; }
+    API_EXPORT inline float get_scale_recip() const noexcept { return qp.scale_recip; }
+    API_EXPORT inline int32_t get_offset() const noexcept { return qp.offset; }
+    API_EXPORT inline qparms const *get_qparms() const noexcept { return &qp; }
 
   protected:
-    static Interface::qparms const *get_qparms_meth(Interface const *const self) noexcept
+    static inline Interface::qparms const *get_qparms_meth(Interface const *const self) noexcept
     {
         return &static_cast<SOIfcBase const &>(*self).qp;
     }
@@ -750,31 +765,31 @@ template <typename T> class ScaleOffsetInterface final : public SOIfcBase {
 
     using element_type = T;
     static constexpr DType dtype = dtype_of_type<ScaleOffsetInterface>();
-    template <typename TX> API_EXPORT static constexpr T saturate(TX in) { return saturate_cast<T>(in); }
-    API_EXPORT constexpr T convert_from_float(float in) const
+    template <typename TX> API_EXPORT static inline constexpr T saturate(TX in) { return saturate_cast<T>(in); }
+    API_EXPORT inline constexpr T convert_from_float(float in) const
     {
         return saturate_round<T>(qp.offset + in * qp.scale_recip);
     }
-    API_EXPORT constexpr float convert_to_float(T in) const
+    API_EXPORT inline constexpr float convert_to_float(T in) const
     {
         if constexpr (sizeof(T) <= 2)
             return (float(int(in) - qp.offset)) * qp.scale;
         else
             return (float(in) - qp.offset) * qp.scale;
     }
-    static constexpr dtype_info get_dt_info() noexcept { return hnnx::dtype_info_v<dtype>; }
-    static constexpr DType get_dtype() noexcept { return dtype; }
-    static constexpr unsigned element_size() noexcept { return get_dt_info().elbytes; }
-    static constexpr bool is_quantized() noexcept { return get_dt_info().is_quant; }
+    static constexpr inline dtype_info get_dt_info() noexcept { return hnnx::dtype_info_v<dtype>; }
+    static inline constexpr DType get_dtype() noexcept { return dtype; }
+    static inline constexpr unsigned element_size() noexcept { return get_dt_info().elbytes; }
+    static inline constexpr bool is_quantized() noexcept { return get_dt_info().is_quant; }
 
   private:
-    static void write_float(Interface const *const self, void *ptr, const float in) noexcept
+    static inline void write_float(Interface const *const self, void *ptr, const float in) noexcept
     {
         assert(ptr != nullptr);
         auto p = static_cast<T *>(ptr);
         *p = static_cast<ScaleOffsetInterface<T> const *>(self)->convert_from_float(in);
     }
-    static float read_float(Interface const *const self, const void *ptr) noexcept
+    static inline float read_float(Interface const *const self, const void *ptr) noexcept
     {
         assert(ptr != nullptr);
         auto p = static_cast<const T *>(ptr);
@@ -788,13 +803,16 @@ template <typename T> class ScaleOffsetInterface final : public SOIfcBase {
     // LCOV_EXCL_STOP
 
   public:
-    uint32_t interface_hash() const noexcept { return ifc_hash(this) ^ uint32_t(dtype); }
+    inline uint32_t interface_hash() const noexcept { return ifc_hash(this) ^ uint32_t(dtype); }
 
-    hnnx::InterfaceRef get_refobj() const noexcept { return hnnx::InterfaceRef(methods_for<dtype>(), this); }
-    DTypeScaleOff get_dtype_scaleoff() const noexcept { return DTypeScaleOff(dtype, *get_qparms_meth(this)); }
+    inline hnnx::InterfaceRef get_refobj() const noexcept { return hnnx::InterfaceRef(methods_for<dtype>(), this); }
+    inline DTypeScaleOff get_dtype_scaleoff() const noexcept { return DTypeScaleOff(dtype, *get_qparms_meth(this)); }
 
-    API_EXPORT int compare(const ScaleOffsetInterface &rhs) const noexcept { return SOIfcBase::compare(rhs); }
-    API_EXPORT bool compare_eq(const ScaleOffsetInterface &rhs) const noexcept { return SOIfcBase::compare_eq(rhs); }
+    API_EXPORT inline int compare(const ScaleOffsetInterface &rhs) const noexcept { return SOIfcBase::compare(rhs); }
+    API_EXPORT inline bool compare_eq(const ScaleOffsetInterface &rhs) const noexcept
+    {
+        return SOIfcBase::compare_eq(rhs);
+    }
 
   private:
     // Accessor for ScaleOffsetInterface
@@ -812,14 +830,14 @@ template <typename T> class ScaleOffsetInterface final : public SOIfcBase {
         {
         }
 
-        AcsrRO(AcsrRO const &) = default;
-        AcsrRO(AcsrRO &&) = default;
-        ~AcsrRO() = default;
+        inline AcsrRO(AcsrRO const &) = default;
+        inline AcsrRO(AcsrRO &&) = default;
+        inline ~AcsrRO() = default;
         AcsrRO &operator=(AcsrRO const &) = delete;
         AcsrRO &operator=(AcsrRO &&) = delete;
-        ALWAYSINLINE element_type value() const { return val; }
-        ALWAYSINLINE float as_float() const { return interface.convert_to_float(val); }
-        ALWAYSINLINE operator float() const { return as_float(); }
+        ALWAYSINLINE inline element_type value() const { return val; }
+        ALWAYSINLINE inline float as_float() const { return interface.convert_to_float(val); }
+        ALWAYSINLINE inline operator float() const { return as_float(); }
         ALWAYSINLINE AcsrRO(Acsr const &a) : val(a.value()), interface(a.interface) {}
     };
     class Acsr {
@@ -836,20 +854,20 @@ template <typename T> class ScaleOffsetInterface final : public SOIfcBase {
             : data(static_cast<T *>(data_in)), interface(*interface_in)
         {
         }
-        ALWAYSINLINE Acsr(Acsr const &) = default;
-        ALWAYSINLINE Acsr(Acsr &&) = default;
+        ALWAYSINLINE inline Acsr(Acsr const &) = default;
+        ALWAYSINLINE inline Acsr(Acsr &&) = default;
         ALWAYSINLINE ~Acsr() = default;
-        ALWAYSINLINE element_type value() const { return *data; }
-        ALWAYSINLINE float as_float() const { return interface.convert_to_float(*data); }
-        ALWAYSINLINE operator float() const { return as_float(); }
-        ALWAYSINLINE void set_float(float v) { *data = interface.convert_from_float(v); }
-        ALWAYSINLINE void set_value(element_type v) { *data = v; }
-        ALWAYSINLINE float operator=(float v)
+        ALWAYSINLINE inline element_type value() const { return *data; }
+        ALWAYSINLINE inline float as_float() const { return interface.convert_to_float(*data); }
+        ALWAYSINLINE inline operator float() const { return as_float(); }
+        ALWAYSINLINE inline void set_float(float v) { *data = interface.convert_from_float(v); }
+        ALWAYSINLINE inline void set_value(element_type v) { *data = v; }
+        ALWAYSINLINE inline float operator=(float v)
         {
             set_float(v);
             return v;
         }
-        ALWAYSINLINE float operator=(Acsr const &rhs)
+        ALWAYSINLINE inline float operator=(Acsr const &rhs)
         {
             if (this != &rhs) {
                 float const v = rhs.as_float();
@@ -859,9 +877,9 @@ template <typename T> class ScaleOffsetInterface final : public SOIfcBase {
             return this->as_float();
         }
         // only needed for SA; forward to 'const &' operator=
-        ALWAYSINLINE float operator=(Acsr &&rhs) { return this->operator=(rhs); }
+        ALWAYSINLINE inline float operator=(Acsr &&rhs) { return this->operator=(rhs); }
 
-        ALWAYSINLINE float operator=(AcsrRO const &rhs)
+        ALWAYSINLINE inline float operator=(AcsrRO const &rhs)
         {
             float const v = rhs.as_float();
             set_float(v);

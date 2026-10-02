@@ -1,9 +1,10 @@
-// ==============================================================================
+//==============================================================================
 //
-// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
-// SPDX-License-Identifier: BSD-3-Clause-Clear
+// Copyright (c) 2020,2022-2023 Qualcomm Technologies, Inc.
+// All Rights Reserved.
+// Confidential and Proprietary - Qualcomm Technologies, Inc.
 //
-// ==============================================================================
+//==============================================================================
 
 #ifndef OEXPR_POST_H_
 #define OEXPR_POST_H_
@@ -101,7 +102,8 @@ class opdef_accessor {
 // opexpr< opexpr<V,T>>::variant -> V
 // opexpr< opexpr<V,T>>::type -> T
 
-template <typename DUMMY> struct opexpr_types {};
+template <typename DUMMY> struct opexpr_types {
+};
 template <OpVnt V, typename T> struct opexpr_types<opexpr<V, T>> {
     static constexpr OpVnt variant = V;
     using parmtype = T;
@@ -814,10 +816,14 @@ inline expr<Variant::config, bool> OPTION_BOOL(char const *optname)
 // Variant::message is a MESSAGE, MESSAGE_IF, or MESSAGE_IFNOT expression.
 // When MESSAGE, CONDEXPR is 'char'.
 //
-struct msg_message {};
-struct msg_message_if {};
-struct msg_message_ifnot {};
-struct msg_message_value {};
+struct msg_message {
+};
+struct msg_message_if {
+};
+struct msg_message_ifnot {
+};
+struct msg_message_value {
+};
 // MESSAGE(value, "...") -> value
 
 template <typename MODE, typename CONDEXPR>

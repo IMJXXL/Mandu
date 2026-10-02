@@ -57,8 +57,6 @@ typedef enum {
   QNN_DEVICE_ERROR_HARDWARE_UNAVAILABLE = QNN_MIN_ERROR_DEVICE + 2,
   /// Device is associated to a context
   QNN_DEVICE_ERROR_ASSOCIATED_TO_CONTEXT = QNN_MIN_ERROR_DEVICE + 3,
-  /// Access to hardware is banned
-  QNN_DEVICE_ERROR_ACCESS_DENIED = QNN_MIN_ERROR_DEVICE + 4,
   /// Qnn Device success
   QNN_DEVICE_NO_ERROR = QNN_SUCCESS,
 

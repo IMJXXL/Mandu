@@ -1,9 +1,10 @@
-// ==============================================================================
+//==============================================================================
 //
-// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
-// SPDX-License-Identifier: BSD-3-Clause-Clear
+// Copyright (c) 2020,2022 Qualcomm Technologies, Inc.
+// All Rights Reserved.
+// Confidential and Proprietary - Qualcomm Technologies, Inc.
 //
-// ==============================================================================
+//==============================================================================
 
 #ifndef OP_DEF_H
 #define OP_DEF_H 1
@@ -11,11 +12,9 @@
 #include <cassert>
 #include <functional>
 #include <memory>
-#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
-#include <variant>
 
 #include "interface_defs.h"
 #include "splithist.h"
@@ -23,7 +22,37 @@
 #include "opname_tag.h"
 #include "weak_linkage.h"
 #include "macros_attribute.h"
+
+// does an opname_tag_t start with the given string.
+// this assumes that converting opname_tag to string_view is cheaper than to std::string
 namespace hnnx {
+inline bool starts_with(opname_tag_t const &opstr, std::string const &pref)
+{
+    std::string_view const sv{opstr};
+    std::string_view sv2;
+    auto found = sv.find("::");
+    if (found != std::string_view::npos) {
+        sv2 = sv.substr(found + 2);
+    } else {
+        sv2 = sv;
+    }
+    int const n = pref.size();
+    return sv2.size() >= n && memcmp(sv2.data(), pref.c_str(), n) == 0;
+}
+inline bool starts_with(opname_tag_t const &opstr, char const *pref)
+{
+    std::string_view const sv{opstr};
+    std::string_view sv2;
+    auto found = sv.find("::");
+    if (found != std::string_view::npos) {
+        sv2 = sv.substr(found + 2);
+    } else {
+        sv2 = sv;
+    }
+    int const n = strlen(pref);
+    return sv2.size() >= n && memcmp(sv2.data(), pref, n) == 0;
+}
+
 class OpIoPtrs;
 } // namespace hnnx
 
@@ -55,7 +84,6 @@ class OpDefFlags {
     // Considered mutable (can change via const ref),
     constexpr static uint32_t BIT_fake_unsigned = 256; // OpDef had dtype changed to unsigned during prepare
     constexpr static uint32_t BIT_custom_op = 512; // OpDef is a custom op
-    constexpr static uint32_t BIT_mux_condition = 1024; // OpDef is the condition of a fully moved down mux
     // Rules for assigning flags at construction:
     //  OpDef_ConstBase subclasses get 'const' and 'constbase'.
     //  otherwise:
@@ -127,12 +155,10 @@ class OpDefFlags {
     API_EXPORT bool is_in_constmap() const { return (flags & BIT_in_constmap) != 0; }
     API_EXPORT bool is_fake_unsigned() const { return (flags & BIT_fake_unsigned) != 0; }
     API_EXPORT bool is_custom_op() const { return (flags & BIT_custom_op) != 0; }
-    API_EXPORT bool is_mux_condition() const { return (flags & BIT_mux_condition) != 0; }
     // this is all we should need.
     API_EXPORT bool set_retain(bool val = true) { return set_flag_state<BIT_retain>(val); }
     API_EXPORT void set_deleted() { flags |= (BIT_hidden | BIT_deleted); }
     API_EXPORT void set_hidden() { flags |= BIT_hidden; }
-    API_EXPORT bool set_mux_condition(bool val = true) { return set_flag_state<BIT_mux_condition>(val); }
     // this is allowed via 'const' ref
     API_EXPORT bool set_is_in_constmap(bool val = true) const
     {
@@ -140,6 +166,8 @@ class OpDefFlags {
     }
     API_EXPORT bool set_fake_unsigned(bool val = true) { return set_flag_state<BIT_fake_unsigned>(val); }
     API_EXPORT void set_custom_op() { flags |= BIT_custom_op; }
+    API_EXPORT void serialize(hnnx::Serializer &sctx) const;
+    API_EXPORT OpDefFlags(hnnx::Deserializer &dctx);
 
   protected:
     // derived ctors can do this.
@@ -194,22 +222,6 @@ class AnyGraphContext {
     GraphPrepare &graph() const { return *m_graphp; }
 };
 
-/**
- * @brief: OutputDefPatch struct is used to update specific members of an OutputDef, rather than replacing/copying an entire object
- */
-struct OutputDefPatch {
-    std::optional<NN_UINT32_T> rank;
-    std::optional<DType> dtype;
-    std::optional<std::array<size_t, MAX_DIMENSIONS>> max_sizes;
-    std::array<bool, MAX_DIMENSIONS> set_dim{};
-    bool patch_maxsizes_partially = false;
-    std::optional<NN_INT32_T> zero_offset;
-    std::optional<float> stepsize;
-    static OutputDefPatch stepsize_zeroOffset(float, NN_INT32_T);
-    static OutputDefPatch new_dtype(enum DType);
-    void set_dim_max_size(size_t dim, size_t max_size);
-};
-
 class OpRef final {
   public:
     unsigned long long int input_id;
@@ -252,13 +264,14 @@ class OpDef : public OpDefFlags {
   protected:
     hnnx::splithist_t splithist;
     const std::reference_wrapper<GraphPrepare> graphref;
-    class ForConst {};
+    class ForConst {
+    };
     // this constructor is for OpDef_ConstBase
     // it sets the flags to just 'is_const | is_constbase'.
     API_EXPORT OpDef(GraphPrepare &graph_in, OpId my_id_in, hnnx::opname_tag_parm_t opstr_in, OutputDef const &odef,
                      ForConst const &)
         : OpDefFlags(opstr_in, true), splithist(), graphref(graph_in), id(my_id_in), opstr(opstr_in), input_defs(),
-          m_first_outputdef(odef)
+          output_def(odef)
     {
     }
 
@@ -272,81 +285,35 @@ class OpDef : public OpDefFlags {
     }
 
     std::vector<OpRef> input_defs; // These should be mutable, we mess with them during optimization
-  protected:
-    // only thing that differs between each is stepsize and zero_offset (the quant params)
-    OutputDef m_first_outputdef;
-    std::unique_ptr<std::vector<OutputDef>> m_rest_outputdefs = nullptr;
+    OutputDef output_def;
 
-    // should only be used for single quant ops, for internal use
-    template <bool ValidateSingleQuant = true> OutputDef &_get_outputdef()
-    {
-        if constexpr (ValidateSingleQuant) {
-            // NOTE: Call to `conditionally_validate_single_quant' is not inlined because it needs to access GraphPrepare internally.
-            // However, for places where we know that the OpDef is single-quant, we can skip this call by conditionally compiling it only when ValidateSingleQuant=true
-            conditionally_validate_single_quant();
-        }
-        return m_first_outputdef;
-    }
-
-  public:
     API_EXPORT inline hnnx::splithist_t get_splithist() const { return splithist; }
     API_EXPORT inline void set_splithist(hnnx::splithist_t val) { splithist = val; }
     API_EXPORT inline void set_splithist(OpDef const &other) { splithist = other.splithist; }
     API_EXPORT inline void inherit_memos(AnyGraphContext, OpDef const &other);
     // with 0 or 1 output (output_def_in may be null)
     API_EXPORT OpDef(GraphPrepare &graph_in, OpId my_id_in, hnnx::opname_tag_parm_t opstr_in,
-                     std::vector<OpRef> &&input_defs_in, OutputDef const *output_defs_in, size_t num_quant_params)
-        : OpDefFlags(opstr_in, input_defs_in.size(), (output_defs_in == nullptr) ? 0 : 1), splithist(),
-          graphref(graph_in), id(my_id_in), opstr(opstr_in), input_defs(std::move(input_defs_in)), m_first_outputdef()
+                     std::vector<OpRef> &&input_defs_in, OutputDef const *output_def_in, hnnx::splithist_t sl)
+        : OpDefFlags(opstr_in, input_defs_in.size(), (output_def_in == nullptr) ? 0 : 1), splithist(sl),
+          graphref(graph_in), id(my_id_in), opstr(opstr_in), input_defs(std::move(input_defs_in)), output_def()
     {
-        if (output_defs_in == nullptr) {
-            m_first_outputdef.dtype = DType::None;
-            return;
+        if (output_def_in != nullptr) {
+            output_def = *output_def_in;
+        } else {
+            output_def.dtype = DType::None;
         }
+    }
 
-        m_first_outputdef = *output_defs_in;
-
-        if (num_quant_params <= 1) {
-            return;
+    API_EXPORT OpDef(GraphPrepare &graph_in, OpId my_id_in, hnnx::opname_tag_parm_t opstr_in,
+                     std::vector<OpRef> &&input_defs_in, OutputDef const *output_def_in)
+        : OpDefFlags(opstr_in, input_defs_in.size(), (output_def_in == nullptr) ? 0 : 1), splithist(),
+          graphref(graph_in), id(my_id_in), opstr(opstr_in), input_defs(std::move(input_defs_in)), output_def()
+    {
+        if (output_def_in != nullptr) {
+            output_def = *output_def_in;
+        } else {
+            output_def.dtype = DType::None;
         }
-
-        m_rest_outputdefs =
-                std::make_unique<std::vector<OutputDef>>(output_defs_in + 1, output_defs_in + num_quant_params);
-    }
-
-    API_EXPORT OpDef(GraphPrepare &graph_in, OpId my_id_in, hnnx::opname_tag_parm_t opstr_in,
-                     std::vector<OpRef> &&input_defs_in, OutputDef const *output_defs_in, size_t num_quant_params,
-                     hnnx::splithist_t sl)
-        : OpDef(graph_in, my_id_in, opstr_in, std::move(input_defs_in), output_defs_in, num_quant_params)
-    {
-        splithist = sl;
-    }
-
-    // assuming only 1 OutputDef is passed
-    API_EXPORT OpDef(GraphPrepare &graph_in, OpId my_id_in, hnnx::opname_tag_parm_t opstr_in,
-                     std::vector<OpRef> &&input_defs_in, OutputDef const *output_defs_in)
-        : OpDef(graph_in, my_id_in, opstr_in, std::move(input_defs_in), output_defs_in, 1)
-    {
-    }
-
-    API_EXPORT OpDef(GraphPrepare &graph_in, OpId my_id_in, hnnx::opname_tag_parm_t opstr_in,
-                     std::vector<OpRef> &&input_defs_in, OutputDef const *output_defs_in, hnnx::splithist_t sl)
-        : OpDef(graph_in, my_id_in, opstr_in, std::move(input_defs_in), output_defs_in, 1, sl)
-    {
-    }
-
-    // vector of OutputDefs
-    API_EXPORT OpDef(GraphPrepare &graph_in, OpId my_id_in, hnnx::opname_tag_parm_t opstr_in,
-                     std::vector<OpRef> &&input_defs_in, std::vector<OutputDef> &&output_defs_in)
-        : OpDef(graph_in, my_id_in, opstr_in, std::move(input_defs_in), output_defs_in.data(), output_defs_in.size())
-    {
-    }
-
-    API_EXPORT OpDef(GraphPrepare &graph_in, OpId my_id_in, hnnx::opname_tag_parm_t opstr_in,
-                     std::vector<OpRef> &&input_defs_in, std::vector<OutputDef> &&output_defs_in, hnnx::splithist_t sl)
-        : OpDef(graph_in, my_id_in, opstr_in, std::move(input_defs_in), output_defs_in.data(), output_defs_in.size(),
-                sl)
-    {
     }
 
     OpDef(OpDef const &) = delete; // use the .copy() method
@@ -358,49 +325,23 @@ class OpDef : public OpDefFlags {
     // copy shape from 'shape_from' (if not null) and output
     //  spec from 'outp_from' (if not null)
     API_EXPORT OpDef make_output_exemplar(OutputDef const *size_from, OutputDef const *outp_from) const;
-    API_EXPORT inline OpDef make_output_exemplar(OutputDef const *from) const
-    {
-        return make_output_exemplar(from, from);
-    }
     // make a copy with the same output and no inputs
     API_EXPORT inline OpDef make_output_exemplar() const { return make_output_exemplar(nullptr, nullptr); }
 
-    API_EXPORT void conditionally_validate_single_quant() const;
-
-    // should only be used for single quant ops
-    template <bool ValidateSingleQuant = true> API_EXPORT OutputDef const &get_outputdef() const
-    {
-        // NOTE: Call to `conditionally_validate_single_quant' is not inlined because it needs to access GraphPrepare internally.
-        // However, for places where we know at compile time that we don't need to validate (for example during GRAPH CONSTRUCTION),
-        // call get_outputdef<false>() (ie ValidateSingleQuant=false) to call the template instantiation without this validation code compiled.
-        if constexpr (ValidateSingleQuant) {
-            conditionally_validate_single_quant();
-        }
-        return m_first_outputdef;
-    }
-    API_EXPORT OutputDef const &get_outputdef(unsigned quant_index) const;
-    API_EXPORT std::vector<OutputDef> get_outputdefs() const;
-
-    API_EXPORT void set_outputdefs(const std::vector<OutputDef> &);
-    API_EXPORT void set_outputdef(const OutputDefPatch &);
-    API_EXPORT void set_outputdef(const OutputDef &);
-
     API_EXPORT size_t n_inputs() const { return input_defs.size(); }
-    API_EXPORT size_t n_outputs() const { return get_outputdef<false>().dtype == DType::None ? 0 : 1; }
+    API_EXPORT size_t n_outputs() const { return output_def.dtype == DType::None ? 0 : 1; }
     //> true if the OpDef has outputs
-    API_EXPORT bool has_outputs() const { return !(get_outputdef<false>().dtype == DType::None); }
+    API_EXPORT bool has_outputs() const { return !(output_def.dtype == DType::None); }
     //> true if the node is a 'sink' for the purposes of sheduler
     /// If we add special nodes with no outputs that are not graph sinks, they can be excluded here.
+    //
     API_EXPORT bool is_graph_sink() const { return !has_outputs(); }
     //> True if the OpDef has multiple outputs (has 'Multi' output type)
-    API_EXPORT bool has_multiple_outputs() const { return get_outputdef<false>().dtype == DType::Multi; }
+    API_EXPORT bool has_multiple_outputs() const { return output_def.dtype == DType::Multi; }
     API_EXPORT OpRef reference() const { return OpRef{id, 0}; }
     // these are only safe to use when has_outputs()
-    API_EXPORT bool has_multiple_quant_params() const { return m_rest_outputdefs != nullptr; }
-    API_EXPORT size_t num_quant_params() const
-    {
-        return 1 + (has_multiple_quant_params() ? m_rest_outputdefs->size() : 0);
-    }
+    API_EXPORT OutputDef &get_outputdef() { return output_def; } //use when need to modify output_def
+    API_EXPORT OutputDef const &get_outputdef() const { return output_def; } //return read-only output_def
 
     API_EXPORT virtual hnnx::uptr_Op generate(hnnx::OpIoPtrs const &) const;
     API_EXPORT virtual const uint8_t *const_data_ptr() const { return nullptr; }
@@ -418,6 +359,9 @@ class OpDef : public OpDefFlags {
         bool operator()(const OpDef *lhs, const OpDef *rhs) const { return OpDef::compare_less(*lhs, *rhs); }
     };
     API_EXPORT bool exact_same_as(const OpDef &rhs);
+    API_EXPORT virtual void nndebug_serialize(hnnx::Serializer &sctx) const;
+    API_EXPORT void serialize(hnnx::Serializer &sctx) const;
+    API_EXPORT OpDef(GraphPrepare &graph_in, hnnx::Deserializer &dctx);
 #ifndef PREPARE_DISABLED
     void dump() const; // debugging only
 #endif
@@ -460,6 +404,10 @@ class OpDef_ConstBase : public OpDef {
     API_EXPORT void invalidate_content_hash() { content_hash = 0; }
     // does it have a content_hash?
     API_EXPORT inline bool has_content_hash() const { return content_hash != 0; }
+    API_EXPORT inline OpDef_ConstBase(GraphPrepare &graph_in, Deserializer &dctx)
+        : OpDef(graph_in, dctx), content_hash(0)
+    {
+    }
 
   protected:
     API_EXPORT uint32_t find_basic_hash() const noexcept; // find the hash of opstr and OutputDef.
@@ -489,6 +437,8 @@ class OpDef_Const : public OpDef_ConstBase {
     API_EXPORT virtual uptr_Op generate(OpIoPtrs const &) const override;
     API_EXPORT virtual const Tensor *get_tensor() const override { return const_data.get(); }
     API_EXPORT virtual void release_memory() override;
+    API_EXPORT void serialize(Serializer &sctx) const;
+    API_EXPORT OpDef_Const(GraphPrepare &graph_in, Deserializer &dctx);
 
   protected:
     API_EXPORT virtual uint32_t find_content_hash() const noexcept override;
@@ -503,6 +453,8 @@ class OpDef_Shape : public OpDef_ConstBase {
     API_EXPORT virtual const uint8_t *const_data_ptr() const override { return nullptr; }
     API_EXPORT virtual size_t const_data_len() const override { return 0; }
     API_EXPORT virtual uptr_Op generate(OpIoPtrs const &) const override;
+    API_EXPORT void serialize(Serializer &sctx) const;
+    API_EXPORT OpDef_Shape(GraphPrepare &graph_in, Deserializer &dctx);
 
   protected:
     // hash of a shape includes only the basic hash.

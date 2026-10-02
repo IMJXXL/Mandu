@@ -1,10 +1,11 @@
 
-// ==============================================================================
+//==============================================================================
 //
-// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
-// SPDX-License-Identifier: BSD-3-Clause-Clear
+// Copyright (c) Qualcomm Technologies, Inc.
+// All Rights Reserved.
+// Confidential and Proprietary - Qualcomm Technologies, Inc.
 //
-// ==============================================================================
+//==============================================================================
 
 /*
  * tile_extract.h
@@ -16,6 +17,8 @@
 #define TILE_EXTRACT_H_
 
 #include "intrinsics.h"
+#include "dynamic_tensors.h"
+
 /*
  *  This defines functions which are templated on Tensor subclasses,
  *  and which extract a tile of data from the tensor, and replace it.
@@ -296,9 +299,12 @@ template <typename Linfo> struct tile_methods_r4flat {
     }
 };
 // specialize tile_methods for flat layout
-template <> struct tile_methods<Ldefs::Flat_8> : public tile_methods_r4flat<Ldefs::Flat_8> {};
-template <> struct tile_methods<Ldefs::Flat_16> : public tile_methods_r4flat<Ldefs::Flat_16> {};
-template <> struct tile_methods<Ldefs::Flat_32> : public tile_methods_r4flat<Ldefs::Flat_32> {};
+template <> struct tile_methods<Ldefs::Flat_8> : public tile_methods_r4flat<Ldefs::Flat_8> {
+};
+template <> struct tile_methods<Ldefs::Flat_16> : public tile_methods_r4flat<Ldefs::Flat_16> {
+};
+template <> struct tile_methods<Ldefs::Flat_32> : public tile_methods_r4flat<Ldefs::Flat_32> {
+};
 
 // specialize for Crouton, padding case
 // Methods are defined in tile_extract.cc
@@ -318,20 +324,24 @@ template <typename Linfo> struct tile_methods_r4crouton {
     {
         using storage_type = typename Linfo::storage_type;
         constexpr unsigned direct = Tensor::tile_direct;
-        return tile_support_flags_for < Tensor::tile_fast | direct, storage_type > ::value;
+        return tile_support_flags_for<Tensor::tile_fast | direct, storage_type>::value;
     }
 };
 // specialize tile_methods for crouton layout
 // 8 bit
-template <> struct tile_methods<Ldefs::Crouton_8> : public tile_methods_r4crouton<Ldefs::Crouton_8> {};
+template <> struct tile_methods<Ldefs::Crouton_8> : public tile_methods_r4crouton<Ldefs::Crouton_8> {
+};
 // 16 bit (different layout!)
-template <> struct tile_methods<Ldefs::Crouton_16> : public tile_methods_r4crouton<Ldefs::Crouton_16> {};
+template <> struct tile_methods<Ldefs::Crouton_16> : public tile_methods_r4crouton<Ldefs::Crouton_16> {
+};
 
 // 32 bit
-template <> struct tile_methods<Ldefs::Crouton_32> : public tile_methods_r4crouton<Ldefs::Crouton_32> {};
+template <> struct tile_methods<Ldefs::Crouton_32> : public tile_methods_r4crouton<Ldefs::Crouton_32> {
+};
 
 // 8 bit
-template <> struct tile_methods<Ldefs::Crouton4x1_8> : public tile_methods_r4crouton<Ldefs::Crouton4x1_8> {};
+template <> struct tile_methods<Ldefs::Crouton4x1_8> : public tile_methods_r4crouton<Ldefs::Crouton4x1_8> {
+};
 
 } // namespace tileExt_priv
 
@@ -367,7 +377,8 @@ template <typename Linfo> API_FUNC_EXPORT unsigned LayoutTensor<Linfo>::tile_sup
 
 namespace tileExt {
 
-template <typename T> struct layout_def_of {};
+template <typename T> struct layout_def_of {
+};
 template <typename L> struct layout_def_of<LayoutTensor<L>> {
     using type = L;
 };
@@ -735,6 +746,16 @@ template <DType DT> class TileStoreWindowTensor : public FakeTensor {
         return set_dims(dims_p);
     }
 
+    API_EXPORT virtual inline void set_valid_dims(const size_t new_dims[]) override final
+    {
+        for (int i = 0; i < Rank; i++) {
+            assert(new_dims[i] <= ts_window.win_dim(i));
+        }
+        // AMINE TODO: update TileStoreWindowBase to handle valid dims correctly
+    }
+    // AMINE TODO: update TileStoreWindowBase to handle valid dims correctly
+    virtual inline DynamicStatus get_dynamic_state() const override { return DynamicStatus::ValidData; }
+
     API_EXPORT virtual DTypeScaleOff get_dtype_intfc() const noexcept override
     {
         // @@FIXME - could be resolved at compile time by mapping DT->Interface_t
@@ -763,9 +784,12 @@ template <unsigned ELBYTES> class TileStoreWindowTensorGeneric {
     static_assert(false && ELBYTES, "not specialized for this value of ELBYTES");
 };
 
-template <> class TileStoreWindowTensorGeneric<1> : public TileStoreWindowTensor<DType::QUInt8> {};
-template <> class TileStoreWindowTensorGeneric<2> : public TileStoreWindowTensor<DType::QUInt16> {};
-template <> class TileStoreWindowTensorGeneric<4> : public TileStoreWindowTensor<DType::Int32> {};
+template <> class TileStoreWindowTensorGeneric<1> : public TileStoreWindowTensor<DType::QUInt8> {
+};
+template <> class TileStoreWindowTensorGeneric<2> : public TileStoreWindowTensor<DType::QUInt16> {
+};
+template <> class TileStoreWindowTensorGeneric<4> : public TileStoreWindowTensor<DType::Int32> {
+};
 
 //
 // generic utilities:

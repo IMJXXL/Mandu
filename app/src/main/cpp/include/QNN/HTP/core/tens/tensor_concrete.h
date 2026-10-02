@@ -1,9 +1,10 @@
-// ==============================================================================
+//==============================================================================
 //
-// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
-// SPDX-License-Identifier: BSD-3-Clause-Clear
+// Copyright (c) Qualcomm Technologies, Inc.
+// All Rights Reserved.
+// Confidential and Proprietary - Qualcomm Technologies, Inc.
 //
-// ==============================================================================
+//==============================================================================
 
 #ifndef HEXNN_TENSOR_CONCRETE_H
 #define HEXNN_TENSOR_CONCRETE_H 1
@@ -17,7 +18,7 @@ namespace hnnx {
 API_EXPORT extern uint64_t checksum_bytes(uint64_t prev, uint8_t const *bytes, unsigned n);
 
 template <size_t N> //
-size_t product_of_array(std::array<size_t, N> const &arr)
+inline size_t product_of_array(std::array<size_t, N> const &arr)
 {
     return std::accumulate(arr.cbegin(), arr.cend(), size_t(1), std::multiplies<size_t>());
 }
@@ -43,11 +44,11 @@ template <typename STYPE, typename TLayout, typename Pad_t> struct layout_mem_co
 
     storage_type *bulk_data;
 
-    API_EXPORT layout_mem_contig(Shape_t const *shp, Graph &graph_in) : bulk_data() {};
+    API_EXPORT inline layout_mem_contig(Shape_t const *shp, Graph &graph_in) : bulk_data(){};
 
     // duplicate clone from another
-    API_EXPORT layout_mem_contig(Shape_t const *shp, layout_mem_contig const &other, hnnx::Allocator *alloc,
-                                 Tensor::clone_mode cmode)
+    API_EXPORT inline layout_mem_contig(Shape_t const *shp, layout_mem_contig const &other, hnnx::Allocator *alloc,
+                                        Tensor::clone_mode cmode)
         : bulk_data(other.bulk_data)
     {
     }
@@ -59,10 +60,10 @@ template <typename STYPE, typename TLayout, typename Pad_t> struct layout_mem_co
     }
 
     // this implements raw_data in the containing tensor
-    API_EXPORT ALWAYSINLINE void *raw_data() const noexcept { return (void *)bulk_data; }
+    API_EXPORT inline ALWAYSINLINE void *raw_data() const noexcept { return (void *)bulk_data; }
 
     // this implements set_raw_data_despite_danger(void *buffer) override final { bulk_data = static_cast<T *>(buffer); }
-    API_EXPORT ALWAYSINLINE void set_raw_data_despite_danger(void *buffer)
+    API_EXPORT inline ALWAYSINLINE void set_raw_data_despite_danger(void *buffer)
     {
         bulk_data = static_cast<storage_type *>(buffer);
     }
@@ -93,23 +94,23 @@ template <typename STYPE, typename TLayout, typename Pad_t> struct layout_mem_co
     PUSH_WARNING()
     DISABLE_WARNING("-Wcast-qual", MSVC_NO_EQUIV)
     // get pointer to block table, and length
-    API_EXPORT ALWAYSINLINE void **get_block_list_ptr() const { return (void **)&bulk_data; }
+    API_EXPORT inline ALWAYSINLINE void **get_block_list_ptr() const { return (void **)&bulk_data; }
     POP_WARNING()
-    API_EXPORT static ALWAYSINLINE size_t get_block_list_len(Shape_t const *shp) { return 1; }
+    API_EXPORT static inline ALWAYSINLINE size_t get_block_list_len(Shape_t const *shp) { return 1; }
     // block size for allocation
-    API_EXPORT ALWAYSINLINE static size_t get_elements_per_block(Shape_t const *shp)
+    API_EXPORT inline ALWAYSINLINE static size_t get_elements_per_block(Shape_t const *shp)
     {
         if (is_singular) return 1;
         return hnnx::product_of_array(shp->max_dims);
     }
     // find the address of the block pointer containing the specified coords.
     // (not used for contig. tensor, but this is reasonable impl).
-    API_EXPORT storage_type **block_ptr_addr(Shape_t const *shape, std::array<SIdx, Rank> coords) const
+    API_EXPORT inline storage_type **block_ptr_addr(Shape_t const *shape, std::array<SIdx, Rank> coords) const
     {
         return &bulk_data;
     }
     // dummy for this
-    API_EXPORT void realloc_blocktab(hnnx::Allocator *alloc, Shape_t const *old_shape, Shape_t const *new_shape)
+    API_EXPORT inline void realloc_blocktab(hnnx::Allocator *alloc, Shape_t const *old_shape, Shape_t const *new_shape)
     {
         bulk_data = nullptr;
     }
@@ -137,7 +138,7 @@ API_EXPORT inline void **make_blocktab(size_t n_blocks, Graph &graph_in)
 }
 
 template <typename CRATE> // Crate or DCrate
-void **make_blocktab_for_overwrite(const size_t n_blocks, CRATE *const crate_p)
+inline void **make_blocktab_for_overwrite(const size_t n_blocks, CRATE *const crate_p)
 {
     return crate_p->template alloc_array<void *>(n_blocks);
 }
@@ -189,9 +190,9 @@ template <typename STYPE, typename TLayout, typename Pad_t> struct layout_mem_in
     }
 
     // this implements raw_data in the containing tensor
-    API_EXPORT ALWAYSINLINE void *raw_data() const noexcept { return (void *)blocktab[0]; }
+    API_EXPORT inline ALWAYSINLINE void *raw_data() const noexcept { return (void *)blocktab[0]; }
     // this implements set_raw_data_despite_danger(void *buffer) override final { bulk_data = static_cast<T *>(buffer); }
-    API_EXPORT void set_raw_data_despite_danger(void *buffer)
+    API_EXPORT inline void set_raw_data_despite_danger(void *buffer)
     {
         assert(!"Invalid to set raw pointer on this type of tensor");
     }
@@ -220,19 +221,19 @@ template <typename STYPE, typename TLayout, typename Pad_t> struct layout_mem_in
         return (void *)&blocktab[block_idx][block_offset];
     }
     // get pointer to block table, and length
-    API_EXPORT ALWAYSINLINE void **get_block_list_ptr() const { return (void **)blocktab; }
-    API_EXPORT static ALWAYSINLINE size_t get_block_list_len(Shape_t const *shp)
+    API_EXPORT inline ALWAYSINLINE void **get_block_list_ptr() const { return (void **)blocktab; }
+    API_EXPORT static inline ALWAYSINLINE size_t get_block_list_len(Shape_t const *shp)
     {
         return layout.num_blocks(shp->max_dims);
     }
     // block size for allocation
-    API_EXPORT ALWAYSINLINE static size_t get_elements_per_block(Shape_t const *shp)
+    API_EXPORT inline ALWAYSINLINE static size_t get_elements_per_block(Shape_t const *shp)
     {
         return layout.block_total(shp->max_dims);
     }
 
     // find the address of the block pointer containing the specified coords.
-    API_EXPORT storage_type **block_ptr_addr(Shape_t const *shape, std::array<SIdx, Rank> coords) const
+    API_EXPORT inline storage_type **block_ptr_addr(Shape_t const *shape, std::array<SIdx, Rank> coords) const
     {
         std::array<size_t, Rank> const padded_coords = pad.pad_coords(coords, shape->pad);
         size_t const block_idx = layout.chunk_index(padded_coords, shape->max_dims);
@@ -241,7 +242,7 @@ template <typename STYPE, typename TLayout, typename Pad_t> struct layout_mem_in
     // reallocate for change from old_shape to new_shape (typically just the padding
     // is changed) and zero the blocktab. If the shape is not actually changed, or if
     // the blocktab isn't larger than before, we keep the old one, but we still clear it.
-    API_EXPORT void realloc_blocktab(hnnx::Allocator *alloc, Shape_t const *old_shape, Shape_t const *new_shape)
+    API_EXPORT inline void realloc_blocktab(hnnx::Allocator *alloc, Shape_t const *old_shape, Shape_t const *new_shape)
     {
         unsigned const nblocks = layout.num_blocks(new_shape->max_dims);
         if (old_shape != new_shape) {
@@ -311,31 +312,31 @@ template <typename Linfo> class BlockTableAccessor {
     // methods which have the same name as tensor methods, do
     // the same thing here.
 
-    API_EXPORT static constexpr unsigned rank() { return Rank; }
+    API_EXPORT inline static constexpr unsigned rank() { return Rank; }
 
-    API_EXPORT size_t blocktab_len() const { return blkstrides[0]; }
-    API_EXPORT pointer_type *blocktab_ptr() const { return blktab; }
-    API_EXPORT size_t blocktab_blocksize() const
+    API_EXPORT inline size_t blocktab_len() const { return blkstrides[0]; }
+    API_EXPORT inline pointer_type *blocktab_ptr() const { return blktab; }
+    API_EXPORT inline size_t blocktab_blocksize() const
     {
         std::array<size_t, Rank> dummy_shape{};
         // the shape will be ignored (unless is_variable_block).
         std::copy_n(blockshape_dims.begin(), n_blockshape_dims, dummy_shape.begin() + (Rank - blockshape_dims));
         return TLayout::block_total(dummy_shape);
     }
-    API_EXPORT size_t blocktab_blocksize_bytes() const { return blocktab_blocksize() * sizeof(storage_type); }
+    API_EXPORT inline size_t blocktab_blocksize_bytes() const { return blocktab_blocksize() * sizeof(storage_type); }
 
-    API_EXPORT size_t blocktab_dim(int i) const { return blkdims[i]; }
-    API_EXPORT size_t blocktab_dim_stride(int i) const { return (i < Rank - 1) ? blkstrides[i + 1] : 1; }
+    API_EXPORT inline size_t blocktab_dim(int i) const { return blkdims[i]; }
+    API_EXPORT inline size_t blocktab_dim_stride(int i) const { return (i < Rank - 1) ? blkstrides[i + 1] : 1; }
 
     // block_ptr_address(b,h,w,d) and block_ptr accept element coordinates.
 
-    template <typename... ind_types> API_EXPORT pointer_type *block_ptr_address(ind_types... inds) const
+    template <typename... ind_types> API_EXPORT inline pointer_type *block_ptr_address(ind_types... inds) const
     {
         static_assert(Rank == (sizeof...(ind_types)), "# of coords must match Rank");
         const std::array<SIdx, Rank> coords = {{static_cast<SIdx>(inds)...}};
         return block_ptr_calc(coords);
     }
-    template <typename... ind_types> API_EXPORT pointer_type &block_ptr(ind_types... inds) const
+    template <typename... ind_types> API_EXPORT inline pointer_type &block_ptr(ind_types... inds) const
     {
         static_assert(Rank == (sizeof...(ind_types)), "# of coords must match Rank");
         const std::array<SIdx, Rank> coords = {{static_cast<SIdx>(inds)...}};
@@ -343,7 +344,7 @@ template <typename Linfo> class BlockTableAccessor {
     }
     // blktab(b,h,w,d) accepts *block* coords
     //
-    template <typename... ind_types> API_EXPORT pointer_type &blocktab(ind_types... inds) const
+    template <typename... ind_types> API_EXPORT inline pointer_type &blocktab(ind_types... inds) const
     {
         static_assert(Rank == (sizeof...(ind_types)), "# of coords must match Rank");
         const std::array<SIdx, Rank> coords = {{static_cast<SIdx>(inds)...}};
@@ -414,10 +415,14 @@ template <typename Linfo> class LayoutTensor : public RankedTensor<Linfo::Rank> 
     static_assert(!(is_indirect && !is_chunked), "non-chunked layouts can't be indirect");
 
     Interface const *const interface_ptr; // pointer to shared instance of Interface subclass.
+    int32_t const *const dummy_interface_ptr = nullptr; // need to immediately follow the interface pointer
     using Shape_t = Shape<Rank>;
+    using Dynamic_shape_t = DynamicShape<Rank>;
+    using ShapeInterface_t = ShapeInterface<Rank>;
 
   public:
     Shape_t const *shape;
+    ShapeInterface_t const *dynamic_shape; // need to immediately follow the shape pointer
     API_EXPORT static constexpr TLayout layout{};
     API_EXPORT static constexpr Pad_t pad{};
 #ifndef PREPARE_DISABLED
@@ -449,7 +454,7 @@ template <typename Linfo> class LayoutTensor : public RankedTensor<Linfo::Rank> 
     static constexpr bool is_singular = traits::is_singular;
     // this function is used to construct the 'shape' pointer in prepare mode,
     // and is different for 'singular' case
-    ALWAYSINLINE static Shape<Rank> const *init_shape_p(Graph &graph_in, const OutputDef &def)
+    ALWAYSINLINE inline static Shape<Rank> const *init_shape_p(Graph &graph_in, const OutputDef &def)
     {
         Shape_t const shp(hnnx::ptr_to_stdarray<Rank, size_t>(&def.max_sizes[0]),
                           TLayout::pad(hnnx::ptr_to_stdarray<Rank, size_t>(&def.max_sizes[0])));
@@ -468,25 +473,35 @@ template <typename Linfo> class LayoutTensor : public RankedTensor<Linfo::Rank> 
                                               Interface const *(*ifc_maker)(Graph &, OutputDef const &))
         : BaseRT(producer_in), interface_ptr((*ifc_maker)(graph_in, def)), //
           shape(init_shape_p(graph_in, def)), //
+          dynamic_shape(
+                  Dynamic_shape_t::crated_shape(graph_in, Dynamic_shape_t(shape->dims, DynamicStatus::ValidData))),
           mem(shape, graph_in)
     {
     }
     using interface_deser_func = Interface const *(*)(hnnx::Deserz &, Interface const **);
     [[gnu::noinline]] API_EXPORT LayoutTensor(hnnx::Deserz &dctx, interface_deser_func const ifc_deser_fp)
         : BaseRT(dctx), interface_ptr((*ifc_deser_fp)(dctx, &interface_ptr_ref())),
-          shape(Shape_t::deserialize(dctx, &shape)), mem(shape, dctx)
+          shape(Shape_t::deserialize(dctx, &shape)),
+          dynamic_shape(Dynamic_shape_t::deserialize(dctx, &dynamic_shape, (ShapeInterface_t const *)shape)),
+          mem(shape, dctx)
     {
     }
     // clone ctor.
     [[gnu::noinline]] API_EXPORT LayoutTensor(const LayoutTensor &old, hnnx::Allocator *allocator,
-                                              Interface const *ifc_in, Tensor::clone_mode cmode)
-        : BaseRT(old, allocator, cmode), interface_ptr(ifc_in), shape(old.shape), mem(shape, old.mem, allocator, cmode)
+                                              Tensor::clone_mode cmode)
+        : BaseRT(old, allocator, cmode), interface_ptr(old.interface_ptr), shape(old.shape),
+          dynamic_shape(old.dynamic_shape), mem(shape, old.mem, allocator, cmode)
     {
     }
 
   public:
-    API_EXPORT virtual size_t dim(size_t index) const noexcept override final { return shape->dims[index]; }
-    API_EXPORT const std::array<size_t, Rank> &dims() const { return shape->dims; }
+    API_EXPORT virtual inline size_t dim(size_t index) const noexcept override final
+    {
+        return dynamic_shape->get_dims()[index];
+    }
+    API_EXPORT const std::array<size_t, Rank> &dims() const { return dynamic_shape->get_dims(); }
+    API_EXPORT virtual inline size_t max_dim(size_t index) const noexcept override final { return shape->dims[index]; }
+    API_EXPORT const std::array<size_t, Rank> &max_dims() const { return shape->dims; }
 
     template <typename... T> API_EXPORT const std::array<size_t, sizeof...(T)> dims(T... indices) const
     {
@@ -494,51 +509,77 @@ template <typename Linfo> class LayoutTensor : public RankedTensor<Linfo::Rank> 
     }
     API_EXPORT virtual std::pair<size_t const *, size_t> get_dims() const noexcept final
     {
+        return std::pair<size_t const *, size_t>(&dynamic_shape->get_dims()[0], Rank);
+    }
+    template <typename... T> API_EXPORT const std::array<size_t, sizeof...(T)> max_dims(T... indices) const
+    {
+        return Tensor::dims_extractor(get_max_dims(), indices...);
+    }
+    API_EXPORT virtual std::pair<size_t const *, size_t> get_max_dims() const noexcept final
+    {
         return std::pair<size_t const *, size_t>(&shape->dims[0], Rank);
     }
 #if defined(NDEBUG) || defined(NO_SETDIMS_CHECK)
-    API_EXPORT virtual bool set_dims(const size_t dims[]) override final { return false; }
-    API_EXPORT virtual bool set_dims(const Tensor &prototype) override final { return false; }
+    API_EXPORT virtual inline bool set_dims(const size_t dims[]) override final { return false; }
+    API_EXPORT virtual inline bool set_dims(const Tensor &prototype) override final { return false; }
 #else
-    API_EXPORT virtual bool set_dims(const size_t dims[]) override
+    API_EXPORT virtual inline bool set_dims(const size_t dims[]) override
     {
         // for (int i = 0; i < Rank; i++) {
         //     assert(dims[i] == shape->dims[i]);
         // }
         return false;
     }
-    API_EXPORT virtual bool set_dims(const Tensor &prototype) override
+    API_EXPORT virtual inline bool set_dims(const Tensor &prototype) override
     {
-        auto [dims_p, dims_n] = prototype.get_dims();
+        auto [dims_p, dims_n] = prototype.get_max_dims();
         assert(dims_n == Rank);
         return set_dims(dims_p);
     }
 #endif
+    API_EXPORT virtual inline void set_valid_dims(const size_t new_dims[]) override final
+    {
+        DynamicStatus new_state = DynamicStatus::ValidData;
+        for (unsigned i = 0u; i < Rank; i++) {
+            assert(new_dims[i] <= shape->dims[i]);
+            if (new_dims[i] <= 0) {
+                new_state = DynamicStatus::InvalidData;
+            }
+            if (new_state == DynamicStatus::ValidData && new_dims[i] < shape->dims[i]) {
+                new_state = DynamicStatus::SemiValidData;
+            }
+        }
+        dynamic_shape->set_state(new_state);
+        dynamic_shape->set_dims(hnnx::ptr_to_stdarray<Rank, size_t>(&new_dims[0]));
+    }
+    API_EXPORT virtual inline DynamicStatus get_dynamic_state() const override { return dynamic_shape->get_state(); }
+    API_EXPORT virtual void const *get_dynamic_shape_obj() const noexcept override
+    {
+        return (void const *)dynamic_shape;
+    };
     // 'interface()' needs to be overriden in ConcreteTensor
-    API_EXPORT float interface_scale() const { return this->interface().get_scale(); }
-    API_EXPORT float interface_scale_recip() const { return this->interface().get_scale_recip(); }
-    API_EXPORT int32_t interface_offset() const { return this->interface().get_offset(); }
+    API_EXPORT inline float interface_scale() const { return this->interface().get_scale(); }
+    API_EXPORT inline float interface_scale_recip() const { return this->interface().get_scale_recip(); }
+    API_EXPORT inline int32_t interface_offset() const { return this->interface().get_offset(); }
 
     // for direct access to bulk_data, in contiguous tensors only
     //  data_ptr() can be assigned to.
-    API_EXPORT std::conditional_t<is_indirect, void, storage_type *&> data_ptr()
+    API_EXPORT inline std::conditional_t<is_indirect, void, storage_type *&> data_ptr()
     {
         if constexpr (!is_indirect) {
             return mem.bulk_data;
         }
     }
-    API_EXPORT std::conditional_t<is_indirect, void, storage_type *const &> data_ptr() const
+    API_EXPORT inline std::conditional_t<is_indirect, void, storage_type *const &> data_ptr() const
     {
         if constexpr (!is_indirect) {
             return mem.bulk_data;
-        } else {
-            return;
         }
     }
 
     // block table access
-    API_EXPORT storage_type **blocktab_ptr() const { return (storage_type **)mem.get_block_list_ptr(); }
-    API_EXPORT storage_type *&blocktab_at(size_t i)
+    API_EXPORT inline storage_type **blocktab_ptr() const { return (storage_type **)mem.get_block_list_ptr(); }
+    API_EXPORT inline storage_type *&blocktab_at(size_t i)
     {
         if constexpr (!is_indirect) {
             assert(i == 0);
@@ -547,7 +588,7 @@ template <typename Linfo> class LayoutTensor : public RankedTensor<Linfo::Rank> 
             return ((storage_type **)mem.get_block_list_ptr())[i];
         }
     }
-    API_EXPORT storage_type *const &blocktab_at(size_t i) const
+    API_EXPORT inline storage_type *const &blocktab_at(size_t i) const
     {
         if constexpr (!is_indirect) {
             assert(i == 0);
@@ -556,22 +597,31 @@ template <typename Linfo> class LayoutTensor : public RankedTensor<Linfo::Rank> 
             return ((storage_type **)mem.get_block_list_ptr())[i];
         }
     }
-    API_EXPORT size_t blocktab_len() const { return mem.get_block_list_len(shape); }
-    API_EXPORT size_t blocktab_blocksize() const { return mem.get_elements_per_block(shape); }
-    API_EXPORT size_t blocktab_blocksize_bytes() const
+    API_EXPORT inline size_t blocktab_len() const { return mem.get_block_list_len(shape); }
+    API_EXPORT inline size_t blocktab_blocksize() const { return mem.get_elements_per_block(shape); }
+    API_EXPORT inline size_t blocktab_blocksize_bytes() const
     {
         return mem.get_elements_per_block(shape) * sizeof(storage_type);
     }
 
     // TODO: make total_storage elements have an optional bool parameter
     // to return in bytes; and then total_storage_bytes is a wrapper.
-    API_EXPORT virtual size_t total_storage_bytes() const final override
+    API_EXPORT virtual inline size_t total_storage_bytes() const final override
     {
         return total_storage_elements() * sizeof(storage_type);
     }
-    API_EXPORT virtual size_t total_storage_elements() const final override
+    API_EXPORT virtual inline size_t total_storage_elements() const final override
     {
         size_t const total_elements = hnnx::product_of_array(shape->max_dims);
+        return total_elements;
+    }
+    API_EXPORT inline size_t valid_storage_bytes() const final override
+    {
+        return valid_storage_elements() * sizeof(storage_type);
+    }
+    API_EXPORT inline size_t valid_storage_elements() const final override
+    {
+        size_t const total_elements = hnnx::product_of_array(dynamic_shape->get_dims());
         return total_elements;
     }
     API_EXPORT virtual void *raw_data() noexcept override final { return mem.raw_data(); }
@@ -611,7 +661,7 @@ template <typename Linfo> class LayoutTensor : public RankedTensor<Linfo::Rank> 
     // change the padding; and reallocate blocktab if it's larger as a result.
     // in any case, all of the block pointers are zeroed.
     // Can only be done early in prepare (i.e. just as Op is created).
-    void change_pad(std::array<size_t, Rank> const &new_pad, hnnx::Allocator &allocator)
+    inline void change_pad(std::array<size_t, Rank> const &new_pad, hnnx::Allocator &allocator)
     {
         change_shapepad_impl(allocator, nullptr, new_pad.data());
     }
@@ -619,39 +669,40 @@ template <typename Linfo> class LayoutTensor : public RankedTensor<Linfo::Rank> 
     // Can only be done early in prepare (i.e. just as Op is created). Initially used only to
     // support 'scratch' outputs.
     // Please use 'change_shape_pad' if you also want to change padding.
-    void change_shape(std::array<size_t, Rank> const &new_dims, hnnx::Allocator &allocator)
+    inline void change_shape(std::array<size_t, Rank> const &new_dims, hnnx::Allocator &allocator)
     {
         change_shapepad_impl(allocator, new_dims.data());
     }
     // special entry point for use by 'generic' change_shape operation.
-    void change_shape_arr(size_t const *const p_new_dims, hnnx::Allocator &allocator)
+    inline void change_shape_arr(size_t const *const p_new_dims, hnnx::Allocator &allocator)
     {
         change_shapepad_impl(allocator, p_new_dims);
     }
 
     // Use instead of change_shape if you want to change the padding too
     // Can only be done early in prepare (i.e. just as Op is created).
-    void change_shape_pad(std::array<size_t, Rank> const &new_dims, std::array<size_t, Rank> const &new_pad,
-                          hnnx::Allocator &allocator)
+    inline void change_shape_pad(std::array<size_t, Rank> const &new_dims, std::array<size_t, Rank> const &new_pad,
+                                 hnnx::Allocator &allocator)
     {
         change_shapepad_impl(allocator, new_dims.data(), new_pad.data());
     }
 
-    template <typename... ind_types> API_EXPORT storage_type const *const *block_ptr_address(ind_types... inds) const
+    template <typename... ind_types>
+    API_EXPORT inline storage_type const *const *block_ptr_address(ind_types... inds) const
     {
         const std::array<SIdx, Rank> coords = {{static_cast<SIdx>(inds)...}};
         return mem.block_ptr_addr(shape, coords);
     }
-    template <typename... ind_types> API_EXPORT storage_type *const *block_ptr_address(ind_types... inds)
+    template <typename... ind_types> API_EXPORT inline storage_type *const *block_ptr_address(ind_types... inds)
     {
         const std::array<SIdx, Rank> coords = {{static_cast<SIdx>(inds)...}};
         return mem.block_ptr_addr(shape, coords);
     }
-    template <typename... ind_types> API_EXPORT storage_type const *block_ptr(ind_types... inds) const
+    template <typename... ind_types> API_EXPORT inline storage_type const *block_ptr(ind_types... inds) const
     {
         return *block_ptr_address(inds...);
     }
-    template <typename... ind_types> API_EXPORT storage_type *block_ptr(ind_types... inds)
+    template <typename... ind_types> API_EXPORT inline storage_type *block_ptr(ind_types... inds)
     {
         return *block_ptr_address(inds...);
     }
@@ -668,44 +719,34 @@ template <typename Linfo> class LayoutTensor : public RankedTensor<Linfo::Rank> 
     {
         if constexpr (is_indirect) {
             std::array<size_t, Linfo::Rank> ret = {0};
-#ifndef PT_512B
             ret[Linfo::Rank - 1] = 1;
             for (int i = Linfo::Rank - 2; i >= 0; i--) {
                 ret[i] = ret[i + 1] * (shape->max_dims[i + 1] / layout.ChunkSizes[i + 1]);
             }
-#else
-            constexpr int indir = TLayout::indirect_ranks;
-            ret[indir - 1] = 1;
-            for (int i = indir - 2; i >= 0; i--) {
-                ret[i] = ret[i + 1] * (shape->max_dims[i + 1] / layout.ChunkSizes[i + 1]);
-            }
-#endif
             return ret;
-        } else {
-            return;
         }
     }
 
     // get_raw_addr(...) on this class gives a storage_type *.
-    template <typename... ind_types> API_EXPORT storage_type const *get_raw_addr(ind_types... inds) const
+    template <typename... ind_types> API_EXPORT inline storage_type const *get_raw_addr(ind_types... inds) const
     {
         static_assert(is_singular || Rank == (sizeof...(ind_types)), "# of coords must match Rank");
         const std::array<SIdx, Rank> coords = {{static_cast<SIdx>(inds)...}};
         return (storage_type const *)element_addr0(Rank, coords.data());
     }
-    template <typename... ind_types> API_EXPORT storage_type *get_raw_addr(ind_types... inds)
+    template <typename... ind_types> API_EXPORT inline storage_type *get_raw_addr(ind_types... inds)
     {
         static_assert(is_singular || Rank == (sizeof...(ind_types)), "# of coords must match Rank");
         const std::array<SIdx, Rank> coords = {{static_cast<SIdx>(inds)...}};
         return (storage_type *)element_addr0(Rank, coords.data());
     }
-    template <typename... ind_types> API_EXPORT storage_type const &get_raw(ind_types... inds) const
+    template <typename... ind_types> API_EXPORT inline storage_type const &get_raw(ind_types... inds) const
     {
         static_assert(is_singular || Rank == (sizeof...(ind_types)), "# of coords must match Rank");
         const std::array<SIdx, Rank> coords = {{static_cast<SIdx>(inds)...}};
         return *(storage_type const *)element_addr0(Rank, coords.data());
     }
-    template <typename... ind_types> API_EXPORT storage_type &get_raw(ind_types... inds)
+    template <typename... ind_types> API_EXPORT inline storage_type &get_raw(ind_types... inds)
     {
         static_assert(is_singular || Rank == (sizeof...(ind_types)), "# of coords must match Rank");
         const std::array<SIdx, Rank> coords = {{static_cast<SIdx>(inds)...}};
@@ -722,8 +763,8 @@ template <typename Linfo> class LayoutTensor : public RankedTensor<Linfo::Rank> 
     // So if you call func(in.layout_base(), out.layout_base()), where 'func'
     // is a template func, it will be specialized according to the layout of
     // in and out, not the subclass.
-    API_EXPORT LayoutTensor &layout_base() { return *this; }
-    API_EXPORT LayoutTensor const &layout_base() const { return *this; }
+    API_EXPORT inline LayoutTensor &layout_base() { return *this; }
+    API_EXPORT inline LayoutTensor const &layout_base() const { return *this; }
 
     // checksum for debug
     [[gnu::noinline]] API_EXPORT virtual uint64_t get_checksum() const override
@@ -763,7 +804,7 @@ template <typename Linfo> class LayoutTensor : public RankedTensor<Linfo::Rank> 
     ALWAYSINLINE void *element_addr0(size_t rank, const SIdx coords_in[]) const noexcept
     {
         if constexpr (!is_singular) {
-            return mem.element_addr(shape, rank, coords_in, shape->dims);
+            return mem.element_addr(shape, rank, coords_in, dynamic_shape->get_dims());
         } else {
             return mem.raw_data();
         }
@@ -813,8 +854,7 @@ template <typename Linfo> class LayoutTensor : public RankedTensor<Linfo::Rank> 
         // get the pointer to block table; and number of entries in it.
         void **const blocktab = this->mem.get_block_list_ptr();
         size_t const nblocks = this->mem.get_block_list_len(this->shape);
-        size_t const blocksize = sizeof(storage_type) * this->mem.get_elements_per_block(this->shape);
-        en.supply_blocks(this, mclass, (void *const *)blocktab, nblocks, blocksize);
+        en.supply_blocks(this, mclass, (void *const *)blocktab, nblocks);
     }
     // called from find_content_hash in the ConcreteTensor class. hash_in includes
     // hash of dtype and interface.
@@ -861,7 +901,7 @@ template <typename Tinfo> class ConcreteTensor : public LayoutTensor<typename Ti
                           std::is_same<Pad_t, typename BaseLayout::traits::pad_type>::value,
                   "incompatible base class for ConcreteTensor");
 
-    Interface_t const *interface_typed() const { return static_cast<Interface_t const *>(this->interface_ptr); }
+    inline Interface_t const *interface_typed() const { return static_cast<Interface_t const *>(this->interface_ptr); }
 
   public:
     API_EXPORT const char *true_name() const override { return Tinfo::typetag; };
@@ -897,11 +937,8 @@ template <typename Tinfo> class ConcreteTensor : public LayoutTensor<typename Ti
     {
     }
     //    - 'clone duplicate' of the given tensor. Note that cmode is ignored.
-    API_EXPORT ConcreteTensor(const ConcreteTensor &old, hnnx::Allocator *allocator, Tensor::clone_mode cmode,
-                              const OutputDef *def = nullptr)
-        : BaseLayout(old, allocator,
-                     (def ? hnnx::make_interface<Interface_t>::from_odef(allocator->graph, *def) : old.interface_ptr),
-                     cmode)
+    API_EXPORT ConcreteTensor(const ConcreteTensor &old, hnnx::Allocator *allocator, Tensor::clone_mode cmode)
+        : BaseLayout(old, allocator, cmode)
     {
     }
 
@@ -914,28 +951,28 @@ template <typename Tinfo> class ConcreteTensor : public LayoutTensor<typename Ti
     {
         return interface_typed()->get_refobj();
     }
-    API_EXPORT float interface_scale() const { return interface_typed()->get_scale(); }
-    API_EXPORT float interface_scale_recip() const { return interface_typed()->get_scale_recip(); }
-    API_EXPORT int32_t interface_offset() const { return interface_typed()->get_offset(); }
+    API_EXPORT inline float interface_scale() const { return interface_typed()->get_scale(); }
+    API_EXPORT inline float interface_scale_recip() const { return interface_typed()->get_scale_recip(); }
+    API_EXPORT inline int32_t interface_offset() const { return interface_typed()->get_offset(); }
 
-    API_EXPORT ALWAYSINLINE const element_type *element_ptr(size_t rank, const SIdx coords[]) const
+    API_EXPORT inline ALWAYSINLINE const element_type *element_ptr(size_t rank, const SIdx coords[]) const
     {
         return (element_type const *)this->element_addr0(rank, coords);
     }
-    API_EXPORT ALWAYSINLINE element_type *element_ptr(size_t rank, const SIdx coords[])
+    API_EXPORT inline ALWAYSINLINE element_type *element_ptr(size_t rank, const SIdx coords[])
     {
         return (element_type *)this->element_addr0(rank, coords);
     }
 
     // Some methods return the same thing as in LayoutTensor, but
     // with the type being element_type instead of storage_type.
-    API_EXPORT std::conditional_t<is_indirect, void, element_type *&> data_ptr()
+    API_EXPORT inline std::conditional_t<is_indirect, void, element_type *&> data_ptr()
     {
         if constexpr (!is_indirect) {
             return (element_type *&)this->mem.bulk_data;
         }
     }
-    API_EXPORT std::conditional_t<is_indirect, void, element_type *const &> data_ptr() const
+    API_EXPORT inline std::conditional_t<is_indirect, void, element_type *const &> data_ptr() const
     {
         if constexpr (!is_indirect) {
             return (element_type *const &)this->mem.bulk_data;
@@ -943,63 +980,64 @@ template <typename Tinfo> class ConcreteTensor : public LayoutTensor<typename Ti
     }
 
     // block table access
-    API_EXPORT element_type **blocktab_ptr() const { return (element_type **)this->mem.get_block_list_ptr(); }
-    API_EXPORT element_type *&blocktab_at(size_t i) { return (element_type *&)BaseLayout::blocktab_at(i); }
-    API_EXPORT element_type *const &blocktab_at(size_t i) const
+    API_EXPORT inline element_type **blocktab_ptr() const { return (element_type **)this->mem.get_block_list_ptr(); }
+    API_EXPORT inline element_type *&blocktab_at(size_t i) { return (element_type *&)BaseLayout::blocktab_at(i); }
+    API_EXPORT inline element_type *const &blocktab_at(size_t i) const
     {
         return (element_type *const &)BaseLayout::blocktab_at(i);
     }
 
-    template <typename... ind_types> API_EXPORT element_type const *const *block_ptr_address(ind_types... inds) const
+    template <typename... ind_types>
+    API_EXPORT inline element_type const *const *block_ptr_address(ind_types... inds) const
     {
         return (element_type const *const *)BaseLayout::block_ptr_address(inds...);
     };
-    template <typename... ind_types> API_EXPORT element_type *const *block_ptr_address(ind_types... inds)
+    template <typename... ind_types> API_EXPORT inline element_type *const *block_ptr_address(ind_types... inds)
     {
         return (element_type *const *)BaseLayout::block_ptr_address(inds...);
     };
-    template <typename... ind_types> API_EXPORT element_type const *block_ptr(ind_types... inds) const
+    template <typename... ind_types> API_EXPORT inline element_type const *block_ptr(ind_types... inds) const
     {
         return *this->block_ptr_address(inds...);
     }
-    template <typename... ind_types> API_EXPORT element_type *block_ptr(ind_types... inds)
+    template <typename... ind_types> API_EXPORT inline element_type *block_ptr(ind_types... inds)
     {
         return *this->block_ptr_address(inds...);
     }
 
     // direct access methods.
     //
-    template <typename... ind_types> API_EXPORT Const_Accessor_t operator()(ind_types... inds) const
+    template <typename... ind_types> API_EXPORT inline Const_Accessor_t operator()(ind_types... inds) const
     {
         static_assert(is_singular || Rank == (sizeof...(ind_types)), "# of coords must match Rank");
         const std::array<SIdx, Rank> coords = {static_cast<SIdx>(inds)...};
         return Const_Accessor_t(this->element_addr0(Rank, coords.data()), interface_typed());
     }
-    template <typename... ind_types> API_EXPORT Accessor_t operator()(ind_types... inds)
+    template <typename... ind_types> API_EXPORT inline Accessor_t operator()(ind_types... inds)
     {
         static_assert(is_singular || Rank == (sizeof...(ind_types)), "# of coords must match Rank");
         const std::array<SIdx, Rank> coords = {{static_cast<SIdx>(inds)...}};
         return Accessor_t(this->element_addr0(Rank, coords.data()), interface_typed());
     }
-    template <typename... ind_types> API_EXPORT element_type const &get_raw(ind_types... inds) const
+    template <typename... ind_types> API_EXPORT inline element_type const &get_raw(ind_types... inds) const
     {
         static_assert(is_singular || Rank == (sizeof...(ind_types)), "# of coords must match Rank");
         const std::array<SIdx, Rank> coords = {{static_cast<SIdx>(inds)...}};
         return *(element_type const *)this->element_addr0(Rank, coords.data());
     }
-    template <typename... ind_types> API_EXPORT element_type &get_raw(ind_types... inds)
+    template <typename... ind_types> API_EXPORT inline element_type &get_raw(ind_types... inds)
     {
         static_assert(is_singular || Rank == (sizeof...(ind_types)), "# of coords must match Rank");
         const std::array<SIdx, Rank> coords = {{static_cast<SIdx>(inds)...}};
         return *(element_type *)this->element_addr0(Rank, coords.data());
     }
-    template <typename... ind_types> API_EXPORT element_type const *get_raw_addr(ind_types... inds) const
+    template <typename... ind_types> API_EXPORT inline element_type const *get_raw_addr(ind_types... inds) const
     {
         static_assert(is_singular || Rank == (sizeof...(ind_types)), "# of coords must match Rank");
         const std::array<SIdx, Rank> coords = {{static_cast<SIdx>(inds)...}};
         return (element_type const *)this->element_addr0(Rank, coords.data());
     }
-    template <typename... ind_types> API_EXPORT element_type *get_raw_addr(ind_types... inds)
+    template <typename... ind_types> API_EXPORT inline element_type *get_raw_addr(ind_types... inds)
     {
         static_assert(is_singular || Rank == (sizeof...(ind_types)), "# of coords must match Rank");
         const std::array<SIdx, Rank> coords = {{static_cast<SIdx>(inds)...}};
@@ -1047,23 +1085,18 @@ template <typename Tinfo> class ConcreteTensor : public LayoutTensor<typename Ti
     {
         // compare the interface, and then all the rest is done in compare_sametype_layout.
         auto *rhs = static_cast<ConcreteTensor const *>(rhs_in);
-        if (rhs == nullptr) {
-            throw std::runtime_error("compare_sametype called with null rhs");
-        }
         int const icmp = interface_typed()->compare(*rhs->interface_typed());
         if (icmp != 0) return icmp;
         return this->compare_sametype_layout(rhs);
     }
 
     API_EXPORT virtual void **clone_util(hnnx::Allocator *allocator, std::unique_ptr<Tensor> *tensp,
-                                         Tensor::tensor_blockinfo *infop,
-                                         const OutputDef *od /* nullptr */) const override
+                                         Tensor::tensor_blockinfo *infop) const override
     {
         void **retval = nullptr;
         ConcreteTensor const *newtens = nullptr;
         if (tensp) {
-            if constexpr (!dtype_traits<dtype>::is_quant) od = nullptr;
-            *tensp = std::make_unique<ConcreteTensor>(*this, allocator, Tensor::clone_mode::duplicate, od);
+            *tensp = std::make_unique<ConcreteTensor>(*this, allocator, Tensor::clone_mode::duplicate);
             newtens = static_cast<ConcreteTensor const *>(tensp->get());
             retval = (void **)newtens->mem.get_block_list_ptr();
         }

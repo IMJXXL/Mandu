@@ -1,17 +1,17 @@
-// ==============================================================================
+//==============================================================================
 //
-// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
-// SPDX-License-Identifier: BSD-3-Clause-Clear
+// Copyright (c) 2018,2021 Qualcomm Technologies, Inc.
+// All Rights Reserved.
+// Confidential and Proprietary - Qualcomm Technologies, Inc.
 //
-// ==============================================================================
+//==============================================================================
 
 #ifndef PERF_TIMING_H
 #define PERF_TIMING_H 1
 
+#include <stdint.h>
 #include "weak_linkage.h"
 #include "macros_attribute.h"
-
-#include <cstdint>
 
 PUSH_VISIBILITY(default)
 
@@ -23,8 +23,8 @@ class PcyclePoint {
     API_EXPORT uint64_t get_start() const { return start; }
     API_EXPORT uint64_t get_end() const { return end; }
     //private:
-    std::uint64_t start;
-    std::uint64_t end;
+    uint64_t start;
+    uint64_t end;
 };
 
 POP_VISIBILITY()

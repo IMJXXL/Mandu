@@ -1,9 +1,10 @@
-// ==============================================================================
+//==============================================================================
 //
-// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
-// SPDX-License-Identifier: BSD-3-Clause-Clear
+// Copyright (c) Qualcomm Technologies, Inc.
+// All Rights Reserved.
+// Confidential and Proprietary - Qualcomm Technologies, Inc.
 //
-// ==============================================================================
+//==============================================================================
 
 #ifndef HEXNN_BLOCK_ENUMERATION_H
 #define HEXNN_BLOCK_ENUMERATION_H 1
@@ -42,17 +43,15 @@ class MemBlockEnumerator {
     MemBlockEnumerator &operator=(MemBlockEnumerator const &) = delete;
     MemBlockEnumerator &operator=(MemBlockEnumerator &&) = delete;
 
-    API_EXPORT virtual void supply_blocks_func(Tensor const *tensp, int memclass, void *const *ptr, size_t num,
-                                               size_t blocksize) = 0;
+    API_EXPORT virtual void supply_blocks_func(Tensor const *tensp, int memclass, void *const *ptr, size_t num) = 0;
     // Tensors can use these wrappers
-    API_EXPORT inline void supply_blocks(Tensor const *tensp, void *const *ptr, size_t num, size_t blocksize)
+    API_EXPORT inline void supply_blocks(Tensor const *tensp, void *const *ptr, size_t num)
     {
-        supply_blocks_func(tensp, -1, ptr, num, blocksize);
+        supply_blocks_func(tensp, -1, ptr, num);
     }
-    API_EXPORT inline void supply_blocks(Tensor const *tensp, MemoryClass mc, void *const *ptr, size_t num,
-                                         size_t blocksize)
+    API_EXPORT inline void supply_blocks(Tensor const *tensp, MemoryClass mc, void *const *ptr, size_t num)
     {
-        supply_blocks_func(tensp, int(mc), ptr, num, blocksize);
+        supply_blocks_func(tensp, int(mc), ptr, num);
     }
 };
 // utility class, to enumerate to a std::set
@@ -66,8 +65,7 @@ class MemBlockEnumToSet : public MemBlockEnumerator {
     {
     }
     API_EXPORT MemBlockEnumToSet(blockid_set_t &s, MemoryClass mc) : m_set(s), m_memclass_sel(int(mc)) {}
-    API_EXPORT virtual void supply_blocks_func(Tensor const *, int memclass, void *const *ptr, size_t num,
-                                               size_t blocksize) override
+    API_EXPORT virtual void supply_blocks_func(Tensor const *, int memclass, void *const *ptr, size_t num) override
     {
         if (m_memclass_sel >= 0 && memclass >= 0 && m_memclass_sel != memclass) return;
         for (size_t i = 0; i < num; i++) {
@@ -80,10 +78,9 @@ class MemBlockEnumToSet : public MemBlockEnumerator {
 template <typename ENFUNC> class MemBlockEnumWrapper : public MemBlockEnumerator {
     ENFUNC m_enfunc;
 
-    API_EXPORT virtual void supply_blocks_func(Tensor const *tensp, int memclass, void *const *ptr, size_t num,
-                                               size_t blocksize) override
+    API_EXPORT virtual void supply_blocks_func(Tensor const *tensp, int memclass, void *const *ptr, size_t num) override
     {
-        m_enfunc(tensp, memclass, ptr, num, blocksize);
+        m_enfunc(tensp, memclass, ptr, num);
     }
 
   public:
@@ -98,8 +95,7 @@ template <typename ENFUNC> class MemBlockEnumWrapper : public MemBlockEnumerator
 template <typename REPLFUNC> class MemBlockReplBlockWrapper : public MemBlockEnumerator {
     REPLFUNC m_replfunc;
 
-    API_EXPORT virtual void supply_blocks_func(Tensor const *tensp, int memclass, void *const *ptr, size_t num,
-                                               size_t blocksize) override
+    API_EXPORT virtual void supply_blocks_func(Tensor const *tensp, int memclass, void *const *ptr, size_t num) override
     {
         for (unsigned i = 0; i < num; i++) {
             void *newblk = m_replfunc(tensp, ptr[i]);

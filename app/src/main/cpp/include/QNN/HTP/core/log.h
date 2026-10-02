@@ -1,39 +1,21 @@
-// ==============================================================================
+//==============================================================================
 //
-// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
-// SPDX-License-Identifier: BSD-3-Clause-Clear
+// Copyright (c) 2023 Qualcomm Technologies, Inc.
+// All Rights Reserved.
+// Confidential and Proprietary - Qualcomm Technologies, Inc.
 //
-// ==============================================================================
+//==============================================================================
 
 #ifndef LOG_H
 #define LOG_H 1
 
-// Include HULI API if reachable. Builds that only sync hexagon/ and bindiff/
-// (e.g. QNN OpPackage x86) will not have huli_api_log.h in their include path.
-// HAVE_HULI_LOG is used as the discriminator for HULI-specific code sections.
-#if __has_include("huli_api_log.h")
-#include "huli_api_log.h"
-#define HAVE_HULI_LOG 1
-#else
-#define HAVE_HULI_LOG 0
-#endif
 #include "weak_linkage.h"
 #include "macros_attribute.h"
-// Include fmt if reachable. Builds that consume only installed SDK headers
-// (e.g. QNN MCP OpPackage) may not have fmt in their include path; in that
-// case the logmsg_fmt / *logf family is simply not declared.
-#if __has_include(<fmt/base.h>)
-#include <cstdlib>
-#include <fmt/base.h>
-#define HAVE_FMT 1
-#else
-#define HAVE_FMT 0
-#endif
 #include <cstdarg>
 #include <cstdint>
-#include <chrono>
 #include <string>
-#include <utility>
+#include <chrono>
+//#include <fmt/format.h>
 
 #if !defined(__PRETTY_FUNCTION__) && !defined(__GNUC__)
 #define __FUNC_INFO__ __FUNCSIG__
@@ -139,7 +121,7 @@ void qnndsp_x86_log(const char *fmt, ...);
 #if defined(NN_LOG_DYNLVL) && (NN_LOG_DYNLVL > 0)
 
 // Dynamic logging level test function.
-inline bool log_condition(const int prio)
+static inline bool log_condition(const int prio)
 {
     return (prio <= GetLogPriorityLevel());
 };
@@ -147,20 +129,18 @@ inline bool log_condition(const int prio)
 #elif defined(NN_LOG_MAXLVL)
 
 // Logging level is fixed at compile time.
-inline bool log_condition(const int prio)
+static inline bool log_condition(const int prio)
 {
     return ((prio <= NN_LOG_MAXLVL) ? true : false);
 };
 
 #else
 
-// LCOV_EXCL_START [SAFTYSWCCB-996]
 // Logging is completely disabled.
-constexpr bool log_condition(const int prio)
+constexpr static bool log_condition(const int prio)
 {
     return false;
 };
-// LCOV_EXCL_STOP
 
 #endif
 
@@ -183,206 +163,96 @@ POP_VISIBILITY()
 
 #define HV3_LOG(PRIO, FMT, ...) qnndsp_log(PRIO, FMT, ##__VA_ARGS__)
 
-// _errlog_ must be usable as an expression (return errlog(...)) so it cannot
-// use a do-while macro.  hv3_errlog_impl is a plain inline function that can
-// appear in a comma-expression context.
-// LCOV_EXCL_START [SAFTYSWCCB-996]
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wformat-nonliteral"
-#pragma clang diagnostic ignored "-Wformat-security"
-template <typename... Args> inline void hv3_errlog_impl(const char *fmt, Args... args)
-{
-    qnndsp_log(NN_LOG_ERRORLVL, fmt, args...);
-}
-#pragma clang diagnostic pop
-// LCOV_EXCL_STOP
+#else // ENABLE_QNNDSP_LOG
 
-#elif HAVE_HULI_LOG // !ENABLE_QNNDSP_LOG, HULI available
-
-#define MAKE_LOG_FMT_WITH_PREFIX(FMT, ...) FILE_BASENAME ":" STRINGIZE(__LINE__) ":" FMT, ##__VA_ARGS__
-#define HV3_LOG(PRIO, FMT, ...)            huli_log(static_cast<huli_log_level_t>(PRIO), FMT, ##__VA_ARGS__)
-
-// huli_log_impl has __attribute__((format(printf,...))) which is useful for
-// catching format bugs, but _errlog_ needs to be usable as an expression (not
-// a statement) so it cannot use the huli_log do-while macro.  This wrapper
-// calls huli_log_impl directly and can appear in a comma-expression context.
-//
-// The pragma suppresses -Wformat-nonliteral/-Wformat-security because the
-// format string is assembled by MAKE_LOG_FMT_WITH_PREFIX via token-paste and
-// FILE_BASENAME — which is a string literal on GCC/Clang (__FILE_NAME__) but
-// not on MSVC (constexpr stripFilePath).  Format correctness is still enforced
-// by huli_log_impl's format attribute at its definition site, and by
-// FORMAT_TYPE_CHECK at each _errlog_ call site.
-// LCOV_EXCL_START [SAFTYSWCCB-996]
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wformat-nonliteral"
-#pragma clang diagnostic ignored "-Wformat-security"
-template <typename... Args> inline void hv3_errlog_impl(const char *fmt, Args... args)
-{
-    huli_log_impl(HULI_ERROR, fmt, args...);
-}
-#pragma clang diagnostic pop
-// LCOV_EXCL_STOP
-
-#else // !ENABLE_QNNDSP_LOG && !HAVE_HULI_LOG — no logging backend (e.g. QNN OpPackage x86)
-
-#define MAKE_LOG_FMT_WITH_PREFIX(FMT, ...) FILE_BASENAME ":" STRINGIZE(__LINE__) ":" FMT, ##__VA_ARGS__
-#define HV3_LOG(PRIO, FMT, ...)            ((void)0)
-
-// LCOV_EXCL_START [SAFTYSWCCB-996]
-#if defined(__clang__)
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wformat-nonliteral"
-#pragma clang diagnostic ignored "-Wformat-security"
-#endif
-template <typename... Args> inline void hv3_errlog_impl(const char * /*fmt*/, Args... /*args*/) {}
-#if defined(__clang__)
-#pragma clang diagnostic pop
-#endif
-// LCOV_EXCL_STOP
+#define MAKE_LOG_FMT_WITH_PREFIX(FMT, ...) FILE_BASENAME ":" STRINGIZE(__LINE__) ":" FMT "\n", ##__VA_ARGS__
+#define HV3_LOG(PRIO, FMT, ...)            nn_log_printf(FMT, ##__VA_ARGS__)
 
 #endif // ENABLE_QNNDSP_LOG
 
 // These are conditional, where the condition is set via compile flags.  Note that these are
 // template functions so that we can exclude them from coverage using lcov commands.
-//
-// __attribute__((noinline)) prevents the compiler from expanding a unique copy of this
-// template at every call site (each distinct Args... signature would otherwise produce
-// separate inlined code, bloating the hot-path instruction stream on DSP targets).
-// The calling macros (_logmsg_, _infolog_, etc.) already guard with log_condition(), so
-// the inner check here is intentionally removed to avoid a redundant branch per call site.
 
-#if defined(__clang__)
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wformat-security"
-#pragma clang diagnostic ignored "-Wformat-nonliteral"
-#endif
-// LCOV_EXCL_START [SAFTYSWCCB-996]
-template <typename... Types> [[gnu::noinline]] void logmsgraw(const int prio, char const *fmt, Types... args)
+template <typename... Types> inline void logmsgraw(const int prio, char const *fmt, Types... args)
 {
-#ifdef ENABLE_QNNDSP_LOG
-    qnndsp_log(prio, fmt, args...);
-#elif HAVE_HULI_LOG
-    // log_condition() is the sole gate for hexnn log levels; call huli_log_impl
-    // directly so huli's own compile-time (HULI_LOG_LEVEL) and runtime
-    // (huli_log_runtime_level) filters do not add a second, independent gate
-    // that would change behavior relative to the pre-HULI system.
-    huli_log_impl(static_cast<huli_log_level_t>(prio), fmt, args...);
-#else
-    (void)prio;
-    (void)fmt;
-#endif
+    // LCOV_EXCL_START [SAFTYSWCCB-996]
+    if (log_condition(prio)) {
+        HV3_LOG(prio, fmt, args...);
+    }
+    // LCOV_EXCL_STOP
 }
-// LCOV_EXCL_STOP
-#if defined(__clang__)
-#pragma clang diagnostic pop
-#endif
 
 // These macros are what are used in actual code, so that the line and filename macros will expand
 // properly to show where the macro is invoked.
 
 #define _rawlog_(FMT, ...)  HV3_LOG(NN_LOG_ERRORLVL, FMT, ##__VA_ARGS__)
 #define _okaylog_(FMT, ...) HV3_LOG(NN_LOG_ERRORLVL, MAKE_LOG_FMT_WITH_PREFIX(FMT, ##__VA_ARGS__))
-// _errlog_ must be usable as an expression (return errlog(...)) so it cannot
-// use the huli_log do-while macro.  Use hv3_errlog_impl which is a plain
-// function call and can appear in a comma-expression.
-#define _errlog_(FMT, ...) hv3_errlog_impl(MAKE_LOG_FMT_WITH_PREFIX(":ERROR:" FMT, ##__VA_ARGS__))
-#define errlog(...)        (_errlog_(__VA_ARGS__), GraphStatus::ErrorFatal)
-// Guard the logmsgraw() call so arguments are not evaluated when the level is
-// disabled at runtime (important under NN_LOG_DYNLVL where log_condition() is
-// a runtime branch rather than a compile-time constant).
-#define _logmsg_(PRIO, FMT, ...)                                                                                       \
-    do {                                                                                                               \
-        if (log_condition(PRIO)) logmsgraw(PRIO, MAKE_LOG_FMT_WITH_PREFIX(FMT, ##__VA_ARGS__));                        \
-    } while (0)
-#define _warnlog_(FMT, ...)                                                                                            \
-    do {                                                                                                               \
-        if (log_condition(NN_LOG_WARNLVL))                                                                             \
-            logmsgraw(NN_LOG_WARNLVL, MAKE_LOG_FMT_WITH_PREFIX("WARNING:" FMT, ##__VA_ARGS__));                        \
-    } while (0) // LCOV_EXCL_BR_LINE LCOV_EXCL_LINE [SAFTYSWCCB-996]
-// Stat logging helpers: keeping the if-branch inside a single inline function
-// (instead of expanding it at each macro call site) ensures the branch is
-// counted once and waived once with LCOV_EXCL, leaving call-site coverage clean.
-// In the ENABLE_QNNDSP_LOG path, HULI stat APIs are not available; use no-ops.
-#if HAVE_HULI_LOG
-template <typename V> inline void hv3_statlog_impl(int prio, const char *name, V value)
-{
-    // LCOV_EXCL_START [SAFTYSWCCB-996]
-    if (log_condition(prio)) huli_log_stat_u64(name, static_cast<uint64_t>(value));
-    // LCOV_EXCL_STOP
-}
-// LCOV_EXCL_START [SAFTYSWCCB-996]
-inline void hv3_statslog_impl(int prio, const char *name, const char *value)
-{
-    if (log_condition(prio)) huli_log_stat_str(name, value);
-}
-// LCOV_EXCL_STOP
-#else
-template <typename V> inline void hv3_statlog_impl(int /*prio*/, const char * /*name*/, V /*value*/) {}
-inline void hv3_statslog_impl(int /*prio*/, const char * /*name*/, const char * /*value*/) {}
-#endif
-#define _infolog_(FMT, ...)                                                                                            \
-    do {                                                                                                               \
-        if (log_condition(NN_LOG_INFOLVL)) logmsgraw(NN_LOG_INFOLVL, MAKE_LOG_FMT_WITH_PREFIX(FMT, ##__VA_ARGS__));    \
-    } while (0) // LCOV_EXCL_BR_LINE LCOV_EXCL_LINE [SAFTYSWCCB-996]
-#define _i_infolog_(FMT, ...)                                                                                          \
-    do {                                                                                                               \
-        if (log_condition(NN_LOG_INFOLVL_INTERNAL))                                                                    \
-            logmsgraw(NN_LOG_INFOLVL_INTERNAL, MAKE_LOG_FMT_WITH_PREFIX(FMT, ##__VA_ARGS__));                          \
-    } while (0) // LCOV_EXCL_BR_LINE LCOV_EXCL_LINE [SAFTYSWCCB-996]
-#define _debuglog_(FMT, ...)                                                                                           \
-    do {                                                                                                               \
-        if (log_condition(NN_LOG_DEBUGLVL)) /* LCOV_EXCL_BR_LINE SAFTYSWCCB-996 */                                     \
-            logmsgraw(NN_LOG_DEBUGLVL, MAKE_LOG_FMT_WITH_PREFIX(FMT, ##__VA_ARGS__));                                  \
-    } while (0) // LCOV_EXCL_BR_LINE LCOV_EXCL_LINE [SAFTYSWCCB-996]
-#define _verboselog_(FMT, ...)                                                                                         \
-    do {                                                                                                               \
-        if (log_condition(NN_LOG_VERBOSELVL))                                                                          \
-            logmsgraw(NN_LOG_VERBOSELVL, MAKE_LOG_FMT_WITH_PREFIX(FMT, ##__VA_ARGS__));                                \
-    } while (0) // LCOV_EXCL_BR_LINE LCOV_EXCL_LINE [SAFTYSWCCB-996]
+#define _errlog_(FMT, ...)                                                                                             \
+    HV3_LOG(NN_LOG_ERRORLVL, MAKE_LOG_FMT_WITH_PREFIX(":ERROR:" FMT, ##__VA_ARGS__)), GraphStatus::ErrorFatal
+#define _logmsg_(PRIO, FMT, ...) logmsgraw(PRIO, MAKE_LOG_FMT_WITH_PREFIX(FMT, ##__VA_ARGS__))
+#define _warnlog_(FMT, ...)      logmsgraw(NN_LOG_WARNLVL, MAKE_LOG_FMT_WITH_PREFIX("WARNING:" FMT, ##__VA_ARGS__))
+#define _statlog_(statname, statvalue, dummy)                                                                          \
+    logmsgraw(NN_LOG_STATLVL, MAKE_LOG_FMT_WITH_PREFIX("STAT: %s=%lld", statname, (long long)statvalue))
+#define _i_statlog_(statname, statvalue, dummy)                                                                        \
+    logmsgraw(NN_LOG_STATLVL_INTERNAL, MAKE_LOG_FMT_WITH_PREFIX("STAT: %s=%lld", statname, (long long)statvalue))
+#define _statslog_(statname, statvalue, dummy)                                                                         \
+    logmsgraw(NN_LOG_STATLVL, MAKE_LOG_FMT_WITH_PREFIX("STAT: %s=%s", statname, statvalue))
+#define _i_statslog_(statname, statvalue, dummy)                                                                       \
+    logmsgraw(NN_LOG_STATLVL_INTERNAL, MAKE_LOG_FMT_WITH_PREFIX("STAT: %s=%s", statname, (statvalue)))
+#define _infolog_(FMT, ...)    logmsgraw(NN_LOG_INFOLVL, MAKE_LOG_FMT_WITH_PREFIX(FMT, ##__VA_ARGS__))
+#define _i_infolog_(FMT, ...)  logmsgraw(NN_LOG_INFOLVL_INTERNAL, MAKE_LOG_FMT_WITH_PREFIX(FMT, ##__VA_ARGS__))
+#define _debuglog_(FMT, ...)   logmsgraw(NN_LOG_DEBUGLVL, MAKE_LOG_FMT_WITH_PREFIX(FMT, ##__VA_ARGS__))
+#define _verboselog_(FMT, ...) logmsgraw(NN_LOG_VERBOSELVL, MAKE_LOG_FMT_WITH_PREFIX(FMT, ##__VA_ARGS__))
 
 template <class T> constexpr const char *format_type_check = "";
 
 // This compile-time expression ensures that we always apply the -Wformat type-safety check.
 #define FORMAT_TYPE_CHECK(...) (format_type_check<decltype(printf(__VA_ARGS__))>)
 
-#define rawlog(...)        _rawlog_(__VA_ARGS__)
-#define okaylog(...)       _okaylog_(__VA_ARGS__)
-#define logmsg(PRIO, ...)  _logmsg_(PRIO, __VA_ARGS__)
-#define warnlog(...)       _warnlog_(__VA_ARGS__)
-#define statlog(sn, sv)    hv3_statlog_impl(NN_LOG_STATLVL, (sn), (sv))
-#define i_statlog(sn, sv)  hv3_statlog_impl(NN_LOG_STATLVL_INTERNAL, (sn), (sv))
-#define statslog(sn, sv)   hv3_statslog_impl(NN_LOG_STATLVL, (sn), (sv))
-#define i_statslog(sn, sv) hv3_statslog_impl(NN_LOG_STATLVL_INTERNAL, (sn), (sv))
-#define infolog(...)       _infolog_(__VA_ARGS__)
-#define i_infolog(...)     _i_infolog_(__VA_ARGS__)
-#define _debuglog(...)     _debuglog_(__VA_ARGS__)
-#define verboselog(...)    _verboselog_(__VA_ARGS__)
+#define rawlog(...)       _rawlog_(__VA_ARGS__, FORMAT_TYPE_CHECK(__VA_ARGS__))
+#define okaylog(...)      _okaylog_(__VA_ARGS__, FORMAT_TYPE_CHECK(__VA_ARGS__))
+#define errlog(...)       _errlog_(__VA_ARGS__, FORMAT_TYPE_CHECK(__VA_ARGS__))
+#define logmsg(PRIO, ...) _logmsg_(PRIO, __VA_ARGS__, FORMAT_TYPE_CHECK(__VA_ARGS__))
+#define warnlog(...)      _warnlog_(__VA_ARGS__, FORMAT_TYPE_CHECK(__VA_ARGS__))
+#define statlog(...)      _statlog_(__VA_ARGS__, FORMAT_TYPE_CHECK(__VA_ARGS__))
+#define i_statlog(...)    _i_statlog_(__VA_ARGS__, FORMAT_TYPE_CHECK(__VA_ARGS__))
+#define statslog(...)     _statslog_(__VA_ARGS__, FORMAT_TYPE_CHECK(__VA_ARGS__))
+#define i_statslog(...)   _i_statslog_(__VA_ARGS__, FORMAT_TYPE_CHECK(__VA_ARGS__))
+#define infolog(...)      _infolog_(__VA_ARGS__, FORMAT_TYPE_CHECK(__VA_ARGS__))
+#define i_infolog(...)    _i_infolog_(__VA_ARGS__, FORMAT_TYPE_CHECK(__VA_ARGS__))
+#define _debuglog(...)    _debuglog_(__VA_ARGS__, FORMAT_TYPE_CHECK(__VA_ARGS__))
+#define verboselog(...)   _verboselog_(__VA_ARGS__, FORMAT_TYPE_CHECK(__VA_ARGS__))
 
 // Extra hook for debuglog.  This allows files to redefine it in order to add extra compile-time
 // hooks for removing it.
 #define debuglog(...) _debuglog(__VA_ARGS__)
 
-// Internal formatter: formats via fmtlib then routes through huli_log_impl.
-// Defined in log.cc.
-#if HAVE_FMT
-void vlogmsg_fmt(int prio, fmt::string_view fmt, fmt::format_args args);
+//
+// BCK:  Temporarily removing fmtlib logging due to QNN build issues.
+//
+#if 0
+//
+// These are logging variants which use fmtlib.
+//
+
+// Internal formatter function which sends data to stdout, FARF, etc.
+void vlogmsg_fmt(fmt::string_view fmt, fmt::format_args args);
 
 template <typename... T> inline void logmsg_fmt(const int prio, fmt::format_string<T...> fmt, T &&...args)
 {
     // LCOV_EXCL_START [SAFTYSWCCB-996]
     if (log_condition(prio)) {
-        vlogmsg_fmt(prio, fmt, fmt::make_format_args(args...));
+        vlogmsg_fmt(fmt, fmt::make_format_args(args...));
     }
     // LCOV_EXCL_STOP
 }
 
-#define errlogf(...)     logmsg_fmt(NN_LOG_ERRORLVL, __VA_ARGS__)
-#define warnlogf(...)    logmsg_fmt(NN_LOG_WARNLVL, __VA_ARGS__)
-#define infologf(...)    logmsg_fmt(NN_LOG_INFOLVL, __VA_ARGS__)
-#define verboselogf(...) logmsg_fmt(NN_LOG_VERBOSELVL, __VA_ARGS__)
-#define debuglogf(...)   logmsg_fmt(NN_LOG_DEBUGLVL, __VA_ARGS__)
-#endif // HAVE_FMT
+#define errlogf(...)          logmsg_fmt(NN_LOG_ERRORLVL, "", MAKE_LOG_FMT_WITH_PREFIX(":ERROR:" FMT, ##__VA_ARGS__))
+#define warnlogf(...)         logmsg_fmt(NN_LOG_WARNLVL, "", MAKE_LOG_FMT_WITH_PREFIX(":WARNING:" FMT, ##__VA_ARGS__))
+#define infologf(FMT, ...)    logmsg_fmt(NN_LOG_INFOLVL, MAKE_LOG_FMT_WITH_PREFIX(FMT, ##__VA_ARGS__))
+#define verboselogf(FMT, ...) logmsg_fmt(NN_LOG_VERBOSELVL, MAKE_LOG_FMT_WITH_PREFIX(FMT, ##__VA_ARGS__))
+#define debuglogf(FMT, ...)   logmsg_fmt(NN_LOG_DEBUGLVL, "", MAKE_LOG_FMT_WITH_PREFIX(FMT, ##__VA_ARGS__))
+#endif // 0
 
 #ifdef NN_LOG_MAXLVL
 #define LOG_STAT()    ((NN_LOG_MAXLVL) >= NN_LOG_STATLVL)

@@ -1,9 +1,10 @@
-// ==============================================================================
+//==============================================================================
 //
-// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
-// SPDX-License-Identifier: BSD-3-Clause-Clear
+// Copyright (c) 2023 Qualcomm Technologies, Inc.
+// All Rights Reserved.
+// Confidential and Proprietary - Qualcomm Technologies, Inc.
 //
-// ==============================================================================
+//==============================================================================
 
 #ifndef SERIALIZE_OPLIST
 #define SERIALIZE_OPLIST 1
@@ -68,14 +69,12 @@ class SerOpsInterface {
     //       lower 8 bits are log2(aligment) - must be >= 2, <= log2(max_opaquet_align)
     //       uppper 24 bits are size, multiple of alignment.
     //       If the size is 0, lower 8 bits are always 2.
-    // mode = 4 is used for ops with the QHPI
-    // So, codes 5..257 are available.
+    // So, codes 4..257 are available.
     static constexpr unsigned opMODE_typical = 0;
     static constexpr unsigned opMODE_variadic = 1;
-    static constexpr unsigned opMODE_foreign = 4;
 
     virtual void op_serialize_func(Op const *op, unsigned n_in, Tensor const *const *in_tens, unsigned n_out,
-                                   uptr_Tensor const *out_tens, unsigned mode, unsigned extra) = 0;
+                                   uptr_Tensor const *out_tens, unsigned mode) = 0;
     // Used for ConstWrapperOp, ShapeWrapperOp, DummyN
     virtual void op_for_tensor_func(Op const *op, unsigned n_out, uptr_Tensor const *out_tens) = 0;
 
@@ -122,27 +121,21 @@ class SerOpsInterface {
     inline void op_typical(Op const *op, std::array<const Tensor *, N_IN> const &inputs,
                            std::array<uptr_Tensor, N_OUT> const &outputs)
     {
-        op_serialize_func(op, N_IN, inputs.data(), N_OUT, outputs.data(), opMODE_typical, 0);
+        op_serialize_func(op, N_IN, inputs.data(), N_OUT, outputs.data(), opMODE_typical);
     }
     // to be called from TypicalOpWithCompiler<F, OpaqueT>::serialize, with OpaqueT explicitly specified
     template <typename OpaqueT, size_t N_IN, size_t N_OUT>
     inline void op_typical_with_extra(Op const *op, std::array<const Tensor *, N_IN> const &inputs,
                                       std::array<uptr_Tensor, N_OUT> const &outputs)
     {
-        op_serialize_func(op, N_IN, inputs.data(), N_OUT, outputs.data(), bake::encode_opaquet_size<OpaqueT>(), 0);
+        op_serialize_func(op, N_IN, inputs.data(), N_OUT, outputs.data(), bake::encode_opaquet_size<OpaqueT>());
     }
 
     // to be called from VariadicOpBase::serialize
     template <typename V_IN, typename V_OUT>
     inline void op_variadic(Op const *op, V_IN const &inputs, V_OUT const &outputs)
     {
-        op_serialize_func(op, inputs.size(), inputs.data(), outputs.size(), outputs.data(), opMODE_variadic, 0);
-    }
-    // to be called from PluginOp::serialize
-    template <typename V_IN, typename V_OUT>
-    inline void op_foreign(Op const *op, V_IN const &inputs, V_OUT const &outputs, unsigned extra = 0)
-    {
-        op_serialize_func(op, inputs.size(), inputs.data(), outputs.size(), outputs.data(), opMODE_foreign, extra);
+        op_serialize_func(op, inputs.size(), inputs.data(), outputs.size(), outputs.data(), opMODE_variadic);
     }
 
     // Used for ConstWrapperOp, ShapeWrapperOp, DummyN

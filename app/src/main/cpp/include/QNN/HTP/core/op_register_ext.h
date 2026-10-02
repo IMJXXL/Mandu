@@ -1,9 +1,10 @@
-// ==============================================================================
+//==============================================================================
 //
-// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
-// SPDX-License-Identifier: BSD-3-Clause-Clear
+// Copyright (c) 2021-2024 Qualcomm Technologies, Inc.
+// All Rights Reserved.
+// Confidential and Proprietary - Qualcomm Technologies, Inc.
 //
-// ==============================================================================
+//==============================================================================
 
 #ifndef OP_REGISTER_EXT_H
 #define OP_REGISTER_EXT_H
@@ -19,7 +20,29 @@
 #include "pco_declarations.h"
 #include "macros_attribute.h"
 #include "weak_linkage.h"
-#include "package_op_storage_base.h"
+
+PUSH_VISIBILITY(default)
+
+namespace hnnx {
+
+class PackageOpStorageBase {
+  public:
+    const std::string op_name;
+    const std::string_view type_tag;
+    const bool is_external;
+    const op_reg_parms opreg_parms;
+
+    API_EXPORT PackageOpStorageBase(const std::string_view op_name_in, const std::string_view type_tag_in,
+                                    const bool is_external_in, const op_reg_parms opreg_params_in);
+    API_EXPORT OpFactory make_op_wrapper() const;
+};
+
+// The map to store op package ops
+API_EXPORT std::map<std::string, std::vector<std::unique_ptr<PackageOpStorageBase>> *> &get_pkg_op_tmp_map();
+
+} // namespace hnnx
+
+POP_VISIBILITY()
 
 #define INIT_PKG_CORE_INIT_FUNC()                                                                                      \
     static bool sg_init = false;                                                                                       \
@@ -42,10 +65,7 @@
         return opv;                                                                                                    \
     }                                                                                                                  \
     extern "C" {                                                                                                       \
-    void clearPackageOpsStorageVecFunc()                                                                               \
-    {                                                                                                                  \
-        current_package_ops_storage_vec_func().clear();                                                                \
-    }                                                                                                                  \
+    void clearPackageOpsStorageVecFunc() { current_package_ops_storage_vec_func().clear(); }                           \
     }
 
 #define DECLARE_PACKAGE_OP_DEF()                                                                                       \
@@ -61,19 +81,11 @@
 #define PKG_TYPE_SUFFIX(OP, ARGS) (hnnx::ConcatStr<hnnx::ConstexprStrLen(OP), hnnx::ConstexprStrLen(ARGS)>(OP, ARGS))
 
 #ifndef OP_REG_COMPILE
-#define DEF_PACKAGE_OP_REG(REGISTRY, F, OP)                                                                            \
-    FLAGS_FOR_DT_NO_TCM_FOLDING(F, Flags::RESOURCE_HVX)                                                                \
-    APPEND_REG_OP_ELEM_NO_TCM_FOLDING_REG(                                                                             \
-            F, THIS_PKG_NAME_STR "::" OP,                                                                              \
-            PKG_TYPE_SUFFIX(THIS_PKG_NAME_STR "::" OP, hnnx::ArgsTuples2<F>::inputTypeNames), true, false, REGISTRY,   \
-            __LINE__)
-
 #define DEF_PACKAGE_OP(F, OP)                                                                                          \
     FLAGS_FOR_DT_NO_TCM_FOLDING(F, Flags::RESOURCE_HVX)                                                                \
-    APPEND_REG_OP_ELEM_NO_TCM_FOLDING_REG(                                                                             \
+    APPEND_REG_OP_ELEM_NO_TCM_FOLDING(                                                                                 \
             F, THIS_PKG_NAME_STR "::" OP,                                                                              \
-            PKG_TYPE_SUFFIX(THIS_PKG_NAME_STR "::" OP, hnnx::ArgsTuples2<F>::inputTypeNames), true, false, "core",     \
-            __LINE__)
+            PKG_TYPE_SUFFIX(THIS_PKG_NAME_STR "::" OP, hnnx::ArgsTuples2<F>::inputTypeNames), true)
 #else
 #define DEF_PACKAGE_OP(F, OP) __reg_op__(F, OP)<<<__FILE__, __LINE__>>>
 #endif
@@ -96,37 +108,19 @@ void add_package_op_ext(std::vector<std::unique_ptr<PackageOpStorageBase>> &ops,
 }
 
 #ifndef OP_REG_COMPILE
-#define DEF_PACKAGE_OP_AND_COST_AND_FLAGS_REG(REGISTRY, F, OP, COST, ...)                                              \
-    COST_OF(F, COST)                                                                                                   \
-    FLAGS_FOR_DT_NO_TCM_FOLDING(F, __VA_ARGS__)                                                                        \
-    APPEND_REG_OP_ELEM_NO_TCM_FOLDING_REG(                                                                             \
-            F, THIS_PKG_NAME_STR "::" OP,                                                                              \
-            PKG_TYPE_SUFFIX(THIS_PKG_NAME_STR "::" OP, hnnx::ArgsTuples2<F>::inputTypeNames), true, false, REGISTRY,   \
-            __LINE__)
-
 #define DEF_PACKAGE_OP_AND_COST_AND_FLAGS(F, OP, COST, ...)                                                            \
     COST_OF(F, COST)                                                                                                   \
     FLAGS_FOR_DT_NO_TCM_FOLDING(F, __VA_ARGS__)                                                                        \
-    APPEND_REG_OP_ELEM_NO_TCM_FOLDING_REG(                                                                             \
+    APPEND_REG_OP_ELEM_NO_TCM_FOLDING(                                                                                 \
             F, THIS_PKG_NAME_STR "::" OP,                                                                              \
-            PKG_TYPE_SUFFIX(THIS_PKG_NAME_STR "::" OP, hnnx::ArgsTuples2<F>::inputTypeNames), true, false, "core",     \
-            __LINE__)
-
-#define DEF_PACKAGE_OP_AND_COST_F_AND_FLAGS_REG(REGISTRY, F, OP, COST_F, ...)                                          \
-    COST_OF_F(F, [](const Graph &, const Op *op) -> float { return call_cost_func(COST_F, op); })                      \
-    FLAGS_FOR_DT_NO_TCM_FOLDING(F, __VA_ARGS__)                                                                        \
-    APPEND_REG_OP_ELEM_NO_TCM_FOLDING_REG(                                                                             \
-            F, THIS_PKG_NAME_STR "::" OP,                                                                              \
-            PKG_TYPE_SUFFIX(THIS_PKG_NAME_STR "::" OP, hnnx::ArgsTuples2<F>::inputTypeNames), true, false, REGISTRY,   \
-            __LINE__)
+            PKG_TYPE_SUFFIX(THIS_PKG_NAME_STR "::" OP, hnnx::ArgsTuples2<F>::inputTypeNames), true)
 
 #define DEF_PACKAGE_OP_AND_COST_F_AND_FLAGS(F, OP, COST_F, ...)                                                        \
     COST_OF_F(F, [](const Graph &, const Op *op) -> float { return call_cost_func(COST_F, op); })                      \
     FLAGS_FOR_DT_NO_TCM_FOLDING(F, __VA_ARGS__)                                                                        \
-    APPEND_REG_OP_ELEM_NO_TCM_FOLDING_REG(                                                                             \
+    APPEND_REG_OP_ELEM_NO_TCM_FOLDING(                                                                                 \
             F, THIS_PKG_NAME_STR "::" OP,                                                                              \
-            PKG_TYPE_SUFFIX(THIS_PKG_NAME_STR "::" OP, hnnx::ArgsTuples2<F>::inputTypeNames), true, false, "core",     \
-            __LINE__)
+            PKG_TYPE_SUFFIX(THIS_PKG_NAME_STR "::" OP, hnnx::ArgsTuples2<F>::inputTypeNames), true)
 #else
 #define DEF_PACKAGE_OP_AND_COST_AND_FLAGS(F, OP, COST, ...)     __reg_op__(F, OP)<<<__FILE__, __LINE__>>>
 #define DEF_PACKAGE_OP_AND_COST_F_AND_FLAGS(F, OP, COST_F, ...) __reg_op__(F, OP)<<<__FILE__, __LINE__>>>

@@ -23,7 +23,7 @@
 extern "C" {
 #endif
 
-#include "QnnLpaiTypes.h"
+#include "QnnLpaiContextInt.h"
 
 typedef struct {
   uint32_t option;

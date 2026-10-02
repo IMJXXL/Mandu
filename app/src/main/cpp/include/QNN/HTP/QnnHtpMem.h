@@ -57,7 +57,6 @@ typedef enum {
   QNN_HTP_MEM_SHARED_BUFFER = 1,
   QNN_HTP_MEM_WEIGHTS_BUFFER = 2,
   QNN_HTP_MEM_SHARED_SPILLFILL_BUFFER = 3,
-  QNN_HTP_MEM_SHARED_VTCMBACKUP_BUFFER = 4,
   QNN_HTP_MEM_UNDEFINED = 0x7FFFFFFF
 } QnnHtpMem_Type_t;
 
@@ -79,9 +78,6 @@ typedef struct {
     QnnHtpMem_SharedBufferConfig_t sharedBufferConfig;
     QnnHtpMem_SharedBufferConfig_t weightsBufferConfig;
     QnnHtpMem_SharedBufferConfig_t sharedSpillfillBufferConfig;
-    QnnHtpMem_SharedBufferConfig_t sharedVTCMBackupBufferConfig;
-    QnnHtpMem_QurtAddress_t sharedSpillfillBufferQurtAddress;
-    QnnHtpMem_QurtAddress_t sharedVTCMBackupBufferQurtAddress;
   };
 } QnnMemHtp_Descriptor_t;
 

@@ -1,9 +1,10 @@
-// ==============================================================================
+//==============================================================================
 //
-// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
-// SPDX-License-Identifier: BSD-3-Clause-Clear
+// Copyright (c) 2023 Qualcomm Technologies, Inc.
+// All Rights Reserved.
+// Confidential and Proprietary - Qualcomm Technologies, Inc.
 //
-// ==============================================================================
+//==============================================================================
 
 #ifndef MACROS_MSVC_CPP17_H
 #define MACROS_MSVC_CPP17_H
@@ -49,39 +50,6 @@
 #define RESTRICT_VAR __restrict__
 
 #endif // _MSC_VER
-
-#if defined(__clang__)
-// Attributes for functions, which can allow compiler to eliminate calls.
-// Use with great care, and only where it matters.
-// There's no reason to add these to functions defined as inline, since
-// the compiler will determine these properties by analyzing the code.
-// Probably best to apply these only to 'noexcept' functions.
-//
-// PURE
-// - Function has no effect except to return a value
-// - It can look at memory pointed to by its parameters, and can look at global
-//    vars in general, and those can affect what is returned. strcmp is 'pure'.
-// - Compiler assumes that if the return value is not used, the call can be eliminated;
-//    or, if two calls are made within a function, both with the same parameter values, and
-//    nothing between can change aything visible outside the calling function, then the
-//    second call will return the same value as the first, and can be eliminated.
-#define FUNC_ATTRIB_PURE __attribute__((pure))
-//
-// CONST (implies PURE)
-// - Function has no effect except to return a value; the returned value depends only on
-//    values of the passed parameters
-// - It will *not* look at memory pointed to by its parameters, and result cannot be affected
-//    by changes in global memory values.
-// - Compiler assumes that if the return value is not used, the call can be eliminated;
-//    and, that any two calls made with the same parameter values will return the same value,
-//    with no constraint on what happens between.
-#define FUNC_ATTRIB_CONST __attribute__((const))
-#else
-// Only defined for clang - we really only need these on hexagon, but it's good to have the syntax
-// checked on X86-clang.
-#define FUNC_ATTRIB_PURE
-#define FUNC_ATTRIB_CONST
-#endif // !clang
 
 /**
  * @brief The following macros: [PUSH|POP|ENABLE|DISABLE]_WARNING,

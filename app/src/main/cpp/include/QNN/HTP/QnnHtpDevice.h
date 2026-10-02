@@ -16,17 +16,84 @@
 
 #include "QnnCommon.h"
 #include "QnnDevice.h"
-#include "QnnHtpDeviceConfigShared.h"
 #include "QnnHtpPerfInfrastructure.h"
 #include "QnnTypes.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
 
+/**
+ * This is used to represent the HTP hardware architecture
+ * Since QnnDevice only supports V68 or newer, using legacy ARCH will result in error
+ */
+typedef enum {
+  QNN_HTP_DEVICE_ARCH_NONE    = 0,
+  QNN_HTP_DEVICE_ARCH_V68     = 68,
+  QNN_HTP_DEVICE_ARCH_V69     = 69,
+  QNN_HTP_DEVICE_ARCH_V73     = 73,
+  QNN_HTP_DEVICE_ARCH_V75     = 75,
+  QNN_HTP_DEVICE_ARCH_V79     = 79,
+  QNN_HTP_DEVICE_ARCH_V81     = 81,
+  QNN_HTP_DEVICE_ARCH_UNKNOWN = 0x7fffffff
+} QnnHtpDevice_Arch_t;
+
+/**
+ * data struture to configure a device to set the minimum HTP Arch
+ * the driver will use ops that compatible to this HTP Arch
+ */
+typedef struct {
+  uint32_t deviceId;
+  QnnHtpDevice_Arch_t arch;
+} QnnHtpDevice_Minimum_Arch_t;
+
+/**
+ * data struture to configure a device to running in Signed/unsigned Domain.
+ */
+typedef struct {
+  uint32_t deviceId;
+  bool useSignedProcessDomain;
+} QnnHtpDevice_UseSignedProcessDomain_t;
+
+/**
+ * data struture to configure a device to running in Secure/normal Domain.
+ * running in secure process domain (SecurePD) is only supported in V81 and SecurePD is part of add-on SDK.
+ */
+typedef struct {
+  uint32_t deviceId;
+  bool useSecureProcessDomain;
+} QnnHtpDevice_UseSecureProcessDomain_t;
+
+/**
+ * enum to list what custom configure is available.
+ */
+typedef enum {
+  QNN_HTP_DEVICE_CONFIG_OPTION_SOC      = 0,
+  QNN_HTP_DEVICE_CONFIG_OPTION_ARCH     = 1,
+  QNN_HTP_DEVICE_CONFIG_OPTION_SIGNEDPD = 2,
+  QNN_HTP_DEVICE_CONFIG_OPTION_SECUREPD = 3,
+  QNN_HTP_DEVICE_CONFIG_OPTION_UNKNOWN  = 0x7fffffff
+} QnnHtpDevice_ConfigOption_t;
+
+/**
+ * Data structure for custom configure.
+ */
+typedef struct {
+  QnnHtpDevice_ConfigOption_t option;
+  union UNNAMED {
+    // This field set the SoC Model
+    uint32_t socModel;
+    // This field update the minimum HTP arch
+    QnnHtpDevice_Minimum_Arch_t arch;
+    // This structure is used for enabling/disabling Signed/unsigned PD
+    QnnHtpDevice_UseSignedProcessDomain_t useSignedProcessDomain;
+    // This structure is used for enabling Secure PD
+    QnnHtpDevice_UseSecureProcessDomain_t useSecureProcessDomain;
+  };
+} QnnHtpDevice_CustomConfig_t;
+
 // For deviceType in QnnDevice_HardwareDeviceInfoV1_t
 typedef enum {
   QNN_HTP_DEVICE_TYPE_ON_CHIP = 0,  // HTP cores are inside SoC
-  QNN_HTP_DEVICE_TYPE_OFF_CHIP = 1,
   QNN_HTP_DEVICE_TYPE_UNKNOWN = 0x7fffffff
 } QnnHtpDevice_DeviceType_t;
 

@@ -1,16 +1,16 @@
-// ==============================================================================
+//==============================================================================
 //
-// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
-// SPDX-License-Identifier: BSD-3-Clause-Clear
+// Copyright (c) Qualcomm Technologies, Inc.
+// All Rights Reserved.
+// Confidential and Proprietary - Qualcomm Technologies, Inc.
 //
-// ==============================================================================
+//==============================================================================
 
 #ifndef GRAPH_HANDLE_DEFS_H
 #define GRAPH_HANDLE_DEFS_H 1
 
 #include <type_traits>
 #include "forward_classes.h"
-class Graph;
 
 namespace gHN {
 class gH;
@@ -100,31 +100,6 @@ inline Graph const &graph_handle_private::graph_from(hnnx::GraphHandleBase const
 }
 #endif
 
-#ifndef GHANDLE_EXPORT
-#if defined(_MSC_VER)
-#define GHANDLE_EXPORT __declspec(dllexport)
-#define GHANDLE_IMPORT __declspec(dllimport)
-#else
-#define GHANDLE_EXPORT __attribute__((visibility("default")))
-#define GHANDLE_IMPORT
-#endif
-#endif
-
-// --- Build policy for graph-handle accessors ---
-#if defined(GHANDLE_BUILD_IMPL)
-#define GHANDLE_ACCESS_FUNC_QUALIFIER GHANDLE_EXPORT
-#define GHANDLE_ACCESS_FUNC_INLINE    GHANDLE_EXPORT
-#if !defined(GHANDLE_INCLUDE_IMPL)
-#define GHANDLE_INCLUDE_IMPL 1
-#endif
-
-#elif defined(CUSTOM_OPS_BUILD)
-#define GHANDLE_ACCESS_FUNC_QUALIFIER GHANDLE_IMPORT
-#define GHANDLE_ACCESS_FUNC_INLINE
-#undef GHANDLE_INCLUDE_IMPL
-#define GHANDLE_INCLUDE_IMPL 0
-
-#else
 // GHANDLE_ACCESS_FUNC_QUALIFIER will change to API_EXPORT in some situations
 #define GHANDLE_ACCESS_FUNC_QUALIFIER
 // changes to 'nothing' in some situations.
@@ -132,25 +107,6 @@ inline Graph const &graph_handle_private::graph_from(hnnx::GraphHandleBase const
 
 #if !defined(GHANDLE_INCLUDE_IMPL)
 #define GHANDLE_INCLUDE_IMPL 1
-#endif
-#endif
-
-// In GHANDLE_BUILD_IMPL and CUSTOM_OPS_BUILD, emit symbols in runtime_graph2
-// to avoid any clash with inline definitions under runtime_graph.
-// In all other builds, keep using runtime_graph.
-#if defined(GHANDLE_BUILD_IMPL) || defined(CUSTOM_OPS_BUILD)
-#define GHANDLE_NS runtime_graph2
-#else
-#define GHANDLE_NS runtime_graph
-#endif
-
-#if defined(CUSTOM_OPS_BUILD)
-namespace runtime_graph2 {
-}
-// Consumers can keep calling runtime_graph::foo(), which resolves to runtime_graph2::foo().
-namespace runtime_graph {
-using namespace runtime_graph2;
-}
 #endif
 
 #endif // GRAPH_HANDLE_DEFS_H

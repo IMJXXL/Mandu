@@ -1,10 +1,12 @@
 #pragma once
-// ==============================================================================
+//==============================================================================
+// @brief Collection of types used by various external/API headers
 //
-// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
-// SPDX-License-Identifier: BSD-3-Clause-Clear
+// Copyright (c) 2024 Qualcomm Technologies, Inc.
+// All Rights Reserved.
+// Confidential and Proprietary - Qualcomm Technologies, Inc.
 //
-// ==============================================================================
+//==============================================================================
 #include <stdint.h>
 #include <stddef.h>
 
@@ -54,52 +56,6 @@ typedef struct {
     hexagon_nn_wide_address_t val;
     uint64_t len;
 } hexagon_nn_wide_iovec_t;
-
-typedef struct {
-    ///
-    /// @brief DSP-side *NEAR* pointer to I/O tensors
-    /// @details This is essentially hexagon_nn_wide_tensordef_t[num_tensors]
-    /// @warning @a tensors is hexagon_nn_wide_address_t for testing on x86. Its
-    /// value on-device MUST BE near!
-    ///
-    hexagon_nn_wide_address_t tensors;
-
-    ///
-    /// @brief Number of tensors pointed to be @a tensors
-    ///
-    uint32_t num_tensors;
-
-    ///
-    /// @brief Reserved/unused
-    ///
-    uint32_t reserved;
-
-} hexagon_nn_io_tensors_t;
-
-///
-/// @brief Argument type to pass sub-graph execute information
-/// @details Typically associated with HEXAGON_NN_ARG_TAG_SUBGRAPH_EXECUTE_PUSH
-///
-typedef struct {
-    ///
-    /// @brief Handle to a subgraph to run
-    /// @details This is essentially nn_graph_t. It is sized to 64b to hold a
-    /// pointer on both 64b (x86) and 32b (Hexagon) architectures
-    ///
-    uint64_t graph_handle;
-
-    ///
-    /// @brief Number of iterations to run
-    ///
-    uint32_t run_iters;
-
-    ///
-    /// @brief Reserved/unused
-    /// @warning MUST BE initialized to zero!
-    ///
-    uint32_t reserved;
-
-} hexagon_nn_subgraph_execute_t;
 
 ///
 /// @brief Used to specify thread types when calling hexagon_nn_set_thread_count

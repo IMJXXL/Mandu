@@ -94,8 +94,9 @@ target_link_libraries(sr_engine
 )
 
 # ── QNN/HTP（高通 NPU）后端 ──
-# 头文件 vendor 在 include/QNN（QAIRT 2.49 官方 API 头，MIT 许可）；运行时 .so 一律
-# 运行期 dlopen（Gradle 从 Maven 拉 com.qualcomm.qti:qnn-runtime 打进 APK），绝不链接。
+# 头文件 vendor 在 include/QNN（Komiho ruzhe85 同款 API 头，MIT 许可，与其 2.50.0 运行时
+# 已验证配对）；运行时 .so 一律运行期 dlopen（jniLibs 直带 Komiho 1.3.1 同款 2.50.0 的
+# 12 个 libQnn*.so，见 app/build.gradle.kts packaging 注释），绝不链接。
 # 仅 arm64-v8a 编入（QNN 运行时只有 arm64）；其余 ABI 走桩：探测不可用、process 返回 null。
 # JNI 胶水始终编入（桩版函数齐全），Kotlin 侧无需感知差异。
 target_sources(sr_engine PRIVATE sr/qnn_jni.cpp)

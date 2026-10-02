@@ -25,7 +25,7 @@
 #define QNN_OP_PACKAGE_NAME_QTI_AISW "qti.aisw"
 
 #define QNN_OPSET_VERSION_MAJOR 2
-#define QNN_OPSET_VERSION_MINOR 12
+#define QNN_OPSET_VERSION_MINOR 7
 #define QNN_OPSET_VERSION_PATCH 0
 
 #define QNN_OP_ARGB_TO_RGB                      "ArgbToRgb"
@@ -258,8 +258,6 @@
 
 #define QNN_OP_ELEMENT_WISE_MULTIPLY "ElementWiseMultiply"
 
-#define QNN_OP_ELEMENT_WISE_MUX "ElementWiseMux"
-
 #define QNN_OP_ELEMENT_WISE_NEG "ElementWiseNeg"
 
 #define QNN_OP_ELEMENT_WISE_NEURON                        "ElementWiseNeuron"
@@ -392,12 +390,6 @@
 #define QNN_OP_GROUP_NORM_PARAM_EPSILON "epsilon"
 #define QNN_OP_GROUP_NORM_PARAM_GROUP   "group"
 
-#define QNN_OP_GROUP_QUERY_ATTENTION                    "GroupQueryAttention"
-#define QNN_OP_GROUP_QUERY_ATTENTION_PARAM_NUM_HEADS    "num_heads"
-#define QNN_OP_GROUP_QUERY_ATTENTION_PARAM_KV_NUM_HEADS "kv_num_heads"
-#define QNN_OP_GROUP_QUERY_ATTENTION_PARAM_DO_ROTARY    "do_rotary"
-#define QNN_OP_GROUP_QUERY_ATTENTION_PARAM_SCALE        "scale"
-
 #define QNN_OP_GRU                           "Gru"
 #define QNN_OP_GRU_PARAM_DIRECTION           "direction"
 #define QNN_OP_GRU_DIRECTION_FORWARD         0
@@ -501,13 +493,10 @@
 #define QNN_OP_MULTI_CLASS_NMS_PARAM_SCORE_THRESHOLD "score_threshold"
 #define QNN_OP_MULTI_CLASS_NMS_PARAM_SOFT_NMS_SIGMA  "soft_nms_sigma"
 
-#define QNN_OP_NON_MAX_SUPPRESSION                               "NonMaxSuppression"
-#define QNN_OP_NON_MAX_SUPPRESSION_PARAM_IOU_THRESHOLD           "iou_threshold"
-#define QNN_OP_NON_MAX_SUPPRESSION_PARAM_SCORE_THRESHOLD         "score_threshold"
-#define QNN_OP_NON_MAX_SUPPRESSION_PARAM_MAX_BOXES_SELECTED      "max_boxes_selected"
-#define QNN_OP_NON_MAX_SUPPRESSION_PARAM_CENTER_POINT_BOX        "center_point_box"
-#define QNN_OP_NON_MAX_SUPPRESSION_CENTER_POINT_BOX_DIAG_CORNERS 0
-#define QNN_OP_NON_MAX_SUPPRESSION_CENTER_POINT_BOX_CENTER_POINT 1
+#define QNN_OP_NON_MAX_SUPPRESSION                          "NonMaxSuppression"
+#define QNN_OP_NON_MAX_SUPPRESSION_PARAM_IOU_THRESHOLD      "iou_threshold"
+#define QNN_OP_NON_MAX_SUPPRESSION_PARAM_SCORE_THRESHOLD    "score_threshold"
+#define QNN_OP_NON_MAX_SUPPRESSION_PARAM_MAX_BOXES_SELECTED "max_boxes_selected"
 
 #define QNN_OP_NON_ZERO "NonZero"
 
@@ -580,10 +569,6 @@
 #define QNN_OP_PRELU "Prelu"
 
 #define QNN_OP_QUANTIZE "Quantize"
-
-#define QNN_OP_RANDOM_NORMAL_LIKE             "RandomNormalLike"
-#define QNN_OP_RANDOM_NORMAL_LIKE_PARAM_MEAN  "mean"
-#define QNN_OP_RANDOM_NORMAL_LIKE_PARAM_SCALE "scale"
 
 #define QNN_OP_RANDOM_UNIFORM_LIKE            "RandomUniformLike"
 #define QNN_OP_RANDOM_UNIFORM_LIKE_PARAM_LOW  "low"
@@ -665,10 +650,6 @@
 
 #define QNN_OP_ROI_POOLING                      "RoiPooling"
 #define QNN_OP_ROI_POOLING_PARAM_IMG_SIZE_RATIO "img_size_ratio"
-
-#define QNN_OP_ROTARY_EMBEDDING                            "RotaryEmbedding"
-#define QNN_OP_ROTARY_EMBEDDING_PARAM_INTERLEAVED          "interleaved"
-#define QNN_OP_ROTARY_EMBEDDING_PARAM_ROTARY_EMBEDDING_DIM "rotary_embedding_dim"
 
 #define QNN_OP_SCATTER_ELEMENTS                 "ScatterElements"
 #define QNN_OP_SCATTER_ELEMENTS_PARAM_AXIS      "axis"

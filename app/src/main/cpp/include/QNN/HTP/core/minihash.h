@@ -1,9 +1,10 @@
-// ==============================================================================
+//==============================================================================
 //
-// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
-// SPDX-License-Identifier: BSD-3-Clause-Clear
+// Copyright (c) 2020 Qualcomm Technologies, Inc.
+// All Rights Reserved.
+// Confidential and Proprietary - Qualcomm Technologies, Inc.
 //
-// ==============================================================================
+//==============================================================================
 
 #ifndef MINIHASH_H_
 #define MINIHASH_H_
@@ -52,8 +53,8 @@ template <typename T> struct findhash {
 template <> struct findhash<unsigned> {
     uint32_t operator()(unsigned n) const
     {
-        uint64_t const bigprod{static_cast<uint64_t>(n) * 0x740F1DE9};
-        return static_cast<uint32_t>(bigprod) ^ static_cast<uint32_t>(bigprod >> 32u);
+        uint64_t const bigprod = uint64_t(n) * 0x740F1DE9;
+        return (uint32_t)bigprod ^ (uint32_t)(bigprod >> 32);
     }
 };
 // define for 'unsigned long long' assuming it's 64 bits
@@ -69,7 +70,8 @@ template <> struct findhash<unsigned long long> {
 template <>
 struct findhash<unsigned long>
     : public findhash<
-              std::conditional<(sizeof(unsigned long) > sizeof(unsigned)), unsigned long long, unsigned>::type> {};
+              std::conditional<(sizeof(unsigned long) > sizeof(unsigned)), unsigned long long, unsigned>::type> {
+};
 // this is useful for defining findhash<X> on other types in other headers,
 // in terms of std::hash<X>,  without needing to include this header first.
 inline uint32_t findhash_sizet(size_t val)
@@ -83,10 +85,12 @@ template <typename T> struct findhash<T *> {
     inline uint32_t operator()(T *ptr) const { return findhash<size_t>()((size_t)ptr); }
 };
 
-template <> struct findhash<int> : public findhash<unsigned> {};
-template <> struct findhash<long> : public findhash<unsigned long> {};
-template <> struct findhash<long long> : public findhash<unsigned long long> {};
-template <> struct findhash<uint16_t> : public findhash<unsigned> {};
+template <> struct findhash<int> : public findhash<unsigned> {
+};
+template <> struct findhash<long> : public findhash<unsigned long> {
+};
+template <> struct findhash<long long> : public findhash<unsigned long long> {
+};
 
 // hashmap_traits<typename Key,bool ERASE_OK>:
 //    bool valid:                     is this key OK
@@ -253,7 +257,8 @@ template <typename Key, typename T> struct simple_raw_entry : public simple_key<
 };
 // simple_raw_entry<Key,no_value>
 // is used for set-of-Key.
-struct no_value {};
+struct no_value {
+};
 
 template <typename Key> struct simple_raw_entry<Key, no_value> : public simple_key<Key> {
     static inline bool is_null(Key k) { return simple_key<Key>::traits::is_null(k); }
@@ -891,7 +896,7 @@ class hashset : private hashmap<typename value_proxy<Key, true>::type, no_value,
     }
 
   public:
-    hashset() : hashimpl() {};
+    hashset() : hashimpl(){};
     explicit hashset(size_t n_entries) : hashimpl(n_entries) {}
 
     bool shrink() { return hashimpl::shrink(); }

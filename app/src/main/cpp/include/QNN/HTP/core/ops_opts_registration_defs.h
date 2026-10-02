@@ -1,9 +1,10 @@
-// ==============================================================================
+//==============================================================================
 //
-// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
-// SPDX-License-Identifier: BSD-3-Clause-Clear
+// Copyright (c) 2020-2023 Qualcomm Technologies, Inc.
+// All Rights Reserved.
+// Confidential and Proprietary - Qualcomm Technologies, Inc.
 //
-// ==============================================================================
+//==============================================================================
 
 #ifndef OPS_OPTS_REGISTRATION_DEFS_H
 #define OPS_OPTS_REGISTRATION_DEFS_H 1
@@ -17,49 +18,27 @@ template <auto, int> struct ModifiedDerivedType;
 
 /** @brief IMPL_APPEND_REG_OP_ELEM_NO_TCM_FOLDING (used by REGISTER_OP, REGISTER_OP_HVX, etc.) */
 // LCOV_EXCL_START [SAFTYSWCCB-1736] constexprs resolved during compile time
-#define IMPL_APPEND_REG_OP_ELEM_NO_TCM_FOLDING_BASE(I, FP, OP, TAG, IS_EXTERNAL)                                       \
-    namespace hnnx::internal {                                                                                         \
-    namespace {                                                                                                        \
-    /* Op name */                                                                                                      \
-    static constexpr std::string_view op_str_view_##I{(OP), sizeof(OP)};                                               \
-    /* Tag type */                                                                                                     \
-    static constexpr auto op_tag_array_##I{(TAG)};                                                                     \
-    /* Tag includes the null terminator */                                                                             \
-    static constexpr std::string_view op_tag_str_view_##I{op_tag_array_##I.data(), op_tag_array_##I.size()};           \
-    }                                                                                                                  \
-    }                                                                                                                  \
-                                                                                                                       \
-    template <> constexpr std::string_view NC<(I)>::get_op() noexcept                                                  \
-    {                                                                                                                  \
-        return hnnx::internal::op_str_view_##I;                                                                        \
-    }                                                                                                                  \
-    template <> constexpr std::string_view NC<(I)>::get_tag() noexcept                                                 \
-    {                                                                                                                  \
-        return hnnx::internal::op_tag_str_view_##I;                                                                    \
-    }                                                                                                                  \
+#define IMPL_APPEND_REG_OP_ELEM_NO_TCM_FOLDING(I, FP, OP, TAG, IS_EXTERNAL)                                            \
     /** @brief Increment the Op count for this file @return 1 */                                                       \
-    template <> constexpr int32_t NC<(I)>::inc_op() noexcept                                                           \
-    {                                                                                                                  \
-        return 1;                                                                                                      \
-    }                                                                                                                  \
+    template <> constexpr int32_t NC<(I)>::inc_op() noexcept { return 1; }                                             \
                                                                                                                        \
     /** @brief Whether the name for this Op is already present in the Op name string table */                          \
     template <>                                                                                                        \
     constexpr bool StrUpd<(I)>::is_new_op_name =                                                                       \
-            make_string_view(op_name_chain<UniqTy<0>, I - 1>().get_arr()).rfind(NC<(I)>::get_op()) ==                  \
+            make_string_view(op_name_chain<UniqTy<0>, I - 1>().get_arr()).rfind(std::string_view{(OP), sizeof(OP)}) == \
             std::string_view::npos;                                                                                    \
                                                                                                                        \
     /** @brief Whether the name for this type suffix is already present in the type suffix string table */             \
     template <>                                                                                                        \
     constexpr bool StrUpd<(I)>::is_new_type_tag =                                                                      \
-            make_string_view(type_tag_chain<UniqTy<0>, I - 1>().get_arr()).rfind(NC<(I)>::get_tag()) ==                \
-            std::string_view::npos;                                                                                    \
+            make_string_view(type_tag_chain<UniqTy<0>, I - 1>().get_arr())                                             \
+                    .rfind(std::string_view{(TAG).data(), (TAG).size()}) == std::string_view::npos;                    \
                                                                                                                        \
     /** @brief Update the size of the Op name string table for this file. @return 0 or sizeof(OP) */                   \
     template <> constexpr uint64_t NC<(I)>::inc_op_name_strtab_size() noexcept                                         \
     {                                                                                                                  \
         if (StrUpd<(I)>::is_new_op_name) {                                                                             \
-            return NC<(I)>::get_op().size();                                                                           \
+            return sizeof(OP);                                                                                         \
         } else {                                                                                                       \
             return 0U;                                                                                                 \
         }                                                                                                              \
@@ -69,7 +48,7 @@ template <auto, int> struct ModifiedDerivedType;
     template <> constexpr uint64_t NC<(I)>::inc_type_tag_strtab_size() noexcept                                        \
     {                                                                                                                  \
         if (StrUpd<(I)>::is_new_type_tag) {                                                                            \
-            return NC<(I)>::get_tag().size();                                                                          \
+            return (TAG).size();                                                                                       \
         } else {                                                                                                       \
             return 0U;                                                                                                 \
         }                                                                                                              \
@@ -80,54 +59,40 @@ template <auto, int> struct ModifiedDerivedType;
     template <>                                                                                                        \
     constexpr ba_str<NC<(I)>::op_name_strtab_size()>                                                                   \
             op_name_strtab_container::chain<UniqTy<0>, NC<(I)>::reg_op_count(), NC<(I)>::op_name_strtab_size()> =      \
-                    strtab_append<UniqTy<0>, I, NC<(I)>::get_op().size(), StrUpd<(I)>::is_new_op_name>(                \
-                            op_name_chain<UniqTy<0>, I - 1>(), NC<(I)>::get_op());                                     \
+                    strtab_append<UniqTy<0>, I, sizeof(OP), StrUpd<(I)>::is_new_op_name>(                              \
+                            op_name_chain<UniqTy<0>, I - 1>(), std::string_view{(OP), sizeof(OP)});                    \
                                                                                                                        \
     /** @brief Get the offset of this Op name in the Op name string table. */                                          \
     template <>                                                                                                        \
-    constexpr uint16_t StrUpd<(I)>::op_name_offset =                                                                   \
-            static_cast<uint16_t>(make_string_view(op_name_chain<UniqTy<0>, I>().get_arr()).rfind(NC<(I)>::get_op())); \
+    constexpr uint16_t StrUpd<(I)>::op_name_offset = static_cast<uint16_t>(                                            \
+            make_string_view(op_name_chain<UniqTy<0>, I>().get_arr()).rfind(std::string_view{(OP), sizeof(OP)}));      \
                                                                                                                        \
     /** @brief Grow the type suffix string table for this file. No-op if it already contains the string */             \
     template <>                                                                                                        \
     template <>                                                                                                        \
     constexpr ba_str<NC<(I)>::type_tag_strtab_size()>                                                                  \
             type_tag_strtab_container::chain<UniqTy<0>, NC<(I)>::reg_op_count(), NC<(I)>::type_tag_strtab_size()> =    \
-                    strtab_append<UniqTy<0>, I, NC<(I)>::get_tag().size(), StrUpd<(I)>::is_new_type_tag>(              \
-                            type_tag_chain<UniqTy<0>, I - 1>(), NC<(I)>::get_tag());                                   \
+                    strtab_append<UniqTy<0>, I, (TAG).size(), StrUpd<(I)>::is_new_type_tag>(                           \
+                            type_tag_chain<UniqTy<0>, I - 1>(), std::string_view{(TAG).data(), (TAG).size()});         \
                                                                                                                        \
     /** @brief Record the offset of this type suffix in the type suffix string table. */                               \
     template <>                                                                                                        \
-    constexpr uint16_t StrUpd<(I)>::type_tag_offset = static_cast<uint16_t>(                                           \
-            make_string_view(type_tag_chain<UniqTy<0>, I>().get_arr()).rfind(NC<(I)>::get_tag()));
-
-#define IMPL_APPEND_REG_OP_ELEM_NO_TCM_FOLDING(I, FP, OP, TAG, IS_EXTERNAL, IS_LEGACY, LINE)                           \
-    IMPL_APPEND_REG_OP_ELEM_NO_TCM_FOLDING_BASE(I, FP, OP, TAG, IS_EXTERNAL)                                           \
+    constexpr uint16_t StrUpd<(I)>::type_tag_offset =                                                                  \
+            static_cast<uint16_t>(make_string_view(type_tag_chain<UniqTy<0>, I>().get_arr())                           \
+                                          .rfind(std::string_view{(TAG).data(), (TAG).size()}));                       \
+                                                                                                                       \
     /** @brief Finally, append a new element to the Op registration table. */                                          \
     template <>                                                                                                        \
     template <>                                                                                                        \
     constexpr ba_op<NC<(I)>::reg_op_count()> op_arr_container::chain<UniqTy<0>, NC<(I)>::reg_op_count()> =             \
-            chain<UniqTy<0>, NC<(I - 1)>::reg_op_count()>.append(hnnx::reg_op_node{                                    \
-                    hnnx::GetParms::get<FP, I>(), StrUpd<(I)>::op_name_offset, StrUpd<(I)>::type_tag_offset,           \
-                    static_cast<uint16_t>(LINE), IS_EXTERNAL, IS_LEGACY});
-
-#define IMPL_APPEND_REG_OP_ELEM_NO_TCM_FOLDING_REG(I, FP, OP, TAG, IS_EXTERNAL, IS_LEGACY, REG, LINE)                  \
-    IMPL_APPEND_REG_OP_ELEM_NO_TCM_FOLDING_BASE(I, FP, OP, TAG, IS_EXTERNAL)                                           \
-    /** @brief Finally, append a new element to the Op registration table. */                                          \
-    template <>                                                                                                        \
-    template <>                                                                                                        \
-    constexpr ba_op<NC<(I)>::reg_op_count()> op_arr_container::chain<UniqTy<0>, NC<(I)>::reg_op_count()> =             \
-            chain<UniqTy<0>, NC<(I - 1)>::reg_op_count()>.append(hnnx::reg_op_node{                                    \
-                    hnnx::GetParms::get<FP, I>(), StrUpd<(I)>::op_name_offset, StrUpd<(I)>::type_tag_offset,           \
-                    static_cast<uint16_t>(LINE), IS_EXTERNAL, IS_LEGACY, REG});
+            chain<UniqTy<0>, NC<(I - 1)>::reg_op_count()>.append(                                                      \
+                    hnnx::reg_op_node{hnnx::GetParms::get<FP, I>(), StrUpd<(I)>::op_name_offset,                       \
+                                      StrUpd<(I)>::type_tag_offset, IS_EXTERNAL});
 
 /** @brief IMPL_APPEND_REG_OP_ELEM (used by REGISTER_OP, REGISTER_OP_HVX, etc.) */
-#define IMPL_APPEND_REG_OP_ELEM(I, FP, OP, TAG, LINE, IS_LEGACY)                                                       \
+#define IMPL_APPEND_REG_OP_ELEM(I, FP, OP, TAG, LINE)                                                                  \
     /** @brief Increment the Op count for this file @return 1 */                                                       \
-    template <> constexpr int32_t NC<(I)>::inc_op() noexcept                                                           \
-    {                                                                                                                  \
-        return 1;                                                                                                      \
-    }                                                                                                                  \
+    template <> constexpr int32_t NC<(I)>::inc_op() noexcept { return 1; }                                             \
                                                                                                                        \
     /** @brief Whether the name for this Op is already present in the Op name string table */                          \
     template <>                                                                                                        \
@@ -194,27 +159,19 @@ template <auto, int> struct ModifiedDerivedType;
     constexpr ba_op<NC<(I)>::reg_op_count()> op_arr_container::chain<UniqTy<0>, NC<(I)>::reg_op_count()> =             \
             chain<UniqTy<0>, NC<(I - 1)>::reg_op_count()>.append(                                                      \
                     hnnx::reg_op_node{hnnx::GetParms::get<fold::ModifiedDerivedType<FP, LINE>::Modified, I>(),         \
-                                      StrUpd<(I)>::op_name_offset, StrUpd<(I)>::type_tag_offset,                       \
-                                      static_cast<uint16_t>(LINE), false, IS_LEGACY});
+                                      StrUpd<(I)>::op_name_offset, StrUpd<(I)>::type_tag_offset, false});
 
 /** @brief APPEND_REG_OP_ELEM (used by REGISTER_OP, REGISTER_OP_HVX, etc.) */
-#define APPEND_REG_OP_ELEM(FP, OP, TAG, LINE, IS_LEGACY)                                                               \
-    IMPL_APPEND_REG_OP_ELEM(__COUNTER__, FP, OP, TAG, LINE, IS_LEGACY)
+#define APPEND_REG_OP_ELEM(FP, OP, TAG, LINE) IMPL_APPEND_REG_OP_ELEM(__COUNTER__, FP, OP, TAG, LINE)
 /** @breif see register-op-tcm-folding.md **/
-#define APPEND_REG_OP_ELEM_NO_TCM_FOLDING(FP, OP, TAG, IS_EXTERNAL, IS_LEGACY, LINE)                                   \
-    IMPL_APPEND_REG_OP_ELEM_NO_TCM_FOLDING(__COUNTER__, FP, OP, TAG, IS_EXTERNAL, IS_LEGACY, LINE)
-
-#define APPEND_REG_OP_ELEM_NO_TCM_FOLDING_REG(FP, OP, TAG, IS_EXTERNAL, IS_LEGACY, REG, LINE)                          \
-    IMPL_APPEND_REG_OP_ELEM_NO_TCM_FOLDING_REG(__COUNTER__, FP, OP, TAG, IS_EXTERNAL, IS_LEGACY, REG, LINE)
+#define APPEND_REG_OP_ELEM_NO_TCM_FOLDING(FP, OP, TAG, IS_EXTERNAL)                                                    \
+    IMPL_APPEND_REG_OP_ELEM_NO_TCM_FOLDING(__COUNTER__, FP, OP, TAG, IS_EXTERNAL)
 
 /** @brief IMPL_APPEND_REG_OPT_ELEM (used by DEF_OPT and DEF_OPTIM) */
 #define IMPL_APPEND_REG_OPT_ELEM(I, PRIORITY, FLAGS, DEFOPTFN, LINE)                                                   \
                                                                                                                        \
     /** @brief Increment the Optimization count for this file @return 1 */                                             \
-    template <> constexpr int32_t NC<(I)>::inc_opt() noexcept                                                          \
-    {                                                                                                                  \
-        return 1;                                                                                                      \
-    }                                                                                                                  \
+    template <> constexpr int32_t NC<(I)>::inc_opt() noexcept { return 1; }                                            \
                                                                                                                        \
     /** @brief Append a new element to the Optimization registration table. */                                         \
     template <>                                                                                                        \
@@ -223,28 +180,9 @@ template <auto, int> struct ModifiedDerivedType;
             chain<UniqTy<0>, NC<(I - 1)>::reg_opt_count()>.append(hnnx::reg_optim_node{                                \
                     static_cast<uint16_t>(PRIORITY), (FLAGS), (DEFOPTFN), static_cast<uint16_t>(LINE)});
 
-#define IMPL_APPEND_REG_OPT_ELEM_REG(I, PRIORITY, FLAGS, DEFOPTFN, LINE, REG)                                          \
-                                                                                                                       \
-    /** @brief Increment the Optimization count for this file @return 1 */                                             \
-    template <> constexpr int32_t NC<(I)>::inc_opt() noexcept                                                          \
-    {                                                                                                                  \
-        return 1;                                                                                                      \
-    }                                                                                                                  \
-                                                                                                                       \
-    /** @brief Append a new element to the Optimization registration table. */                                         \
-    template <>                                                                                                        \
-    template <>                                                                                                        \
-    constexpr ba_opt<NC<(I)>::reg_opt_count()> opt_arr_container::chain<UniqTy<0>, NC<(I)>::reg_opt_count()> =         \
-            chain<UniqTy<0>, NC<(I - 1)>::reg_opt_count()>.append(                                                     \
-                    hnnx::reg_optim_node{static_cast<uint16_t>(PRIORITY), (FLAGS), (DEFOPTFN),                         \
-                                         static_cast<uint16_t>(LINE), static_cast<std::string_view>(REG)});
-
 /** @brief APPEND_REG_OPT_ELEM (used by DEF_OPT and DEF_OPTIM) */
 #define APPEND_REG_OPT_ELEM(PRIORITY, FLAGS, DEFOPTFN, LINE)                                                           \
     IMPL_APPEND_REG_OPT_ELEM(__COUNTER__, PRIORITY, FLAGS, DEFOPTFN, LINE)
-
-#define APPEND_REG_OPT_ELEM_REG(PRIORITY, FLAGS, DEFOPTFN, LINE, REG)                                                  \
-    IMPL_APPEND_REG_OPT_ELEM_REG(__COUNTER__, PRIORITY, FLAGS, DEFOPTFN, LINE, REG)
 
 #define IMPL_INITIALIZE_TABLES(COUNT)                                                                                  \
     DEFINE_UNIQ_TY()                                                                                                   \
@@ -268,22 +206,10 @@ template <auto, int> struct ModifiedDerivedType;
     template <int32_t I> using NC = NodeCounter<UniqTy<0>, I>;                                                         \
     template <int32_t I> using StrUpd = StrtabUpdate<UniqTy<0>, I>;                                                    \
     }                                                                                                                  \
-    template <> constexpr int32_t NC<(COUNT)>::reg_op_count() noexcept                                                 \
-    {                                                                                                                  \
-        return 0;                                                                                                      \
-    }                                                                                                                  \
-    template <> constexpr int32_t NC<(COUNT)>::reg_opt_count() noexcept                                                \
-    {                                                                                                                  \
-        return 0;                                                                                                      \
-    }                                                                                                                  \
-    template <> constexpr uint64_t NC<(COUNT)>::op_name_strtab_size() noexcept                                         \
-    {                                                                                                                  \
-        return 0U;                                                                                                     \
-    }                                                                                                                  \
-    template <> constexpr uint64_t NC<(COUNT)>::type_tag_strtab_size() noexcept                                        \
-    {                                                                                                                  \
-        return 0U;                                                                                                     \
-    }                                                                                                                  \
+    template <> constexpr int32_t NC<(COUNT)>::reg_op_count() noexcept { return 0; }                                   \
+    template <> constexpr int32_t NC<(COUNT)>::reg_opt_count() noexcept { return 0; }                                  \
+    template <> constexpr uint64_t NC<(COUNT)>::op_name_strtab_size() noexcept { return 0U; }                          \
+    template <> constexpr uint64_t NC<(COUNT)>::type_tag_strtab_size() noexcept { return 0U; }                         \
     template <> template <> constexpr ba_op<0> op_arr_container::chain<UniqTy<0>, 0> = {};                             \
     template <> template <> constexpr ba_opt<0> opt_arr_container::chain<UniqTy<0>, 0> = {};                           \
     template <> template <> constexpr ba_str<0> op_name_strtab_container::chain<UniqTy<0>, 0, 0> = {};                 \
@@ -304,46 +230,39 @@ template <auto, int> struct ModifiedDerivedType;
  * @brief IMPL_FINALIZE_TABLES defines the registration tables for both
  * the ops and opts defined in the Op source file
  */
-#define IMPL_FINALIZE_TABLES(COUNT, NAME)                                                                                          \
-    namespace {                                                                                                                    \
-    /** @brief The completed Op registration table */                                                                              \
-    constexpr auto OPS_REG_TABLE(NAME) = op_arr_container::chain<UniqTy<0>, NC<(COUNT)>::reg_op_count()>.get_arr();                \
-    /** @brief The completed Op name string table */                                                                               \
-    constexpr auto OP_NAME_STR_TABLE(NAME) =                                                                                       \
-            op_name_strtab_container::chain<UniqTy<0>, NC<(COUNT)>::reg_op_count(), NC<(COUNT)>::op_name_strtab_size()>.get_arr(); \
-    /** @brief The completed type suffix string table */                                                                           \
-    constexpr auto TYPE_TAG_STR_TABLE(NAME) = type_tag_strtab_container::chain<UniqTy<0>, NC<(COUNT)>::reg_op_count(), NC<(COUNT)>::type_tag_strtab_size()>.get_arr();                                                                                                                      \
-    /** @brief The completed Optimization registration table */                                                                    \
-    constexpr auto OPTS_REG_TABLE(NAME) = opt_arr_container::chain<UniqTy<0>, NC<(COUNT)>::reg_opt_count()>.get_arr();             \
-    }                                                                                                                              \
-    namespace hnnx::detail::NAME {                                                                                                 \
-    namespace {                                                                                                                    \
-    constexpr reg_op_table op_table{OPS_REG_TABLE(NAME).empty() ? nullptr : &OPS_REG_TABLE(NAME).front(),                          \
-                                    OPS_REG_TABLE(NAME).size(),                                                                    \
-                                    OP_NAME_STR_TABLE(NAME).empty() ? nullptr : &OP_NAME_STR_TABLE(NAME).front(),                  \
-                                    OP_NAME_STR_TABLE(NAME).size(),                                                                \
-                                    TYPE_TAG_STR_TABLE(NAME).empty() ? nullptr : &TYPE_TAG_STR_TABLE(NAME).front(),                \
-                                    TYPE_TAG_STR_TABLE(NAME).size(),                                                               \
-                                    __FILE__};                                                                                     \
-    constexpr auto get_op_table() noexcept -> reg_op_table const *                                                                 \
-    {                                                                                                                              \
-        return &op_table;                                                                                                          \
-    }                                                                                                                              \
-    }                                                                                                                              \
-    }                                                                                                                              \
-    namespace hnnx {                                                                                                               \
-    /** @brief Exported getter function for the Op registration table, its associated string tables, and their sizes */            \
-    extern "C" reg_op_table const *EXT_OPS_REG_TABLE(NAME)()                                                                       \
-    {                                                                                                                              \
-        return hnnx::detail::NAME::get_op_table();                                                                                 \
-    }                                                                                                                              \
-    /** @brief Exported getter function for the Optimization registration table and its size */                                    \
-    extern "C" reg_opt_table const *EXT_OPTS_REG_TABLE(NAME)()                                                                     \
-    {                                                                                                                              \
-        static constexpr reg_opt_table table{OPTS_REG_TABLE(NAME).size() ? &OPTS_REG_TABLE(NAME).front() : nullptr,                \
-                                             OPTS_REG_TABLE(NAME).size(), __FILE__};                                               \
-        return &table;                                                                                                             \
-    }                                                                                                                              \
+#define IMPL_FINALIZE_TABLES(COUNT, NAME)                                                                                                                              \
+    namespace {                                                                                                                                                        \
+    /** @brief The completed Op registration table */                                                                                                                  \
+    constexpr auto OPS_REG_TABLE(NAME) = op_arr_container::chain<UniqTy<0>, NC<(COUNT)>::reg_op_count()>.get_arr();                                                    \
+    /** @brief The completed Op name string table */                                                                                                                   \
+    constexpr auto OP_NAME_STR_TABLE(NAME) =                                                                                                                           \
+            op_name_strtab_container::chain<UniqTy<0>, NC<(COUNT)>::reg_op_count(), NC<(COUNT)>::op_name_strtab_size()>.get_arr();                                     \
+    /** @brief The completed type suffix string table */                                                                                                               \
+    constexpr auto TYPE_TAG_STR_TABLE(NAME) = type_tag_strtab_container::chain<UniqTy<0>, NC<(COUNT)>::reg_op_count(), NC<(COUNT)>::type_tag_strtab_size()>.get_arr(); \
+    /** @brief The completed Optimization registration table */                                                                                                        \
+    constexpr auto OPTS_REG_TABLE(NAME) = opt_arr_container::chain<UniqTy<0>, NC<(COUNT)>::reg_opt_count()>.get_arr();                                                 \
+    }                                                                                                                                                                  \
+    namespace hnnx {                                                                                                                                                   \
+    /** @brief Exported getter function for the Op registration table, its associated string tables, and their sizes */                                                \
+    extern "C" reg_op_table const *EXT_OPS_REG_TABLE(NAME)()                                                                                                           \
+    {                                                                                                                                                                  \
+        static constexpr reg_op_table table{                                                                                                                           \
+                OPS_REG_TABLE(NAME).empty() ? nullptr : &OPS_REG_TABLE(NAME).front(),                                                                                  \
+                OPS_REG_TABLE(NAME).size(),                                                                                                                            \
+                OP_NAME_STR_TABLE(NAME).empty() ? nullptr : &OP_NAME_STR_TABLE(NAME).front(),                                                                          \
+                OP_NAME_STR_TABLE(NAME).size(),                                                                                                                        \
+                TYPE_TAG_STR_TABLE(NAME).empty() ? nullptr : &TYPE_TAG_STR_TABLE(NAME).front(),                                                                        \
+                TYPE_TAG_STR_TABLE(NAME).size(),                                                                                                                       \
+                __FILE__};                                                                                                                                             \
+        return &table;                                                                                                                                                 \
+    }                                                                                                                                                                  \
+    /** @brief Exported getter function for the Optimization registration table and its size */                                                                        \
+    extern "C" reg_opt_table const *EXT_OPTS_REG_TABLE(NAME)()                                                                                                         \
+    {                                                                                                                                                                  \
+        static constexpr reg_opt_table table{OPTS_REG_TABLE(NAME).size() ? &OPTS_REG_TABLE(NAME).front() : nullptr,                                                    \
+                                             OPTS_REG_TABLE(NAME).size(), __FILE__};                                                                                   \
+        return &table;                                                                                                                                                 \
+    }                                                                                                                                                                  \
     }
 
 /**
@@ -476,12 +395,12 @@ template <auto, int> struct ModifiedDerivedType;
     template <>                                                                                                        \
     template <>                                                                                                        \
     constexpr ba_op_table<(COUNT)> op_table_arr_container::chain<UniqTy<0>, (COUNT)> =                                 \
-            chain<UniqTy<0>, (COUNT) - 1>.append(&default_empty_ops_table);                                            \
+            chain<UniqTy<0>, (COUNT)-1>.append(&default_empty_ops_table);                                              \
                                                                                                                        \
     template <>                                                                                                        \
     template <>                                                                                                        \
     constexpr ba_opt_table<(COUNT)> opt_table_arr_container::chain<UniqTy<0>, (COUNT)> =                               \
-            chain<UniqTy<0>, (COUNT) - 1>.append(&default_empty_opts_table);                                           \
+            chain<UniqTy<0>, (COUNT)-1>.append(&default_empty_opts_table);                                             \
     }                                                                                                                  \
                                                                                                                        \
     namespace {                                                                                                        \
@@ -516,15 +435,15 @@ template <auto, int> struct ModifiedDerivedType;
                                                                                                                        \
     template <>                                                                                                        \
     template <>                                                                                                        \
-    constexpr ba_op_table<(I)> op_table_arr_container::chain<UniqTy<0>, (I)> =                                         \
-            chain<UniqTy<0>, (I) - 1>.append(&EXT_OPS_REG_TABLE(NAME));                                                \
+    constexpr ba_op_table<(I)>                                                                                         \
+            op_table_arr_container::chain<UniqTy<0>, (I)> = chain<UniqTy<0>, (I)-1>.append(&EXT_OPS_REG_TABLE(NAME));  \
                                                                                                                        \
     OPTS_TABLE_WEAK_SYMBOL(NAME)                                                                                       \
                                                                                                                        \
     template <>                                                                                                        \
     template <>                                                                                                        \
     constexpr ba_opt_table<(I)> opt_table_arr_container::chain<UniqTy<0>, (I)> =                                       \
-            chain<UniqTy<0>, (I) - 1>.append(&EXT_OPTS_REG_TABLE(NAME));                                               \
+            chain<UniqTy<0>, (I)-1>.append(&EXT_OPTS_REG_TABLE(NAME));                                                 \
     }
 
 #ifdef OPS_DISABLED
@@ -535,42 +454,5 @@ template <auto, int> struct ModifiedDerivedType;
 
 #define DECLARE_PKG_OPS_OPTS_LIST(NAME)  IMPL_DECLARE_OPS_OPTS_LIST(__COUNTER__, NAME)
 #define DECLARE_PRIV_OPS_OPTS_LIST(NAME) IMPL_DECLARE_OPS_OPTS_LIST(__COUNTER__, NAME)
-
-#ifdef QHPI_ENABLE
-// Hands a built-in QHPI op's operator array to the internal registrar.
-// qhpi_register_ops_impl's implementation lives in hexagon/src/qhpi/hexnn_qhpi.cc.
-QHPI_StatusCode qhpi_register_ops_impl(uint32_t num_ops, QHPI_OpInfo *operators, bool internal, const char *package);
-
-// Weak-alias fallback for ops listed via QHPI_DECLARE_OPS whose TU is not linked
-// in; defined (non-inline, so the symbol is always emitted) in
-// ops_opts_registration.cc.
-extern "C" void qhpi_internal_noop_register();
-
-#define QHPI_REGISTER_OPS(NAME, OPERATORS, COUNT)                                                                      \
-    extern "C" void NAME##_qhpi_register()                                                                             \
-    {                                                                                                                  \
-        qhpi_register_ops_impl((COUNT), (OPERATORS), true, "q");                                                       \
-    }
-
-// QHPI_DECLARE_OPS(NAME): declare NAME's registrar weak-aliased to the no-op
-// fallback -- so the link succeeds even if NAME's TU is absent -- then fire it
-// at static-init time. Weak aliasing is spelled differently on MSVC vs
-// GCC/Clang; this mirrors the native OPS_TABLE_WEAK_SYMBOL split above.
-#if defined(_MSC_VER)
-#ifdef _M_ARM64EC
-#define QHPI_NOOP_REGISTER_SYM #qhpi_internal_noop_register
-#else
-#define QHPI_NOOP_REGISTER_SYM qhpi_internal_noop_register
-#endif
-#define QHPI_DECLARE_OPS(NAME)                                                                                         \
-    MSVC_LINKER_PRAGMA(NAME##_qhpi_register, QHPI_NOOP_REGISTER_SYM)                                                   \
-    extern "C" void NAME##_qhpi_register();                                                                            \
-    [[maybe_unused]] static bool const NAME##_qhpi_registered = (NAME##_qhpi_register(), true);
-#else
-#define QHPI_DECLARE_OPS(NAME)                                                                                         \
-    extern "C" void NAME##_qhpi_register() __attribute__((weak, alias("qhpi_internal_noop_register")));                \
-    [[maybe_unused]] static bool const NAME##_qhpi_registered = (NAME##_qhpi_register(), true);
-#endif
-#endif // QHPI_ENABLE
 
 #endif // OPS_OPTS_REGISTRATION_DEFS_H

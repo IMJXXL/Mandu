@@ -1,9 +1,10 @@
-// ==============================================================================
+//==============================================================================
 //
-// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
-// SPDX-License-Identifier: BSD-3-Clause-Clear
+// Copyright (c) Qualcomm Technologies, Inc.
+// All Rights Reserved.
+// Confidential and Proprietary - Qualcomm Technologies, Inc.
 //
-// ==============================================================================
+//==============================================================================
 
 #ifndef DESER_CONCURRENT_H
 #define DESER_CONCURRENT_H 1
@@ -163,7 +164,6 @@ struct runlist_seg_descriptor {
     PreloadInfo *prev_seg_final_preload{}; // points to the prev segments' final PreloadInfo
     char *start_preload{}; // the preload start address for prev seg's final preload
     char *end_preload{}; // end address  for prev seg's final preload
-    size_t actual_crate_seg_len;
 };
 
 // One instance of this is in Deserializer, called segments.
@@ -294,9 +294,6 @@ GraphStatus do_multiseg_deser(Deserializer &dctx, size_t ref_deser_pos);
 GraphStatus segmentjob_deserialize_ops(Deserializer &dctx, unsigned segno, unsigned threadno);
 GraphStatus segmentjob_process_fixups(Deserializer &dctx, unsigned segno, unsigned threadno);
 GraphStatus segmentjob_compile_ops(Deserializer &dctx, unsigned segno, unsigned threadno);
-GraphStatus apply_cd_extra_size(size_t const cd_extra_size_kb, Deserializer const &dctx, uint32_t &total_crate_delta,
-                                uint32_t const crate_size_predicted);
-GraphStatus adjust_segments_after_io_overflow(Deserializer &dctx);
 void resolve_chunk_preload_after_multiseg_deser(Deserializer &dctx);
 [[noreturn]] NOINLINE void throw_dcrate_seg_overflow();
 

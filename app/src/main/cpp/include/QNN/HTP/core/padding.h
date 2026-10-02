@@ -1,9 +1,10 @@
-// ==============================================================================
+//==============================================================================
 //
-// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
-// SPDX-License-Identifier: BSD-3-Clause-Clear
+// Copyright (c) 2020, 2023 Qualcomm Technologies, Inc.
+// All Rights Reserved.
+// Confidential and Proprietary - Qualcomm Technologies, Inc.
 //
-// ==============================================================================
+//==============================================================================
 
 #ifndef HEXNN_PADDING_H
 #define HEXNN_PADDING_H 1
@@ -65,4 +66,19 @@ template <Idx Rank> class Padding {
         return ret;
     }
 };
+
+#if 0
+const std::array<Idx, 4> foo(const Padding<4> &x,
+                             const std::array<SIdx, 4> coords)
+{
+    return x.pad_coords(coords);
+}
+
+const std::array<Idx, 4> foo2(const NoPadding<4> &x,
+                              const std::array<SIdx, 4> coords)
+{
+    return x.pad_coords(coords);
+}
+#endif
+
 #endif

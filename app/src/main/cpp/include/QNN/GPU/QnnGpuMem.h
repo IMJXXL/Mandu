@@ -1,6 +1,6 @@
 //==============================================================================
 //
-// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+// Copyright (c) 2024 Qualcomm Technologies, Inc.
 // All Rights Reserved.
 // Confidential and Proprietary - Qualcomm Technologies, Inc.
 //
@@ -41,7 +41,7 @@ typedef struct {
 #define QNN_GPU_MEMINFO_CUSTOM_INIT                               \
   {                                                               \
     QNN_GPU_MEM_UNDEFINED, /*memType*/                            \
-    {NULL} /* buffer*/                                            \
+    NULL /* buffer*/                                              \
   }
 // clang-format on
 

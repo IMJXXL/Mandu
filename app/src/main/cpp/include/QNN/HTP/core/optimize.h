@@ -1,9 +1,10 @@
-// ==============================================================================
+//==============================================================================
 //
-// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
-// SPDX-License-Identifier: BSD-3-Clause-Clear
+// Copyright (c) 2020-2023 Qualcomm Technologies, Inc.
+// All Rights Reserved.
+// Confidential and Proprietary - Qualcomm Technologies, Inc.
 //
-// ==============================================================================
+//==============================================================================
 
 #ifndef OPTIMIZE_H
 #define OPTIMIZE_H 1
@@ -14,19 +15,7 @@
 
 #include "c_tricks.h"
 #include "op_def.h"
-#include "entire_defopt.h"
-#include "optimize_defs.h"
-#include "optimize_flags.h"
-#include "optimize_fwd.h"
-#include "optim_filter.h"
-#include "match_op.h"
-#include "oexpr.h"
-#include "build_options_pub.h"
-#include "op_package_name.h"
-#include "tensor_info.h"
-#include "macros_attribute.h"
-#include "weak_linkage.h"
-#include "op_registries.h"
+#include "unique_types.h"
 
 #include <array>
 #include <cassert>
@@ -38,6 +27,16 @@
 #include <utility>
 #include <vector>
 #include <iso646.h>
+#include "optimize_defs.h"
+#include "optimize_flags.h"
+#include "optim_filter.h"
+#include "match_op.h"
+#include "oexpr.h"
+#include "build_options_pub.h"
+#include "op_package_name.h"
+#include "tensor_info.h"
+#include "macros_attribute.h"
+#include "weak_linkage.h"
 
 #ifndef PREPARE_DISABLED
 /*
@@ -227,7 +226,12 @@ template <typename... Ts> inline ReplFunc gen_Shape_inner(Ts... sizes)
         };
         auto &g = old.graph();
         auto newref = graph_gen_Const_int32_common_wrapper(g, old, out_def, NULL, 0);
-
+#if 0
+        debuglog("Const shape %llx: rank=%zd (%zd,%zd,%zd,%zd...)",
+                 newref.input_id, out_def.rank, out_def.max_sizes[0],
+                 out_def.max_sizes[1], out_def.max_sizes[2],
+                 out_def.max_sizes[3]);
+#endif
         return newref;
     });
 }
@@ -289,13 +293,13 @@ struct QuickShape {
     QuickShape(OutputDef shape, size_t fill)
     {
         rank = shape.rank;
-        for (unsigned int i = 0; i < rank; i++) {
+        for (int i = 0; i < rank; i++) {
             dims[i] = fill;
         }
     }
 
-    // set an op_def's output def based on QuickShape. Only useful in implementing modifiers.
-    API_EXPORT void to_outdef(OpDef &op_def) noexcept;
+    // set an output def based on QuickShape. Only useful in implementing modifiers.
+    API_EXPORT void to_outdef(OutputDef &odef) noexcept;
     explicit inline constexpr QuickShape(empty_rank const &erank) : rank(std::min((unsigned)erank.r, maxdims)), dims()
     {
     }
@@ -400,9 +404,8 @@ template <typename... Ts> struct all_are_int_helper {
 };
 template <typename T1, typename... Ts> struct all_are_int_helper<T1, Ts...> {
     using TX = std::remove_reference_t<T1>;
-    static constexpr bool value =
-            (std::is_same_v<TX, int> || std::is_same_v<TX, long> || std::is_same_v<TX, unsigned>) &&
-            all_are_int_helper<Ts...>::value;
+    static constexpr bool value = (std::is_same_v<TX, int> || std::is_same_v<TX, long> ||
+                                   std::is_same_v<TX, unsigned>)&&all_are_int_helper<Ts...>::value;
 };
 
 template <typename... Ts> inline constexpr bool all_are_int()
@@ -579,9 +582,7 @@ API_EXPORT QuickShape pool_split_size_valid(Replacement &rpx, Split_Context cons
 namespace optim_extfunc { // in concat_opt.cc
 API_EXPORT QuickShape offset_into_concat(Replacement &rpx, Split_Context const &splitinfo, OpRef const &concat,
                                          OpRef const &base_shape);
-API_EXPORT QuickShape offset_into_concat_leo(Replacement &rpx, Split_Context const &splitinfo, OpRef const &concat,
-                                             OpRef const &base_shape, OpRef const &axis_ref);
-} // namespace optim_extfunc
+}
 
 /**
  * \defgroup ShapeFnApply  Functions for SHAPEFN_APPLY
@@ -1236,6 +1237,34 @@ class Replacement : public Constraint {
     Replacement(GraphPrepare &g) : Constraint(g), m_curr_op(NULL) {}
 
   public:
+    struct ReplacedId {
+      private:
+        OpId replaced_id = 0;
+
+      public:
+        ReplacedId() {} // = default;
+
+        bool inline is_set() const { return replaced_id != 0; }
+        bool inline is_clear() const { return replaced_id == 0; }
+
+        void inline set(OpId replaced_id_in)
+        {
+            assert(replaced_id_in != 0);
+            assert(is_clear());
+            replaced_id = replaced_id_in;
+        }
+        void inline clear()
+        {
+            assert(is_set());
+            replaced_id = 0;
+        }
+        OpId inline get() const
+        {
+            assert(is_set());
+            return replaced_id;
+        }
+    };
+
     API_EXPORT auto find_context(hnnx::split_context_tag_t tag)
     {
         auto cur = split_context.rbegin();
@@ -1253,7 +1282,6 @@ class Replacement : public Constraint {
     OpRef match_root() const { return matchop_state.bound_opref[0]; }
     API_EXPORT OpRef do_replacement(const OpDef &oldop, ReplFunc const &replace_func);
     API_EXPORT static void set_pkg_flag(std::string &s) { pkg_flag = s; }
-    API_EXPORT static const std::string &get_pkg_flag() { return pkg_flag; }
 
   private:
     std::vector<std::pair<hnnx::split_context_tag_t, Split_Context>> split_context;
@@ -1447,21 +1475,6 @@ class Replacement : public Constraint {
 
     // what are comments
     OpRef add_TRACKED_OP(Replacement &rpx, const OpDef &old, const ReplFunc_or_Operand &&op);
-
-    /// \ingroup OptReplacement
-    /// @brief It's used for CSE when quant_is_updateable is enabled.
-    /// The nested_level represents the layers from inside to outside of the target op in replacement.
-    /// If the target op changes multiple times in a phase, TRACK_SOURCE_ID needs to be used for recording each id change.
-    /// It must be used together with cse_after_if in the same DEF_OPT.
-    API_HIDDEN inline static ReplFunc TRACK_SOURCE_ID(ReplFunc_or_Operand &&ref, int nested_level, ReplFunc_general &&f)
-    {
-        return ReplFunc::create([=](Replacement &rpx, const OpDef &old) -> OpRef {
-            OpDef const new_def = rpx.add_MAPPED_OPID(ref(rpx, old), nested_level, old);
-            return f(rpx, new_def);
-        });
-    }
-
-    OpDef add_MAPPED_OPID(OpRef const &ref, int nested_level, OpDef const &old);
 
     API_HIDDEN inline static ReplFunc WrapOp(char const *opname, ReplFunc_or_Operand &&f)
     {
@@ -1689,9 +1702,28 @@ class Replacement : public Constraint {
     // Performs AUTOSPLIT in the specified dimension to create at most options.autothread_hvx_ntiles splits
     // that will not be further autothreaded.
     API_EXPORT static ReplFunc AUTOTHREAD_HVX(int dim, hnnx::split_context_tag_t varname, ReplFunc_general &&f);
+    // Same for options.autothread_hmx_ntiles.
+    API_EXPORT static ReplFunc AUTOTHREAD_HMX(int dim, hnnx::split_context_tag_t varname, ReplFunc_general &&f);
 
     static ReplFunc first_AUTOSPLIT(int const dim, hnnx::split_context_tag_t const varname, int const chunksize,
                                     ReplFunc const &f);
+
+  private:
+    static ReplFunc first_AUTOSPLIT(int const dim, hnnx::split_context_tag_t const varname,
+                                    ReplFuncInt const &&chunksize, ReplFunc const &f);
+
+    template <oExp::Variant V2, typename T2>
+    API_FUNC_HIDDEN inline static ReplFunc AUTOSPLIT_FIRST(int dim, hnnx::split_context_tag_t varname,
+                                                           oExp::expr<V2, T2> &&chunksize, ReplFunc_general &&f)
+    {
+        return Replacement::first_AUTOSPLIT(dim, varname, oExp::wrap_as_function<int>(std::move(chunksize)), f);
+    }
+
+    API_FUNC_HIDDEN inline static ReplFunc AUTOSPLIT_FIRST(int const dim, hnnx::split_context_tag_t const varname,
+                                                           int const chunksize, ReplFunc_general const &&f)
+    {
+        return Replacement::first_AUTOSPLIT(dim, varname, chunksize, f);
+    }
 
   private:
     /// AUTOSPLIT and reduce the dim
@@ -1903,27 +1935,23 @@ class Replacement : public Constraint {
     OpDef const &curr_op() const { return *m_curr_op; }
 
     API_EXPORT static OpRef gen_node(const hnnx::opname_tag_t str, size_t n_in, OpRef const *inputs, const OpDef &old,
-                                     const OutputDef *new_odef = nullptr, char const *package_name = THIS_PKG_NAME_STR,
-                                     const OpDef *model = nullptr);
+                                     char const *package_name = THIS_PKG_NAME_STR, const OpDef *model = nullptr);
     static inline OpRef gen_node(const hnnx::opname_tag_t str, std::vector<OpRef> const &inputs, const OpDef &old,
-                                 const OutputDef *new_odef = nullptr, char const *package_name = THIS_PKG_NAME_STR,
-                                 const OpDef *model = nullptr)
+                                 char const *package_name = THIS_PKG_NAME_STR, const OpDef *model = nullptr)
     {
-        return gen_node(str, inputs.size(), inputs.data(), old, new_odef, package_name, model);
+        return gen_node(str, inputs.size(), inputs.data(), old, package_name, model);
     }
     // allow {opref1, opref2} for 'inputs' (without becoming std::vector)
     static inline OpRef gen_node(const hnnx::opname_tag_t str, std::initializer_list<OpRef> inputs, const OpDef &old,
-                                 const OutputDef *new_odef = nullptr, char const *package_name = THIS_PKG_NAME_STR,
-                                 const OpDef *model = nullptr)
+                                 char const *package_name = THIS_PKG_NAME_STR, const OpDef *model = nullptr)
     {
-        return gen_node(str, inputs.size(), inputs.begin(), old, new_odef, package_name, model);
+        return gen_node(str, inputs.size(), inputs.begin(), old, package_name, model);
     }
     template <size_t N>
     static inline OpRef gen_node(const hnnx::opname_tag_t str, std::array<OpRef, N> const &inputs, const OpDef &old,
-                                 const OutputDef *new_odef = nullptr, char const *package_name = THIS_PKG_NAME_STR,
-                                 const OpDef *model = nullptr)
+                                 char const *package_name = THIS_PKG_NAME_STR, const OpDef *model = nullptr)
     {
-        return gen_node(str, N, inputs.data(), old, new_odef, package_name, model);
+        return gen_node(str, N, inputs.data(), old, package_name, model);
     }
 
     API_EXPORT OpRef gen_Shape_in_graph(const OpDef &old, int rank, size_t const *sizes);
@@ -1974,14 +2002,24 @@ class GraphOptInfo;
  * A GraphOptContext ties these all together, along with the 'attempt' method
  */
 class GraphOptContext : public Replacement {
-  private:
-    std::pair<OpRef, bool> build_new_op(GraphOptInfo const &grinfo, OpDef &oldop);
-
   public:
     GraphOptContext(GraphPrepare &g) : Replacement(g) {}
     void set_rule(GraphOptInfo const *const Rule) { curr_rule_info = Rule; }
     API_EXPORT OpId attempt(GraphOptInfo const &, OpDef &oldop);
 };
+
+class entire_defopt {
+  public:
+    hnnx::MatchAst_uptr matcher;
+    ReplFuncBool constraint;
+    ReplFunc replacement;
+    ReplFunc replacement_first;
+    void (*register_tiling)(GraphOptInfo *);
+};
+
+using get_entire_defopt_t = entire_defopt (*)();
+
+template <typename T> entire_defopt get_entire_defopt();
 
 class GraphOptPass;
 
@@ -1993,7 +2031,7 @@ class GraphOptPass;
 class GraphOptInfo {
     friend class GraphOptContext;
 
-    unsigned int priority;
+    int priority;
     OptimFlags::flags_t flags;
     /** @brief defopt A pointer to the function that generates the
      *  match, constraint, and replacement characterizing this optimization
@@ -2001,12 +2039,11 @@ class GraphOptInfo {
     get_entire_defopt_t defopt_fn;
 
   public:
-    std::shared_ptr<hnnx::MatchOpBase> matchop_ptr; //stores the built matchop.
+    MatchOp_uptr matchop_ptr; //stores the built matchop.
     ReplFuncBool constraint_func; // function object for the constraint.
     ReplFunc replace_func; // fucntion object for replacement.
     ReplFunc replace_first_func;
     GraphOptInfo const *next_in_pass = nullptr; // next opt for the same opstr in the same pass.
-    std::string_view registry_name;
 
     // note, WITH OPT_DEBUG must be consistent across a build now, otherwise you
     // should get a link error (at least on "add_package_opt").
@@ -2037,18 +2074,12 @@ class GraphOptInfo {
     }
 
   public:
-    API_EXPORT GraphOptInfo(unsigned int priority, OptimFlags::flags_t flags_in, get_entire_defopt_t defopt_in,
-                            std::string_view registry_name);
-    API_EXPORT GraphOptInfo(unsigned int priority, OptimFlags::flags_t flags_in, get_entire_defopt_t defopt_in);
-    GraphOptInfo(unsigned int priority, OptimFlags::flags_t flags_in);
-    GraphOptInfo(const GraphOptInfo &) = default;
+    API_EXPORT GraphOptInfo(int priority, OptimFlags::flags_t flags_in, get_entire_defopt_t defopt_in);
+    GraphOptInfo(int priority, OptimFlags::flags_t flags_in);
     API_EXPORT virtual ~GraphOptInfo() = default;
 
     // This fills in the optimization map.
-    API_EXPORT static void insert_optimization(std::map<unsigned int, GraphOptPass> &opt_passes, GraphOptInfo *p);
-    // This fills a optimization map with optimizations from a seperate map
-    API_EXPORT static void insert_existing_optimization(std::map<unsigned int, GraphOptPass> &opt_passes,
-                                                        const GraphOptInfo *p);
+    API_EXPORT static void insert_optimization(std::map<int, GraphOptPass> &opt_passes, GraphOptInfo *p);
     API_EXPORT static void populate_package_optimization_map(std::vector<std::unique_ptr<GraphOptInfo>> &opts);
 
     API_EXPORT inline bool test_constraint(Constraint &cst) const
@@ -2060,30 +2091,6 @@ class GraphOptInfo {
     API_EXPORT void set_next_in_pass(const GraphOptInfo *next) { next_in_pass = next; }
 
     API_EXPORT MatchOpBase &get_matchop() const { return *matchop_ptr.get(); }
-
-    /// Build the matcher, constraint, and replacement if not yet built.
-    /// Normally called internally by insert_optimization(); exposed for
-    /// test code that invokes a named rule outside the normal prepare flow.
-    ///
-    /// Note: the match builder reads MatchBuilder::pkg_flag to prefix op
-    /// names.  Replacement::replacement<T>() sets Replacement::pkg_flag
-    /// (a different variable).  On the first call, MatchBuilder::pkg_flag
-    /// is empty, producing wrong prefixes.  We work around this by
-    /// building once to capture the package name from the replacement,
-    /// copying it to the match builder, then rebuilding with the correct
-    /// prefix.
-    API_EXPORT void ensure_built()
-    {
-        if (!matchop_ptr) {
-            build_matchop(); // sets Replacement::pkg_flag
-            MatchBuilder::pkg_flag = Replacement::get_pkg_flag(); // propagate to matcher
-            matchop_ptr.reset(); // discard mis-prefixed matcher
-            constraint_func = {};
-            replace_func = {};
-            replace_first_func = {};
-            build_matchop(); // now MatchBuilder::pkg_flag is correct
-        }
-    }
 
     API_EXPORT OptimFlags::flags_t get_flags() const { return flags; }
     API_EXPORT bool has_flags(OptimFlags::flags_t v) const { return (flags & v) != 0; }
@@ -2106,11 +2113,6 @@ class GraphOptInfo {
     ReplFunc get_replacement() const { return replace_func; }
     ReplFunc get_replacement_first() const { return replace_first_func; }
     API_EXPORT int get_priority() const { return priority; }
-    /** @brief find_rules_by_phase returns all DEF_OPT rules whose priority matches |phase|.
-     *  Every rule registered via add_package_opt is indexed here, so the lookup works
-     *  regardless of whether s_optimization_registries has been populated.  Returns a
-     *  fresh vector (possibly empty). */
-    API_EXPORT static std::vector<const GraphOptInfo *> find_rules_by_phase(int phase);
 #ifndef PREPAREA_DISABLED
     void set_priority(int new_priority) const { const_cast<GraphOptInfo *>(this)->priority = new_priority; }
 #endif
@@ -2118,10 +2120,7 @@ class GraphOptInfo {
 
 #ifndef DEF_OPT_COMPILE
 #define DEF_AUTOSPLIT_COMMON(PRIORITY, FLAGS, MATCHCODE, CONSTRAINTCODE, dim, var, CHUNKSIZE, REPLACE)                 \
-    template <> hnnx::MatchAst_uptr MatchBuilder::matcher<UNIQUE_TYPE>()                                               \
-    {                                                                                                                  \
-        return MATCHCODE;                                                                                              \
-    }                                                                                                                  \
+    template <> hnnx::MatchAst_uptr MatchBuilder::matcher<UNIQUE_TYPE>() { return MATCHCODE; }                         \
     template <> ReplFuncBool Constraint::constraint<UNIQUE_TYPE>()                                                     \
     {                                                                                                                  \
         using namespace oExp_for_cst;                                                                                  \
@@ -2175,63 +2174,6 @@ class GraphOptInfo {
     DEF_AUTOSPLIT_COMMON(PRIORITY, 0, MATCHCODE, CONSTRAINTCODE, dim, var, CHUNKSIZE, REPLACE)
 #define DEF_AUTOSPLITIM(PRIORITY, FLAGS, MATCHCODE, CONSTRAINTCODE, dim, var, CHUNKSIZE, REPLACE)                      \
     DEF_AUTOSPLIT_COMMON(PRIORITY, FLAGS, MATCHCODE, CONSTRAINTCODE, dim, var, CHUNKSIZE, REPLACE)
-
-#ifndef DEF_OPT_COMPILE
-#define DEF_AUTOSPLIT_COMMON_REG(PRIORITY, FLAGS, REG, MATCHCODE, CONSTRAINTCODE, dim, var, CHUNKSIZE, REPLACE)        \
-    template <> hnnx::MatchAst_uptr MatchBuilder::matcher<UNIQUE_TYPE>()                                               \
-    {                                                                                                                  \
-        return MATCHCODE;                                                                                              \
-    }                                                                                                                  \
-    template <> ReplFuncBool Constraint::constraint<UNIQUE_TYPE>()                                                     \
-    {                                                                                                                  \
-        using namespace oExp_for_cst;                                                                                  \
-        using oExp::INT;                                                                                               \
-        using oExp::UINT;                                                                                              \
-        auto result = oExp::wrap_param_to<bool>(                                                                       \
-                AND(CONSTRAINTCODE, OR(OPTION_BOOL("ignore_chunksize"), GT(DIM_OF("*", dim), CHUNKSIZE))));            \
-        return oExp::wrap_as_function<bool>(result);                                                                   \
-    }                                                                                                                  \
-    template <> ReplFunc Replacement::replacement<UNIQUE_TYPE>()                                                       \
-    {                                                                                                                  \
-        using namespace oExp_for_repl;                                                                                 \
-        using oExp::INT;                                                                                               \
-        using oExp::UINT;                                                                                              \
-        pkg_flag = THIS_PKG_NAME_STR;                                                                                  \
-        return Operand(AUTOSPLIT(dim, var, CHUNKSIZE, REPLACE));                                                       \
-    }                                                                                                                  \
-    template <> ReplFunc Replacement::first_replacement<UNIQUE_TYPE>()                                                 \
-    {                                                                                                                  \
-        using namespace oExp_for_repl;                                                                                 \
-        using oExp::INT;                                                                                               \
-        using oExp::UINT;                                                                                              \
-        pkg_flag = THIS_PKG_NAME_STR;                                                                                  \
-        return Operand(REPLACE);                                                                                       \
-    }                                                                                                                  \
-    template <> inline constexpr hnnx::OptimFlags::flags_t hnnx::OptimFlags::flag_evaluate<UNIQUE_TYPE>() noexcept     \
-    {                                                                                                                  \
-        return static_cast<uint32_t>(any_rule) | static_cast<uint32_t>(FLAGS);                                         \
-    }                                                                                                                  \
-    template <> void hnnx::GraphOptInfo::declare_tiling_rule<UNIQUE_TYPE>(GraphOptInfo * info)                         \
-    {                                                                                                                  \
-        declare_tiling_rule(dim, var, info, __FILE__, __LINE__);                                                       \
-    }                                                                                                                  \
-    template <> hnnx::entire_defopt hnnx::get_entire_defopt<UNIQUE_TYPE>()                                             \
-    {                                                                                                                  \
-        return hnnx::entire_defopt{MatchBuilder::matcher<UNIQUE_TYPE>(), Constraint::constraint<UNIQUE_TYPE>(),        \
-                                   Replacement::replacement<UNIQUE_TYPE>(),                                            \
-                                   Replacement::first_replacement<UNIQUE_TYPE>(),                                      \
-                                   GraphOptInfo::declare_tiling_rule<UNIQUE_TYPE>};                                    \
-    }                                                                                                                  \
-    REGISTER_INTERNAL_PACKAGE_OPT_REG((PRIORITY), hnnx::OptimFlags::flag_evaluate<UNIQUE_TYPE>(),                      \
-                                      &hnnx::get_entire_defopt<UNIQUE_TYPE>, REG);
-#else
-#define DEF_AUTOSPLIT_COMMON_REG(PRIORITY, FLAGS, REG, MATCHCODE, CONSTRAINTCODE, dim, var, CHUNKSIZE, REPLACE)        \
-    __def_opt__(PRIORITY, FLAGS, MATCHCODE, AND(CONSTRAINTCODE, GT(DIM_OF("*", dim), CHUNKSIZE)),                      \
-                AUTOSPLIT(dim, var, CHUNKSIZE, REPLACE))<<<__FILE__, __LINE__>>>
-#endif
-
-#define DEF_AUTOSPLITIM_REG(PRIORITY, FLAGS, REG, MATCHCODE, CONSTRAINTCODE, dim, var, CHUNKSIZE, REPLACE)             \
-    DEF_AUTOSPLIT_COMMON_REG(PRIORITY, FLAGS, REG, MATCHCODE, CONSTRAINTCODE, dim, var, CHUNKSIZE, REPLACE)
 #define DEF_AUTOSPLIT_ORDERED(PRIORITY, MATCHCODE, CONSTRAINTCODE, dim, var, CHUNKSIZE, REPLACE)                       \
     DEF_AUTOSPLIT_COMMON(PRIORITY, ordered_autosplit_flag, MATCHCODE, CONSTRAINTCODE, dim, var, CHUNKSIZE, REPLACE)
 #define DEF_AUTOSPLIT_TYPICAL(PRIORITY, OPSTR, ARITY, dim, CHUNKSIZE)                                                  \
@@ -2310,7 +2252,7 @@ class GraphOptPass {
     GraphOptPass(GraphOptPass &&) = default;
 
     // Add a rule in evaluation order...
-    API_EXPORT void add_optim(const GraphOptInfo *p);
+    API_EXPORT void add_optim(GraphOptInfo *p);
 
     // Build the codes and opstrs for each MatcherState after
     // all rules have been added.
@@ -2365,6 +2307,31 @@ POP_VISIBILITY()
 
 #include "oexpr_post.h"
 
+//
+//
+
+PUSH_VISIBILITY(default)
+
+namespace hnnx {
+
+API_EXPORT std::map<int, GraphOptPass> &get_optimization_passes();
+
+API_EXPORT std::map<std::string, std::vector<std::unique_ptr<GraphOptInfo>> *> &get_pkg_opt_tmp_map();
+
+API_EXPORT void add_package_opt(std::vector<std::unique_ptr<GraphOptInfo>> &opts, int priority,
+                                OptimFlags::flags_t flags_in, get_entire_defopt_t defopt_in, char const *const fname,
+                                const int lineno);
+// This entry is only for backwards ABI compatibility for exising op packages
+// compiled when fname and line number were not in the default build.
+API_EXPORT void add_package_opt(std::vector<std::unique_ptr<GraphOptInfo>> &opts, int priority,
+                                OptimFlags::flags_t flags_in, get_entire_defopt_t defopt_in);
+
+API_EXPORT std::string get_opname_with_default_pkg_prefix(char const *opname);
+
+} // namespace hnnx
+
+POP_VISIBILITY()
+
 #define INIT_PACKAGE_OPTIMIZATION_DEF()                                                                                \
     API_HIDDEN std::vector<std::unique_ptr<hnnx::GraphOptInfo>> &current_package_opts_storage_vec_func()               \
     {                                                                                                                  \
@@ -2372,10 +2339,7 @@ POP_VISIBILITY()
         return optv;                                                                                                   \
     }                                                                                                                  \
     extern "C" {                                                                                                       \
-    void clearPackageOptStorageVecFunc()                                                                               \
-    {                                                                                                                  \
-        current_package_opts_storage_vec_func().clear();                                                               \
-    }                                                                                                                  \
+    void clearPackageOptStorageVecFunc() { current_package_opts_storage_vec_func().clear(); }                          \
     }
 
 #define DECLARE_PACKAGE_OPTIMIZATION_DEF()                                                                             \
@@ -2383,32 +2347,15 @@ POP_VISIBILITY()
 
 #define REGISTER_EXTERNAL_PACKAGE_OPT(PRIORITY, FLAGS, DEFOPT) APPEND_REG_OPT_ELEM(PRIORITY, FLAGS, DEFOPT, __LINE__)
 
-#define REGISTER_EXTERNAL_PACKAGE_OPT_REG(PRIORITY, FLAGS, DEFOPT, REG)                                                \
-    APPEND_REG_OPT_ELEM_REG(PRIORITY, FLAGS, DEFOPT, __LINE__, REG)
-
 #define REGISTER_INTERNAL_PACKAGE_OPT(PRIORITY, FLAGS, DEFOPT) APPEND_REG_OPT_ELEM(PRIORITY, FLAGS, DEFOPT, __LINE__)
 
-#define REGISTER_INTERNAL_PACKAGE_OPT_REG(PRIORITY, FLAGS, DEFOPT, REG)                                                \
-    APPEND_REG_OPT_ELEM_REG(PRIORITY, FLAGS, DEFOPT, __LINE__, REG)
-
-// Registry-scoped variants of DEF_PACKAGE_OPTIMIZATION (external/op-pkg facing).
-// REG should be one of the registry name macros from
-// hexagon/include/pub/impl/op_registries.h (e.g. REGISTRY_CORE, REGISTRY_512B).
-#define DEF_PACKAGE_OPTIMIZATION_WITH_FLAGS_REG(REG, PRIORITY, FLAGS, MATCHCODE, CONSTRAINTCODE, REPLACECODE)          \
-    DEF_PACKAGE_OPTIMIZATION_COMMON(PRIORITY, FLAGS, MATCHCODE, CONSTRAINTCODE, REPLACECODE)                           \
-    REGISTER_EXTERNAL_PACKAGE_OPT_REG((PRIORITY), hnnx::OptimFlags::flag_evaluate<UNIQUE_TYPE>(),                      \
-                                      &hnnx::get_entire_defopt<UNIQUE_TYPE>, REG);
-
-#define DEF_PACKAGE_OPTIMIZATION_REG(REG, PRIORITY, MATCHCODE, CONSTRAINTCODE, REPLACECODE)                            \
-    DEF_PACKAGE_OPTIMIZATION_WITH_FLAGS_REG(REG, PRIORITY, 0, MATCHCODE, CONSTRAINTCODE, REPLACECODE)
-
-// Default (non-REG) variants register into the "core" registry via the
-// registry-aware path so behavior is consistent across both spellings.
 #define DEF_PACKAGE_OPTIMIZATION(PRIORITY, MATCHCODE, CONSTRAINTCODE, REPLACECODE)                                     \
-    DEF_PACKAGE_OPTIMIZATION_REG(REGISTRY_CORE, PRIORITY, MATCHCODE, CONSTRAINTCODE, REPLACECODE)
+    DEF_PACKAGE_OPTIMIZATION_WITH_FLAGS(PRIORITY, 0, MATCHCODE, CONSTRAINTCODE, REPLACECODE)
 
 #define DEF_PACKAGE_OPTIMIZATION_WITH_FLAGS(PRIORITY, FLAGS, MATCHCODE, CONSTRAINTCODE, REPLACECODE)                   \
-    DEF_PACKAGE_OPTIMIZATION_WITH_FLAGS_REG(REGISTRY_CORE, PRIORITY, FLAGS, MATCHCODE, CONSTRAINTCODE, REPLACECODE)
+    DEF_PACKAGE_OPTIMIZATION_COMMON(PRIORITY, FLAGS, MATCHCODE, CONSTRAINTCODE, REPLACECODE)                           \
+    REGISTER_EXTERNAL_PACKAGE_OPT((PRIORITY), hnnx::OptimFlags::flag_evaluate<UNIQUE_TYPE>(),                          \
+                                  &hnnx::get_entire_defopt<UNIQUE_TYPE>);
 
 #define DEF_INTERNAL_PACKAGE_OPTIMIZATION(PRIORITY, MATCHCODE, CONSTRAINTCODE, REPLACECODE)                            \
     DEF_INTERNAL_PACKAGE_OPTIMIZATION_WITH_FLAGS(PRIORITY, 0, MATCHCODE, CONSTRAINTCODE, REPLACECODE)
@@ -2417,11 +2364,6 @@ POP_VISIBILITY()
     DEF_PACKAGE_OPTIMIZATION_COMMON(PRIORITY, FLAGS, MATCHCODE, CONSTRAINTCODE, REPLACECODE)                           \
     REGISTER_INTERNAL_PACKAGE_OPT((PRIORITY), hnnx::OptimFlags::flag_evaluate<UNIQUE_TYPE>(),                          \
                                   &hnnx::get_entire_defopt<UNIQUE_TYPE>);
-
-#define DEF_INTERNAL_PACKAGE_OPTIMIZATION_WITH_FLAGS_REG(PRIORITY, FLAGS, MATCHCODE, CONSTRAINTCODE, REPLACECODE, REG) \
-    DEF_PACKAGE_OPTIMIZATION_COMMON(PRIORITY, FLAGS, MATCHCODE, CONSTRAINTCODE, REPLACECODE)                           \
-    REGISTER_INTERNAL_PACKAGE_OPT_REG((PRIORITY), hnnx::OptimFlags::flag_evaluate<UNIQUE_TYPE>(),                      \
-                                      &hnnx::get_entire_defopt<UNIQUE_TYPE>, REG);
 
 #ifndef DEF_OPT_COMPILE
 #define DEF_PACKAGE_OPTIMIZATION_COMMON(PRIORITY, FLAGS, MATCHCODE, CONSTRAINTCODE, REPLACECODE)                       \
@@ -2474,18 +2416,8 @@ POP_VISIBILITY()
 #define DEF_OPTIM(PRIORITY, FLAGS, MATCHCODE, CONSTRAINTCODE, REPLACECODE)                                             \
     DEF_INTERNAL_PACKAGE_OPTIMIZATION_WITH_FLAGS(PRIORITY, FLAGS, MATCHCODE, CONSTRAINTCODE, REPLACECODE)
 
-// Registry-scoped variants of DEF_OPTIM, DEF_OPT. These register optimization rules
-// into a named registry so they only take effect when that registry is active.
-// Ops/Opts Registries is the agreed-upon path forward for the project: this enables
-// utilization of registries within the same pickle driver without rebuilding.
-#define DEF_OPTIM_REG(PRIORITY, FLAGS, REG, MATCHCODE, CONSTRAINTCODE, REPLACECODE)                                    \
-    DEF_INTERNAL_PACKAGE_OPTIMIZATION_WITH_FLAGS_REG(PRIORITY, FLAGS, MATCHCODE, CONSTRAINTCODE, REPLACECODE, REG)
-
 #define DEF_OPT(PRIORITY, MATCHCODE, CONSTRAINTCODE, REPLACECODE)                                                      \
     DEF_INTERNAL_PACKAGE_OPTIMIZATION(PRIORITY, MATCHCODE, CONSTRAINTCODE, REPLACECODE)
-
-#define DEF_OPT_REG(PRIORITY, REG, MATCHCODE, CONSTRAINTCODE, REPLACECODE)                                             \
-    DEF_INTERNAL_PACKAGE_OPTIMIZATION_WITH_FLAGS_REG(PRIORITY, 0, MATCHCODE, CONSTRAINTCODE, REPLACECODE, REG)
 
 #define FROM_DEFAULT_PACKAGE(OP) hnnx::get_opname_with_default_pkg_prefix(OP).c_str()
 
@@ -2609,34 +2541,22 @@ DECLARE_PACKAGE_OPTIMIZATION_DEF()
     [[maybe_unused]] static bool CTRICKS_PASTER(opdef_proprety, __LINE__) =                                            \
             hnnx::register_tensor_properties(THIS_PKG_NAME_STR, TensorInfoBuilder(THIS_PKG_NAME_STR, __VA_ARGS__));    \
     }
-#define DEF_TENSOR_PROPERTIES_REG(REG, ...)                                                                            \
-    namespace DefProperties {                                                                                          \
-    [[maybe_unused]] static bool CTRICKS_PASTER(opdef_proprety, __LINE__) = hnnx::register_tensor_properties(          \
-            THIS_PKG_NAME_STR, TensorInfoBuilder(THIS_PKG_NAME_STR, __VA_ARGS__), REG);                                \
-    }
 #else
-#define DEF_TENSOR_PROPERTIES(...)          __dtp__(__VA_ARGS__)<<<__FILE__, __LINE__>>>
-#define DEF_TENSOR_PROPERTIES_REG(REG, ...) __dtp__(__VA_ARGS__)<<<__FILE__, __LINE__>>>
+#define DEF_TENSOR_PROPERTIES(...) __dtp__(__VA_ARGS__)<<<__FILE__, __LINE__>>>
 #endif
 #else
 #define DEF_TENSOR_PROPERTIES(...)
-#define DEF_TENSOR_PROPERTIES_REG(REG, ...)
 #define DEF_AUTOSPLIT(...)
 #define DEF_AUTOSPLITIM(...)
-#define DEF_AUTOSPLITIM_REG(PRIORITY, FLAGS, REG, MATCHCODE, CONSTRAINTCODE, dim, var, CHUNKSIZE, REPLACE)
 #define DEF_AUTOSPLIT_ORDERED(...)
 #define DEF_AUTOSPLIT_TYPICAL(...)
 #define DEF_PACKAGE_OPTIMIZATION(PRIORITY, MATCHCODE, CONSTRAINTCODE, REPLACECODE)
 #define DEF_PACKAGE_OPTIMIZATION_WITH_FLAGS(PRIORITY, FLAGS, MATCHCODE, CONSTRAINTCODE, REPLACECODE)
-#define DEF_PACKAGE_OPTIMIZATION_REG(REG, PRIORITY, MATCHCODE, CONSTRAINTCODE, REPLACECODE)
-#define DEF_PACKAGE_OPTIMIZATION_WITH_FLAGS_REG(REG, PRIORITY, FLAGS, MATCHCODE, CONSTRAINTCODE, REPLACECODE)
 #define DEF_OPTIM(PRIORITY, FLAGS, MATCHCODE, CONSTRAINTCODE, REPLACECODE)
 #define DEF_OPT(PRIORITY, MATCHCODE, CONSTRAINTCODE, REPLACECODE)
 #define INIT_PACKAGE_OPTIMIZATION_DEF()                                                                                \
     /* Provide no-op definition so clearPkgStorage still works */                                                      \
     extern "C" void clearPackageOptStorageVecFunc() {}
-#define DEF_OPTIM_REG(PRIORITY, FLAGS, REG, MATCHCODE, CONSTRAINTCODE, REPLACECODE)
-#define DEF_OPT_REG(PRIORITY, REG, MATCHCODE, CONSTRAINTCODE, REPLACECODE)
 #define REGISTER_PACKAGE_OPTIMIZATIONS()
 #endif // PREPARE_DISABLED
 
@@ -2646,15 +2566,15 @@ struct Recompilable_param {
 };
 
 #define COMPILER_FOR_UPDATEABLE_QUANT_WITH_CHECKS(XXF, FUNC, PARA, PRE, POST)                                          \
-    template <> constexpr bool has_compile_method<&XXF> = true;                                                        \
-    template <> struct OpaqueT_FOR<&XXF> {                                                                             \
+    template <> constexpr bool has_compile_method<XXF> = true;                                                         \
+    template <> struct OpaqueT_FOR<XXF> {                                                                              \
         using type = PARA;                                                                                             \
     };                                                                                                                 \
-    template <> bool hnnx::TypicalOpWithCompiler<&XXF, PARA>::check_constraint_for_recompile(Graph &graph_in) const    \
+    template <> bool hnnx::TypicalOpWithCompiler<XXF, PARA>::check_constraint_for_recompile(Graph &graph_in) const     \
     {                                                                                                                  \
         return POST(graph_in, this);                                                                                   \
     }                                                                                                                  \
-    template <> hnnx::Executable::ItemType hnnx::TypicalOpWithCompiler<&XXF, PARA>::compile(Graph &graph_in) const     \
+    template <> hnnx::Executable::ItemType hnnx::TypicalOpWithCompiler<XXF, PARA>::compile(Graph &graph_in) const      \
     {                                                                                                                  \
         static_assert(check_szal());                                                                                   \
         auto [f, v] = FUNC(graph_in, this);                                                                            \

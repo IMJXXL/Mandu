@@ -1,9 +1,10 @@
-// ==============================================================================
+//==============================================================================
 //
-// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
-// SPDX-License-Identifier: BSD-3-Clause-Clear
+// Copyright (c) 2021 Qualcomm Technologies, Inc.
+// All Rights Reserved.
+// Confidential and Proprietary - Qualcomm Technologies, Inc.
 //
-// ==============================================================================
+//==============================================================================
 
 #ifndef TYPE_NAME_H
 #define TYPE_NAME_H 1
@@ -79,7 +80,7 @@ template <typename T> constexpr void AppendTypeName(char *des, size_t &offset, s
         same = true;
         des[i++] = '.'; //add delimiter
         size_t const len = name.size();
-        for (size_t j = 0; j < len; j++) {
+        for (int j = 0; j < len; j++) {
             if (des[offset - 1 - j] != name[len - 1 - j]) {
                 same = false;
                 break;

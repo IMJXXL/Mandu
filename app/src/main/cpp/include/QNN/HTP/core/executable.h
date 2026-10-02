@@ -1,13 +1,13 @@
-// ==============================================================================
+//==============================================================================
 //
-// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
-// SPDX-License-Identifier: BSD-3-Clause-Clear
+// Copyright (c) 2018-2024 Qualcomm Technologies, Inc.
+// All Rights Reserved.
+// Confidential and Proprietary - Qualcomm Technologies, Inc.
 //
-// ==============================================================================
+//==============================================================================
 #ifndef EXECUTABLE_H
 #define EXECUTABLE_H 1
 
-#include "list_type.h"
 #include "graph_status.h"
 #include <tuple>
 #include <cstdlib>
@@ -30,36 +30,17 @@ struct OsS {
     // on hexagon:
     //   must be possible to pass this in a 32 bit register; and 'default constructor' must
     //   be equivalent to a 32-bit value of '1'.
-    //
-    // Bit layout (32-bit register):
-    //   bits [13: 0]  m_nslices   (14 bits)
-    //   bits [15:14]  m_resources  (2 bits)
-    //   bits [31:16]  m_slice_idx (16 bits)
-    //
-    // IMPORTANT: m_resources MUST occupy the top 2 bits of the lower 16-bit half-word
-    // and MUST be 0 in any HVX-only context.  Assembly routines that receive this value
-    // via as_uint32() read the lower 16 bits directly as num_slices; a non-zero
-    // m_resources would corrupt that value and cause incorrect slice counts (e.g. the
-    // assert(slice_spec.num_slices() == 1) in 8-bit softmax would fire because the asm
-    // path sees (m_resources<<14)|m_nslices instead of m_nslices alone).
-    // Only exclusive-mode dispatch (RESOURCE_EXCLUSIVE ops) may set m_resources != 0,
-    // and those ops must never be dispatched through HVX-only assembly paths.
-    unsigned m_nslices : 14;
-    unsigned m_resources : 2;
+    unsigned m_nslices : 16;
     unsigned m_slice_idx : 16;
 
   public:
     OsS(OsS const &) = default;
     OsS &operator=(OsS const &) = default;
-    constexpr OsS() : m_nslices(1), m_resources(0), m_slice_idx(0) {}
-    constexpr OsS(unsigned const n, unsigned const i) : m_nslices(n), m_resources(0), m_slice_idx(i) {}
-    constexpr OsS(unsigned const r, unsigned const n, unsigned const i) : m_nslices(n), m_resources(r), m_slice_idx(i)
-    {
-    }
-    void set_nslices(unsigned n) { m_nslices = n; }
+    constexpr OsS() : m_nslices(1), m_slice_idx(0) {}
+    constexpr OsS(unsigned const n, unsigned const i) : m_nslices(n), m_slice_idx(i) {}
+
     constexpr unsigned num_slices() const { return m_nslices; }
     constexpr unsigned slice_idx() const { return m_slice_idx; }
-    hnnx::ListType resources() const { return static_cast<hnnx::ListType>(m_resources); }
 
     // If you want to pass an op_slice_spec into an asm routine as 32-bits, use this;
     // it provides an integer with 'num_slices' in lower 16 bits and 'slice_idx' in upper 16,
@@ -108,11 +89,7 @@ typedef volatile uint32_t *counter_nc_t;
 // (between Excecutable its subclasses) to change the pointer value.
 class API_EXPORT Executable {
   public:
-    // For common self-slicing of HVX/HLX there are most MAX_OP_HVX_SLICES
-    static constexpr unsigned MAX_OP_HVX_SLICES = 8;
-    // For exclusve mode, there may also be this many HMX slices plus one for the main thread
-    static constexpr unsigned MAX_OP_HMX_SLICES = 2;
-    static constexpr unsigned MAX_ALL_OP_SLICES = MAX_OP_HVX_SLICES + MAX_OP_HMX_SLICES + 1;
+    static constexpr unsigned MAX_OP_SLICES = 8;
 
     using FuncType = GraphStatus (*)(const void *, EXECUTE_METHOD_PARMS);
     using ItemType = std::pair<FuncType, const void *>;
@@ -130,14 +107,6 @@ class API_EXPORT Executable {
     };
     virtual GraphStatus execute(EXECUTE_METHOD_PARMS) const noexcept = 0; // Needs to be at vtable offset zero!!!
     virtual ItemType compile(Graph &graph_in) const; // Turn this Executable into a function pointer and data pointer.
-    // Like above but called for self-sliced ops. By default self-slicing is ignored
-    virtual ItemType compile(Graph &graph_in, unsigned nslices) const { return compile(graph_in); }
-    // Exclusive-mode dispatch hook.  Non-dispatch ops run on a single
-    // list_type (whichever their RESOURCE_* flag selects), so they can't
-    // observe which list they were compiled from and the default here
-    // ignores list_type.  Only SliceDispatchOp overrides this to record
-    // per-list slice counts.
-    virtual ItemType compile(Graph &graph_in, hnnx::ListType list_type) const { return compile(graph_in); }
     virtual bool
     check_constraint_for_recompile(Graph &graph_in) const; // allows for additional check for running during recompile
     virtual ~Executable() = default;

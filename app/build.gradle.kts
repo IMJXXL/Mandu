@@ -104,21 +104,18 @@ versionName = "1.36"
             //   useLegacyPackaging=false（AGP 默认）时该目录为空 → NPU 初始化必败（Komiho 实测结论）。
             //   代价是装机后 .so 落盘一份，下载体积几乎不变（.so 压缩率高）。
             useLegacyPackaging = true
-            // qnn-runtime AAR 里真正用不到的后端：Gpu/Dsp 备用后端（我们只走 HTP）、
-            // V68（8 Gen1 不在打包代列表）。五代 Skel/Stub（69/73/75/79/81）+ Htp + System
-            // + **Prepare + ModelDlc 保留**——参考项目（同设备可用）APK 里二者齐全；
-            // 曾裁掉它们省体积，真机报 loadRemoteSymbols 4000/Transport 14001，与参考
-            // 逐项对齐库清单后确认差异就在这两个库（Android 16 新平台上 Prepare 参与
-            // DSP 会话/图装载），勿再裁。
-            // ★ libQnnModelDlc.so 版本必须与 Htp 主库配对（2026-10-02 K80 复盘）：AAR 2.49.0
-            //   的 Htp/Skel + QAIRT 2.49.0.260730 SDK 的 ModelDlc（3.31MB）仍 Transport 14001，
-            //   与参考 APK 逐库 MD5 对比 13/14 相同、唯一差异就是 ModelDlc——换用参考 APK 同款
-            //   （2.70MB，MD5 73a0e5bf）即与可用参考组合完全一致。勿再换成 260730 SDK 版。
-            excludes += setOf(
-                "**/libQnnGpu.so", "**/libQnnDsp.so",
-                "**/libQnnDspV66Skel.so", "**/libQnnDspV66Stub.so",
-                "**/libQnnHtpV68Skel.so", "**/libQnnHtpV68Stub.so",
-            )
+            // ★ QNN 运行时库不再走 Maven AAR（2026-10-03 K80 根因修复）：原 com.qualcomm.qti:
+            //   qnn-runtime:2.49.0 的库在 K80（8 Gen3/v75）上 DSP 传输层建立即失败
+            //   （loadRemoteSymbols 4000 → Transport 14001），ADSP_LIBRARY_PATH 时序修复（已移植）
+            //   与库清单对齐都无法解决。真 Komiho（ruzhe85/Komiho，K80 实测 NPU 可用）9-19 提交
+            //   4542775 的结论：QNN 要求 runtime version ≥ context compile version，其 runtime
+            //   已升 2.50.0。现 jniLibs 里 12 个 QNN 库逐字节取自 Komiho 1.3.1 发布 APK
+            //   （libQnnHtp + libQnnSystem + 五代 Skel/Stub，qnn-runtime 2.50.0）。
+            //   ★ Prepare（79MB）与 ModelDlc 已确认非必需：Komiho 裁掉二者后同路径可用，
+            //     4000 链当年换 ModelDlc 也逐字节复现（两头都试过）。不要再加回。
+            //   ★ 版本规则单向：context 内嵌编译版本 ≤ runtime 即可载（我们 NPU 插件 context
+            //     内嵌 2.49.0 < 2.50.0 合法）；若将来用 onnxruntime-qnn 2.6.0 重编 context
+            //     （内嵌 2.50.40）也兼容，再新就要同步升 runtime。
         }
     }
 }
@@ -219,11 +216,10 @@ dependencies {
     // kotlinx-serialization-cbor (GalleryPreview CborArray)
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-cbor:1.11.0")
 
-    // QNN/HTP（高通 NPU）运行时库：Maven Central 公网，免注册。客户端代码按 cpp/include/QNN
-    // 的 QAIRT 2.49 vendor 头编译（API 向后兼容）。**与参考项目同款 2.49.0**——参考 APK
-    // 在 Android 16 小机上实测可用（2026-10-02），曾试 2.50.0 无助益；库清单对齐后
-    // Prepare/ModelDlc 已恢复打包（见 packaging.excludes 注释）。
-    implementation("com.qualcomm.qti:qnn-runtime:2.49.0")
+    // QNN 运行时库已改为 jniLibs 直带 Komiho 1.3.1 同款 2.50.0（见 packaging.jniLibs 注释
+    // 与 jniLibs/arm64-v8a/ 里的 12 个 libQnn*.so）。原 com.qualcomm.qti:qnn-runtime:2.49.0
+    // AAR 已移除——其库在 K80 上 DSP 传输层建立失败（4000→14001），且会与本 jniLibs 的
+    // 同名 2.50.0 库发生打包冲突，勿再引回。
 
     // ktor (WebDAV + Komga HTTP client)
     implementation("io.ktor:ktor-client-core:3.5.0")

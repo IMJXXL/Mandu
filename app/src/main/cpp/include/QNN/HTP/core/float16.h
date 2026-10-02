@@ -1,496 +1,383 @@
-// ==============================================================================
+//==============================================================================
 //
-// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
-// SPDX-License-Identifier: BSD-3-Clause-Clear
+// Copyright (c) 2020, 2023 Qualcomm Technologies, Inc.
+// All Rights Reserved.
+// Confidential and Proprietary - Qualcomm Technologies, Inc.
 //
-// ==============================================================================
+//==============================================================================
 
 #ifndef FLOAT16_H
 #define FLOAT16_H
 
+#include <algorithm>
 #include <cassert>
 #include <cstdint>
 #include <cmath>
 #include <limits>
-#include <type_traits>
 
 #include "builtin_intrinsics.h"
-#include "hexnn_fp.h"
 
 #include "weak_linkage.h"
 #include "macros_attribute.h"
 
 PUSH_VISIBILITY(default)
 
-struct Float16;
-
-namespace hexnn_fp {
-using float16_t = Float16;
-} // namespace hexnn_fp
-
 struct API_EXPORT Float16 {
-    friend struct hexnn_fp_priv::cmath_funcs<Float16>;
-    friend struct hexnn_fp_priv::raw_methods<Float16>;
-    friend class std::numeric_limits<Float16>;
+    constexpr Float16() : d(0) {}
+    constexpr Float16(float f);
+    constexpr Float16(const Float16 &f) : d(f.d) {}
+    constexpr Float16 &operator=(Float16 f);
 
-    constexpr Float16() noexcept : d(0) {}
-    constexpr Float16(float f) noexcept;
-    // 'noexcept' on defaulted operations is enforced with static_assert af6er class. Do not add here.
-    Float16(const Float16 &f) = default;
-    Float16 &operator=(const Float16 &f) = default;
-    Float16(Float16 &&f) = default;
-    Float16 &operator=(Float16 &&f) = default;
-    ~Float16() = default;
+    constexpr bool is_zero() const;
+    constexpr bool is_neg() const;
+    constexpr bool is_inf() const;
+    constexpr bool is_nan() const;
+    constexpr bool is_subnorm() const;
+    constexpr bool is_norm() const;
+    constexpr bool is_finite() const;
 
-    /// All these to be made 'private' >>>
-    constexpr bool is_zero() const noexcept;
-    constexpr bool is_inf() const noexcept;
-    constexpr bool is_nan() const noexcept;
-    constexpr bool is_finite() const noexcept;
+    constexpr int16_t exp() const;
+    constexpr int16_t frac() const;
+    constexpr uint16_t raw() const { return d; }
 
-    constexpr uint16_t raw() const noexcept { return d; }
+    static constexpr int exp_max() { return 15; }
+    static constexpr int exp_min() { return -14; }
+    static constexpr int16_t bias() { return 15; }
 
-    static constexpr Float16 qnan() noexcept;
-    static constexpr Float16 snan() noexcept;
-    static constexpr Float16 inf() noexcept;
+    static constexpr Float16 zero(bool neg = false);
+    static constexpr Float16 qnan();
+    static constexpr Float16 snan();
+    static constexpr Float16 inf(bool neg = false);
 
-    static constexpr Float16 from_raw(uint16_t v) noexcept;
+    static constexpr Float16 from_raw(uint16_t v);
 
+    constexpr operator float() const;
     // same as ->float, but treats max. exp as a normal number
     // instead of inf/nan
-    constexpr float to_float_alt() const noexcept;
+    float to_float_alt() const;
     // same as from-float, but allows +/- 131008 range, using
     // exp=31 as normal.
-    static constexpr Float16 from_float_alt(float v) noexcept;
-
-    // <<<<
-
-    constexpr operator float() const noexcept;
-
-    // 'catch-all' for conversion from integer types.
-    // This is needed if we have ctor from float, and from double; to eliminate
-    // 'ambiguous' conversions to Float16. Some large ints will get rounded when
-    // converted to float, but all of those will be 'inf' when converted to Float16.
-    template <typename I, std::enable_if_t<std::is_integral_v<I>, bool> = false> //
-    constexpr Float16(I val) noexcept : Float16(static_cast<float>(val))
-    {
-    }
-    constexpr Float16(double v) noexcept : Float16(from_double(v)) {}
+    static Float16 from_float_alt(float v);
 
   private:
-    // Float16 from double (not always the same as what you get from
-    // rounding to float first)
-    static constexpr Float16 from_double(double x) noexcept;
+    explicit constexpr Float16(int sign, int exp, int frac);
 
-    static constexpr unsigned k_no_sign_mask = 0x7fffu;
-    static constexpr unsigned k_sign_mask = 0x8000u;
-    static constexpr unsigned k_inf_code = 0x7c00u;
-    static constexpr unsigned k_mantissa_mask = 0x03ff;
-    static constexpr unsigned k_quiet_bit = 0x0200u;
-    static constexpr unsigned k_smallest_norm_code = k_mantissa_mask + 1u;
+    constexpr uint16_t sign_bit() const;
+    constexpr uint16_t exp_bits() const;
+    constexpr uint16_t frac_bits() const;
 
-    template <bool ALT = false> //
-    static constexpr uint16_t float16_from_float(float x) noexcept;
-    template <bool ALT = false> //
-    static constexpr float float_from_float16(unsigned d) noexcept;
+    static constexpr uint16_t make_exp_bits(uint16_t e);
+    static constexpr uint16_t make_sign_bit(uint16_t s);
+    static constexpr uint16_t make_frac_bits(uint16_t f);
 
-    template <enum hexnn_fp_priv::fp_comp CMP_OP> //
-    constexpr bool do_cmp(Float16 other) noexcept;
+    static constexpr uint16_t make_zero(bool neg);
+    static constexpr uint16_t make_nan(bool quiet);
+    static constexpr uint16_t make_inf(bool neg);
+    static constexpr uint16_t make(int sign, int exp, int frac);
 
-    uint16_t d;
+    static constexpr uint32_t round(uint32_t v, unsigned s);
 
-    friend Float16 operator-(Float16 a) noexcept;
-    friend FUNC_ATTRIB_CONST API_FUNC_EXPORT Float16 operator+(Float16 a, Float16 b) noexcept;
-    friend Float16 operator-(Float16 a, Float16 b) noexcept;
-    friend FUNC_ATTRIB_CONST API_FUNC_EXPORT Float16 operator*(Float16 a, Float16 b) noexcept;
-    friend FUNC_ATTRIB_CONST API_FUNC_EXPORT Float16 operator/(Float16 a, Float16 b) noexcept;
-    friend constexpr bool operator==(Float16 a, Float16 b) noexcept;
-    friend constexpr bool operator!=(Float16 a, Float16 b) noexcept;
-    friend constexpr bool operator<(Float16 a, Float16 b) noexcept;
-    friend constexpr bool operator<=(Float16 a, Float16 b) noexcept;
-    friend constexpr bool operator>(Float16 a, Float16 b) noexcept;
-    friend constexpr bool operator>=(Float16 a, Float16 b) noexcept;
+    std::pair<int32_t, int32_t> force_norm() const;
+
+    union {
+        uint16_t d;
+        struct {
+            uint16_t mantissa : 10;
+            uint16_t exponent : 5;
+            uint16_t sign : 1;
+        };
+    };
+
+    friend API_FUNC_EXPORT Float16 operator-(Float16 a);
+    friend API_FUNC_EXPORT Float16 operator+(Float16 a, Float16 b);
+    friend API_FUNC_EXPORT Float16 operator-(Float16 a, Float16 b);
+    friend API_FUNC_EXPORT Float16 operator*(Float16 a, Float16 b);
 };
 
 POP_VISIBILITY()
 
-//
-// ** If you make a change which causes any of the static_assert below
-// ** to be violated, please reconsider the change before removing the assert.
-// ** Such a change will affect the size and performance of code using Float16
-// ** (E.g. it may not be possible to pass a Float16 by value, without extra
-// ** overhead). Do NOT add 'noexcept' to defaulted methods to make the asserts
-// ** go away.
-static_assert(std::is_nothrow_copy_constructible<Float16>::value);
-static_assert(std::is_nothrow_move_constructible<Float16>::value);
-static_assert(std::is_nothrow_assignable<Float16, Float16>::value);
-static_assert(std::is_nothrow_move_assignable<Float16>::value);
-static_assert(std::is_nothrow_destructible<Float16>::value);
-static_assert(std::is_trivially_copyable<Float16>::value);
-static_assert(std::is_standard_layout<Float16>::value);
-
-// specialize hexnn_fp_priv::raw_methods<Float16>
-// makes hexnn_fp::from_raw<Float16>(rawval),
-// and hexnn_fp::to_raw(Float16 f) work.
-namespace hexnn_fp_priv {
-template <> struct raw_methods<Float16> {
-    using raw_t = uint16_t;
-    static inline constexpr Float16 from_raw(raw_t val) noexcept { return Float16::from_raw(val); }
-    static inline constexpr raw_t to_raw(Float16 val) noexcept { return val.raw(); }
-
-    static inline constexpr Float16 from_float_alt(float val) noexcept { return Float16::from_float_alt(val); }
-    static inline constexpr float to_float_alt(Float16 val) noexcept { return val.to_float_alt(); }
-};
-} // namespace hexnn_fp_priv
-
-namespace hexnn_fp {
-// 'convenience' wrapper ... alternative to hexnn_fp::from_raw<Float16>(rawval)
-inline constexpr Float16 float16_from_raw(uint16_t rawval) noexcept
+inline constexpr Float16::Float16(float f) : d(0)
 {
-    return hexnn_fp_priv::raw_methods<Float16>::from_raw(rawval);
-}
+    union U {
+        constexpr U(float f) : f(f) {}
+        float f;
+        uint32_t w;
+    } const u(f);
 
-// 'convenience' wrapper ... alternative to hexnn_fp::from_float_alt<Float16>(flt)
-inline constexpr Float16 float16_from_float_alt(float f) noexcept
-{
-    return hexnn_fp_priv::raw_methods<Float16>::from_float_alt(f);
-}
-} // namespace hexnn_fp
+    bool const neg = u.w & (uint32_t(1u) << 31u);
+    int const exp_extract = (u.w >> 23u) & 0xFFu;
+    uint32_t const frac_bits = u.w & 0x7FFFFFu;
 
-////////////
-// The following are needed to resolve ambiguities when comparing other types to Float16,
-// e.g (fp16_val == 1) -> float(fp16_val) == 1  -> float(fp16_val) == float(1)
-#define FP16_COMPARE_ADAPTER(CMP_OP)                                                                                   \
-    template <typename T>                                                                                              \
-    inline constexpr std::enable_if_t<std::is_arithmetic_v<T>, bool> operator CMP_OP(T a, Float16 b) noexcept          \
-    {                                                                                                                  \
-        return a CMP_OP float(b);                                                                                      \
-    }                                                                                                                  \
-    template <typename T>                                                                                              \
-    inline constexpr std::enable_if_t<std::is_arithmetic_v<T>, bool> operator CMP_OP(Float16 a, T b) noexcept          \
-    {                                                                                                                  \
-        return float(a) CMP_OP b;                                                                                      \
+    if (exp_extract == 0xFF) {
+        if (frac_bits == 0)
+            d = make_inf(neg);
+        else
+            d = make_nan(frac_bits & 0x400000u);
+        return;
     }
 
-FP16_COMPARE_ADAPTER(==)
-FP16_COMPARE_ADAPTER(!=)
-FP16_COMPARE_ADAPTER(<)
-FP16_COMPARE_ADAPTER(>)
-FP16_COMPARE_ADAPTER(<=)
-FP16_COMPARE_ADAPTER(>=)
-#undef FP16_COMPARE_ADAPTER
-
-//
-// This is a float32->float16 conversion.
-// When ALT=true, we get 'alternate' conversion with no inf/nan, but
-// extra range up to 131008.0 (twice the normal limit of 65504.0).
-// Inf, nan, and all larger values are mapped to that value (with sign).
-//
-// Since this is used in "constexpr Float16 operator""_f16(long double v)",
-// it needs to be constexpr, it can be evaluated at compile time.
-// This is intended to be correct, concise, and self-contained, but
-// not necessarily so clear in the logic. Comments are your friend...
-//
-// It written in a way which allows static analysis tools to
-// establish that the shift amount in << and >> are never out of range.
-//
-// This cannot actually be evaluated constexpr, due to how the union
-// is used, though the compiler can still 'fold' it to a constant result
-// for constant input. With C++20, std::bit_cast could be used instead of the union,
-// which will allow constexpr evaluation.
-//
-template <bool ALT> //
-inline constexpr uint16_t Float16::float16_from_float(float x) noexcept
-{
-    // if a 'normal' float16 value is converted to Float32, exponent is
-    // larger by this much.
-    constexpr unsigned exp_offset = 112;
-    // Encoding of 2^16 in Float32. If converted to float16 via 'normal'
-    // method, this will map to infinity. Exponent field is 143.
-    constexpr unsigned code32_64k = (143u << 23);
-    // float32 encoding of 2^-14 (which is smallest Float16 'normal') in float32  (exp = 113)
-    constexpr unsigned code32_2pm14 = (113u << 23);
-    constexpr unsigned code32_inf = 0x7F800000u; // infinity
-    // The smallest float32 which will round up to smallest float32 code.
-    // Exponent is 102.
-    constexpr unsigned code32_min_for_float16_subnorm = 0x33000001u;
-
-    // this is float32 encoding of 131008.0; exponent is 143.
-    constexpr unsigned code32_alt_limit = 0x47FFE000u;
-
-    constexpr unsigned code16_qnan = k_inf_code | k_quiet_bit; // 'quiet_NaN'
-
-    union {
-        float as_f;
-        unsigned as_u32;
-    } uu = {x};
-
-    unsigned x_abs = uu.as_u32 & 0x7fffffffu;
-
-    unsigned result = (uu.as_u32 >> 16) & 0x8000u; // sign bit only
-
-    if (x_abs >= code32_2pm14) { // too big for subnormal Float16
-        if constexpr (!ALT) {
-            if (x_abs > code32_64k) {
-                // all values >= code32_64k map to code32_64k; first we ned to check for NaN
-                if (x_abs > code32_inf) { // is a NaN
-                    // Same sign; exp=0x1f, bit 9=1, and bits 8..0 from bits 21..13 of input
-                    return result | code16_qnan | ((x_abs >> 13) & 0x1ff);
-                }
-                x_abs = code32_64k;
-            }
-        } else {
-            if (x_abs > code32_alt_limit) {
-                if (x_abs > code32_inf) { // is a NaN
-                    result = 0; // return +MAX vs -MAX for Nan
-                }
-                // all other map to +/- 131008
-                x_abs = code32_alt_limit;
-            }
-        }
-        // value is in range >=2^14, and not too large to convert to 'normal' range.
-        // For ALT = false, this includes values <= code32_64k which will convert to the Float16 'inf'
-        // code, either directly or via rounding up.
-        // For ALT = true, includes all <= code32_alt_limit, none will exceed 0x7fff result.
-        // start by rounding away 13 LSBS of x_abs, using convergent rounding.
-        unsigned const rbias = 0x1000 - ((~x_abs >> 13) & 1u);
-        unsigned rounded = (x_abs + rbias) >> 13;
-        // now, exponent is in bits 17:10, and is too big by exp_offset (range 113 .. 143).
-        rounded -= (exp_offset << 10); // all done except for sign.
-        result |= rounded;
-    } else if (x_abs >= code32_min_for_float16_subnorm) {
-        // subnormal range; float32 exponent is 102 .. 112; we need to take 23 LSBs
-        // of x_abs, add 'hidden bit', and round away lower 126-exp.
-        // (for the '102' case, we are rounding away all 24 bits, result will be 1 unless
-        // all 23 bits are 0, which happens only when x_abs == code32_min_for_float16_subnorm-1)
-
-        unsigned const bits_to_round = 126 - (x_abs >> 23);
-        // Hopefully static analysis can prove from the the above that 14 <= bits_to_round <= 24
-        // if you still get 'shift may be too large,' add: 'bits_to_round &= 31u;' (which compiler
-        // will likely optimize out), and maybe file an issue with SA vendor.
-        x_abs = (x_abs & 0x7FFFFFu) | 0x800000u;
-        unsigned rbias = 1u << bits_to_round;
-        // rbias is (1/2) of (1<<bits_to_round); but 1 less when the lowest 'retained'
-        // bit in x_abs is 0.
-        rbias = (rbias >> 1) - ((~x_abs >> bits_to_round) & 1u);
-        x_abs = (x_abs + rbias) >> bits_to_round;
-        // that's all - result is 1 .. 0x400; 0x400 is 2^-14; a value rounded up out
-        // of subnormal range.
-        result |= x_abs;
+    if (exp_extract == 0) {
+        // It could be a subnormal number, but all single-precision subnormals
+        // become 0 in half-precision.
+        d = make_zero(neg);
+        return;
     }
-    // .. else result is just +/- 0.0
-    return result;
+
+    int const exp = exp_extract - 127;
+    int const frac = round(frac_bits | (uint32_t(1) << 23u), 23 - 10);
+    d = make(neg, exp, frac);
 }
 
-inline constexpr Float16::Float16(float f) noexcept : d(Float16::float16_from_float<false>(f)) {}
-
-inline constexpr bool Float16::is_zero() const noexcept
+inline constexpr Float16 &Float16::operator=(const Float16 f)
 {
-    return (d & k_no_sign_mask) == 0x0000;
+    d = f.d;
+    return *this;
 }
 
-inline constexpr bool Float16::is_inf() const noexcept
+inline constexpr bool Float16::is_zero() const
 {
-    return (d & k_no_sign_mask) == k_inf_code;
+    return (exp_bits() | frac_bits()) == 0x0000;
 }
 
-inline constexpr bool Float16::is_nan() const noexcept
+inline constexpr bool Float16::is_neg() const
 {
-    return (d & k_no_sign_mask) > k_inf_code;
+    return sign_bit();
 }
 
-inline constexpr bool Float16::is_finite() const noexcept
+inline constexpr bool Float16::is_inf() const
 {
-    // is_norm() || is_subnorm
-    return (d & k_no_sign_mask) < k_inf_code;
+    return exp_bits() == make_exp_bits(0x001F) && frac_bits() == 0x0000;
 }
 
-inline constexpr Float16 Float16::qnan() noexcept
+inline constexpr bool Float16::is_nan() const
 {
-    return Float16::from_raw(k_inf_code | k_quiet_bit);
+    return exp_bits() == make_exp_bits(0x001F) && frac_bits() != 0x0000;
 }
 
-inline constexpr Float16 Float16::snan() noexcept
+inline constexpr bool Float16::is_subnorm() const
 {
-    return Float16::from_raw(k_inf_code | (k_quiet_bit >> 1));
+    return exp_bits() == make_exp_bits(0x0000) && frac_bits() != 0x0000;
 }
 
-inline constexpr Float16 Float16::inf() noexcept
+inline constexpr bool Float16::is_norm() const
 {
-    return Float16::from_raw(k_inf_code);
+    if (is_zero()) return true;
+    return exp_bits() > make_exp_bits(0x0000) && exp_bits() < make_exp_bits(0x001F);
 }
 
-inline constexpr Float16 Float16::from_raw(uint16_t v) noexcept
+inline constexpr bool Float16::is_finite() const
+{
+    return is_norm() || is_subnorm();
+}
+
+inline constexpr int16_t Float16::exp() const
+{
+    assert(is_finite());
+    int16_t const e = static_cast<int16_t>(exp_bits() >> 10u);
+    return e != 0 ? e - bias() : e - bias() + 1;
+}
+
+inline constexpr int16_t Float16::frac() const
+{
+    assert(is_finite());
+    uint16_t f = frac_bits();
+    if (is_norm()) f |= uint32_t(1) << 10u;
+    return static_cast<int16_t>(f);
+}
+
+inline constexpr Float16 Float16::zero(bool neg)
+{
+    return Float16::from_raw(make_zero(neg));
+}
+
+inline constexpr Float16 Float16::qnan()
+{
+    return Float16::from_raw(make_nan(true));
+}
+
+inline constexpr Float16 Float16::snan()
+{
+    return Float16::from_raw(make_nan(false));
+}
+
+inline constexpr Float16 Float16::inf(bool neg)
+{
+    return Float16::from_raw(make_inf(neg));
+}
+
+inline constexpr Float16 Float16::from_raw(uint16_t v)
 {
     Float16 f;
     f.d = v;
     return f;
 }
 
-inline Float16 operator-(Float16 a) noexcept
+inline constexpr Float16::operator float() const
 {
-    return Float16::from_raw(a.raw() ^ Float16::k_sign_mask);
+    uint32_t const sign = is_neg();
+
+    // Reproduce the right type of inf/nan.
+    if (exp_bits() == make_exp_bits(0x001F)) {
+        union {
+            uint32_t w;
+            float f;
+        } u{};
+        u.w = 0;
+        u.w |= sign << 31u;
+        u.w |= uint32_t(0xFF) << 23u;
+        // Copy over the msb of the fractional part.
+        uint16_t const frac = frac_bits();
+        uint32_t frac_msb = frac & (uint32_t(1u) << 9u);
+        frac_msb <<= 12u; // RHS = 21 - 9
+        u.w |= frac_msb;
+        // Make sure the frac part doesn't become 0 for signaling NaNs.
+        if ((frac & (frac_msb - 1)) != 0) u.w |= 1u;
+        return u.f;
+    }
+
+    auto [e, f] = force_norm();
+    if (f == 0) return sign != 0 ? -0.0f : 0.0f;
+
+    float const v = ldexpf(f, e - 10);
+    return sign ? -v : v;
 }
 
-inline Float16 operator-(Float16 a, Float16 b) noexcept
+inline constexpr Float16::Float16(int sign, int exp, int frac) : d(make(sign, exp, frac)) {}
+
+inline constexpr uint16_t Float16::sign_bit() const
 {
-    return operator+(a, -b);
+    return d & 0x8000u;
 }
 
-// Compares are done by this function. When used as in f16_val == Float16{}, this should
-// optimize to just: (f16_val.d & 0x7fff) == 0.
-template <enum hexnn_fp_priv::fp_comp CMP_OP> //
-inline constexpr bool Float16::do_cmp(Float16 other) noexcept
+inline constexpr uint16_t Float16::exp_bits() const
 {
-    using namespace hexnn_fp_priv;
-    static_assert(hexnn_fp_priv::cmp_is_valid<CMP_OP>);
+    return d & 0x7C00u;
+}
 
-    unsigned a_code = d;
-    unsigned b_code = other.d;
-    unsigned const a_abs = a_code & Float16::k_no_sign_mask;
-    unsigned const b_abs = b_code & Float16::k_no_sign_mask;
-    unsigned const m = std::max(a_abs, b_abs);
-    if (m > Float16::k_inf_code) {
-        if constexpr (cmp_for_fminmax<CMP_OP>) {
-            // for fmin/fmax: select the one which is *not* NaN where possible
-            // the context is:
-            //    fmin(a, b) -> (a LT_fmin b) ? a : b
-            //    fmax(a, b) -> (a GT_fmax b) ? a : b
-            // So, select a if B is NaN, else b.
-            return b_abs > Float16::k_inf_code;
-        } else {
-            return false; // normal compare: always false if any NaN
+inline constexpr uint16_t Float16::frac_bits() const
+{
+    return d & 0x03FFu;
+}
+
+inline constexpr uint16_t Float16::make_sign_bit(uint16_t s)
+{
+    return static_cast<uint16_t>(!!s) << 15u;
+}
+
+inline constexpr uint16_t Float16::make_exp_bits(uint16_t e)
+{
+    return (e & 0x001Fu) << 10u;
+}
+
+inline constexpr uint16_t Float16::make_frac_bits(uint16_t f)
+{
+    return f & 0x03FFu;
+}
+
+inline constexpr uint16_t Float16::make_zero(bool neg)
+{
+    return make_sign_bit(neg) | make_exp_bits(0) | make_frac_bits(0);
+}
+
+inline constexpr uint16_t Float16::make_nan(bool quiet)
+{
+    uint16_t const f = quiet ? 0x0200 : 0x0100;
+    return make_sign_bit(0) | make_exp_bits(0x001F) | make_frac_bits(f);
+}
+
+inline constexpr uint16_t Float16::make_inf(bool neg)
+{
+    return make_sign_bit(neg) | make_exp_bits(0x001F) | make_frac_bits(0x0000);
+}
+
+inline constexpr uint16_t Float16::make(int sign, int exp, int frac)
+{
+    // Treat frac as a fixed-point value with 10 fraction bits.
+    if (frac == 0) {
+        // Signed zero.
+        return make_zero(sign);
+    }
+    assert(frac > 0);
+    unsigned const clz = HEX_COUNT_LEADING_ZERO(frac);
+    // For a finite, normalized non-zero number, clz should be 16+(16-11) = 21.
+    int exp_inc = 21 - clz;
+    if (exp + exp_inc > exp_max()) {
+        // Number has a magnitude that is too large.
+        return make_inf(sign);
+    }
+    if (exp + exp_inc < exp_min()) {
+        // This number can become subnormal or zero.
+        // safe_rshift will hit an assert if the shift is out of range
+        // If we had an out of range shift, then we should just clip it to the range
+        // Which should cause the frac to become 0 in either case
+        int mask = static_cast<int>(hnnx::get_safe_shift_mask<int>());
+        int shift_amount = exp_min() - exp - exp_inc;
+        shift_amount = (shift_amount > mask) ? mask : shift_amount;
+        frac = hnnx::safe_rshift(static_cast<unsigned>(frac), shift_amount);
+        return make_sign_bit(static_cast<uint16_t>(sign)) | make_exp_bits(0) |
+               make_frac_bits(static_cast<uint16_t>(frac));
+    }
+
+    if (exp_inc < 0) {
+        frac = hnnx::safe_lshift(static_cast<unsigned>(frac), -exp_inc);
+    } else if (exp_inc > 0) {
+        frac = round(static_cast<uint32_t>(frac), exp_inc);
+        // Rounding can change the most significant bit, so check it again.
+        unsigned const clzr = HEX_COUNT_LEADING_ZERO(frac);
+        assert(clzr == 20 || clzr == 21);
+        if (clzr < 21) {
+            frac = hnnx::safe_rshift(frac, (21 - clzr));
+            exp_inc += (21 - clzr);
+            // And the exponent check one more time...
+            if (exp + exp_inc > exp_max()) return make_inf(sign);
         }
     }
-    if constexpr (!cmp_for_fminmax<CMP_OP>) {
-        // special case, both are +/- 0
-        // (for fmin/fmax, 0.0 is considered > -0.0)
-        if (m == 0) return cmp_true_when_eq<CMP_OP>; // special case, both are +/- 0
-    }
+    exp += exp_inc;
+    exp += bias();
+    return make_sign_bit(static_cast<uint16_t>(sign)) | make_exp_bits(static_cast<uint16_t>(exp)) |
+           make_frac_bits(static_cast<uint16_t>(frac));
+}
 
-    bool result{};
-    if constexpr (CMP_OP == cmp_EQ) {
-        result = a_code == b_code;
+inline constexpr uint32_t Float16::round(uint32_t v, unsigned s)
+{
+    if (s == 0) return v;
+    unsigned const out_msb = hnnx::safe_lshift(1u, (s - 1));
+    if ((v & out_msb) == 0) {
+        // Round down.
+        return hnnx::safe_rshift(v, s);
+    }
+    if ((v & (out_msb - 1)) == 0) {
+        // It's a tie, round to even.
+        v = hnnx::safe_rshift(v, s);
+        return v & 1u ? v + 1 : v;
+    }
+    // Round up.
+    return hnnx::safe_rshift(v, s) + 1;
+}
+
+inline std::pair<int32_t, int32_t> Float16::force_norm() const
+{
+    if (is_zero()) return std::make_pair(0, 0);
+    uint32_t f = frac_bits();
+    int32_t e = static_cast<int32_t>(exp_bits() >> 10u);
+    if (e == 0) {
+        // Subnormal number.
+        assert(f != 0);
+        unsigned const clz = HEX_COUNT_LEADING_ZERO(f) - 16; // Pretend we have 16 bits.
+        // Shift f left so that the first bit 1 is at position 10 from lsb
+        // (assuming that lsb is at 0).
+        e = -14 - (clz - 5);
+        f = hnnx::safe_lshift(f, clz - 5);
     } else {
-        // If either a or b has sign bit, invert all 16 bits in both.
-        if (((a_code | b_code) & Float16::k_sign_mask) != 0) {
-            std::swap(a_code, b_code);
-        }
-        // They are now equal iff they were equal before; otherwise they can be compared
-        // using unsigned compare, and result will be correct for the represented values.
-        // (if a,b had different signs, the one which was + is now larger; if both negative,
-        // the reversal has compensated for reverse encoding of values).
-        if constexpr (CMP_OP == cmp_LE) {
-            result = a_code <= b_code;
-        } else if constexpr (CMP_OP == cmp_GT_fmax) {
-            result = a_code > b_code;
-        } else { // LT or LT_fmin
-            result = a_code < b_code;
-        }
+        e -= bias();
+        f |= uint32_t(1) << 10u;
     }
-    return result;
-}
-// some compilers require Float16::do_cmp to be defined before it's used...
-
-constexpr bool operator==(Float16 a, Float16 b) noexcept
-{
-    return a.do_cmp<hexnn_fp_priv::cmp_EQ>(b);
-}
-constexpr bool operator!=(Float16 a, Float16 b) noexcept
-{
-    return !a.do_cmp<hexnn_fp_priv::cmp_EQ>(b);
-}
-constexpr bool operator<(Float16 a, Float16 b) noexcept
-{
-    return a.do_cmp<hexnn_fp_priv::cmp_LT>(b);
-}
-constexpr bool operator<=(Float16 a, Float16 b) noexcept
-{
-    return a.do_cmp<hexnn_fp_priv::cmp_LE>(b);
-}
-constexpr bool operator>(Float16 a, Float16 b) noexcept
-{
-    return b.do_cmp<hexnn_fp_priv::cmp_LT>(a);
-}
-constexpr bool operator>=(Float16 a, Float16 b) noexcept
-{
-    return b.do_cmp<hexnn_fp_priv::cmp_LE>(a);
+    return std::make_pair(e, f);
 }
 
-// convert Float16 to float.
-template <bool ALT> // 'ALT': treat exp=31 as 'normal' range
-inline constexpr float Float16::float_from_float16(unsigned d) noexcept
+constexpr Float16 operator""_f16(long double v)
 {
-    union {
-        unsigned w;
-        float f;
-    } u{};
-    u.w = (static_cast<unsigned>(d) & 0x8000u) << 16; // sign only
-    unsigned const d_abs = static_cast<unsigned>(d) & 0x7fffu;
-
-    if (d_abs != 0) {
-        if (d_abs < 0x400u) { // subnormal case.
-            u.w |= 0x33800000u; // make it +/- 2^-24...
-            return float(d_abs) * u.f; // and multiply.
-        } else {
-            // normal, or inf/nan
-            // offset exponent to get float32 exp for nornmal
-            unsigned d_abs2 = d_abs + ((127u - 15u) << 10);
-            if (!ALT && d_abs >= 0x7c00) { // is inf/nan range
-                d_abs2 |= 0xFFu << 10; // force to inf/nan
-            }
-            u.w |= d_abs2 << 13; // place in float32 code, combine with sign.
-        }
-    }
-    return u.f;
-}
-
-inline constexpr Float16::operator float() const noexcept
-{
-    return float_from_float16(d);
-}
-// same as operator float, except that exp=31 is treated as
-// extended range
-inline constexpr float Float16::to_float_alt() const noexcept
-{
-    return float_from_float16<true>(d);
-}
-
-// same as from-float, but allows +/- 131008 range, using
-// exp=31 as normal.
-constexpr Float16 Float16::from_float_alt(float v) noexcept
-{
-    return Float16::from_raw(Float16::float16_from_float<true>(v));
-}
-
-// Float16 from double .. not exactly the same as
-// double->float->Float16; some cases round improperly if you
-// do that.
-inline constexpr Float16 Float16::from_double(double x) noexcept
-{
-    // Start by rounding the 'double' to a value with 0's in 31 lsbs,
-    // using 'jam' rounding; bit 31 will be unchanged if those bits
-    // were already 0, and will be 1 if they were not.
-    // This only ever changes the 32 LSbs.
-    // The change preserves inf, nan, zero (though, NaN can be changed
-    // to different NaN).
-    // The 'jam rounded' value will be converted to float without further
-    // numerical rounding (assuming it falls within 'normal' float range;
-    // values outside that range won't make it to Float16 anyhow).
-    union {
-        double as_d;
-        unsigned as_u32[2];
-    } uu = {x};
-    if (uu.as_u32[0] != 0) {
-        uu.as_u32[0] = 0x80000000u;
-    }
-    // now, convert that to float and then to Float16.
-    return Float16(float(uu.as_d));
-}
-
-constexpr Float16 operator""_f16(long double v) noexcept
-{
-    return Float16(static_cast<double>(v));
+    return Float16(static_cast<float>(v));
 }
 
 PUSH_VISIBILITY(default)
@@ -516,7 +403,7 @@ template <> class API_EXPORT std::numeric_limits<Float16> {
     static constexpr int radix = 2;
     static constexpr int min_exponent = -13;
     static constexpr int min_exponent10 = -4; // min normal =~ 0.000061035
-    static constexpr int max_exponent = 16;
+    static constexpr int max_exponent = 15;
     static constexpr int max_exponent10 = 5; // largest finite val = 65504
     static constexpr bool traps = false;
     static constexpr bool tinyness_before = false; // libc++
@@ -537,19 +424,19 @@ POP_VISIBILITY()
 constexpr Float16 std::numeric_limits<Float16>::min() noexcept
 {
     // 2^-14 * (1 + 0/1024)     ; 0 00001 0000000000
-    return Float16::from_raw(Float16::k_smallest_norm_code);
+    return Float16::from_raw(0x0400);
 }
 
 constexpr Float16 std::numeric_limits<Float16>::lowest() noexcept
 {
     // -2^15 * (1 + 1023/1024)  ; 1 11110 1111111111
-    return Float16::from_raw(Float16::k_sign_mask | (Float16::k_inf_code - 1)); // -65504
+    return Float16::from_raw(0xfbff); // -65504
 }
 
 constexpr Float16 std::numeric_limits<Float16>::max() noexcept
 {
     // 2^15 * (1 + 1023/1024)   ; 0 11110 1111111111
-    return Float16::from_raw(Float16::k_inf_code - 1); // 65504
+    return Float16::from_raw(0x7bff); // 65504
 }
 
 constexpr Float16 std::numeric_limits<Float16>::epsilon() noexcept
@@ -566,7 +453,7 @@ constexpr Float16 std::numeric_limits<Float16>::round_error() noexcept
 
 constexpr Float16 std::numeric_limits<Float16>::infinity() noexcept
 {
-    return Float16::inf();
+    return Float16::inf(false);
 }
 
 constexpr Float16 std::numeric_limits<Float16>::quiet_NaN() noexcept
@@ -583,68 +470,5 @@ constexpr Float16 std::numeric_limits<Float16>::denorm_min() noexcept
 {
     return Float16::from_raw(0x0001);
 }
-
-// this is to make hexnn_fp::fpclassify(Float16), etc, work...
-
-namespace hexnn_fp_priv {
-
-template <> struct cmath_funcs<Float16> {
-    using FType = Float16;
-
-    API_FUNC_EXPORT static FType frexp(FType x, int *ex_p) noexcept; // defined in float16.cc
-    API_FUNC_EXPORT static FType ldexp(FType x, int ex) noexcept; // defined in float16.cc
-    static inline constexpr FType fabs(FType x) noexcept { return Float16::from_raw(x.d & 0x7fffu); }
-    static inline constexpr FType copysign(FType mag, FType sgn) noexcept
-    {
-        return Float16::from_raw((mag.d & 0x7fffu) | (sgn.d & 0x8000u));
-    }
-    template <int DIR> //
-    static inline FType fl_tr_ce(FType x) noexcept
-    {
-        static_assert(DIR >= -1 && DIR <= 1);
-        // if code >= 0x6400 (1024.0) then it represents an integer (or inf or Nan), so no change
-        if ((x.d & 0x7fffu) >= 0x6400) {
-            return x;
-        }
-        return fl_tr_ce_inner<DIR>(x);
-    }
-
-    static inline constexpr int fpclassify(FType x) noexcept
-    {
-        unsigned const t = (x.d & FType::k_no_sign_mask);
-        if (t < FType::k_inf_code) {
-            return (t >= FType::k_smallest_norm_code) ? FP_NORMAL : (t == 0) ? FP_ZERO : FP_SUBNORMAL;
-        }
-        return (t == FType::k_inf_code) ? FP_INFINITE : FP_NAN;
-    }
-    static inline constexpr bool isfinite(FType x) noexcept { return x.is_finite(); }
-    static inline constexpr bool isinf(FType x) noexcept { return x.is_inf(); }
-    static inline constexpr bool isnan(FType x) noexcept { return x.is_nan(); }
-    static inline constexpr bool isnormal(FType x) noexcept
-    {
-        unsigned const t = (x.d & FType::k_no_sign_mask);
-        return t >= FType::k_smallest_norm_code && t < FType::k_inf_code;
-    }
-    static inline constexpr bool signbit(FType x) noexcept { return (x.d & FType::k_sign_mask) != 0; }
-    static inline constexpr bool iszero(FType x) noexcept { return x.is_zero(); }
-
-    static inline constexpr FType fmin(FType x, FType y) noexcept
-    {
-        return x.do_cmp<hexnn_fp_priv::cmp_LT_fmin>(y) ? x : y;
-    }
-    static inline constexpr FType fmax(FType x, FType y) noexcept
-    {
-        return x.do_cmp<hexnn_fp_priv::cmp_GT_fmax>(y) ? x : y;
-    }
-
-  protected:
-    template <int DIR> //
-    API_FUNC_EXPORT static FType fl_tr_ce_inner(FType x) noexcept; // defined in float16.cc
-};
-} // namespace hexnn_fp_priv
-
-extern template FUNC_ATTRIB_CONST Float16 hexnn_fp_priv::cmath_funcs<Float16>::fl_tr_ce_inner<-1>(Float16 x) noexcept;
-extern template FUNC_ATTRIB_CONST Float16 hexnn_fp_priv::cmath_funcs<Float16>::fl_tr_ce_inner<0>(Float16 x) noexcept;
-extern template FUNC_ATTRIB_CONST Float16 hexnn_fp_priv::cmath_funcs<Float16>::fl_tr_ce_inner<1>(Float16 x) noexcept;
 
 #endif // FLOAT16_H

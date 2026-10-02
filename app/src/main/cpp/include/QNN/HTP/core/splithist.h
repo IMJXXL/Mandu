@@ -1,9 +1,10 @@
-// ==============================================================================
+//==============================================================================
 //
-// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
-// SPDX-License-Identifier: BSD-3-Clause-Clear
+// Copyright (c) 2020 Qualcomm Technologies, Inc.
+// All Rights Reserved.
+// Confidential and Proprietary - Qualcomm Technologies, Inc.
 //
-// ==============================================================================
+//==============================================================================
 
 #ifndef SPLITHIST_H
 #define SPLITHIST_H
@@ -20,8 +21,8 @@ namespace hnnx {
 class SplitHistoryTable;
 
 class splithist_t {
-    uint64_t val;
-    explicit splithist_t(uint64_t v) : val(v) {}
+    unsigned val;
+    explicit splithist_t(unsigned v) : val(v) {}
     friend SplitHistoryTable;
     // this is the number of split which can refer to
     // one record in the table; it determines how many
@@ -38,20 +39,20 @@ class splithist_t {
     inline bool empty() const { return val == 0; }
     // the following 2 methods only work if nsplit < SPLITPER
     // they are only intended for results of AUTOTHREAD
-    uint64_t get_record() const { return val / SPLITPER; }
-    uint64_t get_sliceno() const { return val % SPLITPER; }
+    unsigned get_record() const { return val / SPLITPER; }
+    unsigned get_sliceno() const { return val % SPLITPER; }
 
     inline bool operator==(splithist_t const &rhs) const { return val == rhs.val; }
     inline bool operator!=(splithist_t const &rhs) const { return val != rhs.val; }
     inline void next_slice()
     {
-        uint64_t nextval = val + 1;
+        unsigned nextval = val + 1;
         if ((nextval & (SPLITPER - 1)) == 0) { // rolled over
             nextval -= SPLITPER * 2; // reset, and back one record.
         }
         val = nextval;
     }
-    inline uint64_t value() const { return val; }
+    inline unsigned value() const { return val; }
 };
 class SplitHistory {
     friend SplitHistoryTable;
@@ -153,8 +154,8 @@ class SplitHistoryTable {
 
     // Return the main split record / slice number.
     // This differs from the values returned by splithist_t get_record() / get_sliceno() for extension records.
-    uint64_t get_splithist_main_record(splithist_t shist) const;
-    uint64_t get_splithist_main_sliceno(splithist_t shist) const;
+    unsigned get_splithist_main_record(splithist_t shist) const;
+    unsigned get_splithist_main_sliceno(splithist_t shist) const;
 
     // When two nodes containing splithist_t values 'a' and 'b' are combined
     // by CSE, this determines the splithist for the combined node.
@@ -172,7 +173,7 @@ class SplitHistoryTable {
     splithist_t resolve_func(splithist_t a, splithist_t b, bool is_const) const;
 
     struct Cursor {
-        uint64_t rec_index; // current record's index (skipping indirect record if any)
+        unsigned rec_index; // current record's index (skipping indirect record if any)
         splithist_t parent; // link to parent, or empty (0) if this is root.
         int sliceno; // slice index (adjusted for indirect record if any)
         int dimno;
@@ -182,7 +183,7 @@ class SplitHistoryTable {
     // internal methods to traverse from a position to the root.
     void cursor_from_splithist(Cursor &, splithist_t const &) const;
     void cursor_to_parent(Cursor &c) const; // move to parent, only legal if not root.
-    unsigned extract_orig_id(uint64_t recindex) const; // only to be used on root record.
+    unsigned extract_orig_id(unsigned recindex) const; // only to be used on root record.
 };
 
 } // end namespace hnnx

@@ -1,26 +1,22 @@
 
-// ==============================================================================
+//==============================================================================
 //
-// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
-// SPDX-License-Identifier: BSD-3-Clause-Clear
+// Copyright (c) Qualcomm Technologies, Inc.
+// All Rights Reserved.
+// Confidential and Proprietary - Qualcomm Technologies, Inc.
 //
-// ==============================================================================
+//==============================================================================
 
 #ifndef HEXNN_TEMPLATE_HELP_H
 #define HEXNN_TEMPLATE_HELP_H 1
 
-#include "type_name.h"
-#include "graph_handle_defs.h"
-#include "op_arg_category.h"
-#include "arg_tup_filter.h"
-
-#include <array>
-#include <cstddef>
 #include <functional>
 #include <memory>
 #include <tuple>
 #include <type_traits>
 #include <utility>
+#include "type_name.h"
+#include "graph_handle_defs.h"
 
 class Graph;
 class Tensor;
@@ -32,11 +28,14 @@ struct OsS; // this is the 'real name of hnnx::op_slice_spec
 /* Wrap Types or Values in Templates */
 /* I'm not sure that these are always needed, but it came in handy as I'm learning these things */
 
-template <template <typename> typename Tname> struct TemplateTypeWrapper {};
+template <template <typename> typename Tname> struct TemplateTypeWrapper {
+};
 
-template <template <size_t> typename Tname> struct TemplateIdxWrapper {};
+template <template <size_t> typename Tname> struct TemplateIdxWrapper {
+};
 
-template <typename twrap, size_t val> struct UnwrapIdxTemplate_struct {};
+template <typename twrap, size_t val> struct UnwrapIdxTemplate_struct {
+};
 
 template <template <size_t> typename Twrap, size_t Val>
 struct UnwrapIdxTemplate_struct<TemplateIdxWrapper<Twrap>, Val> {
@@ -45,7 +44,8 @@ struct UnwrapIdxTemplate_struct<TemplateIdxWrapper<Twrap>, Val> {
 
 template <typename Twrap, size_t Val> using UnwrapIdxTemplate = typename UnwrapIdxTemplate_struct<Twrap, Val>::type;
 
-template <typename twrap, typename tapply> struct UnwrapTypeTemplate_struct {};
+template <typename twrap, typename tapply> struct UnwrapTypeTemplate_struct {
+};
 
 template <template <typename> typename Twrap, typename Tapply>
 struct UnwrapTypeTemplate_struct<TemplateTypeWrapper<Twrap>, Tapply> {
@@ -139,9 +139,19 @@ struct TupMap<Wrap, C<Rest...>> {
     using type = C<Wrap<Rest>...>;
 };
 
+#if 0
+template <template <typename> class Wrap, template <typename...> typename C,
+          typename... Ts>
+using TupMap_t = typename TupMap<Wrap, C<Ts...>>::type;
+
+template <template <typename> class Filt, template <typename...> typename C,
+          typename... Ts>
+using TupFilter_t = typename TupFilter<Filt, C<Ts...>>::type;
+#else
 template <template <typename> class Wrap, typename Tup> using TupMap_t = typename TupMap<Wrap, Tup>::type;
 
 template <template <typename> class Filt, typename Tup> using TupFilter_t = typename TupFilter<Filt, Tup>::type;
+#endif
 
 template <typename T> struct Unboxed {
     using type = T;
@@ -167,7 +177,8 @@ template <class T>
 using is_const = std::integral_constant<bool, std::is_const<std::remove_pointer_t<unboxed_t<T>>>::value>;
 
 //template<template<typename...> typename C, typename...>
-template <typename T, typename Default> struct First_Tuple_Element {};
+template <typename T, typename Default> struct First_Tuple_Element {
+};
 
 template <template <typename...> typename C, typename First, typename... Rest, typename Default>
 struct First_Tuple_Element<C<First, Rest...>, Default> {
@@ -208,6 +219,56 @@ template <typename T> struct add_uniqueptr {
 template <class T> using add_uniqueptr_t = typename add_uniqueptr<T>::type;
 
 //////////
+// Op function parameter categories
+// The order of these is important: The operands must
+// appear in order of increasing category. Also, no two operands
+// can have the same category, unless it's tensor_out or tensor_in
+// (see CheckOpFuncArgs below).
+enum class OpArgCategory { //
+    invalid, // none of the below
+    tensor_out, // T &, where T is a Tensor subclass
+    vararg_out, // Vector<T*> const &; or Vector<T*>
+    tensor_in, // T const &, where T is a Tensor subclass.
+    vararg_in, // Vector<T const*> const &; or Vector<T*>
+    slice_spec, // op_slice_spec (passed by value)
+    graph_handle, // subclass of hnnx::GraphHandleBase; previously 'Graph const &'
+};
+
+// OpArgCat<TYPE>::value is the category of a parameter type, as an 'enum OpArgCategory'
+// the 'base' definition only looks at the 'graph_handle' category; all others are
+// done by specializing this this struct.
+template <typename T> struct OpArgCat {
+    // if it's a subclass of GraphHandleBase (without actually being GraphHandleBase) it's 'graph_handle'
+    // otherwise invalid.
+    static constexpr OpArgCategory value =
+            (std::is_base_of_v<hnnx::GraphHandleBase, T> && !std::is_same_v<const hnnx::GraphHandleBase, const T>)
+                    ? OpArgCategory::graph_handle
+                    : OpArgCategory::invalid;
+};
+
+// T& or T const &; Ok if  T subclass of Tensor;
+template <typename T> struct OpArgCat<T &> {
+    static constexpr OpArgCategory value = !std::is_base_of_v<Tensor, T> ? OpArgCategory::invalid
+                                           : std::is_const_v<T>          ? OpArgCategory::tensor_in
+                                                                         : OpArgCategory::tensor_out;
+};
+
+// Also: Vector<T*> is ok as pass-by-value or pass-by-const-ref.
+// Implementation of Vector<P> is just {P const *base, size_t n}
+//
+template <typename T> struct OpArgCat<Vector<T *> const &> {
+    static constexpr OpArgCategory value = !std::is_base_of_v<Tensor, T> ? OpArgCategory::invalid
+                                           : std::is_const_v<T>          ? OpArgCategory::vararg_in
+                                                                         : OpArgCategory::vararg_out;
+};
+template <typename T> struct OpArgCat<Vector<T *>> : public OpArgCat<Vector<T *> const &> {
+};
+
+// op_slice_spec is OK as a parameter
+template <> struct OpArgCat<OsS> {
+    static constexpr OpArgCategory value = OpArgCategory::slice_spec;
+};
+//////////
 // Check all the 'category' of the Op function args, which must conform to
 //
 // - `tensor_out` (0 or more) - parameter is `T &`
@@ -227,46 +288,39 @@ template <class T> using add_uniqueptr_t = typename add_uniqueptr<T>::type;
 //
 // LCOV_EXCL_START [SAFTYSWCCB-1736] constexprs resolved during compile time
 // used in locally with  constexpr lvalue
-template <OpArgCategory... Args> constexpr int CheckOpFuncArgs()
+template <OpArgCategory... Args> inline constexpr int CheckOpFuncArgs()
 {
-    constexpr auto N{sizeof...(Args)};
-    if constexpr (N == 0) {
-        return 0;
-    }
-
-    int num_scratch_out{0};
-    OpArgCategory cat_previous{OpArgCategory::invalid};
-    constexpr std::array<OpArgCategory, N> cats{{Args...}};
-
-    for (std::size_t i{0}; i < N; ++i) {
-        auto const cat{cats[i]};
-
-        if (cat < cat_previous) {
-            // not allowed, except for 'tensor_out' where it's interpreted as first 'scratch'
-            if (cat == OpArgCategory::tensor_out && cat_previous < OpArgCategory::slice_spec) {
-                num_scratch_out = 1;
-                cat_previous = cat;
-                continue;
-            } else {
+    constexpr unsigned N = sizeof...(Args);
+    int num_scratch_out = 0;
+    if constexpr (N > 0) {
+        OpArgCategory cat_previous = OpArgCategory::invalid;
+        constexpr OpArgCategory cats[N] = {Args...};
+        for (unsigned i = 0; i < N; i++) {
+            OpArgCategory cat = cats[i];
+            if (cat < cat_previous) {
+                // not allowed, except for 'tensor_out' where it's interpreted as first 'scratch'
+                if (cat == OpArgCategory::tensor_out && cat_previous < OpArgCategory::slice_spec) {
+                    num_scratch_out = 1;
+                    cat_previous = cat;
+                    continue;
+                } else {
+                    return -1;
+                }
+            } else if (cat == cat_previous && cat != OpArgCategory::tensor_in && cat != OpArgCategory::tensor_out) {
+                // only tensor_in, tensor_out can repeat previous category.
                 return -1;
             }
-        } else if (cat == cat_previous && cat != OpArgCategory::tensor_in && cat != OpArgCategory::tensor_out) {
-            // only tensor_in, tensor_out can repeat previous category.
-            return -1;
-        }
-
-        // special checks when the previous was a 'scratch output'
-        if (num_scratch_out > 0 && cat_previous == OpArgCategory::tensor_out) {
-            if (cat == OpArgCategory::tensor_out) {
-                num_scratch_out++; // count one more scratch output
-            } else if (cat < OpArgCategory::slice_spec) {
-                return -1; // any after 'scratch out' must be slice_spec or graph_handle.
+            // special checks when the previous was a 'scratch output'
+            if (num_scratch_out > 0 && cat_previous == OpArgCategory::tensor_out) {
+                if (cat == OpArgCategory::tensor_out) {
+                    num_scratch_out++; // count one more scratch output
+                } else if (cat < OpArgCategory::slice_spec) {
+                    return -1; // any after 'scratch out' must be slice_spec or graph_handle.
+                }
             }
+            cat_previous = cat;
         }
-
-        cat_previous = cat;
     }
-
     return num_scratch_out;
 }
 // LCOV_EXCL_STOP
@@ -279,6 +333,40 @@ template <typename... T> struct Concat_struct;
  * Make the name nice
  */
 template <typename... T> using Concat = typename Concat_struct<T...>::type;
+
+//////////
+// ArgTupFilter_t<CAT, Args...> -> tuple<Args...> with only ops of given cat removed.
+// Also, refs are removed.
+//
+template <typename T1, typename TUP> struct TupleBuild {
+};
+template <typename T1, typename... Types> struct TupleBuild<T1, std::tuple<Types...>> {
+    using type = std::tuple<T1, Types...>;
+};
+
+template <OpArgCategory CAT, typename... Types> struct ArgTupFilterHelper {
+};
+
+template <OpArgCategory CAT, typename T1, typename... Types> struct ArgTupFilterHelper<CAT, T1, Types...> {
+  private:
+    using tail = typename ArgTupFilterHelper<CAT, Types...>::type;
+
+  public:
+    using type = std::conditional_t<OpArgCat<T1>::value == CAT, // is T1 included?
+                                    typename TupleBuild<std::remove_reference_t<T1>, tail>::type, tail>;
+};
+
+// just one...
+template <OpArgCategory CAT, typename T1> struct ArgTupFilterHelper<CAT, T1> {
+    using type = std::conditional_t<OpArgCat<T1>::value == CAT, std::tuple<std::remove_reference_t<T1>>, std::tuple<>>;
+};
+
+// empty case...
+template <OpArgCategory CAT> struct ArgTupFilterHelper<CAT> {
+    using type = std::tuple<>;
+};
+
+template <OpArgCategory CAT, typename... Types> using ArgTupFilter_t = typename ArgTupFilterHelper<CAT, Types...>::type;
 
 // This mechanism is used to control the generation of name_args_tuple (in ArgsTuples),
 // we don't want to add the 'graph handle' parameter if
@@ -346,11 +434,13 @@ template <typename R, typename... Args> struct ArgsTuples<R(Args...)> {
     static constexpr const char *inputTypeNames = nameArray.data();
 };
 
-template <auto F> struct ArgsTuples2 : public ArgsTuples<std::remove_pointer_t<decltype(F)>> {};
+template <auto F> struct ArgsTuples2 : public ArgsTuples<std::remove_pointer_t<decltype(F)>> {
+};
 
 // contains_type< tuple<a,b,c>, x >::value: true if x is in a,b,c ...
 // no 'remove ref' etc is done.
-template <typename TUPLET, typename T> struct contains_type {};
+template <typename TUPLET, typename T> struct contains_type {
+};
 
 template <typename T> struct contains_type<std::tuple<>, T> {
     static const bool value = false; // empty tuple contains nothing
@@ -401,6 +491,104 @@ static_assert(std::is_same_v<Concat<std::tuple<int>, std::tuple<char, float>, st
 static_assert(std::is_same_v<Concat<std::tuple<>, std::tuple<float, char>, std::tuple<int, char *>, std::tuple<bool>>,
                              std::tuple<float, char, int, char *, bool>>);
 #endif
+
+#if 0 // UNUSED >>>
+/*
+ * Generic template
+ */
+template <typename... T> struct Product_helper_struct;
+
+/*
+ * Make the name nice
+ */
+template <typename... T> using Product_helper = typename Product_helper_struct<T...>::type;
+
+/*
+ * Product helper specialization:
+ * Container "C"
+ * A single container of types
+ */
+template <template <typename...> typename C, typename... As> struct Product_helper_struct<C<As...>> {
+    using type = C<As...>;
+};
+
+/*
+ * Product helper specialization:
+ * Container "C"
+ * Product with empty set is empty set always
+ */
+
+template <template <typename...> typename C, typename... Prefixes, typename... Rest>
+struct Product_helper_struct<C<Prefixes...>, C<>, Rest...> {
+    using type = C<>;
+};
+
+// The two functions below do the bulk of the work
+
+/*
+ * Product helper specialization
+ * First Arg: a container of prefixes,
+ * Second Arg: a single (containered) element to append to each prefix
+ * Args...: All the rest of the work
+ *
+ * Create a container of new prefixes by concatinating each prefix with the new element
+ * Then recurse using these new prefixes with the rest of the work
+ *
+ * This handles a single element.
+ * The element is containerized so that it also handles a container with a single element,
+ * or the last element in a list.
+ */
+
+template <template <typename...> typename C, typename... Prefixes, typename Elem, typename... Rest>
+struct Product_helper_struct<C<Prefixes...>, C<Elem>, Rest...> {
+    using new_prefixes = C<Concat<Prefixes, C<Elem>>...>;
+    using type = Product_helper<new_prefixes, Rest...>;
+};
+
+/*
+ * Product helper specialization
+ * First Arg: a container of prefixes,
+ * Second Arg: More than one containered elements
+ * Args...: All the rest of the work
+ *
+ * Create a first list with the first element off the second argument, and
+ * create the list recursing with just the single containerized element
+ *  (This will use the specialization above)
+ * Then create a second list by recursing with the rest of the elements of the second argument
+ * Finally, Concatenate these two lists.
+ *
+ * EJP: I think maybe I'm starting to get the hang of these template things.
+ *
+ */
+
+template <template <typename...> typename C, typename... Prefixes, typename FirstElem, typename... RestElem,
+          typename... Rest>
+struct Product_helper_struct<C<Prefixes...>, C<FirstElem, RestElem...>, Rest...> {
+    using type = Concat<Product_helper<C<Prefixes...>, C<FirstElem>, Rest...>,
+                        Product_helper<C<Prefixes...>, C<RestElem...>, Rest...>>;
+};
+
+template <typename... T> struct Product_struct;
+
+template <template <typename...> typename C> struct Product_struct<C<>> {
+    using type = C<>;
+};
+
+#if 0
+template <template <typename...> typename C, typename... First,
+          typename... Rest>
+struct Product_struct<C<C<First...>, Rest...>> {
+    using type = Product_helper<C<C<First>...>, Rest...>;
+};
+#else
+template <template <typename...> typename C, typename... Rest> struct Product_struct<C<Rest...>> {
+    using type = Product_helper<C<C<>>, Rest...>;
+};
+#endif
+
+template <typename... T> using Product = typename Product_struct<T...>::type;
+
+#endif // <<< UNUSED
 
 template <typename IterT> struct pair_to_iterators : std::pair<IterT, IterT> {
     pair_to_iterators(std::pair<IterT, IterT> const &&iter_pair_in) : std::pair<IterT, IterT>(std::move(iter_pair_in))

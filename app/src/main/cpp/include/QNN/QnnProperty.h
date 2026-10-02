@@ -206,13 +206,6 @@ extern "C" {
  */
 #define QNN_PROPERTY_CONTEXT_SUPPORT_GRAPH_RETENTION_ORDER (QNN_PROPERTY_GROUP_CONTEXT + 20)
 
-/**
- * @brief Property key for determining whether a backend supports updating previously generated
- * binary sections. This determines support for QnnContext_getBinarySectionUpdate() and
- * QnnContext_freeBinarySectionUpdate().
- */
-#define QNN_PROPERTY_CONTEXT_SUPPORT_BINARY_SECTION_UPDATES (QNN_PROPERTY_GROUP_CONTEXT + 21)
-
 ///
 /// Definition of QNN_PROPERTY_GROUP_GRAPH property group. This group is Core (non-optional) API.
 ///
@@ -352,14 +345,6 @@ extern "C" {
  *        graphs.
  */
 #define QNN_PROPERTY_GRAPH_SUPPORT_ONLINE_PREPARE (QNN_PROPERTY_GROUP_GRAPH + 21)
-
-/**
- * @brief Property key for determining whether a backend supports creation of a binary section which
- *        can be updated at a later time. This determines support for the QnnGraph config
- *        QNN_GRAPH_CONFIG_OPTION_ENABLE_BINARY_SECTION_UPDATES.
- */
-#define QNN_PROPERTY_GRAPH_SUPPORT_UPDATABLE_WEIGHTS_BINARY_SECTION_CREATION \
-  (QNN_PROPERTY_GROUP_GRAPH + 22)
 
 ///
 /// Definition of QNN_PROPERTY_GROUP_OP_PACKAGE property group. This group is Optional portion of
@@ -537,210 +522,6 @@ extern "C" {
  */
 #define QNN_PROPERTY_TENSOR_SUPPORT_UBWC_NV12_UV (QNN_PROPERTY_GROUP_TENSOR + 23)
 
-/**
- * @brief Property key for determining whether a backend supports QNN_TENSOR_DATA_FORMAT_UBWC_NV124R
- *        data format.
- */
-#define QNN_PROPERTY_TENSOR_SUPPORT_UBWC_NV124R (QNN_PROPERTY_GROUP_TENSOR + 24)
-
-/**
- * @brief Property key for determining whether a backend supports QNN_TENSOR_DATA_FORMAT_UBWC_NV124R_Y
- *        data format.
- */
-#define QNN_PROPERTY_TENSOR_SUPPORT_UBWC_NV124R_Y (QNN_PROPERTY_GROUP_TENSOR + 25)
-
-/**
- * @brief Property key for determining whether a backend supports
- *        QNN_TENSOR_DATA_FORMAT_UBWC_NV124R_UV data format.
- */
-#define QNN_PROPERTY_TENSOR_SUPPORT_UBWC_NV124R_UV (QNN_PROPERTY_GROUP_TENSOR + 26)
-
-/**
- * @brief Property key to determine whether a backend supports float block quantization encodings. See
- *        QNN_QUANTIZATION_ENCODING_FLOAT_BLOCK.
- */
-#define QNN_PROPERTY_TENSOR_SUPPORT_QUANTIZATION_ENCODING_FLOAT_BLOCK (QNN_PROPERTY_GROUP_TENSOR + 27)
-
-/**
- * @brief Property key to determine whether a backend supports bit-width axis scale-offset
- *        mapped quantization encodings. See QNN_QUANTIZATION_ENCODING_BW_AXIS_SCALE_OFFSET_MAPPED.
- */
-#define QNN_PROPERTY_TENSOR_SUPPORT_QUANTIZATION_ENCODING_BW_AXIS_SCALE_OFFSET_MAPPED (QNN_PROPERTY_GROUP_TENSOR + 28)
-
-/**
- * @brief Property key to determine whether a backend supports bit-width block scale-offset
- *        mapped quantization encodings. See QNN_QUANTIZATION_ENCODING_BW_BLOCK_MAPPED.
- */
-#define QNN_PROPERTY_TENSOR_SUPPORT_QUANTIZATION_ENCODING_BW_BLOCK_SCALE_OFFSET_MAPPED (QNN_PROPERTY_GROUP_TENSOR + 29)
-
-/**
- * @brief Property key to determine whether a backend supports bit-width block scale-offset
- *        mapped quantization encodings. See QNN_QUANTIZATION_ENCODING_BW_BLOCKWISE_EXPANSION_MAPPED.
- */
-#define QNN_PROPERTY_TENSOR_SUPPORT_QUANTIZATION_ENCODING_BW_BLOCKWISE_EXPANSION_MAPPED (QNN_PROPERTY_GROUP_TENSOR + 30)
-
-/**
- * @brief Property key to determine whether a backend supports bit-width float block quantization encodings. See
- *        QNN_QUANTIZATION_ENCODING_BW_FLOAT_BLOCK.
- */
-#define QNN_PROPERTY_TENSOR_SUPPORT_QUANTIZATION_ENCODING_BW_FLOAT_BLOCK (QNN_PROPERTY_GROUP_TENSOR + 31)
-
-/**
- * @brief Property key to determine whether a backend supports Microscaling quantization encodings. See
- *        QNN_QUANTIZATION_ENCODING_MICROSCALING.
- */
-#define QNN_PROPERTY_TENSOR_SUPPORT_QUANTIZATION_ENCODING_MICROSCALING (QNN_PROPERTY_GROUP_TENSOR + 32)
-
-/**
- * @brief Property key for determining whether a backend supports QNN_TENSOR_DATA_FORMAT_UBWC_P010
- *        data format.
- */
-#define QNN_PROPERTY_TENSOR_SUPPORT_UBWC_P010 (QNN_PROPERTY_GROUP_TENSOR + 33)
-
-/**
- * @brief Property key for determining whether a backend supports QNN_TENSOR_DATA_FORMAT_UBWC_P010_Y
- *        data format.
- */
-#define QNN_PROPERTY_TENSOR_SUPPORT_UBWC_P010_Y (QNN_PROPERTY_GROUP_TENSOR + 34)
-
-/**
- * @brief Property key for determining whether a backend supports QNN_TENSOR_DATA_FORMAT_UBWC_P010_UV
- *        data format.
- */
-#define QNN_PROPERTY_TENSOR_SUPPORT_UBWC_P010_UV (QNN_PROPERTY_GROUP_TENSOR + 35)
-
-/**
- * @brief Property key for determining whether a backend supports QNN_TENSOR_DATA_FORMAT_UBWC_P016
- *        data format.
- */
-#define QNN_PROPERTY_TENSOR_SUPPORT_UBWC_P016 (QNN_PROPERTY_GROUP_TENSOR + 36)
-
-/**
- * @brief Property key for determining whether a backend supports QNN_TENSOR_DATA_FORMAT_UBWC_P016_Y
- *        data format.
- */
-#define QNN_PROPERTY_TENSOR_SUPPORT_UBWC_P016_Y (QNN_PROPERTY_GROUP_TENSOR + 37)
-
-/**
- * @brief Property key for determining whether a backend supports QNN_TENSOR_DATA_FORMAT_UBWC_P016_UV
- *        data format.
- */
-#define QNN_PROPERTY_TENSOR_SUPPORT_UBWC_P016_UV (QNN_PROPERTY_GROUP_TENSOR + 38)
-
-/**
- * @brief Property key for determining whether a backend supports QNN_TENSOR_DATA_FORMAT_UBWC_TP10
- *        data format.
- */
-#define QNN_PROPERTY_TENSOR_SUPPORT_UBWC_TP10 (QNN_PROPERTY_GROUP_TENSOR + 39)
-
-/**
- * @brief Property key for determining whether a backend supports QNN_TENSOR_DATA_FORMAT_UBWC_TP10_Y
- *        data format.
- */
-#define QNN_PROPERTY_TENSOR_SUPPORT_UBWC_TP10_Y (QNN_PROPERTY_GROUP_TENSOR + 40)
-
-/**
- * @brief Property key for determining whether a backend supports QNN_TENSOR_DATA_FORMAT_UBWC_TP10_UV
- *        data format.
- */
-#define QNN_PROPERTY_TENSOR_SUPPORT_UBWC_TP10_UV (QNN_PROPERTY_GROUP_TENSOR + 41)
-
-/**
- * @brief Property key for determining whether a backend supports QNN_TENSOR_DATA_FORMAT_UBWC_TBAYER10_1X1
- *        data format.
- */
-#define QNN_PROPERTY_TENSOR_SUPPORT_UBWC_TBAYER10_1X1 (QNN_PROPERTY_GROUP_TENSOR + 42)
-
-/**
- * @brief Property key for determining whether a backend supports QNN_TENSOR_DATA_FORMAT_UBWC_TBAYER10_2X2
- *        data format.
- */
-#define QNN_PROPERTY_TENSOR_SUPPORT_UBWC_TBAYER10_2X2 (QNN_PROPERTY_GROUP_TENSOR + 43)
-
-/**
- * @brief Property key for determining whether a backend supports QNN_TENSOR_DATA_FORMAT_UBWC_TBAYER10_3X3
- *        data format.
- */
-#define QNN_PROPERTY_TENSOR_SUPPORT_UBWC_TBAYER10_3X3 (QNN_PROPERTY_GROUP_TENSOR + 44)
-
-/**
- * @brief Property key for determining whether a backend supports QNN_TENSOR_DATA_FORMAT_UBWC_TBAYER10_4X4
- *        data format.
- */
-#define QNN_PROPERTY_TENSOR_SUPPORT_UBWC_TBAYER10_4X4 (QNN_PROPERTY_GROUP_TENSOR + 45)
-
-/**
- * @brief Property key for determining whether a backend supports QNN_TENSOR_DATA_FORMAT_UBWC_BAYER16_10BPS_1X1
- *        data format.
- */
-#define QNN_PROPERTY_TENSOR_SUPPORT_UBWC_BAYER16_10BPS_1X1 (QNN_PROPERTY_GROUP_TENSOR + 46)
-
-/**
- * @brief Property key for determining whether a backend supports QNN_TENSOR_DATA_FORMAT_UBWC_BAYER16_10BPS_2X2
- *        data format.
- */
-#define QNN_PROPERTY_TENSOR_SUPPORT_UBWC_BAYER16_10BPS_2X2 (QNN_PROPERTY_GROUP_TENSOR + 47)
-
-/**
- * @brief Property key for determining whether a backend supports QNN_TENSOR_DATA_FORMAT_UBWC_BAYER16_10BPS_4X4
- *        data format.
- */
-#define QNN_PROPERTY_TENSOR_SUPPORT_UBWC_BAYER16_10BPS_4X4 (QNN_PROPERTY_GROUP_TENSOR + 48)
-
-/**
- * @brief Property key for determining whether a backend supports QNN_TENSOR_DATA_FORMAT_UBWC_BAYER16_12BPS_1X1
- *        data format.
- */
-#define QNN_PROPERTY_TENSOR_SUPPORT_UBWC_BAYER16_12BPS_1X1 (QNN_PROPERTY_GROUP_TENSOR + 49)
-
-/**
- * @brief Property key for determining whether a backend supports QNN_TENSOR_DATA_FORMAT_UBWC_BAYER16_12BPS_2X2
- *        data format.
- */
-#define QNN_PROPERTY_TENSOR_SUPPORT_UBWC_BAYER16_12BPS_2X2 (QNN_PROPERTY_GROUP_TENSOR + 50)
-
-/**
- * @brief Property key for determining whether a backend supports QNN_TENSOR_DATA_FORMAT_UBWC_BAYER16_12BPS_4X4
- *        data format.
- */
-#define QNN_PROPERTY_TENSOR_SUPPORT_UBWC_BAYER16_12BPS_4X4 (QNN_PROPERTY_GROUP_TENSOR + 51)
-
-/**
- * @brief Property key for determining whether a backend supports QNN_TENSOR_DATA_FORMAT_UBWC_BAYER16_14BPS_1X1
- *        data format.
- */
-#define QNN_PROPERTY_TENSOR_SUPPORT_UBWC_BAYER16_14BPS_1X1 (QNN_PROPERTY_GROUP_TENSOR + 52)
-
-/**
- * @brief Property key for determining whether a backend supports QNN_TENSOR_DATA_FORMAT_UBWC_BAYER16_14BPS_2X2
- *        data format.
- */
-#define QNN_PROPERTY_TENSOR_SUPPORT_UBWC_BAYER16_14BPS_2X2 (QNN_PROPERTY_GROUP_TENSOR + 53)
-
-/**
- * @brief Property key for determining whether a backend supports QNN_TENSOR_DATA_FORMAT_UBWC_BAYER16_14BPS_4X4
- *        data format.
- */
-#define QNN_PROPERTY_TENSOR_SUPPORT_UBWC_BAYER16_14BPS_4X4 (QNN_PROPERTY_GROUP_TENSOR + 54)
-
-/**
- * @brief Property key for determining whether a backend supports QNN_TENSOR_DATA_FORMAT_UBWC_BAYER16_16BPS_1X1
- *        data format.
- */
-#define QNN_PROPERTY_TENSOR_SUPPORT_UBWC_BAYER16_16BPS_1X1 (QNN_PROPERTY_GROUP_TENSOR + 55)
-
-/**
- * @brief Property key for determining whether a backend supports QNN_TENSOR_DATA_FORMAT_UBWC_BAYER16_16BPS_2X2
- *        data format.
- */
-#define QNN_PROPERTY_TENSOR_SUPPORT_UBWC_BAYER16_16BPS_2X2 (QNN_PROPERTY_GROUP_TENSOR + 56)
-
-/**
- * @brief Property key for determining whether a backend supports QNN_TENSOR_DATA_FORMAT_UBWC_BAYER16_16BPS_4X4
- *        data format.
- */
-#define QNN_PROPERTY_TENSOR_SUPPORT_UBWC_BAYER16_16BPS_4X4 (QNN_PROPERTY_GROUP_TENSOR + 57)
-
 ///
 /// Definition of QNN_PROPERTY_GROUP_ERROR property group. This group is Optional portion of API.
 ///
@@ -781,11 +562,6 @@ extern "C" {
  * @brief Property key to determine whether a backend supports DMA-BUF memory type.
  */
 #define QNN_PROPERTY_MEMORY_SUPPORT_MEM_TYPE_DMA_BUF (QNN_PROPERTY_GROUP_MEMORY + 3)
-
-/**
- * @brief Property key to determine whether a backend supports DX12 memory type.
- */
-#define QNN_PROPERTY_MEMORY_SUPPORT_MEM_TYPE_DX12 (QNN_PROPERTY_GROUP_MEMORY + 4)
 
 ///
 /// Definition of QNN_PROPERTY_GROUP_SIGNAL property group. This group is an optional API.

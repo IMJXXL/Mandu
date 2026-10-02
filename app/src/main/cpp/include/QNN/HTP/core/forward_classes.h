@@ -1,9 +1,10 @@
-// ==============================================================================
+//==============================================================================
 //
-// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
-// SPDX-License-Identifier: BSD-3-Clause-Clear
+// Copyright (c) 2020, 2023 Qualcomm Technologies, Inc.
+// All Rights Reserved.
+// Confidential and Proprietary - Qualcomm Technologies, Inc.
 //
-// ==============================================================================
+//==============================================================================
 
 #ifndef HEXNN_FORWARD_CLASSES_H
 #define HEXNN_FORWARD_CLASSES_H 1
@@ -47,7 +48,7 @@ template <typename T> class DeleterWithDisable {
     // this conversion allows us to convert a unique_ptr<T> to unique_ptr<T,DeleterWithDisable<T> >
     ALWAYSINLINE DeleterWithDisable(std::default_delete<T> const &) : skip_delete(false) {}
     ALWAYSINLINE void operator()(T const *p) const;
-    ALWAYSINLINE bool delete_disabled() const { return skip_delete; }
+    ALWAYSINLINE inline bool delete_disabled() const { return skip_delete; }
 };
 template <typename T> ALWAYSINLINE void DeleterWithDisable<T>::operator()(T const *p) const
 {
@@ -80,7 +81,7 @@ class uptr_DWD : public std::unique_ptr<T, DeleterWithDisable<T>> {
 
 // convert a pointet to T (within crate) to uptr_DWD that has the deletion disabled
 template <typename T> //
-uptr_DWD<T> uptr_NoDelete(T *ptr)
+inline uptr_DWD<T> uptr_NoDelete(T *ptr)
 {
     return uptr_DWD<T>(ptr, true);
 }
@@ -92,7 +93,8 @@ using uptr_Tensor = uptr_DWD<Tensor>;
 // it will return true if the skip flag is set (i.e the object
 // is in a crate).
 //
-template <typename TA, typename TB> API_FUNC_EXPORT bool is_in_crate(std::unique_ptr<TA, DeleterWithDisable<TB>> &tp)
+template <typename TA, typename TB>
+API_FUNC_EXPORT inline bool is_in_crate(std::unique_ptr<TA, DeleterWithDisable<TB>> &tp)
 {
     return tp.get() != nullptr && tp.get_deleter().delete_disabled();
 }

@@ -1,9 +1,10 @@
-// ==============================================================================
+//==============================================================================
 //
-// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
-// SPDX-License-Identifier: BSD-3-Clause-Clear
+// Copyright (c) Qualcomm Technologies, Inc.
+// All Rights Reserved.
+// Confidential and Proprietary - Qualcomm Technologies, Inc.
 //
-// ==============================================================================
+//==============================================================================
 
 #ifndef HEXNN_TENSOR_H
 #define HEXNN_TENSOR_H 1
@@ -95,6 +96,7 @@
 #include "minihash.h"
 #include "macros_attribute.h"
 #include "weak_linkage.h"
+#include "dynamic_tensors.h"
 #include "interface.h"
 
 #define TENSOR_MAGIC 0x1337beef

@@ -1,9 +1,10 @@
-// ==============================================================================
+//==============================================================================
 //
-// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
-// SPDX-License-Identifier: BSD-3-Clause-Clear
+// Copyright (c) Qualcomm Technologies, Inc.
+// All Rights Reserved.
+// Confidential and Proprietary - Qualcomm Technologies, Inc.
 //
-// ==============================================================================
+//==============================================================================
 
 #ifndef TEMPLATE_HELP_TENSOR_EXT_H
 #define TEMPLATE_HELP_TENSOR_EXT_H
@@ -120,7 +121,7 @@ template <typename AggType, class Tup> static inline constexpr AggType tensors_t
 template <class Tup, size_t... I>
 static inline constexpr bool check_tensor_types_valid_helper(std::index_sequence<I...>)
 {
-    return (((bool)tensor_idx<std::tuple_element_t<I, Tup>>) && ...);
+    return (((bool)tensor_idx<std::tuple_element_t<I, Tup>>)&&...);
 }
 
 // checks tensor types in a tuple are all from AllTensors list

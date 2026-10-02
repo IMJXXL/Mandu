@@ -47,8 +47,6 @@ typedef struct {
   uint32_t compilerVersion[4];
   /// GPU device max work group size
   size_t maxWorkGroupSize;
-  /// GPU device image 1D max width
-  size_t image1dBufferMaxWidth;
   /// GPU device image 2D max width
   size_t image2dMaxWidth;
   /// GPU device image 2D max height
@@ -261,12 +259,6 @@ typedef enum {
   /// Memory type is unclaimed and can be specified by the op package via the \n
   /// QnnGpu_OutputClaim_t struct
   QNN_GPU_MEM_OBJ_TYPE_UNCLAIMED = 6,
-  /// GPU driver image 1D memory object
-  QNN_GPU_MEM_OBJ_TYPE_IMAGE1D_BUFFER = 7,
-  /// GPU driver memory object that aliases another memory object,
-  /// reusing its GpuBuffer with a different data type and cl::Image format.
-  /// Note: This functionality is currently supported only for Image1DBuffer.
-  QNN_GPU_MEM_OBJ_TYPE_ALIAS = 8,
 } QnnGpu_MemoryObjectType_t;
 
 /**
@@ -291,128 +283,21 @@ typedef enum {
 } QnnGpu_MemoryLayout_t;
 
 /**
- * @brief An enum to specify the quantization encoding definition source
- *
- */
-typedef enum {
-  /// QNN Quantization Encoding
-  QNN_GPU_QUANTIZATION_ENCODING_QNN_IMPL = 0,
-  /// QNN GPU Custom Quantization Encoding
-  QNN_GPU_QUANTIZATION_ENCODING_CUSTOM = 1,
-  /// Undefined
-  QNN_GPU_QUANTIZATION_ENCODING_UNDEFINED = 0x7FFFFFFF
-} QnnGpu_QuantizationEncodingType_t;
-
-/**
- * @brief A struct to express per-axis quantization parameters
- *
+ * @brief A struct to specify blockSize for weight Tensor and tensorId for weight Param tensor
  */
 typedef struct {
-  /// Axis ScaleOffsets tensor id
-  uint32_t scaleOffsetId;
-} QnnGpu_AxisScaleOffsetInfo_t;
-
-// clang-format off
-/// QnnGpu_AxisScaleOffsetInfo_t initializer macro
-#define QNN_GPU_AXIS_SCALE_OFFSET_INFO_INIT                \
-  {                                                        \
-    0u                         /*scaleOffsetId*/           \
-  }
-// clang-format on
-
-/**
- * @brief A struct to express bitwise per-axis quantization parameters
- *
- */
-typedef struct {
-  /// Axis Scales tensor id
-  uint32_t scaleId;
-  /// Axis Offsets tensor id
-  uint32_t offsetId;
-} QnnGpu_BwAxisScaleOffsetInfo_t;
-
-// clang-format off
-/// QnnGpu_BwAxisScaleOffsetInfo_t initializer macro
-#define QNN_GPU_BW_AXIS_SCALE_OFFSET_INFO_INIT             \
-  {                                                        \
-    0u,                        /*scaleId*/                 \
-    0u                         /*offsetId*/                \
-  }
-// clang-format on
-
-/**
- * @brief A struct to express bitwise per-block quantization parameters
- *
- */
-typedef struct {
-  /// block sizes for block quantization
-  uint32_t* blockSize;
-  /// ScaleOffsets tensor id
-  uint32_t scaleOffsetId;
+  // Block Quantization, block Sizes
+  uint32_t* bqBlockSize;
+  /// Tensor Id for Quantization encodings
+  uint32_t bqEncodingTensorId;
 } QnnGpu_BlockEncodingInfo_t;
 
 // clang-format off
-/// QnnGpu_BlockEncodingInfo_t initializer macro
-#define QNN_GPU_BLOCK_ENCODING_INFO_INIT                  \
-  {                                                       \
-    NULL,                      /*blockSize*/              \
-    0u                         /*scaleOffsetId*/          \
-  }
-// clang-format on
-
-/**
- * @brief A struct to express microscaling per-block quantization parameters
- *
- */
-typedef struct {
-  /// block sizes for block quantization
-  uint32_t* blockDimensions;
-  /// ScaleOffsets tensor id
-  uint32_t blockScaleId;
-} QnnGpu_MicroscalingEncodingInfo_t;
-
-// clang-format off
-/// QnnGpu_MicroscalingEncodingInfo_t initializer macro
-#define QNN_GPU_MICROSCALING_ENCODING_INFO_INIT                   \
-  {                                                               \
-    NULL,                      /*blockDimensions*/                \
-    0u                         /*blockScaleId*/                   \
-  }
-// clang-format on
-
-typedef void* QnnGpu_QuantizeParamsInfo_Custom_t;
-
-/**
- * @brief A struct for GPU quantization parameters for OpPackage
- *
- */
-typedef struct {
-  /// Quantization encoding type identifying which parameter structure to use
-  QnnGpu_QuantizationEncodingType_t encodingType;
-  union UNNAMED {
-    /// Used when encodingType is QNN_GPU_QUANTIZATION_ENCODING_QNN_IMPL
-    /// and quantizationEncoding is QNN_QUANTIZATION_ENCODING_AXIS_SCALE_OFFSET
-    QnnGpu_AxisScaleOffsetInfo_t axisScaleOffsetInfo;
-    /// Used when encodingType is QNN_GPU_QUANTIZATION_ENCODING_QNN_IMPL
-    /// and quantizationEncoding is QNN_QUANTIZATION_ENCODING_BW_AXIS_SCALE_OFFSET
-    QnnGpu_BwAxisScaleOffsetInfo_t bwAxisScaleOffsetInfo;
-    /// Used when encodingType is QNN_GPU_QUANTIZATION_ENCODING_QNN_IMPL
-    /// and quantizationEncoding is QNN_QUANTIZATION_ENCODING_BLOCK
-    QnnGpu_BlockEncodingInfo_t blockEncodingInfo;
-    /// Used when encodingType is QNN_GPU_QUANTIZATION_ENCODING_QNN_IMPL
-    /// and quantizationEncoding is QNN_QUANTIZATION_ENCODING_MICROSCALING
-    QnnGpu_MicroscalingEncodingInfo_t microscalingEncodingInfo;
-    /// Used when encodingType is QNN_GPU_QUANTIZATION_ENCODING_CUSTOM
-    QnnGpu_QuantizeParamsInfo_Custom_t customParams;
-  };
-} QnnGpu_QuantizeParams_t;
-
-// clang-format off
-/// QnnGpu_QuantizeParams_t initializer macro
-#define QNN_GPU_QUANTIZE_PARAMS_INFO_INIT                           \
-  {                                                                 \
-    QNN_GPU_QUANTIZATION_ENCODING_UNDEFINED,     /*encodingType*/   \
-    {QNN_GPU_AXIS_SCALE_OFFSET_INFO_INIT}        /*paramsDefault*/  \
+/// QnnGpu_MemoryObject_t initializer macro
+#define QNN_GPU_BLOCK_ENCODING_INFO_INIT                   \
+  {                                                   \
+    NULL,                      /*bqBlockSize*/    \
+    0u                         /*bqEncodingTensorId*/      \
   }
 // clang-format on
 
@@ -422,7 +307,6 @@ typedef struct {
  *          - QNN_GPU_KERNEL_ARG_TYPE_OP_INPUT_READ
  *          - QNN_GPU_KERNEL_ARG_TYPE_OP_INPUT_READWRITE
  *          - QNN_GPU_KERNEL_ARG_TYPE_OP_OUTPUT_WRITE
- *          - QNN_GPU_KERNEL_ARG_TYPE_OP_OUTPUT_READWRITE
  *          - QNN_GPU_KERNEL_ARG_TYPE_INTERNAL_READ
  *          - QNN_GPU_KERNEL_ARG_TYPE_INTERNAL_READWRITE
  *          - QNN_GPU_KERNEL_ARG_TYPE_INTERNAL_WRITE
@@ -456,28 +340,24 @@ typedef struct {
   /// Op package specific layout identifier          \n
   /// Default is QNN_GPU_MEM_LAYOUT_UNDEFINED if not already specified by a prior operation
   QnnGpu_MemoryLayout_t layout;
-  /// Quantization Tensor Information
-  QnnGpu_QuantizeParams_t quantizeParams;
+  /// Block Quantization Tensor Information
+  QnnGpu_BlockEncodingInfo_t blockEncodingInfo;
   /// Memory object name used to propagate the tensor name to Backend
   const char* name;
-  /// For QNN_GPU_MEM_OBJ_TYPE_ALIAS only: name of the original tensor whose
-  /// GpuBuffer is reused.
-  const char* aliasSourceName;
 } QnnGpu_MemoryObject_t;
 
 // clang-format off
 /// QnnGpu_MemoryObject_t initializer macro
-#define QNN_GPU_MEMORY_OBJECT_INIT                          \
-  {                                                         \
-    QNN_GPU_MEM_OBJ_TYPE_UNCLAIMED,     /*type*/            \
-    QNN_DATATYPE_UNDEFINED,             /*dataType*/        \
-    NULL,                               /*dimensions*/      \
-    NULL,                               /*offsets*/         \
-    0u,                                 /*numDimensions*/   \
-    QNN_GPU_MEM_LAYOUT_UNDEFINED,       /*layout*/          \
-    QNN_GPU_QUANTIZE_PARAMS_INFO_INIT,  /*quantizeParams*/  \
-    NULL,                                /*name*/           \
-    NULL                                /*aliasSourceName*/ \
+#define QNN_GPU_MEMORY_OBJECT_INIT                    \
+  {                                                   \
+    QNN_GPU_MEM_OBJ_TYPE_UNCLAIMED, /*type*/          \
+    QNN_DATATYPE_UNDEFINED,         /*dataType*/      \
+    NULL,                           /*dimensions*/    \
+    NULL,                           /*offsets*/       \
+    0u,                             /*numDimensions*/ \
+    QNN_GPU_MEM_LAYOUT_UNDEFINED,   /*layout*/        \
+    QNN_GPU_BLOCK_ENCODING_INFO_INIT,  /*blockEncodingInfo*/    \
+    NULL                            /*name*/          \
   }
 // clang-format on
 
@@ -573,8 +453,6 @@ typedef enum {
   QNN_GPU_KERNEL_ARG_TYPE_NULL_PTR = 8,
   /// Operation tensor parameter used as kernel input
   QNN_GPU_KERNEL_ARG_TYPE_OP_TENSOR_PARAM = 9,
-  /// Operation output tensor used as kernel input
-  QNN_GPU_KERNEL_ARG_TYPE_OP_OUTPUT_READWRITE = 10,
 } QnnGpu_KernelArgType_t;
 
 /**
@@ -583,7 +461,6 @@ typedef enum {
  *          - QNN_GPU_KERNEL_ARG_TYPE_OP_INPUT_READ
  *          - QNN_GPU_KERNEL_ARG_TYPE_OP_INPUT_READWRITE
  *          - QNN_GPU_KERNEL_ARG_TYPE_OP_OUTPUT_WRITE
- *          - QNN_GPU_KERNEL_ARG_TYPE_OP_OUTPUT_READWRITE
  *          - QNN_GPU_KERNEL_ARG_TYPE_INTERNAL_READ
  *          - QNN_GPU_KERNEL_ARG_TYPE_INTERNAL_READWRITE
  *          - QNN_GPU_KERNEL_ARG_TYPE_INTERNAL_WRITE

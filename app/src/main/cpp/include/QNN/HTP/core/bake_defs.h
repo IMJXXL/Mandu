@@ -1,9 +1,10 @@
-// ==============================================================================
+//==============================================================================
 //
-// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
-// SPDX-License-Identifier: BSD-3-Clause-Clear
+// Copyright (c) Qualcomm Technologies, Inc.
+// All Rights Reserved.
+// Confidential and Proprietary - Qualcomm Technologies, Inc.
 //
-// ==============================================================================
+//==============================================================================
 
 #ifndef BAKE_DEFS
 #define BAKE_DEFS 1
@@ -117,12 +118,23 @@ constexpr std::pair<unsigned, unsigned> chunk_preload_op_tgt_size_align()
 //
 constexpr std::pair<unsigned, unsigned> shape_tgt_size_align(unsigned rank)
 {
-    // tgt_sizet_bytes * (1 + 2 * rank) =
+    // tgt_sizet_bytes * (1 + 1 + 2 * rank) =
+    //      vtable ptr
     //      shapeflag flags + padding[]
     //      std::array<size_t, Rank> dims
     //      std::array<size_t, Rank> max_dims
     //  + rank = std::array<uint8_t, Rank> pad
-    return {round_up(tgt_sizet_bytes * (1 + 2 * rank) + rank, tgt_sizet_bytes), tgt_sizet_bytes};
+    return {round_up(tgt_sizet_bytes * (1 + 1 + 1 + 2 * rank) + rank, tgt_sizet_bytes), tgt_sizet_bytes};
+}
+
+//
+// {size_align} of DynamicShape<RANK> object
+//
+constexpr std::pair<unsigned, unsigned> dynamic_shape_tgt_size_align(const unsigned rank)
+{
+    // std::array<size_t, Rank> dims == tgt_sizet_bytes * rank
+    // (shapeflag flags + padding[]) + vtable ptr + dynamic_state =  (3 * tgt_sizet_bytes)
+    return {round_up(tgt_sizet_bytes * rank + (4 * tgt_sizet_bytes), tgt_sizet_bytes), tgt_sizet_bytes};
 }
 
 //
@@ -139,7 +151,7 @@ constexpr std::pair<unsigned, unsigned> interface_tgt_size_align(bool is_quantiz
 //
 constexpr std::pair<unsigned, unsigned> tensor_general_tgt_size_align()
 {
-    return {tgt_sizet_bytes * 4, tgt_sizet_bytes};
+    return {tgt_sizet_bytes * 4 + 2 * tgt_ptr_bytes, tgt_sizet_bytes};
 }
 
 // 'shape' tensor, of given rank.
@@ -164,30 +176,9 @@ constexpr std::pair<unsigned, unsigned> OpExtraInfo_size_align = {24, 8};
 // Currently it's always the same regardless of 'nslices'; We may introduce 'right-sized'
 // value, in which case 'exact=true' will get the 'real' size; but exact = false will always
 // give the full size.
-//
-// Layout on target (each word = tgt_sizet_bytes; see slice_dispatch_op.h):
-//   1 word : optional graph pointer (when op_has_graphp)
-//  12 words: fixed SliceDispatchOp members -- vtable, MetaOpBase state,
-//            sliced_op, m_num_slices[ListTypeCount], m_slices_configured[...],
-//            and the slice_dispatch_table header (Executable::ItemType = {func*, data*}).
-//            Hand-maintained; a mismatch will fire size_align_matches<SliceDispatchOp>.
-//   MAX_ALL_OP_SLICES words + 4 bytes/slice : TableElt[] (slice_spec + 16-bit offset).
 constexpr std::pair<unsigned, unsigned> slice_dispatch_op_size_align(unsigned const nslices, bool const exact = false)
 {
-    unsigned words = (op_has_graphp ? 1 : 0) + 12 + Executable::MAX_ALL_OP_SLICES;
-    return {tgt_sizet_bytes * words + 4 * Executable::MAX_ALL_OP_SLICES, tgt_sizet_bytes};
-}
-
-// The size/align of a SwitchedOp for the given table size (which must be >= 1; in practice, >=2)
-// NOTE: the number is the number of *choices*, which can be larger than the number of actual ops, when
-// there is aliasing.
-// Structure is:
-//    vptr
-//    u16,u16,u32,ptr
-//   {ptr,ptr,ptr} * nrows.
-constexpr std::pair<unsigned, unsigned> switched_op_size_align(unsigned const n_rows)
-{
-    return {tgt_sizet_bytes * ((op_has_graphp ? 2 : 1) + 3 * n_rows) + 12, tgt_sizet_bytes};
+    return {tgt_sizet_bytes * ((op_has_graphp ? 7 : 6) + Executable::MAX_OP_SLICES), tgt_sizet_bytes};
 }
 
 // The size of a Predicated Op
@@ -214,13 +205,10 @@ template <typename T, typename SZAL> constexpr bool size_align_matches(SZAL sz)
 //        static_assert(claimed(CLAIMED_SIZE) == actual(ACTUAL_SIZE), "size not as claimed");
 // ... note: in instantiation of function template specialization 'check_szal<MyType>::check_size_align<..., ...>'
 //
-// EXTRA_BYTES can be used for cases which support adjustment to the allocation (e.g SwitchedOp); the
-// CLAIMED_SIZE parameter to check() should be larger than sizeof(T) by this amount.
-//
-template <typename T, int EXTRA_BYTES = 0> struct check_size_align {
+template <typename T> struct check_size_align {
     static constexpr int claimed(int K) { return K; }
     static constexpr int actual(int K) { return K; }
-    template <int CLAIMED_SIZE, int ACTUAL_SIZE = sizeof(T) + EXTRA_BYTES> static constexpr bool check_size()
+    template <int CLAIMED_SIZE, int ACTUAL_SIZE = sizeof(T)> static constexpr bool check_size()
     {
         static_assert(claimed(CLAIMED_SIZE) == actual(ACTUAL_SIZE), "size not as claimed");
         return CLAIMED_SIZE == ACTUAL_SIZE;

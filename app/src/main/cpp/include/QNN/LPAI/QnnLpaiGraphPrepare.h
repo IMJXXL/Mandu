@@ -20,7 +20,7 @@
 #include <stdint.h>
 #endif
 
-#include "QnnLpaiTypes.h"
+#include "QnnLpaiGraphInternal.h"
 
 #ifdef __cplusplus
 extern "C" {

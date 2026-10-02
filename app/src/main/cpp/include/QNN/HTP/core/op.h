@@ -1,9 +1,10 @@
-// ==============================================================================
+//==============================================================================
 //
-// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
-// SPDX-License-Identifier: BSD-3-Clause-Clear
+// Copyright (c) 2018-2023 Qualcomm Technologies, Inc.
+// All Rights Reserved.
+// Confidential and Proprietary - Qualcomm Technologies, Inc.
 //
-// ==============================================================================
+//==============================================================================
 
 #ifndef OP_H
 #define OP_H
@@ -21,11 +22,9 @@
 #include <vector>
 #include "weak_linkage.h"
 #include "macros_attribute.h"
-#include "qhpi_type_info.h"
 
 class Graph;
 class Tensor;
-
 namespace hnnx {
 class OpIoPtrs;
 class CostBasedFeatureDesc;
@@ -80,16 +79,16 @@ enum ChkptStoreType {
  */
 
 class Op : public hnnx::Executable {
-    friend void hnnx::op_serialize_common(hnnx::Serializer &, Op const *, hnnx::type_info const *);
+    friend void hnnx::op_serialize_common(hnnx::Serializer &, Op const *, std::type_info const *);
     //! Interface to the external world is 32 bits for an Op ID (0 and above 0xF000_0000 are reserved for internal use).
     //! However, as we break ops down we want to have some semblance of the original op IDs while still maintaining unique IDs.
     //! So we make internal OpIDs 64 bits.
     //! Half of them can be the external OpID, and we can use a counter or something to uniquify in the other bits.
     //! We can accumulate performance information and such to still represent OpIDs on the interface.
   public:
-    Op() {};
+    Op(){};
     API_EXPORT Op(Graph &graph_in, unsigned long long int my_id_in);
-    API_EXPORT explicit Op(hnnx::Deserz &) {}
+    API_EXPORT explicit Op(hnnx::Deserz &);
     Op(Op const &) = delete;
     Op &operator=(Op const &) = delete;
     // virtual destructor
@@ -125,20 +124,16 @@ class Op : public hnnx::Executable {
     API_EXPORT virtual std::pair<size_t, size_t> num_inputs_outputs() const = 0;
     API_EXPORT inline size_t num_outputs() const { return num_inputs_outputs().second; }
     API_EXPORT inline size_t num_inputs() const { return num_inputs_outputs().first; }
-    API_EXPORT virtual const char *true_name() const;
+    API_EXPORT const char *true_name() const;
     API_EXPORT virtual Flags_word get_flag_word() const { return hnnx::flags_for<Op>; }
     virtual const char *get_docs() const { return hnnx::docs_for<Op>(); } //LCOV_EXCL_LINE [SAFTYSWCCB-1542]
 
     /// @brief
     ///     Gets the typeid mangled name of the kernel implementing this operator
-    API_EXPORT virtual const char *true_func() const noexcept;
+    API_EXPORT const char *true_func() const noexcept;
 
     // get type, allowing for SimpleOpWrapper to get forwarded type.
     API_EXPORT std::type_info const *get_type_extended() const;
-    // LCOV_EXCL_START [SAFTYSWCCB-1542]
-    API_EXPORT virtual hnnx::type_info get_type_info() const { return hnnx::type_info(typeid(*this)); }
-    // LCOV_EXCL_STOP
-
     API_EXPORT bool get_flag(Flags flag) const { return hnnx::test_flag_for(get_flag_word(), flag); }
     //LCOV_EXCL_START [SAFTYSWCCB-1542]
     API_EXPORT bool get_flag_and(Flags flag0, Flags flag1) const
@@ -219,7 +214,7 @@ class Op : public hnnx::Executable {
     //    number and types of input and output tensors are supported by Y.
     //
     API_EXPORT hnnx::uptr_Op clone(Graph &graph_in, OpId, op_clonemode opclonemode = opclone_auto,
-                                   std::type_info const *as_type = nullptr, const OpDef *op_def_in = nullptr) const;
+                                   std::type_info const *as_type = nullptr) const;
 
     // these are not virtual, but are thin wrappers of swap_output so they act as if virtual.
     /// @brief remove output tensor from an op
@@ -410,6 +405,68 @@ class ShapeWrapperOp : public Op {
         return is_input ? nullptr : shape.get();
     }
 };
+
+// MetaOpBase is a shim which provides empty defs for all of the =0 virtual methods,
+// so that internal Ops (e.g. PreloadOp) can be based on this and not need to define any they don't need
+//
+class MetaOpBase : public Op {
+  public:
+    MetaOpBase(){};
+    MetaOpBase(Graph &graph_in, unsigned long long int my_id_in) : Op(graph_in, my_id_in) {}
+    explicit MetaOpBase(hnnx::Deserz &dctx) : Op(dctx) {}
+
+    API_EXPORT virtual GraphStatus prepare(hnnx::OpIoPtrs const &,
+                                           bool tcm_available) override; //{ return GraphStatus::Success;}
+    API_EXPORT virtual GraphStatus allocate(Graph &graph_in) override; // { return GraphStatus::Success;}
+
+    API_EXPORT virtual bool is_valid() const noexcept override; // {return false;}
+    API_EXPORT virtual std::pair<size_t, size_t> num_inputs_outputs() const override; //{ return {0,0};}
+    API_EXPORT virtual Tensor const *get_input_output(size_t which,
+                                                      bool is_input) const override; // {return nullptr;}
+    API_EXPORT virtual void serialize(hnnx::SerOpsInterface &) const override; // {}
+    API_EXPORT virtual uptr_Op clone_meta(Graph &graph_in, OpId new_opid) const; // {return uptr_Op(nullptr);}
+};
+
+// SpecialPrepOpBase is a shim (based on MetaOpBase) which provides some new virtual methods
+// that are queried during GraphDeps stage of preparation.
+// This is intended for things like SuperTileOp which want to add these discovery methods.
+//
+// LCOV_EXCL_START [SAFTYSWCCB-1542]
+
+class SpecialPrepOpBase : public MetaOpBase {
+  public:
+    SpecialPrepOpBase(){};
+    SpecialPrepOpBase(Graph &graph_in, unsigned long long int my_id_in) : MetaOpBase(graph_in, my_id_in) {}
+    explicit SpecialPrepOpBase(hnnx::Deserz &dctx) : MetaOpBase(dctx) {}
+
+    // new virtual methods to populate the OpDesc for the op:
+    // These return 'true' if the result was changed, and 'false' if unchanged; the caller can set
+    // the variable to reasonable default before calling, and then ignore the result.
+    API_EXPORT virtual bool get_opdef_name(OpId opid, opname_tag_t &result) const; // {return false} in op.cc
+    API_EXPORT virtual bool get_splithist(OpId opid, splithist_t &result) const { return false; }
+    API_EXPORT virtual bool get_is_volatile(OpId opid, bool &result) const { return false; }
+    API_EXPORT virtual bool get_cost(const Graph &, OpId opid, float &result) const { return false; }
+    API_EXPORT virtual bool get_flags_word(OpId opid, Flags_word &result) const { return false; }
+
+    // make a CostBasedFeatureDesc. If 'false' is returned, it should be obtained 'in the usual manner'.
+    API_EXPORT virtual bool get_costbased_feature(OpId opid, CostBasedFeatureDesc &result) const { return false; }
+};
+// LCOV_EXCL_STOP
+
+// this is a base class for adding hooks on construction of Ops.
+// May not have data members or dtor - so it's just a vtable pointer, and is constexpr constructable
+// All methods must be const, and return GraphStatus; the 'default' methods do nothing and return GraphNotApplicable.
+// So, we can allow two or more hooks to be attached to an Op; when calling a method,
+// we will call it on the first one, and if it returns NotApplicable, we will try the next
+// one, etc (so they are 'layered', in effect).
+//
+class OpHookBase {
+  public:
+    API_EXPORT virtual GraphStatus pre_output_prep(OpIoPtrs const &, Op &) const;
+    API_EXPORT virtual GraphStatus pre_allocate(OpIoPtrs const &, Op &) const;
+};
+
+// if the indicated Op is a SpawnOp, get its inner op ptr, otherwise null.
 } // namespace hnnx
 
 POP_VISIBILITY()

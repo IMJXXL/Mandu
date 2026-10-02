@@ -1,10 +1,10 @@
-//==============================================================================
+//=============================================================================
 //
-//  Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
-//  All rights reserved.
+//  Copyright (c) 2024 Qualcomm Technologies, Inc.
+//  All Rights Reserved.
 //  Confidential and Proprietary - Qualcomm Technologies, Inc.
 //
-//==============================================================================
+//=============================================================================
 
 /** @file
  *  @brief QNN GenAiTransformer Common components

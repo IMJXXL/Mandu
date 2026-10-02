@@ -1,17 +1,16 @@
-// ==============================================================================
+//==============================================================================
 //
-// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
-// SPDX-License-Identifier: BSD-3-Clause-Clear
+// Copyright (c) 2020 Qualcomm Technologies, Inc.
+// All Rights Reserved.
+// Confidential and Proprietary - Qualcomm Technologies, Inc.
 //
-// ==============================================================================
+//==============================================================================
 
 #ifndef OPTIMIZE_FLAGS_H_
 #define OPTIMIZE_FLAGS_H_
 
-#include "weak_linkage.h"
-#include "macros_attribute.h"
-
 #include <stdint.h>
+#include "weak_linkage.h"
 
 #ifndef PREPARE_DISABLED
 

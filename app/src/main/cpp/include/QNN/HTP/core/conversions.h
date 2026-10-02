@@ -1,9 +1,10 @@
-// ==============================================================================
+//==============================================================================
 //
-// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
-// SPDX-License-Identifier: BSD-3-Clause-Clear
+// Copyright (c) 2018 Qualcomm Technologies, Inc.
+// All Rights Reserved.
+// Confidential and Proprietary - Qualcomm Technologies, Inc.
 //
-// ==============================================================================
+//==============================================================================
 
 #ifndef CONVERSIONS_H
 #define CONVERSIONS_H
@@ -52,7 +53,8 @@ namespace scast {
 // directly from std::numeric_limits<TI>::min()
 //
 //
-template <typename F, typename TI> struct intrange_within_float {};
+template <typename F, typename TI> struct intrange_within_float {
+};
 
 // LCOV_EXCL_START [SAFTYSWCCB-1736] constexprs resolved during compile time
 template <typename TI> struct intrange_within_float<Float16, TI> {
@@ -169,7 +171,8 @@ template <typename TT> struct satcast_helper<TT, TT> {
 #ifdef __hexagon__
 
 // saturate to types <= int.
-template <typename T> struct q6_sat_int {};
+template <typename T> struct q6_sat_int {
+};
 template <> struct q6_sat_int<int8_t> {
     static inline int op(int x) { return Q6_R_satb_R(x); }
 };
@@ -182,6 +185,29 @@ template <> struct q6_sat_int<int16_t> {
 template <> struct q6_sat_int<uint16_t> {
     static inline int op(int x) { return Q6_R_satuh_R(x); }
 };
+
+// TODO: these should be done again for 'long' if long is also 32 bits.
+#if 0 // NOTE: we can't really do this unless intrinsics are constexpr
+template <> struct satcast_helper<uint8_t, int> {
+    static inline uint8_t /*constexpr*/ op(int val)
+    {
+        return Q6_R_satub_R(val);
+    }
+};
+template <> struct satcast_helper<int8_t, int> {
+    static inline int8_t /*constexpr*/ op(int val) { return Q6_R_satb_R(val); }
+};
+template <> struct satcast_helper<uint16_t, int> {
+    static inline uint16_t /*constexpr*/ op(int val)
+    {
+        return Q6_R_satuh_R(val);
+    }
+};
+template <> struct satcast_helper<int16_t, int> {
+    static inline int16_t /*constexpr*/ op(int val) { return Q6_R_sath_R(val); }
+};
+#endif
+
 #endif
 } // end namespace scast
 

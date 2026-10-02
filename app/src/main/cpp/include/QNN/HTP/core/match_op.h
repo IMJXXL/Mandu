@@ -1,22 +1,20 @@
-// ==============================================================================
+//==============================================================================
 //
-// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
-// SPDX-License-Identifier: BSD-3-Clause-Clear
+// Copyright (c) 2018-2024 Qualcomm Technologies, Inc.
+// All Rights Reserved.
+// Confidential and Proprietary - Qualcomm Technologies, Inc.
 //
-// ==============================================================================
+//==============================================================================
 
 #ifndef MATCH_OP_H_
 #define MATCH_OP_H_ 1
 
+#include <vector>
+#include <stdexcept>
 #include "op_package_name.h"
 #include "opname_tag.h"
 #include "macros_attribute.h"
 #include "weak_linkage.h"
-#include "match_op_fwd.h"
-
-#include <vector>
-#include <stdexcept>
-#include <memory>
 
 #ifndef PREPARE_DISABLED
 //
@@ -49,6 +47,13 @@ PUSH_VISIBILITY(default)
 namespace hnnx {
 
 static constexpr int MATCH_MAX_PATTERN = 80;
+
+//
+class MatchOpBase;
+using MatchOp_uptr = std::unique_ptr<MatchOpBase>;
+class MatchAstNode;
+using MatchAst_uptr = std::unique_ptr<MatchAstNode>;
+
 /// @brief MatchAstNode represents an input to an Op in a Match Pattern.
 ///
 /// Only used as element of m_subnodes array in MatchAstNode.
@@ -134,8 +139,8 @@ class MatchBuilder {
     Op(char const *opname, Ts &&...ts)
     {
         std::array<hnnx::MatchAstSubnode, sizeof...(Ts)> subnodes = {std::move(std::forward<Ts>(ts))...};
-        return std::make_unique<hnnx::MatchAstNode>(opname, pkg_flag.c_str(), hnnx::MatchAstNode::is_Op,
-                                                    static_cast<int>(sizeof...(Ts)), subnodes.data());
+        return std::make_unique<hnnx::MatchAstNode>(opname, pkg_flag.c_str(), hnnx::MatchAstNode::is_Op, sizeof...(Ts),
+                                                    subnodes.data());
     }
 
     template <typename... Ts>
@@ -143,8 +148,8 @@ class MatchBuilder {
     Op(char const *opname, Ts... ts)
     {
         std::array<hnnx::MatchAstSubnode, sizeof...(Ts)> subnodes = {(ts)...};
-        return std::make_unique<hnnx::MatchAstNode>(opname, pkg_flag.c_str(), hnnx::MatchAstNode::is_Op,
-                                                    static_cast<int>(sizeof...(Ts)), subnodes.data());
+        return std::make_unique<hnnx::MatchAstNode>(opname, pkg_flag.c_str(), hnnx::MatchAstNode::is_Op, sizeof...(Ts),
+                                                    subnodes.data());
     }
 
     template <typename... Ts>
@@ -153,7 +158,7 @@ class MatchBuilder {
     {
         hnnx::MatchAstSubnode subnodes[sizeof...(Ts) + 1] = {std::move(t1), (ts)...};
         return std::make_unique<hnnx::MatchAstNode>(opname, pkg_flag.c_str(), hnnx::MatchAstNode::is_Op,
-                                                    static_cast<int>(sizeof...(Ts) + 1), subnodes);
+                                                    sizeof...(Ts) + 1, subnodes);
     }
 
     /// \ingroup OptMatch
@@ -167,7 +172,7 @@ class MatchBuilder {
     {
         std::array<hnnx::MatchAstSubnode, sizeof...(Ts)> subnodes = {std::move(std::forward<Ts>(ts))...};
         return std::make_unique<hnnx::MatchAstNode>(opname, pkg_flag.c_str(), hnnx::MatchAstNode::is_OpVarIn,
-                                                    static_cast<int>(sizeof...(Ts)), subnodes.data());
+                                                    sizeof...(Ts), subnodes.data());
     }
 
     template <typename... Ts>
@@ -176,7 +181,7 @@ class MatchBuilder {
     {
         std::array<hnnx::MatchAstSubnode, sizeof...(Ts)> subnodes = {(ts)...};
         return std::make_unique<hnnx::MatchAstNode>(opname, pkg_flag.c_str(), hnnx::MatchAstNode::is_OpVarIn,
-                                                    static_cast<int>(sizeof...(Ts)), subnodes.data());
+                                                    sizeof...(Ts), subnodes.data());
     }
     /// \ingroup OptMatch
     /// @brief give an Op in a pattern a tag: LET("tag", Op("opname", ...inputs... ))

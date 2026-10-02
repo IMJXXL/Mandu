@@ -38,8 +38,6 @@ typedef enum {
   QNN_GPU_BACKEND_CONFIG_OPTION_INVALIDATE_PERFORMANCE_CACHE = 2,
   /// If non-zero, weight sharing is disabled
   QNN_GPU_BACKEND_CONFIG_OPTION_WEIGHT_SHARING_ENABLED = 3,
-  /// If non-zero, kernels will not be profiled in tuning mode
-  QNN_GPU_BACKEND_CONFIG_OPTION_DISABLE_KERNEL_PROFILING = 4,
   /// Unused, present to ensure 32 bits.
   QNN_GPU_BACKEND_CONFIG_OPTION_UNDEFINED = 0x7FFFFFFF,
 } QnnGpuBackend_ConfigOption_t;
@@ -55,7 +53,6 @@ typedef struct {
     const char* performanceCacheDir;
     uint8_t invalidatePerformanceCache;
     uint8_t weightSharingEnabled;
-    uint8_t disableKernelProfiling;
   };
 } QnnGpuBackend_CustomConfig_t;
 

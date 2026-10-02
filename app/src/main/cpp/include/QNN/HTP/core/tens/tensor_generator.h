@@ -1,9 +1,10 @@
-// ==============================================================================
+//==============================================================================
 //
-// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
-// SPDX-License-Identifier: BSD-3-Clause-Clear
+// Copyright (c) Qualcomm Technologies, Inc.
+// All Rights Reserved.
+// Confidential and Proprietary - Qualcomm Technologies, Inc.
 //
-// ==============================================================================
+//==============================================================================
 #ifndef HEXNN_TENSOR_GENERATOR_H
 #define HEXNN_TENSOR_GENERATOR_H 1
 #ifndef HEXNN_TENSOR_H
@@ -48,7 +49,7 @@ struct tensor_generator_table_entry {
 // a thing to make the constexpr table..
 template <typename TTUPLE, size_t... I>
 inline constexpr std::array<tensor_generator_table_entry, std::tuple_size_v<TTUPLE>>
-make_tengen_init(std::index_sequence<I...>)
+        make_tengen_init(std::index_sequence<I...>)
 {
     return {tensor_generator_table_entry(static_cast<typename std::tuple_element_t<I, TTUPLE> *>(nullptr))...};
 }
@@ -251,7 +252,8 @@ template <typename T> struct reg_tens_for_deser<T> {
     }
 };
 
-template <typename TUP> struct map_rtfd_type {};
+template <typename TUP> struct map_rtfd_type {
+};
 template <typename... T> struct map_rtfd_type<std::tuple<T...>> {
     using type = reg_tens_for_deser<T...>;
 };

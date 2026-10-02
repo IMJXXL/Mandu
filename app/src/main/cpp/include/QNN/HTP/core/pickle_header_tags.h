@@ -1,9 +1,10 @@
-// ==============================================================================
+//==============================================================================
 //
-// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
-// SPDX-License-Identifier: BSD-3-Clause-Clear
+// Copyright (c) 2023 Qualcomm Technologies, Inc.
+// All Rights Reserved.
+// Confidential and Proprietary - Qualcomm Technologies, Inc.
 //
-// ==============================================================================
+//==============================================================================
 
 #ifndef PICKLE_HEADER_TAGS_H_
 #define PICKLE_HEADER_TAGS_H_
@@ -53,16 +54,6 @@ constexpr inline bool htp_header_is_valid_MAGIC(const unsigned val)
 constexpr inline unsigned htp_header_get_MAGIC(void const *const p)
 {
     return *(unsigned const *)p;
-}
-
-inline bool htp_is_barrel(void const *const p)
-{
-    return htp_header_get_MAGIC(p) == Hdr_MAGIC_MULTI;
-}
-
-inline bool htp_is_pickle(void const *const p)
-{
-    return htp_header_get_MAGIC(p) == Hdr_MAGIC;
 }
 
 //

@@ -1,38 +1,22 @@
-// ==============================================================================
+//==============================================================================
 //
-// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
-// SPDX-License-Identifier: BSD-3-Clause-Clear
+// Copyright (c) Qualcomm Technologies, Inc.
+// All Rights Reserved.
+// Confidential and Proprietary - Qualcomm Technologies, Inc.
 //
-// ==============================================================================
+//==============================================================================
 
 #ifndef OP_IO_PTRS_H
 #define OP_IO_PTRS_H
 
-#include "weak_linkage.h"
-
 PUSH_VISIBILITY(default)
 
 class GraphPrepare;
-class Graph;
-class Tensor;
-class Op;
-class OpDef;
-struct OutputDef;
 namespace fa {
 struct FancyAllocator;
 }
 
-#include "graph_status.h"
-#include "forward_classes.h"
-#include "interface_defs.h"
-
-#include <vector>
-#include <stddef.h>
-
 namespace hnnx {
-class Allocator;
-class OpHookBase;
-
 //
 // This is use for two purposes:
 //  (1) make a new Op based on OpDef, using information in the op_def_map
@@ -64,13 +48,6 @@ class OpIoPtrs {
     // NOTE: should be able to remove this one when prepare code is properly separated - used in  Op::clone
     OpIoPtrs(Graph &g, Op const *op_to_clone_in, OpId new_op_id_in, clonemode clone_mode_in = output_realloc);
     GraphStatus status() const { return stat; }
-
-    // Methods used for Switched Ops
-    OpIoPtrs(Graph &g, Op const *op_to_clone_in, OpId new_op_id_in, OpDef const *op_def,
-             clonemode clone_mode_in = output_dup);
-    OpIoPtrs(GraphPrepare &g, Op const *op_to_clone_in, OpId new_op_id_in, OpDef const *op_def,
-             clonemode clone_mode_in = output_dup);
-
     Graph &graph() const { return *graph_p; }
     GraphPrepare &graphp() const { return *graphp_p; }
     Allocator &allocator() const; // returns graph_p->get_allocator()

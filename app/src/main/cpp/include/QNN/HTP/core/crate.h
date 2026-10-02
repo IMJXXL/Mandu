@@ -1,9 +1,10 @@
-// ==============================================================================
+//==============================================================================
 //
-// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
-// SPDX-License-Identifier: BSD-3-Clause-Clear
+// Copyright (c) Qualcomm Technologies, Inc.
+// All Rights Reserved.
+// Confidential and Proprietary - Qualcomm Technologies, Inc.
 //
-// ==============================================================================
+//==============================================================================
 
 /*
  * crate.h
@@ -14,22 +15,20 @@
 
 #ifndef CRATE_H_
 #define CRATE_H_
-
-#include "is_detected.h"
-#include "forward_classes.h"
-#include "macros_attribute.h"
-#include "weak_linkage.h"
-#include "size_align_code.h"
-
 #include <cstddef>
 #include <cstdint>
-#include <cassert>
 #include <utility>
 #include <list>
 #include <memory>
 #include <vector>
 #include <cstring>
 #include <stdexcept>
+
+#include "is_detected.h"
+#include "forward_classes.h"
+#include "macros_attribute.h"
+#include "weak_linkage.h"
+#include "size_align_code.h"
 
 PUSH_VISIBILITY(default)
 
@@ -199,7 +198,7 @@ class Crate {
         chunkhdr *chunkp;
 
       protected:
-        ChunkHandle(chunkhdr *cp) : chunkp(cp) {};
+        ChunkHandle(chunkhdr *cp) : chunkp(cp){};
 
       public:
         ChunkHandle() : chunkp(nullptr) {} // null handle may only be assigned-to
@@ -284,14 +283,14 @@ class Crate {
             if constexpr (!std::is_trivially_destructible<T>::value) {
                 // Obtain a callable '~T()' function.
                 // this typically generates a jump, or a small inline; lambda can
-                // be implicitly converted to a function pointer since it has no state.
+                // be cast to a function pointer since it has no state.
                 auto dtor_func = [](Graph *graph_in, void *obj) {
                     if constexpr (has_clear<T>) {
                         static_cast<T *>(obj)->clear(graph_in);
                     }
                     static_cast<T *>(obj)->~T();
                 };
-                install_dtor(pos, dtor_func);
+                install_dtor(pos, (dtor_funcp)dtor_func);
             } else {
                 ++m_records; // note, install_dtor does this too.
             }

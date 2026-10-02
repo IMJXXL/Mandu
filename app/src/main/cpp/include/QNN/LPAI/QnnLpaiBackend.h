@@ -17,7 +17,6 @@
 #define QNN_LPAI_BACKEND_H
 
 #include "QnnBackend.h"
-#include "QnnLpaiTypes.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -132,18 +131,12 @@ typedef struct {
 typedef enum {
   // get the start address alignment and size alignment requirement of buffers, see
   // QnnLpaiBackend_BufferAlignmentReq_t
-  QNN_LPAI_BACKEND_GET_PROP_ALIGNMENT_REQ = QNN_LPAI_BACKEND_GET_PROP_ALIGNMENT_REQ_DEFAULT,
+  QNN_LPAI_BACKEND_GET_PROP_ALIGNMENT_REQ,
   // indicate if cached binary buffer need to be persistent until QnnContext_free is called, return
   // bool
   // if true is returned, need to specify QNN_CONTEXT_CONFIG_PERSISTENT_BINARY during
   // QnnContext_createFromBinary
-  QNN_LPAI_BACKEND_GET_PROP_REQUIRE_PERSISTENT_BINARY = QNN_LPAI_BACKEND_GET_PROP_REQUIRE_PERSISTENT_BINARY_DEFAULT,
-  // get the number of cores in enpu
-  // QnnLpaiBackend_eNPUCoreNum_t
-  QNN_LPAI_BACKEND_GET_PROP_ENPU_CORE_NUM = QNN_LPAI_BACKEND_GET_PROP_ENPU_CORE_NUM_DEFAULT,
-  // get the number of Macs and version number of the certain core
-  // QnnLpaiBackend_eNPUCoreInfo_t
-  QNN_LPAI_BACKEND_GET_PROP_ENPU_CORE_INFO = QNN_LPAI_BACKEND_GET_PROP_ENPU_CORE_INFO_DEFAULT,
+  QNN_LPAI_BACKEND_GET_PROP_REQUIRE_PERSISTENT_BINARY,
   // Unused, present to ensure 32 bits.
   QNN_LPAI_BACKEND_GET_PROP_UNDEFINED = 0x7fffffff
 } QnnLpaiBackend_GetPropertyOption_t;
@@ -161,37 +154,6 @@ typedef struct {
   {                                                                  \
     0u,                                      /*startAddrAlignment*/  \
     0u                                       /*sizeAlignment*/       \
-  }
-// clang-format on
-
-/**
- * @brief Type representing the number of eNPU cores available.
- *        Used with QNN_LPAI_BACKEND_GET_PROP_ENPU_CORE_NUM property.
- */
-typedef uint32_t QnnLpaiBackend_eNPUCoreNum_t;
-
-#define QNN_LPAI_BACKEND_ENPU_CORE_NUM_INIT 0
-
-/**
- * @brief Structure containing information about a specific eNPU core.
- *        Used with QNN_LPAI_BACKEND_GET_PROP_ENPU_CORE_INFO property.
- */
-typedef struct {
-  /// Index of the enpu core
-  uint32_t coreIndex;
-  /// Number of MAC (Multiply-Accumulate) units in the core
-  uint32_t macCnt;
-  /// Version of the enpu core (hardware/firmware version)
-  uint32_t version;
-} QnnLpaiBackend_eNPUCoreInfo_t;
-
-// clang-format off
-/// QnnLpaiBackend_eNPUCoreInfo_t initializer macro
-#define QNN_LPAI_BACKEND_ENPU_CORE_INFO_INIT  \
-  {                                         \
-    0u, /*coreIndex*/                       \
-    0u, /*macCnt*/                          \
-    0u  /*version*/                         \
   }
 // clang-format on
 

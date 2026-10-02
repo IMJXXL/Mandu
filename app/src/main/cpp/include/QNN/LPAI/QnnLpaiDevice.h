@@ -19,9 +19,6 @@
 #include <stdint.h>
 #endif
 
-#include "QnnDevice.h"
-#include "QnnLpaiPerfInfrastructure.h"
-
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -33,7 +30,6 @@ extern "C" {
 typedef struct _QnnDevice_DeviceInfoExtension_t {
   uint32_t socModel;        // An enum value defined in Qnn Header that represent SoC model
   uint32_t arch;            // This field shows the architecture of this device
-  uint32_t domainId;        // This field shows the domain id of this device
   const char* domainName;   // This field shows the domain name of this device
 } QnnLpaiDevice_DeviceInfoExtension_t;
 
@@ -43,39 +39,7 @@ typedef struct _QnnDevice_DeviceInfoExtension_t {
   {                                                                  \
     0u,                                         /*socModel*/         \
     0u,                                         /*arch*/             \
-    0u,                                         /*domainId*/         \
     "adsp"                                      /*domainName*/       \
-  }
-// clang-format on
-
-typedef enum {
-    QNN_LPAI_DEVICE_INFRASTRUCTURE_TYPE_PERF    = 0,
-    QNN_LPAI_DEVICE_INFRASTRUCTURE_TYPE_UNKNOWN = 0x7fffffff
-} QnnLpaiDevice_InfrastructureType_t;
-
-/**
-* @brief Infrastructure configuration for QNN LPAI Device
-*
-* The infraType field determines which union member is valid:
-* - QNN_LPAI_DEVICE_INFRASTRUCTURE_TYPE_PERF: use setPowerConfig
-*
-* Always check infraType before accessing union members.
-*/
-typedef struct _QnnDevice_Infrastructure_t {
-    QnnLpaiDevice_InfrastructureType_t infraType;
-    union UNNAMED {
-        QnnLpaiPerfInfrastructure_SetPowerConfigFn_t setPowerConfig;
-    };
-} QnnLpaiDevice_Infrastructure_t;
-
-// clang-format off
-/// QnnLpaiDevice_Infrastructure_t initializer macro
-#define QNN_LPAI_DEVICE_INFRASTRUCTURE_INIT                    \
-  {                                                            \
-    QNN_LPAI_DEVICE_INFRASTRUCTURE_TYPE_UNKNOWN, /*infraType*/ \
-    {                                                          \
-      NULL /*setPowerConfig*/                                  \
-    }                                                          \
   }
 // clang-format on
 

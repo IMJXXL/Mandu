@@ -1,15 +1,17 @@
-// ==============================================================================
+//==============================================================================
 //
-// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
-// SPDX-License-Identifier: BSD-3-Clause-Clear
+// Copyright (c) Qualcomm Technologies, Inc.
+// All Rights Reserved.
+// Confidential and Proprietary - Qualcomm Technologies, Inc.
 //
-// ==============================================================================
+//==============================================================================
 
 #ifndef HEXNN_MEMORY_LAYOUT_H
 #define HEXNN_MEMORY_LAYOUT_H 1
 
 #include <array>
 #include <cstddef>
+#include <tuple>
 #include <utility>
 
 /*
@@ -217,6 +219,19 @@ struct IChunkedMemoryLayout<RankVal, IndirRanks, Dim, ChunkSize, Rest...> {
         }
         return blocks;
     }
+#if 0
+    static inline constexpr size_t
+    chunk_index(const std::array<size_t, Rank> padded_coords,
+                const std::array<size_t, Rank> dims_total)
+    {
+        size_t offset = 0;
+        for (int i = 0; i < Rank; i++) {
+            offset *= dims_total[i] / ChunkSizes[i];
+            offset += padded_coords[i] / ChunkSizes[i];
+        }
+        return offset;
+    }
+#endif
 };
 
 // ChunkedMemoryLayout is just IChunkedMemoryLayout with IDirRanks = Rank
@@ -242,7 +257,7 @@ template <size_t RankVal> struct FlatMemoryLayout {
                                                const std::array<size_t, Rank> &dims_total)
     {
         size_t offset = padded_coords[0];
-        for (size_t i = 1; i < Rank; i++) {
+        for (int i = 1; i < Rank; i++) {
             offset = offset * dims_total[i] + padded_coords[i];
         }
         return offset;
@@ -302,25 +317,33 @@ using R4SingularMemoryLayout = SingularMemoryLayout<4>;
 // we changed from typedefs to trivial subclassing to shorten those names, but
 // that's no longer an issue.
 
-class R4NCHWMemoryLayout : public ChunkedMemoryLayout<4, 0, 0, 3, 0, 2, 0, 1, 0> {}; // NCHW
-class R4Depth32MemoryLayout : public ChunkedMemoryLayout<4, 0, 0, 1, 0, 3, 0, 2, 0, 2, 4, 3, 32> {};
+class R4NCHWMemoryLayout : public ChunkedMemoryLayout<4, 0, 0, 3, 0, 2, 0, 1, 0> {
+}; // NCHW
+class R4Depth32MemoryLayout : public ChunkedMemoryLayout<4, 0, 0, 1, 0, 3, 0, 2, 0, 2, 4, 3, 32> {
+};
 
 // Croutons for HMX, YYYXXXDDDDD chunks
-class R4CroutonLayout : public ChunkedMemoryLayout<4, 0, 0, 1, 0, 2, 0, 3, 0, 1, 8, 2, 8, 3, 32> {};
+class R4CroutonLayout : public ChunkedMemoryLayout<4, 0, 0, 1, 0, 2, 0, 3, 0, 1, 8, 2, 8, 3, 32> {
+};
 // Croutons for HMX, YXXXXXDDDDD chunks (wide aspect ratio)
-class R4WideCroutonLayout : public ChunkedMemoryLayout<4, 0, 0, 1, 0, 2, 0, 3, 0, 1, 2, 2, 32, 3, 32> {};
+class R4WideCroutonLayout : public ChunkedMemoryLayout<4, 0, 0, 1, 0, 2, 0, 3, 0, 1, 2, 2, 32, 3, 32> {
+};
 
 // Croutons for HMX, YYYXDDDDDXX chunks
-class R4Crouton4x1Layout : public ChunkedMemoryLayout<4, 0, 0, 1, 0, 2, 0, 3, 0, 1, 8, 2, 2, 3, 32, 2, 4> {};
+class R4Crouton4x1Layout : public ChunkedMemoryLayout<4, 0, 0, 1, 0, 2, 0, 3, 0, 1, 8, 2, 2, 3, 32, 2, 4> {
+};
 
 // Croutons for HMX, YYXXDDDDDYX chunks
-class R4Crouton2x2Layout : public ChunkedMemoryLayout<4, 0, 0, 1, 0, 2, 0, 3, 0, 1, 4, 2, 4, 3, 32, 1, 2, 2, 2> {};
+class R4Crouton2x2Layout : public ChunkedMemoryLayout<4, 0, 0, 1, 0, 2, 0, 3, 0, 1, 4, 2, 4, 3, 32, 1, 2, 2, 2> {
+};
 
 // Croutons for HMX, YYXXDDDDDYX chunks (wide aspect ratio)
-class R4WideCrouton2x2Layout : public ChunkedMemoryLayout<4, 0, 0, 1, 0, 2, 0, 3, 0, 2, 16, 3, 32, 1, 2, 2, 2> {};
+class R4WideCrouton2x2Layout : public ChunkedMemoryLayout<4, 0, 0, 1, 0, 2, 0, 3, 0, 2, 16, 3, 32, 1, 2, 2, 2> {
+};
 
 // Croutons2 for HMX, 8x4x32 chunks where the data is 16b
-class R4Crouton2Layout : public ChunkedMemoryLayout<4, 0, 0, 1, 0, 2, 0, 3, 0, 1, 8, 2, 2, 3, 32, 2, 2> {};
+class R4Crouton2Layout : public ChunkedMemoryLayout<4, 0, 0, 1, 0, 2, 0, 3, 0, 1, 8, 2, 2, 3, 32, 2, 2> {
+};
 
 // Note, we want the lists of numbers to be paired properly, some of the commas won't have spaces after.
 // clang-format off
@@ -331,13 +354,17 @@ using R4DeepAR8_16bLayout = IChunkedMemoryLayout<4,3, 0,0, 1,0, 2,0, 3,0, 2,4, 3
 
 // clang-format on
 
-class R4Crouton4Layout : public ChunkedMemoryLayout<4, 0, 0, 1, 0, 2, 0, 3, 0, 1, 8, 2, 2, 3, 32> {};
+class R4Crouton4Layout : public ChunkedMemoryLayout<4, 0, 0, 1, 0, 2, 0, 3, 0, 1, 8, 2, 2, 3, 32> {
+};
 
-class R4WideCrouton4Layout : public ChunkedMemoryLayout<4, 0, 0, 1, 0, 2, 0, 3, 0, 1, 2, 2, 8, 3, 32> {};
+class R4WideCrouton4Layout : public ChunkedMemoryLayout<4, 0, 0, 1, 0, 2, 0, 3, 0, 1, 2, 2, 8, 3, 32> {
+};
 
-class R4Weights8x4Layout : public ChunkedMemoryLayout<4, 0, 0, 1, 0, 3, 0, 2, 0, 0, 8, 1, 4, 2, 16, 3, 32, 2, 2> {};
+class R4Weights8x4Layout : public ChunkedMemoryLayout<4, 0, 0, 1, 0, 3, 0, 2, 0, 0, 8, 1, 4, 2, 16, 3, 32, 2, 2> {
+};
 
-class R5CroutonLayout : public ChunkedMemoryLayout<5, 0, 0, 1, 0, 2, 0, 3, 0, 4, 0, 2, 8, 3, 8, 4, 32> {};
+class R5CroutonLayout : public ChunkedMemoryLayout<5, 0, 0, 1, 0, 2, 0, 3, 0, 4, 0, 2, 8, 3, 8, 4, 32> {
+};
 
 //typedef ChunkedMemoryLayout<4, 0,0, 3,0, 2,0, 1,0> R4NCHWMemoryLayout; // NCHW
 //typedef ChunkedMemoryLayout<4, 0,0, 1,0, 3,0, 2,0, 2,4, 3,32> R4Depth32MemoryLayout;

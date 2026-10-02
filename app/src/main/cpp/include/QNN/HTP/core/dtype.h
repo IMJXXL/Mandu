@@ -1,9 +1,10 @@
-// ==============================================================================
+//==============================================================================
 //
-// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
-// SPDX-License-Identifier: BSD-3-Clause-Clear
+// Copyright (c) 2020 Qualcomm Technologies, Inc.
+// All Rights Reserved.
+// Confidential and Proprietary - Qualcomm Technologies, Inc.
 //
-// ==============================================================================
+//==============================================================================
 
 #ifndef DTYPE_H
 #define DTYPE_H 1
@@ -16,16 +17,8 @@
 #include "macros_attribute.h"
 #include "weak_linkage.h"
 
-namespace hnnx::dtype_private {
-// std::is_signed<T> gives true for float, but false for Float16 and BFloat16.
-// So, this is used instead, to generate dtype_info::is_signed, from element_type.
-template <typename T> inline constexpr bool is_signed_for_dt = std::is_signed<T>::value;
-
-template <> inline constexpr bool is_signed_for_dt<Float16> = true;
-template <> inline constexpr bool is_signed_for_dt<BFloat16> = true;
-} // namespace hnnx::dtype_private
-
-template <DType DT> struct dtype_traits {};
+template <DType DT> struct dtype_traits {
+};
 
 template <> struct dtype_traits<DType::QUInt8> {
     typedef uint8_t element_type;
@@ -130,7 +123,6 @@ POP_VISIBILITY()
 
 namespace hnnx {
 namespace dtype_private {
-
 template <DType DT> dtype_info constexpr inline dtype_info_for()
 {
     typedef dtype_traits<DT> traits;
@@ -139,7 +131,7 @@ template <DType DT> dtype_info constexpr inline dtype_info_for()
             DT, // dtype
             traits::is_quant, //is_quant
             traits::is_float, //is_float
-            (is_signed_for_dt<typename traits::element_type> ? 1 : 0) //is_signed
+            (std::is_signed<typename traits::element_type>::value ? 1 : 0) //is_signed
     };
 }
 template <> dtype_info constexpr inline dtype_info_for<DType::UNKNOWN>()

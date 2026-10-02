@@ -1,9 +1,10 @@
-// ==============================================================================
+//==============================================================================
 //
-// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
-// SPDX-License-Identifier: BSD-3-Clause-Clear
+// Copyright (c) Qualcomm Technologies, Inc.
+// All Rights Reserved.
+// Confidential and Proprietary - Qualcomm Technologies, Inc.
 //
-// ==============================================================================
+//==============================================================================
 
 #ifndef TYPICAL_OP_H
 #define TYPICAL_OP_H 1
@@ -15,6 +16,7 @@
 #include "op_utils.h"
 #include "op_io_ptrs.h"
 #include "tensor.h"
+#include "perf_timing.h"
 #include "op_info.h"
 #include "bake_defs.h"
 #include "weak_linkage.h"
@@ -411,14 +413,7 @@ class TypicalOpIO : public TypicalOpIoBase<ArgsTuples<Ftype>::n_outputs, ArgsTup
     {
         this->assign_input_pointers(ioptrs, n_inputs, this->io.inputs().data());
         auto const *gen_arr_p = output_generator_array();
-        // Different behaviour for cloning when 'scratch' outputs are present:
-        // when cloning, the full output count is supplied to output_create,
-        // and output_scratch_create is called as usual.
-        unsigned n_outputs_to_create = n_nonscratch_outputs;
-        if (n_scratch_outputs > 0 && ioptrs.is_clone_mode()) {
-            n_outputs_to_create += n_scratch_outputs;
-        }
-        this->output_create(ioptrs, n_outputs_to_create, this->io.outputs().data(), gen_arr_p);
+        this->output_create(ioptrs, n_nonscratch_outputs, this->io.outputs().data(), gen_arr_p);
         if constexpr (n_scratch_outputs > 0) {
             this->output_scratch_create(ioptrs.graph(), n_scratch_outputs,
                                         this->io.outputs().data() + n_nonscratch_outputs,
@@ -430,25 +425,17 @@ class TypicalOpIO : public TypicalOpIoBase<ArgsTuples<Ftype>::n_outputs, ArgsTup
         Graph &graph_in = op_io_ptrs.graph();
         size_t const n_inputs_in = op_io_ptrs.n_inputs();
         size_t const n_outputs_in = op_io_ptrs.n_outputs();
-        unsigned n_outs_expected = n_nonscratch_outputs;
-        if (n_scratch_outputs > 0 && op_io_ptrs.is_clone_mode()) {
-            n_outs_expected += n_scratch_outputs;
-        }
         //debuglog("n_inputs_in=%zd n_outputs_in=%zd",n_inputs_in,n_outputs_in);
         //debuglog("expected n_inputs=%zd n_outputs=%zd",n_inputs,n_outputs);
-        if (n_outs_expected != n_outputs_in) return false;
+        if (n_nonscratch_outputs != n_outputs_in) return false;
         if (n_inputs != n_inputs_in) return false;
         //debuglog("numbers OK");
         if (!are_input_tensors_compatible<n_inputs, input_tuple_type>(graph_in, op_io_ptrs.in_tensors.data()))
             return false;
         if (build_options_pub::DebugRegistry) debuglog("inputs OK");
         if (!op_io_ptrs.is_clone_mode()) {
-            if (!op_io_ptrs.out_defs.empty()) {
-                if (!are_output_defs_valid<n_nonscratch_outputs, output_tuple_defs>(op_io_ptrs.out_defs.data(),
-                                                                                    graph_in)) {
-                    return false;
-                }
-            }
+            if (!are_output_defs_valid<n_nonscratch_outputs, output_tuple_defs>(op_io_ptrs.out_defs.data(), graph_in))
+                return false;
         }
         //debuglog("outputs OK");
         return true;
@@ -651,7 +638,7 @@ template <auto F, typename OpaqueT> class TypicalOpWithCompiler : public Typical
     using ThisType = TypicalOpWithCompiler<F, OpaqueT>;
     using Parent = TypicalOp<F>;
     mutable OpaqueT opaque{};
-    explicit TypicalOpWithCompiler(Deserz &dctx) : Parent(dctx) {};
+    explicit TypicalOpWithCompiler(Deserz &dctx) : Parent(dctx){};
     virtual Executable::ItemType compile(Graph &graph_in) const override;
     virtual bool check_constraint_for_recompile(Graph &graph_in) const override;
     // Generator function.  Create the op if possible, otherwise return null.
@@ -678,7 +665,7 @@ template <auto F, typename OpaqueT> class TypicalOpWithCompiler : public Typical
     }
 #endif
   protected:
-    TypicalOpWithCompiler(OpIoPtrs const &ioptrs) : Parent(ioptrs) {};
+    TypicalOpWithCompiler(OpIoPtrs const &ioptrs) : Parent(ioptrs){};
 };
 
 } // namespace hnnx

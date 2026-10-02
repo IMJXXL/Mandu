@@ -1,9 +1,10 @@
-// ==============================================================================
+//==============================================================================
 //
-// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
-// SPDX-License-Identifier: BSD-3-Clause-Clear
+// Copyright (c) Qualcomm Technologies, Inc.
+// All Rights Reserved.
+// Confidential and Proprietary - Qualcomm Technologies, Inc.
 //
-// ==============================================================================
+//==============================================================================
 #ifndef HEXNN_TENSOR_DEFINITIONS_H
 #define HEXNN_TENSOR_DEFINITIONS_H 1
 #ifndef HEXNN_TENSOR_H
@@ -86,10 +87,7 @@ template <typename T> API_FUNC_EXPORT constexpr const char *code_to_type_name()
 }
 
 #define DECLARE_TENSOR_CODE_TO_TYPENAME_STRING(TYPE)                                                                   \
-    template <> API_FUNC_EXPORT const char *code_to_type_name<TYPE>()                                                  \
-    {                                                                                                                  \
-        return TensorTypeStruct<TYPE>::name;                                                                           \
-    }
+    template <> API_FUNC_EXPORT const char *code_to_type_name<TYPE>() { return TensorTypeStruct<TYPE>::name; }
 
 // macro to define a ConcreteTensor config in Tdefs namespace
 //  LAYOUTNAME is a layout defined by LAYOUTDEF macro
@@ -152,7 +150,6 @@ LAYOUTDEF(WideCrouton_32, 4, R4WideCrouton4Layout, Padding)
 // UNUSED LAYOUTDEF(R4Depth32_32pad, 4, R4Depth32MemoryLayout, Padding)
 
 LAYOUTDEF(R4Singular_8, 1, R4SingularMemoryLayout, NoPadding)
-LAYOUTDEF(R4Singular_16, 2, R4SingularMemoryLayout, NoPadding)
 
 DEFINE_TYPENAME(LayoutTensor<Ldefs::Flat_8>, "yfB")
 DEFINE_TYPENAME(LayoutTensor<Ldefs::Flat5D_8>, "yf5B")
@@ -170,7 +167,6 @@ DEFINE_TYPENAME(LayoutTensor<Ldefs::Crouton_16_DeepAR4>, "ya;4H")
 DEFINE_TYPENAME(LayoutTensor<Ldefs::Crouton_16_DeepAR8>, "ya;8H")
 
 DEFINE_TYPENAME(LayoutTensor<Ldefs::R4Singular_8>, "yqB")
-DEFINE_TYPENAME(LayoutTensor<Ldefs::R4Singular_16>, "yqH")
 
 // 5D LAYOUTDEFs for Croutons
 // LAYOUTDEF(Crouton_8_5D, 1, R5CroutonLayout, Padding)
@@ -184,7 +180,7 @@ TENSORDEF(QuantUint8_5D, Flat5D_8, DType::QUInt8, "f5B")
 TENSORDEF(QuantInt8, Flat_8, DType::QInt8, "fb")
 TENSORDEF(QuantInt8_5D, Flat5D_8, DType::QInt8, "f5b")
 TENSORDEF(QUint8Crouton, Crouton_8, DType::QUInt8, "cB")
-TENSORDEF(QUint8Crouton4x1, Crouton4x1_8, DType::QUInt8, "c4#B")
+TENSORDEF(QUint8Crouton4x1, Crouton4x1_8, DType::QUInt8, "c#B")
 TENSORDEF(QUint8Crouton2x2, Crouton2x2_8, DType::QUInt8, "c#B")
 TENSORDEF(QUint8WideCrouton, WideCrouton_8, DType::QUInt8, "wB")
 TENSORDEF(QUint8WideCrouton2x2, WideCrouton2x2_8, DType::QUInt8, "w#B")
@@ -195,7 +191,7 @@ TENSORDEF_MC(QuantUint8_5D_TCM, Flat5D_8, DType::QUInt8, MemoryClass::TCM, "F5B"
 TENSORDEF_MC(QuantInt8_TCM, Flat_8, DType::QInt8, MemoryClass::TCM, "Fb")
 TENSORDEF_MC(QuantInt8_5D_TCM, Flat5D_8, DType::QInt8, MemoryClass::TCM, "F5b")
 TENSORDEF_MC(QUint8Crouton_TCM, Crouton_8, DType::QUInt8, MemoryClass::TCM, "CB")
-TENSORDEF_MC(QUint8Crouton4x1_TCM, Crouton4x1_8, DType::QUInt8, MemoryClass::TCM, "C4#B")
+TENSORDEF_MC(QUint8Crouton4x1_TCM, Crouton4x1_8, DType::QUInt8, MemoryClass::TCM, "C#B")
 TENSORDEF_MC(QUint8Crouton2x2_TCM, Crouton2x2_8, DType::QUInt8, MemoryClass::TCM, "C#B")
 TENSORDEF_MC(QUint8WideCrouton_TCM, WideCrouton_8, DType::QUInt8, MemoryClass::TCM, "WB")
 TENSORDEF_MC(QUint8WideCrouton2x2_TCM, WideCrouton2x2_8, DType::QUInt8, MemoryClass::TCM, "W#B")
@@ -232,7 +228,7 @@ TENSORDEF_MC(PlainFloat16_TCM, Flat_16, DType::Float16, MemoryClass::TCM, "Fe")
 TENSORDEF_MC(PlainFloat16_5D_TCM, Flat5D_16, DType::Float16, MemoryClass::TCM, "F5e")
 TENSORDEF_MC(BFloat16Crouton_TCM, Crouton_16, DType::BFloat16, MemoryClass::TCM, "Cg")
 TENSORDEF_MC(PlainBFloat16_TCM, Flat_16, DType::BFloat16, MemoryClass::TCM, "Fg")
-TENSORDEF_MC(PlainBFloat16_5D_TCM, Flat5D_16, DType::BFloat16, MemoryClass::TCM, "F5g")
+TENSORDEF_MC(PlainBFloat16_5D_TCM, Flat_16, DType::BFloat16, MemoryClass::TCM, "F5g")
 
 // 32-bit
 TENSORDEF(Int32, Flat_32, DType::Int32, "fi")
@@ -265,7 +261,6 @@ TENSORDEF(Int64, Flat_64, DType::Int64, "fl")
 TENSORDEF_MC(Int64_TCM, Flat_64, DType::Int64, MemoryClass::TCM, "Fl")
 
 TENSORDEF(Predicate, R4Singular_8, DType::QUInt8, "qB")
-TENSORDEF(Predicate16, R4Singular_16, DType::QUInt16, "qH")
 
 DEFINE_TYPENAMES(Vector<Tensor *>, "t*");
 DEFINE_TYPENAMES(TensorScalar<float>, "nf");
@@ -410,9 +405,8 @@ typedef ConcreteTensor<Tdefs::QFloat> QFloatTensor;
 typedef ConcreteTensor<Tdefs::PlainBFloat16> PlainBFloat16Tensor;
 typedef ConcreteTensor<Tdefs::PlainBFloat16_5D> PlainBFloat16Tensor5D;
 typedef ConcreteTensor<Tdefs::BFloat16Crouton> BFloat16CroutonTensor;
-typedef ConcreteTensor<Tdefs::FloatCrouton> FloatCroutonTensor;
+
 typedef ConcreteTensor<Tdefs::Predicate> PredicateTensor;
-typedef ConcreteTensor<Tdefs::Predicate16> Predicate16Tensor;
 
 // These were once TensorContiguous
 typedef ConcreteTensor<Tdefs::PlainFloat> PlainFloatContiguousTensor;
@@ -422,7 +416,7 @@ struct ModifiedDerivedTypeParent {
     using PlainFloatTensor_TCM = PlainFloatTensor;
     using PlainFloatTensor5D_TCM = PlainFloatTensor5D;
     using PlainFloat16Tensor_TCM = PlainFloat16Tensor;
-    using PlainBFloat16Tensor5D_TCM = PlainBFloat16Tensor5D;
+    // using PlainBFloat16Tensor5D_TCM = PlainBFloat16Tensor5D;
     using PlainBFloat16Tensor_TCM = PlainBFloat16Tensor;
     using PlainFloat16Tensor5D_TCM = PlainFloat16Tensor5D;
     using QFloatTensor_TCM = QFloatTensor;
@@ -492,7 +486,6 @@ typedef ConcreteTensor<Tdefs::QFloatCrouton_TCM> QFloatCroutonTensor_TCM;
 typedef ConcreteTensor<Tdefs::QUint8WideCrouton_TCM> QUint8WideCroutonTensor_TCM;
 typedef ConcreteTensor<Tdefs::QUint8WideCrouton2x2_TCM> QUint8WideCrouton2x2Tensor_TCM;
 typedef ConcreteTensor<Tdefs::QInt32WideCrouton_TCM> QInt32WideCroutonTensor_TCM;
-typedef ConcreteTensor<Tdefs::FloatCrouton_TCM> FloatCroutonTensor_TCM;
 
 // These were once TensorContiguous
 typedef ConcreteTensor<Tdefs::Int32_TCM> Int32Tensor_TCM;
@@ -525,10 +518,11 @@ using TypicalTensors =
         std::tuple<PlainFloatTensor, PlainFloatTensor5D, PlainFloat16Tensor, QuantUint8Tensor, QuantUint8Tensor5D,
                    QuantInt8Tensor, QuantInt8Tensor5D, QuantUint16Tensor, QuantUint16Tensor5D, QuantInt16Tensor,
                    QuantInt32Tensor, Int32Tensor, Int32Tensor5D, Int32Tensor6D, QUint8CroutonTensor, QInt8CroutonTensor,
-                   QUint8Crouton4x1Tensor, QUint8Crouton2x2Tensor, QUint16CroutonTensor, QInt16CroutonTensor,
-                   QUint16CroutonTensor_AR4, QUint16CroutonTensor_AR8, QInt32CroutonTensor, QFloatTensor,
-                   QFloatCroutonTensor, Int32CroutonTensor, PlainFloat16Tensor_TCM, PlainFloat16Tensor5D, Int64Tensor,
-                   QuantInt16Tensor5D, PlainBFloat16Tensor, PlainBFloat16Tensor5D, BFloat16CroutonTensor>;
+                   QUint8Crouton4x1Tensor, QUint8Crouton2x2Tensor, QUint16CroutonTensor, QInt16CroutonTensor, //
+                   QUint16CroutonTensor_AR4, QUint16CroutonTensor_AR8, //
+                   QInt32CroutonTensor, QFloatTensor, QFloatCroutonTensor, Int32CroutonTensor, PlainFloat16Tensor_TCM,
+                   PlainFloat16Tensor5D, Int64Tensor, QuantInt16Tensor5D, PlainBFloat16Tensor, PlainBFloat16Tensor5D,
+                   BFloat16CroutonTensor>;
 
 namespace hnnx {
 // these tensor types are 'pre-registered' for deserialize

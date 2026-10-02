@@ -1,9 +1,10 @@
-// ==============================================================================
+//==============================================================================
 //
-// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
-// SPDX-License-Identifier: BSD-3-Clause-Clear
+// Copyright (c) 2023 Qualcomm Technologies, Inc.
+// All Rights Reserved.
+// Confidential and Proprietary - Qualcomm Technologies, Inc.
 //
-// ==============================================================================
+//==============================================================================
 
 // Compiler builtin intrinsic functions should be specified in this file
 
@@ -52,14 +53,14 @@
 
 #include <limits>
 
-template <typename _T> bool HEX_ADD_OVERFLOW(_T a, _T b, _T *out)
+template <typename _T> static inline bool HEX_ADD_OVERFLOW(_T a, _T b, _T *out)
 {
     *out = a + b;
     return ((b > 0) && (a > std::numeric_limits<_T>::max() - b)) ||
            ((b < 0) && (a < std::numeric_limits<_T>::min() - b));
 }
 
-template <typename _T> bool HEX_MUL_OVERFLOW(_T a, _T b, _T *out)
+template <typename _T> static inline bool HEX_MUL_OVERFLOW(_T a, _T b, _T *out)
 {
     *out = a * b;
     return ((b > 0) && (a > std::numeric_limits<_T>::max() / b || a < std::numeric_limits<_T>::min() / b)) ||
@@ -72,7 +73,7 @@ template <typename _T> bool HEX_MUL_OVERFLOW(_T a, _T b, _T *out)
 
 #include <bitset>
 
-template <typename _T> int HEX_COUNT_ONE_BIT(_T x)
+template <typename _T> static inline int HEX_COUNT_ONE_BIT(_T x)
 {
     return std::bitset<sizeof(_T) * 8>(x).count();
 }
@@ -96,42 +97,42 @@ template <typename _T> int HEX_COUNT_ONE_BIT(_T x)
 
 // Returns the number of leading 0-bits in x, starting at the most significant
 // bit position. If x is 0, the result is undefined.
-inline int HEX_COUNT_LEADING_ZERO_ULL(unsigned long long x)
+static inline int HEX_COUNT_LEADING_ZERO_ULL(unsigned long long x)
 {
     unsigned long where;
     if (_BitScanReverse64(&where, x)) return static_cast<int>(63 - where);
     return 64; // Undefined behavior
 }
 
-inline int HEX_COUNT_LEADING_ZERO(unsigned int x)
+static inline int HEX_COUNT_LEADING_ZERO(unsigned int x)
 {
     unsigned long where;
     if (_BitScanReverse(&where, x)) return static_cast<int>(31 - where);
     return 32; // Undefined Behavior.
 }
 
-inline int HEX_COUNT_LEADING_ZERO_UL(unsigned long x)
+static inline int HEX_COUNT_LEADING_ZERO_UL(unsigned long x)
 {
     return sizeof(x) == 8 ? HEX_COUNT_LEADING_ZERO_ULL(x) : HEX_COUNT_LEADING_ZERO(static_cast<unsigned int>(x));
 }
 
 // Returns the number of trailing 0-bits in x, starting at the least significant
 // bit position. If x is 0, the result is undefined.
-inline int HEX_COUNT_TRAILING_ZERO_ULL(unsigned long long x)
+static inline int HEX_COUNT_TRAILING_ZERO_ULL(unsigned long long x)
 {
     unsigned long where;
     if (_BitScanForward64(&where, x)) return static_cast<int>(where);
     return 64; // Undefined Behavior.
 }
 
-inline int HEX_COUNT_TRAILING_ZERO(unsigned int x)
+static inline int HEX_COUNT_TRAILING_ZERO(unsigned int x)
 {
     unsigned long where;
     if (_BitScanForward(&where, x)) return static_cast<int>(where);
     return 32; // Undefined Behavior.
 }
 
-inline int HEX_COUNT_TRAILING_ZERO_UL(unsigned long x)
+static inline int HEX_COUNT_TRAILING_ZERO_UL(unsigned long x)
 {
     return sizeof(x) == 8 ? HEX_COUNT_TRAILING_ZERO_ULL(x) : HEX_COUNT_TRAILING_ZERO(static_cast<unsigned int>(x));
 }
@@ -158,13 +159,13 @@ inline int HEX_COUNT_TRAILING_ZERO_UL(unsigned long x)
     (sizeof *(_p) == sizeof(__int64) ? _InterlockedExchangeAdd64((__int64 *)(_p), (__int64)(_v))                       \
                                      : _InterlockedExchangeAdd((long *)(_p), (long)(_v)))
 
-template <typename _T> _T HEX_ATOMIC_FETCH_AND_AND(_T volatile *_p, _T _v)
+template <typename _T> static inline _T HEX_ATOMIC_FETCH_AND_AND(_T volatile *_p, _T _v)
 {
     _InterlockedAnd((long *)_p, (long)_v);
     return static_cast<_T>(*_p);
 }
 
-template <typename _T> _T HEX_ATOMIC_FETCH_AND_OR(_T volatile *_p, _T _v)
+template <typename _T> static inline _T HEX_ATOMIC_FETCH_AND_OR(_T volatile *_p, _T _v)
 {
     _InterlockedOr((long *)_p, (long)_v);
     return static_cast<_T>(*_p);

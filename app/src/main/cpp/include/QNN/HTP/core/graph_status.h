@@ -1,9 +1,10 @@
-// ==============================================================================
+//==============================================================================
 //
-// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
-// SPDX-License-Identifier: BSD-3-Clause-Clear
+// Copyright (c) 2020, 2023 Qualcomm Technologies, Inc.
+// All Rights Reserved.
+// Confidential and Proprietary - Qualcomm Technologies, Inc.
 //
-// ==============================================================================
+//==============================================================================
 
 #ifndef GRAPH_STATUS_H
 #define GRAPH_STATUS_H
@@ -65,8 +66,6 @@ struct GraphStatus {
         ErrorBadCDPatchContent = 105,
         ErrorSegmentMemoryOverflow = 106,
         ErrorBadAlloc = 107,
-        ErrorBadCDExtraSize = 108,
-        ErrorInsufficientCDExtraSize = 109,
         ErrorFatal = -1,
     };
 #ifdef __cplusplus

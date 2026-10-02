@@ -1,16 +1,17 @@
-// ==============================================================================
+//==============================================================================
 //
-// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
-// SPDX-License-Identifier: BSD-3-Clause-Clear
+// Copyright (c) Qualcomm Technologies, Inc.
+// All Rights Reserved.
+// Confidential and Proprietary - Qualcomm Technologies, Inc.
 //
-// ==============================================================================
+//==============================================================================
 
 #ifndef ALLOCATOR_H
 #define ALLOCATOR_H 1
 
 #include <cstddef>
 #include <algorithm>
-
+#include <memory>
 #include "dtype_enum.h"
 #include "weak_linkage.h"
 #include "macros_attribute.h"
@@ -81,7 +82,7 @@ class Allocator {
     // AllocComplete allows no further allocations. A deserialized allocator
     // is in this state.
 
-    API_EXPORT Allocator(Mode mode_in, Graph &graph_in) : graph(graph_in), mode(mode_in) {};
+    API_EXPORT Allocator(Mode mode_in, Graph &graph_in) : graph(graph_in), mode(mode_in){};
     API_EXPORT virtual ~Allocator() = 0;
 
     Graph &graph;
@@ -190,7 +191,7 @@ class Allocator {
 //
 class FakeAllocator : public Allocator {
   public:
-    API_EXPORT FakeAllocator(Allocator::Mode mode_in, Graph &graph_in) : Allocator(mode_in, graph_in) {};
+    API_EXPORT FakeAllocator(Allocator::Mode mode_in, Graph &graph_in) : Allocator(mode_in, graph_in){};
     API_EXPORT virtual ~FakeAllocator();
 };
 

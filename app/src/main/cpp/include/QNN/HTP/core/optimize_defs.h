@@ -1,9 +1,11 @@
-// ==============================================================================
+//==============================================================================
 //
-// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
-// SPDX-License-Identifier: BSD-3-Clause-Clear
+// Copyright (c) 2020-2023 Qualcomm Technologies, Inc.
+// All Rights Reserved.
+// Confidential and Proprietary - Qualcomm Technologies, Inc.
 //
-// ==============================================================================
+//==============================================================================
+
 #ifndef OPTIMIZE_DEFS_H
 #define OPTIMIZE_DEFS_H 1
 
@@ -28,14 +30,6 @@
 #define IS_1HD_H1D(A, B)                                                                                               \
     AND(EQ(DIM_HEIGHT(A), 1), NE(DIM_WIDTH(A), 1), EQ(DIM_WIDTH(B), 1), EQ(DIM_WIDTH(A), DIM_HEIGHT(B)),               \
         EQ(DIM_DEPTH(A), DIM_DEPTH(B)))
-
-#define IS_4D_SPACE_RESHAPE(RESHAPE, ACT)                                                                              \
-    AND(EQ(RANK_OF(RESHAPE), 4), EQ(RANK_OF(ACT), 4), EQ(DIM_BATCHES(RESHAPE), DIM_BATCHES(ACT)),                      \
-        EQ(DIM_DEPTH(RESHAPE), DIM_DEPTH(ACT)))
-
-#define IS_4D_DEPTH_SLICE(SLICE, ACT)                                                                                  \
-    AND(EQ(RANK_OF(SLICE), 4), EQ(RANK_OF(ACT), 4), EQ(DIM_BATCHES(SLICE), DIM_BATCHES(ACT)),                          \
-        EQ(DIM_HEIGHT(SLICE), DIM_HEIGHT(ACT)), EQ(DIM_WIDTH(SLICE), DIM_WIDTH(ACT)))
 
 /// @brief A constant specifying the standard split for output depth
 // NOTE: HEXNNVVV-330 workaround: stay at 32 channels or FP test starts to fail...
@@ -92,6 +86,14 @@
 #define SHOULD_AUTOTHREAD2(ACT1, ACT2) AND(SHOULD_AUTOTHREAD1(ACT1), EQ(ELEMENTSIZE_OF("*"), ELEMENTSIZE_OF(ACT2)))
 #define SHOULD_AUTOTHREAD3(ACT1, ACT2, ACT3)                                                                           \
     AND(SHOULD_AUTOTHREAD2(ACT1, ACT2), EQ(ELEMENTSIZE_OF("*"), ELEMENTSIZE_OF(ACT3)))
+
+// This is used for some unary operators so that they are supertiled the same way
+// as binary ops even though they have a smaller footprint
+// In particular Sqrt(Mul(x,y))...
+#define SHOULD_AUTOTHREAD_UNARY                                                                                        \
+    AND(NOT(OPTION_BOOL("central_tiler")), GT(MUL(3, DATA_SIZE("*")), MUL(OPTION_INT("autothread_size_kb"), 2 * 1024)))
+// When autothreading on width, beware of rounding based on element size
+#define SHOULD_AUTOTHREAD_UNARY1(ACT) AND(SHOULD_AUTOTHREAD_UNARY, EQ(ELEMENTSIZE_OF("*"), ELEMENTSIZE_OF(ACT)))
 
 /*
  * "Choose the maximum channel split size that doesn't make the slice of weights too big"
@@ -339,8 +341,6 @@
 
 #define IS_BINARY_FP16(A, B, Out) AND(IS_FLOAT16(A), IS_FLOAT16(B), IS_FLOAT16(Out))
 
-#define IS_BINARY_BF16(A, B, Out) AND(IS_BFLOAT16(A), IS_BFLOAT16(B), IS_BFLOAT16(Out))
-
 #define IS_BINARY_FP32(A, B, Out) AND(IS_FLOAT32(A), IS_FLOAT32(B), IS_FLOAT32(Out))
 
 #define FP16_CONST_CAST(X, Y) LET(X, Op(FROM_DEFAULT_PACKAGE("Cast_fp32_to_fp16_plain"), Y))
@@ -442,7 +442,8 @@
 
 #define HEIGHTX_SHAPE(OPSTR)                                                                                           \
     SELECT(EQ(REM(DIM_WIDTH(OPSTR), TILE_HEIGHT), 0),                                                                  \
-           SELECT(AND(EQ(DIM_HEIGHT(OPSTR), 1), LE(DIM_WIDTH(OPSTR), 16), IS_QUINT16(OPSTR)),                          \
+           SELECT(AND(EQ(DIM_HEIGHT(OPSTR), 1), LE(DIM_WIDTH(OPSTR), 16), IS_QUINT16(OPSTR),                           \
+                      NOT(OPTION_BOOL("dynamic_graph_input"))),                                                        \
                   gen_Shape(DIM_BATCHES(OPSTR), DIV(DIM_WIDTH(OPSTR), 4), 4, DIM_DEPTH(OPSTR)),                        \
                   gen_Shape(DIM_BATCHES(OPSTR), MUL(DIM_HEIGHT(OPSTR), TILE_HEIGHT),                                   \
                             DIV(DIM_WIDTH(OPSTR), TILE_HEIGHT), DIM_DEPTH(OPSTR))),                                    \
@@ -453,7 +454,7 @@
 
 #define HEIGHT84_SHAPE(OPSTR)                                                                                          \
     SELECT(EQ(REM(DIM_WIDTH(OPSTR), TILE_HEIGHT), 0),                                                                  \
-           SELECT(AND(LE(DIM_WIDTH(OPSTR), 16), IS_QUINT16(OPSTR)),                                                    \
+           SELECT(AND(LE(DIM_WIDTH(OPSTR), 16), IS_QUINT16(OPSTR), NOT(OPTION_BOOL("dynamic_graph_input"))),           \
                   gen_Shape(DIM_BATCHES(OPSTR), DIV(DIM_WIDTH(OPSTR), 4), 4, DIM_DEPTH(OPSTR)),                        \
                   gen_Shape(DIM_BATCHES(OPSTR), TILE_HEIGHT, DIV(DIM_WIDTH(OPSTR), TILE_HEIGHT), DIM_DEPTH(OPSTR))),   \
            gen_Shape(DIM_BATCHES(OPSTR), 4, DIV(DIM_WIDTH(OPSTR), 4), DIM_DEPTH(OPSTR)))
