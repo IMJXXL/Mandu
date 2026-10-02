@@ -36,8 +36,10 @@ object QnnEngine {
         context.applicationInfo.nativeLibraryDir
 
     /**
-     * CDSP 功能节点探测：/dev 下任何带 "cdsp" 且不是调试节点 rdbg_cdsp 的节点；
-     * SELinux 不给 readdir 时退化为 stat 已知功能节点名。只 stat/readdir，从不 open。
+     * CDSP 功能节点预检（提示性质，不作路由硬门）：/dev 下任何带 "cdsp" 且不是调试节点
+     * rdbg_cdsp 的节点。ROM 节点命名差异会造成假阴性（Redmi K50/MIUI12 实锤：QNN 正常
+     * 报出 v69 而这些名字全不匹配），所以 QNN 探到代号即放行；真关了 CDSP 由熔断链兜底。
+     * 只 stat/readdir，从不 open。
      */
     @Volatile
     private var cdspAvailable: Boolean? = null
@@ -83,9 +85,9 @@ object QnnEngine {
             return cachedArch
         }
 
-    /** 本机是否具备 NPU 条件（有 CDSP + QNN 报出受支持的代号）。探测结果缓存，进程内不变。 */
+    /** 本机是否具备 NPU 条件：以 QNN 探测的 HTP 代为准（能报出受支持代号 = CDSP 在工作） */
     val isDeviceCapable: Boolean
-        get() = isCdspAvailable && architecture in SUPPORTED_ARCHS
+        get() = architecture in SUPPORTED_ARCHS
 
     // ── JNI（qnn_jni.cpp；桩实现见同文件的 MIHON_ENABLE_QNN=0 分支）──
 

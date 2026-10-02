@@ -72,18 +72,19 @@ class SuperResolutionManager(
             // 插件清单不能依赖面板扫描（开进程直进书不碰面板时 registry 是空的，
             // 曾致"面板选了 NPU、实际永远静默回 GPU"），路由前必须自扫一次。
             NpuModelRegistry.ensureScanned(context)
-            val capable = QnnEngine.isDeviceCapable
-            val arch = if (capable) QnnEngine.architecture else 0
+            val cdsp = QnnEngine.isCdspAvailable
+            val arch = QnnEngine.architecture
             val entry = NpuModelRegistry.resolve(model, currentDenoiseLevel, arch)
-            if (!npuFused && capable && entry != null) {
+            if (!npuFused && arch > 0 && entry != null) {
                 return SrEngine.NPU
             }
             if (!npuFused) {
-                // 中性打点（对应表 enq）：cap=设备可探；arch=HTP 代号（0=探不到/不受支持）；
-                // reg=当前档位+降噪+代号有无插件 context。reg=false → 装对应代模型包。
+                // 中性打点（对应表 enq）：cdsp=/dev 节点预检（ROM 命名差异可假阴性，仅提示
+                // 不作门）；arch=QNN 报的 HTP 代号（0=探不到/不受支持）；reg=当前档位+降噪+
+                // 代号有无插件 context。reg=false → 装对应代模型包；arch=0 → 探测失败。
                 runCatching {
                     com.mangareader.DiagTracer.markStatic(
-                        "enhance: npu skip cap=$capable arch=$arch reg=${entry != null}"
+                        "enhance: npu skip cdsp=$cdsp arch=$arch reg=${entry != null}"
                     )
                 }
             }
