@@ -213,10 +213,13 @@ dependencies {
     // kotlinx-serialization-cbor (GalleryPreview CborArray)
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-cbor:1.11.0")
 
-    // QNN/HTP（高通 NPU）运行时库：Maven Central 公网，免注册。版本必须与 cpp/include/QNN
-    // vendor 头文件同源（QAIRT 2.49）。context 加载路径只用到 libQnnHtp/libQnnSystem +
-    // 五代 Skel/Stub；libQnnHtpPrepare/libQnnModelDlc 在 packaging.excludes 裁掉。
-    implementation("com.qualcomm.qti:qnn-runtime:2.49.0")
+    // QNN/HTP（高通 NPU）运行时库：Maven Central 公网，免注册。客户端代码按 cpp/include/QNN
+    // 的 QAIRT 2.49 vendor 头编译（API 向后兼容）。**运行时必须 ≥ context 编译版本**：
+    // mihon v1.3.10 的 context 内嵌 2.49.0.260730 构建，Maven 2.49.0 构建号更旧会被
+    // contextCreateFromBinary 拒载（真机 s=7 实锤），升 2.50.0 解决（Komiho 同款做法）。
+    // context 加载路径只用到 libQnnHtp/libQnnSystem + 五代 Skel/Stub；
+    // libQnnHtpPrepare/libQnnModelDlc 在 packaging.excludes 裁掉。
+    implementation("com.qualcomm.qti:qnn-runtime:2.50.0")
 
     // ktor (WebDAV + Komga HTTP client)
     implementation("io.ktor:ktor-client-core:3.5.0")
