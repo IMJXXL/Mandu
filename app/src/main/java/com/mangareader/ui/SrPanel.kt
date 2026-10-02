@@ -369,7 +369,9 @@ private fun SrPanelContent(
         }
         val npuTierOk = npuArch > 0 && NpuModelRegistry.supports(model, denoise, npuArch)
         val npuDeviceOk = npuProbed && npuArch > 0
-        val npuChipOk = npuDeviceOk && npuModelsReady && npuTierOk && npuTestOk && !npuBlocked
+        // 用户要求（2026-10-02）：实测不拦截——「测试 NPU」降级为参考信息，
+        // 未实测/实测失败也允许选 NPU，真不支持时装载失败就地自动回 GPU/CPU
+        val npuChipOk = npuDeviceOk && npuModelsReady && npuTierOk
 
         Text("处理引擎", fontSize = 14.sp, fontWeight = FontWeight.Medium)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -396,9 +398,9 @@ private fun SrPanelContent(
                 SrEngine.GPU -> "交给显卡（Vulkan）处理，比 CPU 快数倍；发热明显时切回 CPU"
                 SrEngine.NPU ->
                     when {
-                        npuBlocked -> "本机实测被系统拦截：厂商不给应用开放加速芯片，自动用 GPU/CPU"
+                        npuBlocked -> "本机实测被系统拦截（厂商封锁）：选 NPU 实际会自动用 GPU/CPU"
                         npuTestOk -> "实测通过（v$npuArch）：交给骁龙 AI 芯片，最快最省电；个别页可能有轻微偏色"
-                        else -> "先点下方「测试 NPU」，实测通过前选了 NPU 也会自动用 GPU/CPU"
+                        else -> "尚未实测：本机不支持时会自动用 GPU/CPU；建议先点下方「测试 NPU」"
                     }
             },
             fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -407,17 +409,16 @@ private fun SrPanelContent(
             Text(
                 when {
                     npuBlocked ->
-                        "实测结果：系统拒绝建立加速会话（厂商封锁，部分小米机型如此）。" +
-                            "日后系统更新后可点「重新测试」再试"
+                        "实测结果：系统拒绝建立加速会话（厂商封锁，部分小米机型如此）——" +
+                            "仍可选 NPU，实际自动回 GPU/CPU；日后系统更新可「重新测试」"
                     npuTesting ->
                         "正在实测：真实加载一次 NPU 模型试水，约 1-3 秒，请稍候…"
-                    npuModelsReady && npuTestOk && npuTierOk ->
+                    npuModelsReady && npuTierOk && npuTestOk ->
                         "实测通过，NPU 模型包已就绪（v$npuArch）：当前档位走 NPU 处理"
-                    npuModelsReady && npuTestOk ->
-                        "实测通过，已装 NPU 模型包，但当前档位/降噪无 NPU 版（支持：CUGAN 2x 保守、动漫V3 2x 极速）——自动用 GPU/CPU 处理"
+                    npuModelsReady && npuTierOk ->
+                        "NPU 模型包已就绪（v$npuArch）：未实测，若机型不支持会自动回 GPU/CPU。建议先点「测试 NPU」"
                     npuModelsReady ->
-                        "检测到 NPU（v$npuArch，${QnnEngine.archDisplayName(npuArch)}），模型包已装。" +
-                            "点「测试 NPU」实测通过后，当前档位才会真正走 NPU"
+                        "已装 NPU 模型包，但当前档位/降噪无 NPU 版（支持：CUGAN 2x 保守、动漫V3 2x 极速）——自动用 GPU/CPU 处理"
                     else ->
                         "检测到 NPU（v$npuArch，${QnnEngine.archDisplayName(npuArch)}）。" +
                             "先安装「漫读-NPU模型-v$npuArch.apk」，装好后点「测试 NPU」"

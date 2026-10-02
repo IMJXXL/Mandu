@@ -75,19 +75,18 @@ class SuperResolutionManager(
             val cdsp = QnnEngine.isCdspAvailable
             val arch = QnnEngine.architecture
             val entry = NpuModelRegistry.resolve(model, currentDenoiseLevel, arch)
-            // npuTestOk＝用户在面板「测试 NPU」实测通过（用户主动制）：
-            // 没实测过/被系统封锁时选了 NPU 也不生效，自动回 GPU。
-            val tested = SrCore.settings.npuTestOk && !SrCore.settings.npuDeviceBlock
-            if (!npuFused && tested && arch > 0 && entry != null) {
+            if (!npuFused && arch > 0 && entry != null) {
                 return SrEngine.NPU
             }
             if (!npuFused) {
-                // 中性打点（对应表 enq）：cdsp=/dev 节点预检（ROM 命名差异可假阴性，仅提示
-                // 不作门）；arch=QNN 报的 HTP 代号（0=探不到/不受支持）；reg=当前档位+降噪+
-                // 代号有无插件 context；t=实测通过。reg=false → 装对应代模型包；t=false → 先测试。
+                // 中性打点（对应表 enq）：cdsp=/dev 节点预检（仅提示）；arch=QNN 报的 HTP
+                // 代号（0=探不到）；reg=当前档位+降噪+代号有无插件 context；t=实测通过
+                // （2026-10-02 起为参考项不拦截——用户要求未实测/失败也允许走 NPU，
+                // 装载失败由 loadPendingModel 就地回 GPU 并熔断）。
                 runCatching {
                     com.mangareader.DiagTracer.markStatic(
-                        "enhance: npu skip cdsp=$cdsp arch=$arch reg=${entry != null} t=$tested"
+                        "enhance: npu skip cdsp=$cdsp arch=$arch reg=${entry != null} " +
+                            "t=${SrCore.settings.npuTestOk}"
                     )
                 }
             }
@@ -265,19 +264,35 @@ class SuperResolutionManager(
             // 幂等保底：模型文件未解包时先解包再加载（首次启动如果 applySettings 先于后台解包也能用）
             try { ensureModelsExtracted() } catch (_: Exception) {}
             val modelPath = getModelPath(model)
-            val engine = resolveEngine(model)
+            var engine = resolveEngine(model)
             val loadStart = System.currentTimeMillis()
             try {
                 when (engine) {
                     SrEngine.NPU -> {
-                        // 先解析插件 context；失败（包被卸载/换包）直接抛出走 NoOp 兜底
+                        // 先解析插件 context；失败（包被卸载/换包）抛出走就地回退
                         val arch = QnnEngine.architecture
-                        val qnn = QnnProcessor.create(context, model, currentDenoiseLevel, arch)
-                            ?: throw IllegalStateException("no NPU context for ${model.key} v$arch")
-                        // ncnn 占位处理器未 initialize 即无资源，release 幂等
-                        try { processor.release() } catch (_: Throwable) {}
-                        qnn.initialize("", 0)
-                        currentProcessor = qnn
+                        try {
+                            val qnn = QnnProcessor.create(context, model, currentDenoiseLevel, arch)
+                                ?: throw IllegalStateException("no NPU context for ${model.key} v$arch")
+                            // ncnn 占位处理器未 initialize 即无资源，release 幂等
+                            try { processor.release() } catch (_: Throwable) {}
+                            qnn.initialize("", 0)
+                            currentProcessor = qnn
+                        } catch (t: Throwable) {
+                            if (t is kotlinx.coroutines.CancellationException) throw t
+                            // NPU 装载失败不落 NoOp：本次就地回 GPU/CPU（用户要求未实测/
+                            // 实测被拒也允许选 NPU），并本会话熔断 NPU 防止每次装载空转；
+                            // 恢复加速/切档解除后下次装载会再试 NPU。
+                            Log.w(TAG, "SR: NPU init failed (${t.message}), fallback GPU/CPU")
+                            npuFused = true
+                            npuFailStreak.set(0)
+                            val gpu = isVulkanAvailable && model.requiresVulkan
+                            engine = if (gpu) SrEngine.GPU else SrEngine.CPU
+                            val gpuid = if (gpu) 0 else -1
+                            try { processor.release() } catch (_: Throwable) {}
+                            processor.initialize(modelPath, gpuid)
+                            currentProcessor = processor
+                        }
                     }
                     else -> {
                         // 规则：engine=GPU 走 Vulkan；CPU/回落路径 gpuid=-1 纯 CPU（默认更安全）
