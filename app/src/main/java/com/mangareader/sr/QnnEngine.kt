@@ -90,17 +90,20 @@ object QnnEngine {
         get() = architecture in SUPPORTED_ARCHS
 
     // ── JNI（qnn_jni.cpp；桩实现见同文件的 MIHON_ENABLE_QNN=0 分支）──
+    // external 函数禁止用 internal：Kotlin 2.x 起按模块名修饰 internal 函数的 JVM 名
+    // （nativeInitQnn$app → JNI 符号 …nativeInitQnn_00024app），与 C 侧导出的裸名对不上，
+    // 运行时 UnsatisfiedLinkError 直接闪退（private/public 不修饰，安全）。
 
     @JvmStatic private external fun nativeEnsureDspPath(libDir: String?)
     @JvmStatic private external fun nativeIsRuntimeAvailable(): Boolean
     @JvmStatic private external fun nativeGetArchitecture(): Int
-    @JvmStatic internal external fun nativeInitQnn(contextPath: String, libDir: String?, padding: Int): Boolean
-    @JvmStatic internal external fun nativeIsQnnInitialized(): Boolean
-    @JvmStatic internal external fun nativeGetQnnScale(): Int
-    @JvmStatic internal external fun nativeProcessQnn(bitmap: android.graphics.Bitmap): android.graphics.Bitmap?
-    @JvmStatic internal external fun nativeAbortQnn()
-    @JvmStatic internal external fun nativeClearAbortQnn()
-    @JvmStatic internal external fun nativeShutdownQnn()
+    @JvmStatic external fun nativeInitQnn(contextPath: String, libDir: String?, padding: Int): Boolean
+    @JvmStatic external fun nativeIsQnnInitialized(): Boolean
+    @JvmStatic external fun nativeGetQnnScale(): Int
+    @JvmStatic external fun nativeProcessQnn(bitmap: android.graphics.Bitmap): android.graphics.Bitmap?
+    @JvmStatic external fun nativeAbortQnn()
+    @JvmStatic external fun nativeClearAbortQnn()
+    @JvmStatic external fun nativeShutdownQnn()
 
     // Kotlin 侧便捷封装（初始化/处理/释放走 QnnProcessor；这里只暴露探测与生命周期）
 

@@ -294,10 +294,13 @@ class SuperResolutionManager(
                             "${System.currentTimeMillis() - loadStart}ms"
                     )
                 }
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
+                // Throwable 而非 Exception：JNI 层的 UnsatisfiedLinkError 等是 Error，
+                // 接不住就是进程闪退（Kotlin internal 修饰 JNI 函数名事故的教训）；
+                // 任何引擎初始化失败都必须落到 NoOp 兜底。
                 Log.e(TAG, "SR: init ${model.key} failed ($engine), fallback NoOp: ${e.message}")
                 runCatching { com.mangareader.DiagTracer.markStatic("enhance: off (init)") }
-                try { processor.release() } catch (_: Exception) {}
+                try { processor.release() } catch (_: Throwable) {}
                 currentProcessor = NoOpProcessor()
                 currentModel = model
                 activeEngine = SrEngine.CPU
@@ -364,7 +367,8 @@ class SuperResolutionManager(
                 input
             } catch (e: CancellationException) {
                 input
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
+                // Throwable：native 层抛的是 Error 家族（UnsatisfiedLinkError 等），接不住=闪退
                 Log.e(TAG, "SR processing failed: ${e.message}")
                 input
             }
