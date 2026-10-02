@@ -26,7 +26,8 @@ OUT_DIR = Path("X:/MangaReader-AI/model-apk")
 
 # 与 NpuModelRegistry.stemFor 严格一致的档位清单（首发两个 NPU 档 + 降噪变体）。
 # padding：CUGAN=官方 tile reflect-pad 18；动漫V3=Real-ESRGAN 官方瓦片边 10（Komiho 同款实测）。
-# context 来源：mihon_img_upscale v1.3.2 release APK（同源权重 + QAIRT 离线编译，仅 FP16）；
+# context 来源：mihon_img_upscale v1.3.10 release APK（同源权重 + QAIRT 按 HTP 代离线编译，仅 FP16）。
+# 注意 v1.3.2 的 qnn-contexts 是同文件复制五个名字（跨代 MD5 相同，非真编译产物），已废弃；
 # 后续自编译走 tools/npupack/build_modellib.py + Linux 端 context 生成（Windows 主机不支持）。
 MODEL_STEMS = {
     "realcugan-se-2x-conservative": ("realcugan_2x_conservative", 2, 18, "CUGAN 2x 保守（NPU）"),

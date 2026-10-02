@@ -128,11 +128,11 @@ object QnnEngine {
 
     /** HTP 代 → 骁龙平台名（UI 提示用；同代号兼容同代其它骁龙，仅展示参考） */
     fun archDisplayName(arch: Int): String = when (arch) {
-        69 -> "骁龙 8+ Gen1 / Gen2 级"
-        73 -> "骁龙 8 Gen 2 级"
+        69 -> "骁龙 8 Gen 1 / 8+ Gen 1 级"
+        73 -> "骁龙 8 Gen 2 / 8s Gen 3 级"
         75 -> "骁龙 8 Gen 3 级"
         79 -> "骁龙 8 Elite 级"
-        81 -> "骁龙 8 Elite Gen 5 级"
+        81 -> "骁龙 8 Gen 5 / 8 Elite Gen 5 级"
         else -> "未知"
     }
 }

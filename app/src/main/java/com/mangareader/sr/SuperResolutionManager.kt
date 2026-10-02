@@ -394,9 +394,11 @@ class SuperResolutionManager(
         val bw = currentBwConfig
         val bwPart = if (bw != null) "_bw${bw.grayLevels}${if (bw.densityCorrection) "d" else ""}" else ""
         val denoise = currentDenoiseLevel.key
-        // 引擎指纹：NPU 与 GPU/CPU 产物不混用（同一档位两边产物存在差异）
+        // 引擎指纹：NPU 与 GPU/CPU 产物不混用（同一档位两边产物存在差异）；
+        // _ng = 偏色守护版（上游 v1.3.10 周期网点守护），守护前的 NPU 产物键不同自然失效
+        val enginePart = if (activeEngine == SrEngine.NPU) "enpu_ng" else activeEngine.key
         return "page_${chapterId}_${pageIndex}_${modelKey}_${activeScale}_${denoise}$bwPart" +
-            "_e${activeEngine.key}"
+            "_e$enginePart"
     }
 
     fun ensureModelsExtracted() {
