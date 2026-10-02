@@ -20,6 +20,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
@@ -220,6 +221,10 @@ fun CurlDoublePageContent(
             }
         }
 
+        // 画面矩形计算用的可用尺寸（constraints 不能在嵌套可组合 lambda 里隐式取，先存局部）
+        val maxW = constraints.maxWidth.toFloat()
+        val maxH = constraints.maxHeight.toFloat()
+
         val areaModifier = Modifier.fillMaxSize().padding(
             start = insetL, top = insetT, end = insetR, bottom = insetB,
         )
@@ -239,25 +244,19 @@ fun CurlDoublePageContent(
                 reloadTrigger.intValue
 
                 val targetSpread = if (forward) current + 1 else current - 1
+                val tLeft = if (targetSpread in 0 until totalSpreads) cache.get(SpreadMapping.leftPage(targetSpread, totalPages, shift)) else null
+                val tRight = if (targetSpread in 0 until totalSpreads) {
+                    val r = SpreadMapping.rightPage(targetSpread, totalPages, shift)
+                    if (r >= 0) cache.get(r) else null
+                } else null
                 Box {
-                    if (targetSpread < 0 || targetSpread >= totalSpreads) {
-                        SpreadImage(null, null, doublePageReverse, pageBgColor, isRtl, landscapeZoom, fitScreen, bgTexPaint = bgPaint)
-                    } else {
-                        val tLeftIdx = SpreadMapping.leftPage(targetSpread, totalPages, shift)
-                        val tRightIdx = SpreadMapping.rightPage(targetSpread, totalPages, shift)
-                        SpreadImage(
-                            cache.get(tLeftIdx),
-                            if (tRightIdx >= 0) cache.get(tRightIdx) else null,
-                            doublePageReverse,
-                            pageBgColor,
-                            isRtl,
-                            landscapeZoom,
-                            fitScreen,
-                            bgTexPaint = bgPaint,
-                        )
-                    }
+                    SpreadImage(tLeft, tRight, doublePageReverse, pageBgColor, isRtl, landscapeZoom, fitScreen, bgTexPaint = bgPaint)
                     // 沟阴影画进页面内容层：随纸翻动，不会悬在翻起的纸上方
-                    SpineGutterShadow(spineShadowAlpha)
+                    SpineGutterShadow(
+                        spineShadowAlpha,
+                        if (curlContentAreaOnly) null
+                        else spineBounds(tLeft, tRight, fitScreen, landscapeZoom, maxW, maxH),
+                    )
                 }
             },
         ) { spreadIdx ->
@@ -266,10 +265,12 @@ fun CurlDoublePageContent(
 
             val leftIdx = SpreadMapping.leftPage(spreadIdx, totalPages, shift)
             val rightIdx = SpreadMapping.rightPage(spreadIdx, totalPages, shift)
+            val leftBmp = cache.get(leftIdx)
+            val rightBmp = if (rightIdx >= 0) cache.get(rightIdx) else null
             Box {
                 SpreadImage(
-                    cache.get(leftIdx),
-                    if (rightIdx >= 0) cache.get(rightIdx) else null,
+                    leftBmp,
+                    rightBmp,
                     doublePageReverse,
                     pageBgColor,
                     isRtl,
@@ -277,31 +278,69 @@ fun CurlDoublePageContent(
                     fitScreen,
                     bgTexPaint = bgPaint,
                 )
-                SpineGutterShadow(spineShadowAlpha)
+                SpineGutterShadow(
+                    spineShadowAlpha,
+                    if (curlContentAreaOnly) null
+                    else spineBounds(leftBmp, rightBmp, fitScreen, landscapeZoom, maxW, maxH),
+                )
             }
         }
     }
 }
 
+/** 画面显示矩形（与 SpreadImage/curlContentAreaOnly 同款缩放语义：fitScreen=contain、
+ *  landscapeZoom 且宽图=贴满高、其余贴满宽，超界按可视范围收）：书脊阴影夹在画面内用。
+ *  左页未就绪（翻页背面目标页尚未解码等）返回 null=回退整宽（同旧行为）。 */
+private fun spineBounds(
+    left: Bitmap?,
+    right: Bitmap?,
+    fitScreen: Boolean,
+    landscapeZoom: Boolean,
+    boxW: Float,
+    boxH: Float,
+): Rect? {
+    if (left == null || left.isRecycled || boxW <= 0f || boxH <= 0f) return null
+    val iw = (left.width + (right?.width ?: 0)).toFloat()
+    val ih = maxOf(left.height, right?.height ?: left.height).toFloat()
+    if (iw <= 0f || ih <= 0f) return null
+    val scale = when {
+        fitScreen -> minOf(boxW / iw, boxH / ih)
+        landscapeZoom && iw > ih -> boxH / ih
+        else -> boxW / iw
+    }
+    val dw = (iw * scale).coerceAtMost(boxW)
+    val dh = (ih * scale).coerceAtMost(boxH)
+    return Rect((boxW - dw) / 2f, (boxH - dh) / 2f, (boxW + dw) / 2f, (boxH + dh) / 2f)
+}
+
 /** 书脊沟阴影：中缝暗渐变模拟装订沟（浓度可调，0=关闭）。画在页面内容层（静态一层渐变
- *  零性能成本），翻起的纸会盖住阴影而不是被阴影盖住。 */
+ *  零性能成本），翻起的纸会盖住阴影而不是被阴影盖住。bounds=画面显示矩形（渐变裁进画面，
+ *  不冲进留边）；null=整宽回退（位图未就绪，或「仅画面区域」已把翻页区缩进画面）。 */
 @Composable
-private fun SpineGutterShadow(alpha: Float) {
+private fun SpineGutterShadow(alpha: Float, bounds: Rect? = null) {
     if (alpha <= 0f) return
     Canvas(Modifier.fillMaxSize()) {
         val w = size.width
         if (w > 0f) {
-            val cx = w / 2f
-            val half = w * 0.055f
-            drawRect(
-                brush = Brush.horizontalGradient(
-                    0f to Color.Transparent,
-                    ((cx - half) / w).coerceIn(0f, 1f) to Color.Transparent,
-                    0.5f to Color.Black.copy(alpha = alpha),
-                    ((cx + half) / w).coerceIn(0f, 1f) to Color.Transparent,
-                    1f to Color.Transparent,
+            val b = bounds
+            val half = (b?.width ?: w) * 0.055f
+            val cx = b?.center?.x ?: (w / 2f)
+            val gradient = {
+                drawRect(
+                    brush = Brush.horizontalGradient(
+                        0f to Color.Transparent,
+                        ((cx - half) / w).coerceIn(0f, 1f) to Color.Transparent,
+                        0.5f to Color.Black.copy(alpha = alpha),
+                        ((cx + half) / w).coerceIn(0f, 1f) to Color.Transparent,
+                        1f to Color.Transparent,
+                    )
                 )
-            )
+            }
+            if (b != null && b.width > 0f && b.height > 0f) {
+                clipRect(b.left, b.top, b.right, b.bottom) { gradient() }
+            } else {
+                gradient()
+            }
         }
     }
 }

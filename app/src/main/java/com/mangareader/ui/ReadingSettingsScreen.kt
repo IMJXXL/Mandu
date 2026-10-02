@@ -463,6 +463,8 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
                     com.mangareader.data.ReaderConfig().save(ctx)
                     prefs.edit().apply {
                         remove("default_read_mode")
+                        remove("webtoon_tablet_cap_pct")
+                        remove("page_curl_sound")
                         remove("reader_volume_keys")
                         remove("reader_volume_keys_inverted")
                         remove("long_press_save")
