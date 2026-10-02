@@ -532,21 +532,26 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         val pageListSnap = pageList
         if (pageListSnap.isEmpty()) return
         val curSnap = cur
+        // ★ 进度持久化存物理页（originalPageIdx）：宽图二分/竖切展开后的流位随拆分开关/屏幕
+        //   尺寸变化，物理页恒定。未展开表 originalPageIdx 无意义（默认 0），按展开特征判定。
+        val isExpandedTable = pageListSnap.any { it.segmentIndex > 0 || it.splitSide != 0 }
+        val savedPage = if (isExpandedTable)
+            (pageListSnap.getOrNull(curSnap)?.originalPageIdx ?: curSnap) else curSnap
         val chPathSnap = navStack.lastOrNull() ?: b.filePath
         val now = System.currentTimeMillis()
         val effectiveSize = if (expandedPageCount > 0) expandedPageCount else pageListSnap.size
         val done = effectiveSize > 1 && curSnap >= effectiveSize - 1
-        android.util.Log.d("ReaderProgress", "save bookId=${b.id} chPath=$chPathSnap cur=$curSnap size=$effectiveSize done=$done")
+        android.util.Log.d("ReaderProgress", "save bookId=${b.id} chPath=$chPathSnap cur=$curSnap savedPage=$savedPage size=$effectiveSize done=$done")
 
         saveJob?.cancel()
         saveJob = app.appScope.launch {
             try {
                 val history = ReadingHistory(
-                    bookId = b.id, pagesRead = curSnap + 1,
+                    bookId = b.id, pagesRead = savedPage + 1,
                     scrollX = cx, scrollY = cy, zoomLevel = zs
                 )
                 withContext(Dispatchers.IO) {
-                    dao.saveReaderProgressBatch(b.id, curSnap + 1, now, chPathSnap, curSnap, done, history, pageListSnap.size)
+                    dao.saveReaderProgressBatch(b.id, savedPage + 1, now, chPathSnap, savedPage, done, history, pageListSnap.size)
                 }
                 syncBookStatusFromProgress(b, now, pageListSnap.size)
             } catch (_: Exception) {
@@ -981,18 +986,33 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                 }
             }
         }
-        val expandedPages = if (config.tallSplitEnabled &&
-            (mode == Mode.VERT || mode == Mode.WEBTOON_GAP)) {
+        // ★ 宽图二分（2026-10-02）：拆分双页开启时跨页拼合图（宽>高×1.2）拆成左右半页（splitSide）。
+        //   条漫族=竖切+宽图同轮；翻页族=仅宽图（竖切段页翻页视图不渲染，isWebtoonMode 把守）。
+        //   双页布局不展开（双页并排自带跨页完整显示）；翻页族展开后每个半页=独立翻页位，
+        //   滑动/点击/进度条全走 ViewPager2 原生路径（修拆分后滑动翻页失效）。
+        val isWebtoonFamily = mode == Mode.VERT || mode == Mode.WEBTOON_GAP
+        val wideSplitOn = config.doublePageSplit &&
+            (isWebtoonFamily || config.pageLayout == com.mangareader.data.ReaderConfig.PageLayout.SINGLE)
+        val expandedPages = if ((config.tallSplitEnabled && isWebtoonFamily) || wideSplitOn) {
             val sm = maxOf(ctx.resources.displayMetrics.widthPixels, ctx.resources.displayMetrics.heightPixels)
             val sw = ctx.resources.displayMetrics.widthPixels
             // ★ 长图分割：入口放宽到全部本地书（PDF + 图片族），白名单在 expander 内把守；
             //   allowProbe=true 探测尺寸并落尺寸表，全程 IO（B3）
-            try { withContext(Dispatchers.IO) { com.mangareader.engine.pdf.VirtualPageExpander.expand(pages, true, true, sm, sw, engine, path, allowProbe = true) } }
+            //   半页阅读序：日式右开本（RTL⊕反转双页）先右后左
+            val leftFirst = !(isRtl != config.doublePageReverse)
+            try { withContext(Dispatchers.IO) { com.mangareader.engine.pdf.VirtualPageExpander.expand(
+                pages, config.tallSplitEnabled, isWebtoonFamily, sm, sw, engine, path,
+                allowProbe = true, wideSplitEnabled = wideSplitOn, splitLeftFirst = leftFirst) } }
             catch (_: Exception) { pages }
         } else pages
         pageList = expandedPages
-        // ★ 展开生效即备份原始表：切回 pager 族时还原（段页只在条漫视图可渲染）
+        // ★ 展开生效即备份原始表：切回 pager 族时还原（竖切段页只在条漫视图可渲染）
         preExpandPages = if (expandedPages.size > pages.size) path to pages else null
+        // ★ 恢复位映射：lastPage 语义=物理页（save 存 originalPageIdx），展开后映射到半页流位
+        if (expandedPages.size > pages.size && cur in pages.indices) {
+            val mapped = expandedPages.indexOfFirst { it.originalPageIdx == cur }
+            if (mapped >= 0) cur = mapped
+        }
         // ★ 分割诊断取证：入口展开统计进诊断日志（unprobed>0 = 有页探测失败被整页透传）
         try { com.mangareader.DiagTracer.mark(ctx, "seg expand ${com.mangareader.engine.pdf.VirtualPageExpander.lastStats}") } catch (_: Exception) {}
         // ★ B1：分割实际生效（存在展开段）时提升共享位图缓存额度（仅大内存设备）
@@ -2838,7 +2858,9 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                         val sw = ctx.resources.displayMetrics.widthPixels
                         val expanded = try {
                             com.mangareader.engine.pdf.VirtualPageExpander.expand(
-                                pageList, true, true, sm, sw, engine, curTree, allowProbe = false
+                                pageList, true, true, sm, sw, engine, curTree, allowProbe = false,
+                                wideSplitEnabled = config.doublePageSplit,
+                                splitLeftFirst = !(isRtl != config.doublePageReverse)
                             )
                         } catch (_: Exception) { null }
                         if (expanded != null && expanded.size > pageList.size) {
@@ -2849,11 +2871,26 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                         }
                     }
                 } else if (!toWebtoon && preExpandPages?.first == curTree) {
-                    // 切回 pager 族：还原原始页表（段页只在条漫视图可渲染），页号按 originalPageIdx 映回
+                    // 切回 pager 族：还原原始页表（竖切段页只在条漫视图可渲染），页号按 originalPageIdx 映回；
+                    //   宽图二分在翻页模式同样成立：还原后重跑宽图展开（只读尺寸缓存不探测），半页序保持
                     val raw = preExpandPages!!.second
                     val back = pageList.getOrNull(cur)?.originalPageIdx ?: -1
-                    pageList = raw
-                    cur = if (back in raw.indices) back else cur.coerceIn(0, raw.lastIndex.coerceAtLeast(0))
+                    val reSplit = if (config.doublePageSplit &&
+                        config.pageLayout == com.mangareader.data.ReaderConfig.PageLayout.SINGLE) {
+                        val sm = maxOf(ctx.resources.displayMetrics.widthPixels, ctx.resources.displayMetrics.heightPixels)
+                        val sw = ctx.resources.displayMetrics.widthPixels
+                        try {
+                            com.mangareader.engine.pdf.VirtualPageExpander.expand(
+                                raw, false, false, sm, sw, engine, curTree, allowProbe = false,
+                                wideSplitEnabled = true, splitLeftFirst = !(isRtl != config.doublePageReverse)
+                            )
+                        } catch (_: Exception) { raw }
+                    } else raw
+                    pageList = reSplit
+                    cur = if (back in raw.indices) {
+                        reSplit.indexOfFirst { it.originalPageIdx == back }
+                            .takeIf { it >= 0 } ?: back.coerceIn(0, reSplit.lastIndex)
+                    } else cur.coerceIn(0, reSplit.lastIndex.coerceAtLeast(0))
                     preExpandPages = null
                 }
                 mode = newMode

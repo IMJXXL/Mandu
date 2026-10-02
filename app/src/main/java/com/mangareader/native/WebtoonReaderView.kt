@@ -768,8 +768,9 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
         val sm = maxOf(width, height).coerceAtLeast(1)
         loadScope.launch {
             try {
-            // ★ 段页不走 tile：tile 按「整图文件+区域」渲染，不认识 segmentIndex，会显示错误区域
-            if (tileModeEnabled && !trimWhiteBorder && meta.segmentIndex <= 0) {
+            // ★ 段页不走 tile：tile 按「整图文件+区域」渲染，不认识 segmentIndex，会显示错误区域；
+            //   宽图二分半页（splitSide）同理——tile 整图渲染会漏掉裁半（2026-10-02）
+            if (tileModeEnabled && !trimWhiteBorder && meta.segmentIndex <= 0 && meta.splitSide == 0) {
                 val tileFile = obtainTileFile(idx)
                 if (tileFile != null) {
                     ArchiveEngine.d("WebtoonRV", "tile OK idx=$idx file=${tileFile.length()}B")

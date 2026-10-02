@@ -1312,8 +1312,8 @@ class ArchiveEngine(private val ctx: Context) {
                             val rawData = com.mangareader.native.NativeEngine.readZipEntry(cacheKey, rawEntryIdx)
                             android.util.Log.d(TAG, "loadPage z: readZipEntry returned ${rawData?.size ?: "null"} bytes")
                             if (rawData != null) {
-                                val bmp = decodeBitmap(rawData)
-                                if (bmp != null) { cachePut(key, bmp); return bmp }
+                                val half = applySplitSide(decodeBitmap(rawData), meta)
+                                if (half != null) { cachePut(key, half); return half }
                             }
                         } else {
                             android.util.Log.e(TAG, "loadPage z: imgLocalIdx $imgLocalIdx out of range (0..${current.imageIndices.indices.last})")
@@ -1332,8 +1332,8 @@ class ArchiveEngine(private val ctx: Context) {
                     cacheGet(key)?.let { return it }
                     val rawData = loadFromZip(uri, meta.localIdx, treeStr)
                     if (rawData != null) {
-                        val bmp = decodeBitmap(rawData)
-                        if (bmp != null) { cachePut(key, bmp); return bmp }
+                        val half = applySplitSide(decodeBitmap(rawData), meta)
+                        if (half != null) { cachePut(key, half); return half }
                     }
                 }
             } catch (_: Exception) {}
@@ -1356,8 +1356,8 @@ class ArchiveEngine(private val ctx: Context) {
                         else -> null
                     }
                     if (rawData != null) {
-                        val bmp = decodeBitmap(rawData)
-                        if (bmp != null) { cachePut(key, bmp); return bmp }
+                        val half = applySplitSide(decodeBitmap(rawData), meta)
+                        if (half != null) { cachePut(key, half); return half }
                     }
                 }
             } catch (_: Exception) {}
@@ -1406,14 +1406,26 @@ class ArchiveEngine(private val ctx: Context) {
                 }
                 else -> null
             }
-            val result = if (bmp != null && meta.splitSide != 0 && bmp.width > bmp.height * 1.2f) {
-                val halfWidth = bmp.width / 2
-                val startX = if (meta.splitSide == 1) 0 else halfWidth
-                Bitmap.createBitmap(bmp, startX, 0, halfWidth, bmp.height)
-            } else bmp
+            val result = applySplitSide(bmp, meta)
             result?.let { cachePut(key, it) }
             result
         } catch (e: Exception) { Log.e(TAG, "loadPage: ${e.message}", e); null }
+    }
+
+    /** ★ 宽图二分（splitSide）：跨页拼合图按左右半裁切（splitSide=1 左半 / 2 右半）。
+     *  1.2 宽高比守卫与展开器判定同源——展开的页必然裁，未展开页零影响。
+     *  裁半在 cachePut 之前：半图入缓存，两个半页各自缓存条目互不覆盖。 */
+    private fun applySplitSide(bmp: Bitmap?, meta: PageMeta): Bitmap? {
+        if (bmp == null || bmp.isRecycled) return bmp
+        if (meta.splitSide == 0 || bmp.width <= bmp.height * 1.2f) return bmp
+        return try {
+            val halfWidth = bmp.width / 2
+            val startX = if (meta.splitSide == 1) 0 else halfWidth
+            Bitmap.createBitmap(bmp, startX, 0, halfWidth, bmp.height)
+        } catch (e: Exception) {
+            Log.e(TAG, "applySplitSide: ${e.message}")
+            bmp
+        }
     }
 
     private fun calculateSampleSize(width: Int, height: Int, maxDim: Int): Int {

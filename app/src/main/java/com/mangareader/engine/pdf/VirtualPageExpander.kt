@@ -34,8 +34,10 @@ object VirtualPageExpander {
         engine: ArchiveEngine,
         treePath: String,
         allowProbe: Boolean = false,
+        wideSplitEnabled: Boolean = false,
+        splitLeftFirst: Boolean = true,
     ): List<ArchiveEngine.PageMeta> {
-        if (!tallSplitEnabled || !isWebtoonMode) return pages
+        if ((!tallSplitEnabled || !isWebtoonMode) && !wideSplitEnabled) return pages
         var storeStamp: String? = null
         var storeSizes: Map<String, IntArray>? = null
         val pending = HashMap<String, IntArray>()
@@ -80,10 +82,15 @@ object VirtualPageExpander {
             }
         }
         for ((origIdx, meta) in pages.withIndex()) {
-            if (meta.segmentIndex > 0 || meta.source !in SPLIT_SOURCES) {
+            // ★ splitSide 页（宽图二分半页）透传且永不二次处理——半页免竖切（横屏条漫要求）、
+            //   免重复二分，originalPageIdx 已是物理页不可再盖
+            if (meta.segmentIndex > 0 || meta.splitSide != 0 || meta.source !in SPLIT_SOURCES) {
                 // 透传页统一盖 originalPageIdx（段页保持原值）——Reader 侧切模式映射页号用；
                 // 对 WebtoonReaderView 的同组段页判隙（segmentIndex>0 双条件）无影响
-                result.add(if (meta.segmentIndex > 0) meta else meta.copy(originalPageIdx = origIdx))
+                result.add(when {
+                    meta.segmentIndex > 0 || meta.splitSide != 0 -> meta
+                    else -> meta.copy(originalPageIdx = origIdx)
+                })
                 continue
             }
             var size: IntArray? = null
@@ -118,7 +125,17 @@ object VirtualPageExpander {
                 continue
             }
             val splitH = PdfTallSplitCalculator.splitHeightPdf(screenMax, screenWidth, pw)
-            if (!PdfTallSplitCalculator.isTallPage(pw, ph, splitH)) {
+            // ★ 竖切仅条漫族（isWebtoonMode）参与：翻页视图不渲染段页，高图在翻页族走透传/宽图分支
+            val tall = isWebtoonMode && PdfTallSplitCalculator.isTallPage(pw, ph, splitH)
+            if (!tall) {
+                // ★ 宽图二分（2026-10-02）：跨页拼合图（宽>高×1.2，与 ArchiveEngine.applySplitSide
+                //   裁半守卫同源——展开的页加载时必被裁半）拆成左右两个半页位（splitSide 1/2），
+                //   条漫/翻页统一按独立页消费。竖切优先：高图不进此分支，两分支天然互斥。
+                if (wideSplitEnabled && pw > ph * 1.2f) {
+                    result.add(meta.copy(splitSide = if (splitLeftFirst) 1 else 2, originalPageIdx = origIdx))
+                    result.add(meta.copy(splitSide = if (splitLeftFirst) 2 else 1, originalPageIdx = origIdx))
+                    continue
+                }
                 if (!fromStore) pending["${meta.localIdx}|${meta.source}"] = intArrayOf(pw.toInt(), ph.toInt())
                 result.add(meta.copy(originalPageIdx = origIdx))
                 continue

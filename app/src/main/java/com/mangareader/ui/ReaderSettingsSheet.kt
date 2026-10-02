@@ -328,8 +328,24 @@ private fun ReadingModeTab(config: ReaderConfig, mode: Mode, onConfigChange: (Re
             }
         }
         GroupTitle("画面")
-        CheckboxItem("漫画完整显示（开启后单页模式下，画面不会越界屏幕）", config.fitScreen) { onConfigChange(config.copy(fitScreen = it)) }
-        CheckboxItem("拆分双页", config.doublePageSplit) { onConfigChange(config.copy(doublePageSplit = it)) }
+        // ★ 画面缩放二选一（2026-10-02，替代"漫画完整显示"反义开关）：把效果说直白——
+        //   fitScreen=true 完整显示（contain），false 铺满屏幕（贴宽，超出上下划着看）
+        SettingsChipRow("画面缩放") {
+            listOf("完整显示" to true, "铺满屏幕" to false).forEach { (label, value) ->
+                FilterChip(
+                    selected = value == config.fitScreen,
+                    onClick = { onConfigChange(config.copy(fitScreen = value)) },
+                    label = { Text(label, fontSize = 13.sp) },
+                )
+            }
+        }
+        Text(
+            if (config.fitScreen) "整页缩在屏幕里，四边不裁切，可能有黑边"
+            else "放大到没有黑边，上下没看全的地方划着看",
+            fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 4.dp),
+        )
+        CheckboxItem("拆分双页（跨页图拆成左右两页，翻页/条漫均生效）", config.doublePageSplit) { onConfigChange(config.copy(doublePageSplit = it)) }
         if (config.doublePageSplit) {
             CheckboxItem("反转双页", config.doublePageReverse) { onConfigChange(config.copy(doublePageReverse = it)) }
         }

@@ -452,6 +452,19 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     /** ★ §34.3：VERT_PAGER（单页从上到下）专用导航。fy<0.4→PREV、fy>0.6→NEXT、中间菜单。
      *  与横向 DefaultNavigation 不同——竖向翻页时 fx 无意义，只用 fy。 */
     private var verticalPager: Boolean = false
+        set(v) {
+            field = v
+            // ★ 同步已挂载 SSIV 的手势分流主轴（横向 pager=横滑翻页/纵拖看图；竖向 pager 反向）
+            try {
+                val rv = viewPager.getChildAt(0) as? androidx.recyclerview.widget.RecyclerView
+                if (rv != null) {
+                    for (i in 0 until rv.childCount) {
+                        (rv.getChildAt(i) as? ViewGroup)?.findViewById<PagerSSIV>(com.mangareader.R.id.ssiv_pager)
+                            ?.axisPassthroughHorizontal = !v
+                    }
+                }
+            } catch (_: Exception) {}
+        }
     private var centerGapType: Int = 0
     private var doublePageReverseEnabled: Boolean = false
     private var doublePageSplitEnabled: Boolean = false
@@ -993,7 +1006,10 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             val ssiv = holder.ssiv ?: return false
             // ★ 裁切页放行：split 视口缩放恒 > minScale（见 isSplitPage 注释），不是用户放大
             if (holder.isSplitPage) return false
-            if (ssiv.visibility != View.VISIBLE || ssiv.scale <= ssiv.minScale + 0.01f) return false
+            // ★ 视口基准判定（2026-10-02）：铺满屏幕贴宽/拆分视口的初始比例不是"用户放大"，
+            //   铺满模式下点击翻页不得被 pan 导航劫持成图内平移
+            val base = (ssiv as? PagerSSIV)?.viewportBaseScale?.takeIf { it > 0f } ?: ssiv.minScale
+            if (ssiv.visibility != View.VISIBLE || ssiv.scale <= base + 0.01f) return false
             val remaining = android.graphics.RectF()
             ssiv.getPanRemaining(remaining)
             val canPan = if (forward) remaining.right > 1f else remaining.left > 1f
@@ -1069,7 +1085,9 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             if (remotePageSupply == null) ensureNativeArchive()
 
             val supply = remotePageSupply
-            if (tileModeEnabled && !trimWhiteBorder && !doublePageMode && pageAnimFlags.none { it.pageIdx == idx && it.kind != AnimKind.NONE }) {
+            if (tileModeEnabled && !trimWhiteBorder && !doublePageMode &&
+                pageList[idx].splitSide == 0 && pageList[idx].segmentIndex <= 0 &&
+                pageAnimFlags.none { it.pageIdx == idx && it.kind != AnimKind.NONE }) {
                 val tileFile = obtainTileFile(idx, supply)
                 if (tileFile != null) {
                     com.mangareader.viewer.ArchiveEngine.d("PagerView", "tileHit idx=$idx tileOn=$tileModeEnabled trimOn=$trimWhiteBorder")
@@ -1634,6 +1652,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 setMinimumTileDpi(160)
                 setMinimumScaleType(1) // SCALE_TYPE_FIT_CENTER
                 setDoubleTapZoomDuration(300)
+                axisPassthroughHorizontal = !verticalPager
                 visibility = View.GONE
             }
         }
@@ -1714,7 +1733,10 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 return
             }
             val scaleByWidth = ssiv.width.toFloat() / (bmp.width / 2f)
-            val targetScale = if (ssiv.height > 0) {
+            // ★ 画面缩放跟随：完整显示=contain（竖屏贴宽/横屏按高缩小完整可见）；
+            //   铺满屏幕=恒贴宽（横屏半页放大铺满，上下超出在 SSIV 内拖动看——修"横屏拆分失效"）
+            val targetScale = if (!fitScreenEnabled) scaleByWidth
+            else if (ssiv.height > 0) {
                 val scaleByHeight = ssiv.height.toFloat() / bmp.height.toFloat()
                 minOf(scaleByWidth, scaleByHeight)
             } else {
@@ -1722,6 +1744,9 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             }
             val centerX = if (showRight) bmp.width * 3f / 4f else bmp.width / 4f
             val centerY = bmp.height / 2f
+            // ★ 视口基准：拆分视口的定位比例就是"未放大"态——横滑放行翻页（修滑动翻页失效）、
+            //   纵拖看图，双击缩放以此为中心
+            ssiv.viewportBaseScale = targetScale
             ssiv.setScaleAndCenter(targetScale, android.graphics.PointF(centerX, centerY))
         }
 
@@ -1745,6 +1770,8 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                         val scale = if (fitScreenEnabled && h > 0) minOf(w / bmp.width, h / bmp.height)
                             else if (resources.configuration.smallestScreenWidthDp >= 600) minOf(w / bmp.width, 1f)
                             else w / bmp.width
+                        // ★ 视口基准：铺满屏幕的贴宽比例就是"未放大"态（手势分流判定用）
+                        ssiv.viewportBaseScale = scale
                         ssiv.setScaleAndCenter(scale, android.graphics.PointF(bmp.width / 2f, bmp.height / 2f))
                     }
                 }
@@ -1766,6 +1793,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             disposeAnimDrawable()
             heldBitmap = null
             iv?.setImageBitmap(null)
+            try { ssiv?.viewportBaseScale = 0f } catch (_: Exception) {}
             try { ssiv?.resetScaleAndCenter() } catch (_: Exception) {}
             ssiv?.visibility = View.GONE
             iv?.visibility = View.VISIBLE
@@ -1843,6 +1871,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                                     else if (h > 0 && sw > sh && !landscapeZoom && isTablet) minOf(w / sw, h / sh)
                                     else if (isTablet) minOf(w / sw, 1f)
                                     else w / sw
+                                ssv.viewportBaseScale = scale
                                 ssv.setScaleAndCenter(scale, android.graphics.PointF(sw / 2f, sh / 2f))
                             }
                         }
