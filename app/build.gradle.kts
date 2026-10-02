@@ -110,6 +110,10 @@ versionName = "1.36"
             // 曾裁掉它们省体积，真机报 loadRemoteSymbols 4000/Transport 14001，与参考
             // 逐项对齐库清单后确认差异就在这两个库（Android 16 新平台上 Prepare 参与
             // DSP 会话/图装载），勿再裁。
+            // ★ libQnnModelDlc.so 版本必须与 Htp 主库配对（2026-10-02 K80 复盘）：AAR 2.49.0
+            //   的 Htp/Skel + QAIRT 2.49.0.260730 SDK 的 ModelDlc（3.31MB）仍 Transport 14001，
+            //   与参考 APK 逐库 MD5 对比 13/14 相同、唯一差异就是 ModelDlc——换用参考 APK 同款
+            //   （2.70MB，MD5 73a0e5bf）即与可用参考组合完全一致。勿再换成 260730 SDK 版。
             excludes += setOf(
                 "**/libQnnGpu.so", "**/libQnnDsp.so",
                 "**/libQnnDspV66Skel.so", "**/libQnnDspV66Stub.so",
