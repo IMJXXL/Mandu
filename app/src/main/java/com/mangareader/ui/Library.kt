@@ -407,10 +407,16 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                 books = list
                 shelfItems = if (sortAsc) aggregated.reversed() else aggregated
             } else {
+                // ★ 排序修复：书架/筛选/搜索路径此前只认「名称」排序，最近阅读/添加时间/进度
+                //   全被无视（DAO 查询写死 ORDER BY：书架=title ASC，筛选/搜索=lastReadAt DESC），
+                //   用户选了时间排序进书架看到的是书名序=「新旧掺一起」。四键与 sortShelfItems 对齐。
                 val ordered = withContext(Dispatchers.IO) {
-                    if (sort == SortMode.NAME) {
-                        list.sortedWith(Comparator { a, b -> naturalCompare(a.title, b.title) })
-                    } else list
+                    when (sort) {
+                        SortMode.NAME -> list.sortedWith(Comparator { a, b -> naturalCompare(a.title, b.title) })
+                        SortMode.LAST -> list.sortedByDescending { it.lastReadAt ?: 0L }
+                        SortMode.DATE -> list.sortedByDescending { it.addedAt }
+                        SortMode.PROGRESS -> list.sortedByDescending { if (it.totalPages > 0) it.readPages.toFloat() / it.totalPages else 0f }
+                    }
                 }
                 books = if (sortAsc) ordered.reversed() else ordered
                 shelfItems = null
