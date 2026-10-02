@@ -63,16 +63,32 @@ class SuperResolutionManager(
     /**
      * 引擎解析（唯一路由）：看门狗强制 CPU > 用户所选引擎可用性（NPU 需设备可探到 HTP
      * 代 + 插件里有该档位/降噪/代号的 context）> GPU（需 Vulkan 且档位是神经网络档）> CPU。
+     * 仅在 loadPendingModel 的 IO 块内调用——NPU 探测会 dlopen QNN 运行时，禁主线程。
      */
     private fun resolveEngine(model: SRModel): SrEngine {
         if (forceCpu) return SrEngine.CPU
         val want = SrCore.settings.engine
-        if (want == SrEngine.NPU && !npuFused && QnnEngine.isDeviceCapable &&
-            NpuModelRegistry.resolve(model, currentDenoiseLevel, QnnEngine.architecture) != null
-        ) {
-            return SrEngine.NPU
+        if (want == SrEngine.NPU) {
+            // 插件清单不能依赖面板扫描（开进程直进书不碰面板时 registry 是空的，
+            // 曾致"面板选了 NPU、实际永远静默回 GPU"），路由前必须自扫一次。
+            NpuModelRegistry.ensureScanned(context)
+            val capable = QnnEngine.isDeviceCapable
+            val arch = if (capable) QnnEngine.architecture else 0
+            val entry = NpuModelRegistry.resolve(model, currentDenoiseLevel, arch)
+            if (!npuFused && capable && entry != null) {
+                return SrEngine.NPU
+            }
+            if (!npuFused) {
+                // 中性打点（对应表 enq）：cap=设备可探；arch=HTP 代号（0=探不到/不受支持）；
+                // reg=当前档位+降噪+代号有无插件 context。reg=false → 装对应代模型包。
+                runCatching {
+                    com.mangareader.DiagTracer.markStatic(
+                        "enhance: npu skip cap=$capable arch=$arch reg=${entry != null}"
+                    )
+                }
+            }
         }
-        // NPU 选了但不可用 → 依回落链先试 GPU（含 engine=GPU 的正常路径）
+        // NPU 选了但不可用/已熔断 → 依回落链先试 GPU（含 engine=GPU 的正常路径）
         if (!gpuFused && want != SrEngine.CPU && isVulkanAvailable && model.requiresVulkan) {
             return SrEngine.GPU
         }
