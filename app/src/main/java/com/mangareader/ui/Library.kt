@@ -931,15 +931,15 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                 title = { Text("已选 ${selectedBooks.size} 本") },
                 navigationIcon = { IconButton(onClick = { isMultiSelect = false; selectedBooks = emptySet() }) { Icon(Icons.Default.Close, "取消选择") } },
                 actions = {
-                    // 批量离线超分：把选中的书全部加入后台超分队列
+                    // 批量离线超分：把选中的书全部加入后台超分队列（已读章节）
                     IconButton(onClick = {
                         val targets = books.orEmpty().filter { it.id in selectedBooks }
                         // 异步入队（大书 IO 不卡主线程），完成后主线程 Toast
-                        com.mangareader.sr.SrBatchRunner.enqueueBooks(ctx, targets.map { it.id to it.title }) { n ->
+                        com.mangareader.sr.SrBatchRunner.enqueueBooks(ctx, targets.map { it.id to it.title }) { r ->
                             (ctx as? android.app.Activity)?.runOnUiThread {
                                 android.widget.Toast.makeText(
                                     ctx,
-                                    if (n > 0) "已加入批量增强队列（$n 章），通知栏可看进度\n（安卓13+ 需先允许通知权限）" else "所选书籍已在队列中",
+                                    if (r.chapters > 0) "已加入批量增强队列（${r.chapters} 章 ${r.pages} 页），通知栏可看进度\n（安卓13+ 需先允许通知权限）" else "所选书籍已在队列中",
                                     android.widget.Toast.LENGTH_LONG,
                                 ).show()
                             }
@@ -955,6 +955,27 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                 title = { Column {
                     Text("瑾", fontWeight = FontWeight.Bold, fontSize = 20.sp, modifier = Modifier.clickable { showDonation = true })
                     Text("${books?.size ?: 0} 本", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    // ★ 批量增强进行中状态（2026-10-02）：书架直接可见，解决"入队后失联"；
+                    //   点按进设置（设置→增强队列 看逐章详情）。进度由服务 queueProgress 事件驱动
+                    var batchStatus by remember { mutableStateOf("") }
+                    LaunchedEffect(Unit) {
+                        fun summarize() {
+                            try {
+                                if (!com.mangareader.sr.SrCore.initialized) return
+                                val q = com.mangareader.sr.SrCore.queueStore.load()
+                                batchStatus = if (q.isEmpty()) ""
+                                else "增强中：${q.size} 章 ${q.sumOf { it.processedPages }}/${q.sumOf { it.totalPages }} 页"
+                            } catch (_: Exception) {}
+                        }
+                        summarize()
+                        com.mangareader.sr.SrCore.queueProgress.collect { summarize() }
+                    }
+                    if (batchStatus.isNotEmpty()) {
+                        Text(
+                            batchStatus, fontSize = 11.sp, color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.clickable { onSettings() },
+                        )
+                    }
                 } },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
                 actions = {
@@ -1000,6 +1021,48 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                 Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
                     TextButton(onClick = { showShelfDialog = true }) { Text("添加到书架", color = MaterialTheme.colorScheme.primary) }
                         TextButton(onClick = { showBatchTagPicker = true }) { Text("打标签", color = MaterialTheme.colorScheme.primary) }
+                    // ★ 增强菜单（2026-10-02）：已读章批量/整本入队（含未读章）/清除增强产物
+                    var srMenu by remember { mutableStateOf(false) }
+                    Box {
+                        TextButton(onClick = { srMenu = true }) { Text("增强 ▾", color = MaterialTheme.colorScheme.primary) }
+                        DropdownMenu(expanded = srMenu, onDismissRequest = { srMenu = false }) {
+                            val targets = books.orEmpty().filter { it.id in selectedBooks }
+                            DropdownMenuItem(
+                                text = { Text("批量增强（已读章节）") },
+                                onClick = {
+                                    srMenu = false
+                                    com.mangareader.sr.SrBatchRunner.enqueueBooks(ctx, targets.map { it.id to it.title }, false) { r ->
+                                        (ctx as? android.app.Activity)?.runOnUiThread {
+                                            Toast.makeText(ctx, if (r.chapters > 0) "已加入队列：${r.chapters} 章 ${r.pages} 页" else "所选书籍已在队列中", Toast.LENGTH_LONG).show()
+                                        }
+                                    }
+                                    isMultiSelect = false; selectedBooks = emptySet()
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("整本增强（含未读章，占用更多存储）") },
+                                onClick = {
+                                    srMenu = false
+                                    com.mangareader.sr.SrBatchRunner.enqueueBooks(ctx, targets.map { it.id to it.title }, true) { r ->
+                                        (ctx as? android.app.Activity)?.runOnUiThread {
+                                            Toast.makeText(ctx, if (r.chapters > 0) "已加入队列：${r.chapters} 章 ${r.pages} 页，空闲时自动逐章处理" else "所选书籍已在队列中", Toast.LENGTH_LONG).show()
+                                        }
+                                    }
+                                    isMultiSelect = false; selectedBooks = emptySet()
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("清除增强产物（不可恢复）", color = MaterialTheme.colorScheme.error) },
+                                onClick = {
+                                    srMenu = false
+                                    kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                                        targets.forEach { com.mangareader.sr.SrCore.diskCache.removeBatchBook(it.id) }
+                                    }
+                                    Toast.makeText(ctx, "已清除所选书的增强产物", Toast.LENGTH_SHORT).show()
+                                },
+                            )
+                        }
+                    }
                     TextButton(onClick = { showRenameBatch = true }) { Text("重命名", color = MaterialTheme.colorScheme.primary) }
                     TextButton(onClick = { showDeleteConfirm = true }) { Text("删除", color = MaterialTheme.colorScheme.error) }
                 }

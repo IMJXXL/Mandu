@@ -463,14 +463,29 @@ private fun SrPanelContent(
 
         // ── 批量离线 ──
         if (bookId >= 0) {
+            // ★ 整本入队（2026-10-02）：默认只入"读过的章"（旧行为），勾上后枚举书根下
+            //   全部章节（含没读过的）逐章排队——用户诉求"多选几章放着超分/自动下一章"
+            var includeUnread by remember { mutableStateOf(false) }
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Checkbox(checked = includeUnread, onCheckedChange = { includeUnread = it })
+                Text(
+                    "包含未读章节（整本跑完，占用更多存储）",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
+                )
+            }
             OutlinedButton(
                 onClick = {
-                    SrBatchRunner.enqueueBook(ctx, bookId, bookTitle) { n ->
+                    SrBatchRunner.enqueueBook(ctx, bookId, bookTitle, includeUnread) { r ->
                         (ctx as? android.app.Activity)?.runOnUiThread {
                             android.widget.Toast.makeText(
                                 ctx,
-                                if (n > 0) "已加入批量增强队列（$n 章）" else "本书已在队列中",
-                                android.widget.Toast.LENGTH_SHORT,
+                                when {
+                                    r.chapters > 0 -> "已加入队列：${r.chapters} 章 ${r.pages} 页，空闲时自动逐章处理（通知栏可看进度）"
+                                    else -> "本书已在队列中"
+                                },
+                                android.widget.Toast.LENGTH_LONG,
                             ).show()
                         }
                     }

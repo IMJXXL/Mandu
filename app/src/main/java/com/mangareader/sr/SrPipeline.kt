@@ -301,6 +301,18 @@ object SrPipeline {
         SrCore.diskCache.hasBatchChapter(sessionBookTitle, SRQueueItem.chapterKey(sessionBookId, sessionTreeStr))
     } catch (_: Throwable) { false }
 
+    /** ★ 批量礼让信号（2026-10-02）：最近一次实时超分调度时间（SystemClock.elapsedRealtime）。
+     *  批量服务页间检查：用户在阅读且 15 秒内有实时请求 → 让出引擎，
+     *  防止"批量后台跑着、翻页实时超分排队卡顿"互相打架 */
+    @Volatile
+    var lastRealtimeRequestAt: Long = 0L
+
+    /** 阅读实时超分是否活跃（批量礼让判定用）：开着作用域且最近有实时请求。
+     *  看完一页停下 15 秒后即不活跃——批量继续跑，不饥饿 */
+    fun realtimeActiveRecently(): Boolean =
+        sessionActive && SrUiState.scope.intValue > SrUiState.SCOPE_OFF &&
+            android.os.SystemClock.elapsedRealtime() - lastRealtimeRequestAt < 15_000L
+
     /** 三级缓存直查：实时缓存/黑白独立缓存仅在作用域开启时生效；批量离线产物永远生效 */
     fun getCached(pageIndex: Int): Bitmap? {
         if (!sessionActive) return null
@@ -451,6 +463,8 @@ object SrPipeline {
         if (sessionHasBatch && !force) return
         val cid = sessionChapterId
         val key = "$cid:$pageIndex"
+        // ★ 批量礼让信号源：实时调度即刷新（翻页持续更新=批量持续让位）
+        lastRealtimeRequestAt = android.os.SystemClock.elapsedRealtime()
         if (!inFlight.add(key)) return
         synchronized(SrUiState.computingPages) { SrUiState.computingPages.add(pageIndex) }
         SrUiState.bumpSrTick()

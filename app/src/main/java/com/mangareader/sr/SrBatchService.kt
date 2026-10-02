@@ -165,6 +165,13 @@ class SrBatchService : Service() {
                 while (paused) {
                     kotlinx.coroutines.delay(400)
                 }
+                // ★ 批量礼让（2026-10-02）：用户在阅读且实时超分活跃（15 秒内有实时请求）时
+                //   让出引擎，防止翻页时批量与实时互相排队卡顿；停下阅读/关作用域后自动继续。
+                //   页粒度等待：当前页开始解码前判定一次，推理一旦开始不打断
+                while (SrPipeline.realtimeActiveRecently()) {
+                    kotlinx.coroutines.delay(1500)
+                    if (item.chapterKey in cancelledKeys) break
+                }
                 if (item.chapterKey in cancelledKeys) break
 
                 // 已存在产物（断点续做）直接跳过；只看文件存在与否，不解码整图

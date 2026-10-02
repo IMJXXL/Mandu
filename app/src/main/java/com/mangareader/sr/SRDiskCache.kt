@@ -122,6 +122,22 @@ class SRDiskCache(
         return File(dir, "$stem.webp").exists() || File(dir, "$stem.jpg").exists()
     }
 
+    /** ★ 清除一本书的全部批量产物（2026-10-02，书架"清除增强产物"用）：
+     *  chapterKey 自带 bookId 前缀（b<id>_），按前缀匹配无需枚举书的全部章节路径 */
+    fun removeBatchBook(bookId: Long) {
+        val prefix = "b${bookId}_"
+        if (!batchDir.exists()) return
+        try {
+            batchDir.listFiles()?.forEach { bookDir ->
+                bookDir.listFiles()?.forEach { chDir ->
+                    if (chDir.isDirectory && chDir.name.startsWith(prefix)) chDir.deleteRecursively()
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "removeBatchBook $bookId failed", e)
+        }
+    }
+
     /** 从 0 开始连续存在产物的页数（批量重跑/续做的进度基线） */
     fun countBatchDonePrefix(bookTitle: String, chapterKey: String, total: Int): Int {
         var n = 0
