@@ -29,7 +29,15 @@ class QnnProcessor(
         // contextPath 形参由 Manager 传 ncnn 目录；NPU 用构造时传入的 context 路径
         val ok = QnnEngine.init(contextPath, libDir, entry.padding)
         Log.i(TAG, "QNN init ${entry.stem} ok=$ok padding=${entry.padding}")
-        if (!ok) throw IllegalStateException("QNN init failed for ${entry.stem}")
+        if (!ok) {
+            // 中性打点（对照表 enq）：s=初始化失败阶段码，0=插件 context 提取失败、1-9=native 各阶段
+            runCatching {
+                com.mangareader.DiagTracer.markStatic(
+                    "enhance: npu load s=${QnnEngine.lastInitStage()}"
+                )
+            }
+            throw IllegalStateException("QNN init failed for ${entry.stem}")
+        }
     }
 
     override fun process(
@@ -73,7 +81,12 @@ class QnnProcessor(
         fun create(context: Context, model: SRModel, denoise: DenoiseLevel, arch: Int): QnnProcessor? {
             if (!QnnEngine.nativeLoaded) return null
             val entry = NpuModelRegistry.resolve(model, denoise, arch) ?: return null
-            val path = NpuModelRegistry.prepareContextFile(context, entry, arch) ?: return null
+            val path = NpuModelRegistry.prepareContextFile(context, entry, arch)
+            if (path == null) {
+                // s=0：还没到 native，插件 context 资产提取失败（对照表 enq）
+                runCatching { com.mangareader.DiagTracer.markStatic("enhance: npu load s=0") }
+                return null
+            }
             return QnnProcessor(model, entry, path)
         }
     }

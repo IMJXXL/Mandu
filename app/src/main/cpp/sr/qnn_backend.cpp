@@ -29,6 +29,12 @@
 
 namespace qnn_backend {
 
+// 初始化失败阶段码：随 load() 推进覆写，成功清零；诊断日志取码脱敏（对照表 enq）。
+// 1=运行时库加载 2=context 文件读取 3=系统上下文接口 4=二进制信息解析 5=图/张量元数据
+// 6=布局或倍率校验 7=context 装载(contextCreateFromBinary) 8=图检索(graphRetrieve)
+// 9=推理缓冲分配。定义在命名空间头部——Runtime::load 内部要写它。
+std::atomic<int> g_init_stage{0};
+
 // ── Komiho (2026-09-18): ADSP_LIBRARY_PATH 必须在「首次 dlopen libQnnHtp.so」之前就位 ──
 //
 // 为什么值得为它单独写一节：真机日志（run 35263307970 的装机版）的时间顺序是
@@ -323,7 +329,9 @@ public:
 
   bool load(const std::string &context_path, int padding) {
     deactivate();
+    g_init_stage.store(0, std::memory_order_relaxed);
     if (!ensure_runtime()) {
+      g_init_stage.store(1, std::memory_order_relaxed);
       return false;
     }
     const auto &qnn = provider_->QNN_INTERFACE_VER_NAME;
@@ -331,16 +339,19 @@ public:
     std::ifstream stream(context_path, std::ios::binary | std::ios::ate);
     if (!stream) {
       LOGE("Unable to open QNN context: %s", context_path.c_str());
+      g_init_stage.store(2, std::memory_order_relaxed);
       return false;
     }
     const auto length = stream.tellg();
     if (length <= 0) {
+      g_init_stage.store(2, std::memory_order_relaxed);
       return false;
     }
     binary_.resize(static_cast<size_t>(length));
     stream.seekg(0);
     if (!stream.read(reinterpret_cast<char *>(binary_.data()), length)) {
       LOGE("Unable to read QNN context: %s", context_path.c_str());
+      g_init_stage.store(2, std::memory_order_relaxed);
       return false;
     }
 
@@ -363,8 +374,10 @@ public:
            system.systemContextCreate != nullptr,
            system.systemContextGetBinaryInfo != nullptr,
            system.systemContextFree != nullptr);
+      g_init_stage.store(3, std::memory_order_relaxed);
     } else if (system.systemContextCreate(&system_context) != QNN_SUCCESS) {
       LOGE("QnnSystemContext_create failed");
+      g_init_stage.store(3, std::memory_order_relaxed);
       metadata_ok = false;
     }
 
@@ -375,23 +388,27 @@ public:
       if (status != QNN_SUCCESS) {
         LOGE("QnnSystemContext_getBinaryInfo failed: %u",
              static_cast<unsigned>(status));
+        g_init_stage.store(4, std::memory_order_relaxed);
         metadata_ok = false;
       }
     }
     if (metadata_ok && !get_graph_metadata(binary_info, metadata)) {
       LOGE("QNN context graph metadata unusable (see preceding reason)");
+      g_init_stage.store(5, std::memory_order_relaxed);
       metadata_ok = false;
     }
     if (metadata_ok &&
         !copy_tensor(metadata.inputs[0], input_, input_name_, input_dimensions_)) {
       LOGE("QNN context input tensor unusable (version %u)",
            static_cast<unsigned>(metadata.inputs[0].version));
+      g_init_stage.store(5, std::memory_order_relaxed);
       metadata_ok = false;
     }
     if (metadata_ok &&
         !copy_tensor(metadata.outputs[0], output_, output_name_, output_dimensions_)) {
       LOGE("QNN context output tensor unusable (version %u)",
            static_cast<unsigned>(metadata.outputs[0].version));
+      g_init_stage.store(5, std::memory_order_relaxed);
       metadata_ok = false;
     }
     if (!metadata_ok) {
@@ -411,6 +428,7 @@ public:
         output_.v2.dimensions[1] / input_.v2.dimensions[1] !=
             output_.v2.dimensions[2] / input_.v2.dimensions[2]) {
       LOGE("QNN context tensor layout is not square NHWC with an integer scale");
+      g_init_stage.store(6, std::memory_order_relaxed);
       deactivate();
       return false;
     }
@@ -419,6 +437,7 @@ public:
     scale_ = output_tile_size_ / tile_size_;
     if (scale_ < 2 || scale_ > 4) {
       LOGE("Unsupported QNN output scale: %d", scale_);
+      g_init_stage.store(6, std::memory_order_relaxed);
       deactivate();
       return false;
     }
@@ -428,6 +447,7 @@ public:
                                     binary_.size(), &context_, nullptr);
     if (status != QNN_SUCCESS) {
       LOGE("QNN contextCreateFromBinary failed: %u", static_cast<unsigned>(status));
+      g_init_stage.store(7, std::memory_order_relaxed);
       deactivate();
       return false;
     }
@@ -435,9 +455,11 @@ public:
     if (status != QNN_SUCCESS) {
       LOGE("QNN graphRetrieve failed for %s: %u", graph_name_.c_str(),
            static_cast<unsigned>(status));
+      g_init_stage.store(8, std::memory_order_relaxed);
       deactivate();
       return false;
     }
+    g_init_stage.store(9, std::memory_order_relaxed);
 
     const size_t input_elements = static_cast<size_t>(tile_size_) * tile_size_ * 3u;
     const size_t output_elements =
@@ -471,6 +493,7 @@ public:
     padding_ = std::clamp(padding, 0, 48);
     configure_performance();
     initialized_ = true;
+    g_init_stage.store(0, std::memory_order_relaxed);
     LOGD("Loaded QNN graph %s with tile %dx%d, scale %dx, %s IO and padding %d",
          graph_name_.c_str(), tile_size_, tile_size_, scale_,
          is_fp16_tensor(input_) ? "FP16" : (is_quant16_tensor(input_) ? "INT16" : "INT8"),
@@ -1170,6 +1193,7 @@ private:
 Runtime runtime;
 
 } // namespace
+
 #endif
 
 bool is_runtime_loadable() {
@@ -1196,6 +1220,10 @@ bool initialize(const std::string &context_path, int padding) {
   (void)padding;
   return false;
 #endif
+}
+
+int last_init_stage() {
+  return g_init_stage.load(std::memory_order_relaxed);
 }
 
 bool is_initialized() {

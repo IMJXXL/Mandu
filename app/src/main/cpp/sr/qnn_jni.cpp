@@ -62,6 +62,15 @@ Java_com_mangareader_sr_QnnEngine_nativeGetArchitecture(JNIEnv * /*env*/, jobjec
 #endif
 }
 
+extern "C" JNIEXPORT jint JNICALL
+Java_com_mangareader_sr_QnnEngine_nativeGetLastInitStage(JNIEnv * /*env*/, jobject /*thiz*/) {
+#if MIHON_ENABLE_QNN
+  return static_cast<jint>(qnn_backend::last_init_stage());
+#else
+  return 0;
+#endif
+}
+
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_mangareader_sr_QnnEngine_nativeInitQnn(JNIEnv *env, jobject /*thiz*/,
                                                 jstring contextPath, jstring libDir,

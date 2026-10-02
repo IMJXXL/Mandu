@@ -101,9 +101,27 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?, Int) -> Unit
         }
     ) { padding ->
         var showAbout by remember { mutableStateOf(false) }
+        var diagExportMsg by remember { mutableStateOf<String?>(null) }
         LazyColumn(modifier = Modifier.padding(padding).fillMaxSize().wrapContentWidth(Alignment.CenterHorizontally).widthIn(max = CONTENT_MAX_WIDTH_DP).padding(16.dp)) {
             item {
             Spacer(Modifier.height(12.dp))
+            }
+            item {
+            // 【临时功能，用完整体删除】全量日志导出（含本进程 logcat，已脱敏）——远端排障用
+            val ctx = androidx.compose.ui.platform.LocalContext.current
+            Card(Modifier.fillMaxWidth().clickable {
+                diagExportMsg = com.mangareader.sr.DiagLogExporter.export(ctx)
+            }) {
+                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Info, null, modifier = Modifier.size(24.dp))
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("导出全部日志（临时）", fontSize = 16.sp)
+                        Text(diagExportMsg ?: "含引擎初始化细节，供排障分析", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
             }
             item {
 

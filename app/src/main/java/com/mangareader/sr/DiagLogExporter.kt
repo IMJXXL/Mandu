@@ -100,7 +100,15 @@ object DiagLogExporter {
         val proc = Runtime.getRuntime().exec(arrayOf("logcat", "-d", "--pid=${android.os.Process.myPid()}", "-v", "time"))
         val text = proc.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
         proc.waitFor()
-        sb.append(text)
+        // 与 DiagExporter 同一隐私口径：路径/书名→<book>，网盘与 IP→<server>，类名中性化
+        sb.append(
+            text
+                .replace(Regex("""/storage/[^\s"'）)\\]+|/data/user/[^\s"'）)\\]+|/sdcard/[^\s"'）)\\]+"""), "<book>")
+                .replace(Regex("""\b(?:https?|smb|ftp|ftps|webdav|webdavs)://[^\s"'）)\\]+"""), "<server>")
+                .replace(Regex("""\\\\[\w.-]+[^\s"']*"""), "<server>")
+                .replace(Regex("""\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?::\d+)?\b"""), "<server>")
+                .replace(Regex("""\b(?:com\.)?mangareader\.[\w.]+"""), "m.*")
+        )
         if (text.isBlank()) sb.appendLine("（logcat 为空：系统未返回本应用日志，需换抓取方式）")
     }
 
