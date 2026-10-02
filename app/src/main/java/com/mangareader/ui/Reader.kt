@@ -2819,6 +2819,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         com.mangareader.ui.SrPanel(
             bookId = book?.id ?: -1L,
             bookTitle = book?.title ?: "",
+            bookPath = book?.filePath,
             onOpenQueue = {
                 showSrPanel = false
                 showSrQueue = true

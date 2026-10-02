@@ -59,10 +59,17 @@ object SrCore {
             manager = SuperResolutionManager(appContext)
             // 产物落 filesDir/page_cache/sr（ArchiveEngine 预留的 pageCacheDir，此前从未使用）
             val srDir = File(File(appContext.filesDir, "page_cache"), "sr")
-            diskCache = SRDiskCache(srDir) {
-                // 实时缓存上限跟随用户设置（MB → Byte）
-                settings.realtimeCacheLimitMb.toLong() * 1024 * 1024
-            }
+            diskCache = SRDiskCache(
+                srDir,
+                artifactLimitBytes = {
+                    // 页级持久产物上限跟随用户设置（MB → Byte）
+                    settings.artifactCacheLimitMb.toLong() * 1024 * 1024
+                },
+                realtimeLimitBytes = {
+                    // 实时缓存上限跟随用户设置（MB → Byte）
+                    settings.realtimeCacheLimitMb.toLong() * 1024 * 1024
+                },
+            )
             dispatcher = SRPreloadDispatcher(manager, diskCache)
             queueStore = SRQueueStore(appContext)
             profileManager = DeviceProfileManager(appContext)

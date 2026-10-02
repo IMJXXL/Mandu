@@ -12,15 +12,21 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 /**
- * 超分磁盘缓存。两层用途：
- *  1. 实时超分产物（cacheDir 根，容量 100MB  LRU 驱逐）——key 含模型/倍率/降噪/黑白配置（见 SuperResolutionManager.buildCacheKey，设置变了自动不串图）
+ * 超分磁盘缓存。三层用途：
+ *  1. 实时超分产物（cacheDir 根，容量默认 1000MB  LRU 驱逐）——key 含模型/倍率/降噪/黑白配置（见 SuperResolutionManager.buildCacheKey，设置变了自动不串图）
  *  2. 批量离线产物（batch/<书目安全名>/<章节key>/pageNNN.webp + metadata.json，不设上限，用户手动清）
+ *  3. ★ 页级持久产物（artifacts/<bookId>/<章节key>/<缓存键>.webp，2026-10-03）：
+ *     实时增强成功即永久落盘，任何作用域下最高优先显示（"只要有过且产物在就优先"）；
+ *     缓存键自带完整指纹（档位/降噪/黑白/引擎）——改设置自动失效走新键，同键覆盖；
+ *     总量受 artifactCacheLimitMb 上限控制，超限自动清最旧（用户拍板三件套：上限+清最旧+单书清理）。
  * API 30+ 用 WEBP_LOSSY，低版本自动 JPEG（系统限制，功能不受影响）。
  */
 class SRDiskCache(
     private val cacheDir: File,
-    /** 实时缓存上限提供者（字节）；默认 100MB。来自用户设置（SrSettings.realtimeCacheLimitMb） */
-    private val realtimeLimitBytes: () -> Long = { 100L * 1024 * 1024 },
+    /** 实时缓存上限提供者（字节）；默认 1000MB。来自用户设置（SrSettings.realtimeCacheLimitMb） */
+    private val realtimeLimitBytes: () -> Long = { 1000L * 1024 * 1024 },
+    /** 页级持久产物上限提供者（字节）；默认 1000MB。来自 SrSettings.artifactCacheLimitMb */
+    private val artifactLimitBytes: () -> Long = { 1000L * 1024 * 1024 },
 ) {
     private val evictScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -162,6 +168,94 @@ class SRDiskCache(
     /** 快速直取判定（每页调用路径用）：按书名/章节精确目录存在性，O(1) 文件 stat */
     fun hasBatchChapter(bookTitle: String, chapterKey: String): Boolean {
         return File(batchDir, "${DiskUtil.buildValidFilename(bookTitle)}/$chapterKey").isDirectory
+    }
+
+    // ════ 页级持久产物（2026-10-03）：实时增强结果永久落盘 ════
+    // 布局：artifacts/<bookId>/<章节key安全名>/<实时缓存键>.webp|jpg
+    //  - 缓存键自带完整指纹（档位/降噪/黑白/引擎+页号），改设置自动走新键，同键覆盖
+    //  - bookId 一级目录使"单书清理"为 O(1) 树删
+    private val artifactDir: File
+        get() = File(cacheDir, "artifacts").also { it.mkdirs() }
+
+    private fun artifactChapterDir(bookId: Long, chapterKey: String): File =
+        File(artifactDir, "$bookId/${DiskUtil.buildValidFilename(chapterKey)}")
+
+    private fun artifactFile(bookId: Long, chapterKey: String, cacheKey: String): File {
+        val ext = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) "webp" else "jpg"
+        val safeKey = DiskUtil.buildValidFilename(cacheKey)
+        return File(artifactChapterDir(bookId, chapterKey), "$safeKey.$ext")
+    }
+
+    /** 实时增强成功后调用（须在 IO 线程）：落盘 + 超限自动清最旧 */
+    fun putArtifact(bookId: Long, chapterKey: String, cacheKey: String, bitmap: Bitmap) {
+        if (bookId < 0) return
+        try {
+            val file = artifactFile(bookId, chapterKey, cacheKey)
+            file.parentFile?.mkdirs()
+            writeBitmapAtomic(file, bitmap)
+            evictArtifactsIfNeeded()
+        } catch (e: Exception) {
+            Log.e(TAG, "putArtifact failed: $cacheKey", e)
+        }
+    }
+
+    /** 只判断产物文件是否存在（O(1) stat，不解码）——显示链 Fast 路径守卫用 */
+    fun hasArtifact(bookId: Long, chapterKey: String, cacheKey: String): Boolean =
+        bookId >= 0 && artifactFile(bookId, chapterKey, cacheKey).exists()
+
+    /** 本章是否已有任何页级产物（O(1) 目录 stat）——pollForResult 守卫用 */
+    fun hasArtifactChapter(bookId: Long, chapterKey: String): Boolean =
+        bookId >= 0 && artifactChapterDir(bookId, chapterKey).isDirectory
+
+    fun getArtifact(bookId: Long, chapterKey: String, cacheKey: String): Bitmap? {
+        val file = artifactFile(bookId, chapterKey, cacheKey)
+        if (!file.exists()) return null
+        return try {
+            BitmapFactory.decodeFile(file.absolutePath)
+        } catch (e: Exception) {
+            Log.e(TAG, "read artifact failed: $cacheKey", e)
+            null
+        }
+    }
+
+    /** 全库产物用量（张数, 字节）——面板产物管理显示用，IO 线程调用 */
+    fun artifactUsage(): Pair<Int, Long> {
+        if (!artifactDir.exists()) return 0 to 0L
+        var count = 0
+        var bytes = 0L
+        artifactDir.walkTopDown().filter { it.isFile }.forEach {
+            count++
+            bytes += it.length()
+        }
+        return count to bytes
+    }
+
+    /** 单书清理（三件套之三）：删除 artifacts/<bookId> 整树 */
+    fun removeArtifacts(bookId: Long) {
+        if (bookId < 0) return
+        try {
+            File(artifactDir, bookId.toString()).deleteRecursively()
+        } catch (e: Exception) {
+            Log.e(TAG, "removeArtifacts $bookId failed", e)
+        }
+    }
+
+    /** 三件套之二：总字节超上限时按 mtime 从旧到新删，直到回落上限内（IO 线程调用） */
+    private fun evictArtifactsIfNeeded() {
+        val limit = try {
+            artifactLimitBytes().coerceAtLeast(16L * 1024 * 1024)
+        } catch (_: Throwable) {
+            return
+        }
+        var files = artifactDir.walkTopDown().filter { it.isFile }.toList()
+        var total = files.sumOf { it.length() }
+        if (total <= limit) return
+        files = files.sortedBy { it.lastModified() }
+        for (f in files) {
+            if (total <= limit) break
+            val len = f.length()
+            if (f.delete()) total -= len
+        }
     }
 
     private fun readBatchPageFile(dir: File, pageIndex: Int): Bitmap? {

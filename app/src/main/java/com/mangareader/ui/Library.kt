@@ -1056,7 +1056,11 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                                 onClick = {
                                     srMenu = false
                                     kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-                                        targets.forEach { com.mangareader.sr.SrCore.diskCache.removeBatchBook(it.id) }
+                                        targets.forEach {
+                                            com.mangareader.sr.SrCore.diskCache.removeBatchBook(it.id)
+                                            // ★ 同步清页级自动保存产物（2026-10-03 三件套之三）
+                                            com.mangareader.sr.SrCore.diskCache.removeArtifacts(it.id)
+                                        }
                                     }
                                     Toast.makeText(ctx, "已清除所选书的增强产物", Toast.LENGTH_SHORT).show()
                                 },

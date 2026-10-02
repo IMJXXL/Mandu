@@ -116,9 +116,12 @@ object SrPipeline {
         } else bmp
     }
 
-    /** 对比叠层"右侧"取图：超分结果优先；黑白独立模式下退而求其次取黑白优化结果；
+    /** 对比叠层"右侧"取图：页级持久产物优先；超分结果次之；黑白独立模式下退而求其次取黑白优化结果；
      *  最后兜底查批量离线产物（手动开超分切换模型后内存缓存键不命中时仍可对比） */
     fun peekSr(pageIndex: Int): Bitmap? {
+        artifactKey(pageIndex)?.let { ck ->
+            SrCore.diskCache.getArtifact(sessionBookId, artifactChapterKey(), ck)?.let { return it }
+        }
         val srBmp = SrCore.dispatcher.getSrBitmap(sessionChapterId, pageIndex)
         if (srBmp != null) return srBmp
         if (!SrCore.settings.upscaleEnabled && SrCore.settings.bwEnabled) {
@@ -209,8 +212,9 @@ object SrPipeline {
         if (!sessionActive) return
         // ★ F4.6：批量产物"永远生效"——作用域/开关关闭时也要为批量章节轮询回填；
         //   守卫改 stat（2026-10-02）：不再依赖会话级 sessionHasBatch（冷启动误判会挂全会话）
-        if (SrUiState.scope.intValue == SrUiState.SCOPE_OFF && !batchChapterOnDisk()) return
-        if (!SrCore.settings.upscaleEnabled && !SrCore.settings.bwEnabled && !batchChapterOnDisk()) return
+        //   页级持久产物同理永远生效（2026-10-03）：守卫加 artifactChapterOnDisk()
+        if (SrUiState.scope.intValue == SrUiState.SCOPE_OFF && !batchChapterOnDisk() && !artifactChapterOnDisk()) return
+        if (!SrCore.settings.upscaleEnabled && !SrCore.settings.bwEnabled && !batchChapterOnDisk() && !artifactChapterOnDisk()) return
         val key = "$sessionChapterId:$pageIndex"
         if (!pollKeys.add(key)) return
         scope.launch(Dispatchers.IO) {
@@ -301,6 +305,21 @@ object SrPipeline {
         SrCore.diskCache.hasBatchChapter(sessionBookTitle, SRQueueItem.chapterKey(sessionBookId, sessionTreeStr))
     } catch (_: Throwable) { false }
 
+    // ════ 页级持久产物（2026-10-03）：实时增强成功即永久落盘，显示链最高优先 ════
+
+    private fun artifactChapterKey(): String =
+        SRQueueItem.chapterKey(sessionBookId, sessionTreeStr)
+
+    /** 本章是否已有任何页级产物（O(1) 目录 stat）——pollForResult 守卫用 */
+    private fun artifactChapterOnDisk(): Boolean = try {
+        SrCore.diskCache.hasArtifactChapter(sessionBookId, artifactChapterKey())
+    } catch (_: Throwable) { false }
+
+    /** 当前页的产物键 = 实时缓存键（自带档位/降噪/黑白/引擎完整指纹，改设置自动走新键） */
+    private fun artifactKey(pageIndex: Int): String? = try {
+        SrCore.manager.buildCacheKey(sessionChapterId, pageIndex)
+    } catch (_: Throwable) { null }
+
     /** ★ 批量礼让信号（2026-10-02）：最近一次实时超分调度时间（SystemClock.elapsedRealtime）。
      *  批量服务页间检查：用户在阅读且 15 秒内有实时请求 → 让出引擎，
      *  防止"批量后台跑着、翻页实时超分排队卡顿"互相打架 */
@@ -313,9 +332,20 @@ object SrPipeline {
         sessionActive && SrUiState.scope.intValue > SrUiState.SCOPE_OFF &&
             android.os.SystemClock.elapsedRealtime() - lastRealtimeRequestAt < 15_000L
 
-    /** 三级缓存直查：实时缓存/黑白独立缓存仅在作用域开启时生效；批量离线产物永远生效 */
+    /** 四级缓存直查：★页级持久产物（永远生效，最高优先）/实时缓存/黑白独立缓存仅在作用域开启时生效；批量离线产物永远生效 */
     fun getCached(pageIndex: Int): Bitmap? {
         if (!sessionActive) return null
+        // ★ 页级持久产物：任何作用域下最高优先（"只要有过且产物在就优先显示增强过的"）；
+        //   键含完整指纹——改档位/降噪/引擎后自动 miss 走新键现算
+        artifactKey(pageIndex)?.let { ck ->
+            SrCore.diskCache.getArtifact(sessionBookId, artifactChapterKey(), ck)?.let { bmp ->
+                // 回填内存结果缓存（同批量回填：状态指示/前后对比可见）
+                try {
+                    SrCore.manager.putCachedResult(SrCore.manager.buildCacheKey(sessionChapterId, pageIndex), bmp)
+                } catch (_: Throwable) {}
+                return bmp
+            }
+        }
         if (SrUiState.scope.intValue > SrUiState.SCOPE_OFF) {
             SrCore.dispatcher.getSrBitmap(sessionChapterId, pageIndex)?.let { return it }
             // "仅黑白优化"产物的独立缓存键
@@ -374,6 +404,14 @@ object SrPipeline {
                     SrCore.manager.getCachedResult(key)?.let { return it }
                 }
             }
+            // ★ 页级持久产物守卫（2026-10-03）：键含完整指纹，stat 命中即交给 pollForResult
+            //   在 IO 解码回填——任何作用域下最高优先显示，且不重复实时烧算力
+            artifactKey(pageIndex)?.let { ck ->
+                if (SrCore.diskCache.hasArtifact(sessionBookId, artifactChapterKey(), ck)) {
+                    pollForResult(pageIndex) { b -> SrCore.emitReady(cid, pageIndex, b) }
+                    return null
+                }
+            }
             // ★ 批量产物守卫改 stat-only（2026-10-02）：目录存在 → 交给 pollForResult 在 IO
             //   解码回填。原实现在此同步调 getCached → getBatchPage 主线程解码大图，
             //   违反 Fast 路径"主线程零解码"设计原则（F4.6）；事件注入不可靠（SharedFlow
@@ -428,10 +466,21 @@ object SrPipeline {
     fun computing(pageIndex: Int): Boolean =
         synchronized(SrUiState.computingPages) { pageIndex in SrUiState.computingPages }
 
-    /** 作用域被切回"关闭"：把当前页换回注入前的原图 */
+    /** 作用域被切回"关闭"：把当前页换回注入前的原图。
+     *  ★ 页级产物优先（2026-10-03）：已增强过的页即使关作用域也显示持久产物
+     *  （"只要有过且产物在就优先"），无产物才回原图。 */
     fun revertCurrentToOriginal() {
         val p = lastUserPage
         if (p < 0 || !sessionActive) return
+        val ck = artifactKey(p)
+        if (ck != null && SrCore.diskCache.hasArtifact(sessionBookId, artifactChapterKey(), ck)) {
+            scope.launch(Dispatchers.IO) {
+                SrCore.diskCache.getArtifact(sessionBookId, artifactChapterKey(), ck)?.let {
+                    SrCore.emitReady(sessionChapterId, p, it)
+                }
+            }
+            return
+        }
         val orig = synchronized(originals) { originals["$sessionChapterId:$p"] } ?: return
         if (!orig.isRecycled) {
             SrCore.emitReady(sessionChapterId, p, orig)
@@ -439,7 +488,10 @@ object SrPipeline {
     }
 
     /** "重算本页"（面板手动按钮）：已有结果→补发注入事件立刻替换；没有→清在途标记强制重算。
-     *  显式用户动作，绕过 batch 章节跳过策略与作用域守卫（调用方 UI 已在作用域关闭时灰掉）。 */
+     *  显式用户动作，绕过 batch 章节跳过策略与作用域守卫（调用方 UI 已在作用域关闭时灰掉）。
+     *  ★ 诚实化（2026-10-03）：此前异步任务里有 7 个静默退出点（主开关没开/页太小/超输入上限/
+     *  动图/翻走等），用户看到"已开始重算"实际没开始。现把可同步判定的分支全部前置到点击时刻，
+     *  按真实情况返回不同文案，杜绝"提示已开始、实际没开始"。 */
     fun forceRetryCurrentPage(): String {
         if (!sessionActive) return "当前没有打开的书"
         if (sessionPageList.isEmpty()) return "没有可用页"
@@ -448,13 +500,32 @@ object SrPipeline {
         val p = sequenceOf(currentPageIdx, lastUserPage)
             .firstOrNull { it in sessionPageList.indices }
             ?: return "没有可用页"
+        val meta = sessionPageList.getOrNull(p)
+        if (meta != null && !isApplicable(meta)) return "本页是动图，不支持增强"
+        if (!SrCore.settings.upscaleEnabled && !SrCore.settings.bwEnabled) {
+            return "画质增强未启用：先打开「启用画质增强」或「黑白增强」"
+        }
+        val key = "$sessionChapterId:$p"
+        if (inFlight.contains(key)) return "本页正在处理中，请稍候"
         val cached = getCached(p)
         if (cached != null && !cached.isRecycled) {
             SrCore.emitReady(sessionChapterId, p, cached)
             return "本页已有增强结果，已刷新显示"
         }
-        inFlight.remove("$sessionChapterId:$p")
-        val orig = synchronized(originals) { originals["$sessionChapterId:$p"] }
+        val orig = synchronized(originals) { originals[key] }
+        if (orig != null && !orig.isRecycled) {
+            if (orig.width < 100 || orig.height < 100) return "本页图片太小，无需增强"
+            // 与 scheduleInternal 同口径的输入上限（1x 放宽 8192；4x 收 2048；2x 4096）
+            val inputCap = when {
+                SrCore.manager.currentScale <= 1 -> 8192
+                SrCore.manager.currentScale >= 4 -> 2048
+                else -> 4096
+            }
+            if (maxOf(orig.width, orig.height) > inputCap) {
+                return "本页原图超出当前档位的处理上限"
+            }
+        }
+        inFlight.remove(key)
         scheduleInternal(p, orig, force = true)
         return "已开始重算本页，完成后自动替换"
     }
@@ -553,6 +624,16 @@ object SrPipeline {
 
                     SrCore.dispatcher.putSrResult(cid, pageIndex, result)
                     SrCore.emitReady(cid, pageIndex, result)
+                    // ★ 页级持久产物（2026-10-03）：实时结果永久落盘（IO 线程）。
+                    //   键含完整指纹——同键覆盖，改设置自动走新键；超总量上限自动清最旧。
+                    //   批量章节不落这里（batchChapterOnDisk 时 scheduleInternal 不会跑到这）。
+                    if (sessionBookId >= 0) {
+                        runCatching {
+                            artifactKey(pageIndex)?.let { ck ->
+                                SrCore.diskCache.putArtifact(sessionBookId, artifactChapterKey(), ck, result)
+                            }
+                        }
+                    }
                 } else {
                     // B. 仅黑白优化（不放大，原尺寸毫秒级；彩色页直接跳过）
                     if (!isGrayscaleish(original)) return@launch

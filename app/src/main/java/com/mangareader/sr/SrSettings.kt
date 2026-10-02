@@ -88,10 +88,16 @@ class SrSettings(context: Context) {
         get() = prefs.getInt("sr_preload_override", -1)
         set(v) = prefs.edit().putInt("sr_preload_override", v).apply()
 
-    /** 实时缓存上限（MB，用户自定，默认 100；范围 16~4096） */
+    /** 实时缓存上限（MB，用户自定，默认 1000；范围 16~4096）。2026-10-03 默认 100→1000 */
     var realtimeCacheLimitMb: Int
-        get() = prefs.getInt("sr_realtime_cache_mb", 100)
+        get() = prefs.getInt("sr_realtime_cache_mb", 1000)
         set(v) = prefs.edit().putInt("sr_realtime_cache_mb", v.coerceIn(16, 4096)).apply()
+
+    /** ★ 页级持久产物上限（MB，用户自定，默认 1000；范围 16~4096）。
+     *  实时增强结果永久落盘的总额度，超上限自动清最旧（2026-10-03 用户拍板三件套之一） */
+    var artifactCacheLimitMb: Int
+        get() = prefs.getInt("sr_artifact_cache_mb", 1000)
+        set(v) = prefs.edit().putInt("sr_artifact_cache_mb", v.coerceIn(16, 4096)).apply()
 
     // ── 单作品覆盖 ──
 
