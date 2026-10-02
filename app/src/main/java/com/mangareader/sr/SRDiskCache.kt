@@ -105,9 +105,10 @@ class SRDiskCache(
         writeBitmapAtomic(file, bitmap)
     }
 
-    /** 按章节 key 找批量产物（不依赖书名目录，O(1) 命中常见情况） */
+    /** 按章节 key 找批量产物（不依赖书名目录，O(1) 命中常见情况）。
+     *  ★ 只读查询不建目录（2026-10-02）：不走 batchChapterDir 的 mkdirs，查询路径不得写文件系统 */
     fun getBatchPage(bookTitle: String, chapterKey: String, pageIndex: Int): Bitmap? {
-        val dir = batchChapterDir(bookTitle, chapterKey)
+        val dir = File(batchDir, "${DiskUtil.buildValidFilename(bookTitle)}/$chapterKey")
         return readBatchPageFile(dir, pageIndex)
     }
 

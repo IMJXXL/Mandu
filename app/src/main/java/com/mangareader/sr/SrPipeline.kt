@@ -126,9 +126,8 @@ object SrPipeline {
             SrCore.manager.getCachedResult(key)?.let { return it }
             SrCore.diskCache.get(key)?.let { return it }
         }
-        val chKey = SRQueueItem.chapterKey(sessionBookId, sessionTreeStr)
-        if (SrCore.diskCache.hasBatchChapter(sessionBookTitle, chKey)) {
-            SrCore.diskCache.getBatchPage(sessionBookTitle, chKey, pageIndex)?.let { return it }
+        if (batchChapterOnDisk()) {
+            SrCore.diskCache.getBatchPage(sessionBookTitle, SRQueueItem.chapterKey(sessionBookId, sessionTreeStr), batchPageIdx(pageIndex))?.let { return it }
         }
         return null
     }
@@ -138,19 +137,24 @@ object SrPipeline {
     var maxOutputEdge: Int = 4096
         private set
 
-    fun beginSession(context: Context, treeStr: String, bookId: Long, bookTitle: String, pages: List<ArchiveEngine.PageMeta>) {
+    fun beginSession(context: Context, treeStr: String, bookId: Long, bookTitle: String, pages: List<ArchiveEngine.PageMeta>, startPage: Int = 0) {
         if (engine == null || sessionBookId != bookId || sessionTreeStr != treeStr) {
             engine = ArchiveEngine(context.applicationContext)
         }
+        // ★ 2026-10-02 修"批量产物全会话失效"：init 必须在 sessionHasBatch 判定之前——
+        //   原顺序冷启动直进书时 SrCore.initialized=false → 判定恒 false 且会话内无人更新，
+        //   显示链三道守卫（Fast 同步查/轮询/跳过实时重算）全被这个坏开关锁死，
+        //   用户观感="批量超分完只有个别页清晰、翻走就丢、退出重进才好"。init 幂等且轻量。
+        if (!SrCore.initialized) SrCore.init(context)
         sessionChapterId = stableChapterId(treeStr)
         sessionBookId = bookId
         sessionTreeStr = treeStr
         sessionBookTitle = bookTitle
         sessionPageList = pages
+        sessionExpandedTable = pages.any { it.segmentIndex > 0 || it.splitSide != 0 }
         sessionActive = true
         sessionHasBatch = try {
-            SrCore.initialized &&
-                SrCore.diskCache.hasBatchChapter(bookTitle, SRQueueItem.chapterKey(bookId, treeStr))
+            SrCore.diskCache.hasBatchChapter(bookTitle, SRQueueItem.chapterKey(bookId, treeStr))
         } catch (_: Throwable) {
             false
         }
@@ -158,7 +162,9 @@ object SrPipeline {
         cancelScope()
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         lastUserPage = -1
-        currentPageIdx = 0
+        // ★ 2026-10-02：currentPageIdx 用真实起始页（onPageChanged 钩子此前从未被接线，
+        //   恒 0 → "勾选作用域不立即开算/仅当前页守卫错杀/整本预载失效"）
+        currentPageIdx = startPage.coerceIn(0, (pages.size - 1).coerceAtLeast(0))
 
         // 作用域按需求每次进书默认关闭（手动开启才实时超分；离线批量产物不受影响）
         SrUiState.resetForBook(bookId, bookTitle)
@@ -166,14 +172,14 @@ object SrPipeline {
         val dm = context.resources.displayMetrics
         maxOutputEdge = (maxOf(dm.widthPixels, dm.heightPixels) * 2).coerceIn(2048, 8192)
 
-        if (!SrCore.initialized) SrCore.init(context)
         // 注入真实预载取料（修复源项目缺口：回调接管后真正做到"主动预载"）
         SrCore.dispatcher.onPreloadRequested = { chapterId, pageIndex ->
             if (chapterId == sessionChapterId && sessionActive) {
                 scheduleInternal(pageIndex, callerBitmap = null)
             }
         }
-        Log.i(TAG, "session begin: cid=$sessionChapterId book=$bookId maxEdge=$maxOutputEdge pages=${pages.size}")
+        Log.i(TAG, "session begin: cid=$sessionChapterId book=$bookId maxEdge=$maxOutputEdge pages=${pages.size} batch=$sessionHasBatch start=$currentPageIdx")
+        try { com.mangareader.DiagTracer.markStatic("enhance: batch=$sessionHasBatch pages=${pages.size}") } catch (_: Throwable) {}
 
         // ★ N1：无缝跨卷恢复实时超分作用域（resetForBook 刚把 scope 重置为 OFF；非关闭才恢复）
         pendingScopeRestore?.let { saved ->
@@ -201,9 +207,10 @@ object SrPipeline {
      *  与事件注入并存：两边都走到时 inject 幂等（同一张图重复写缓存+刷新，无副作用）。 */
     fun pollForResult(pageIndex: Int, onReady: (Bitmap) -> Unit) {
         if (!sessionActive) return
-        // ★ F4.6：批量产物"永远生效"——作用域/开关关闭时也要为批量章节轮询回填
-        if (SrUiState.scope.intValue == SrUiState.SCOPE_OFF && !sessionHasBatch) return
-        if (!SrCore.settings.upscaleEnabled && !SrCore.settings.bwEnabled && !sessionHasBatch) return
+        // ★ F4.6：批量产物"永远生效"——作用域/开关关闭时也要为批量章节轮询回填；
+        //   守卫改 stat（2026-10-02）：不再依赖会话级 sessionHasBatch（冷启动误判会挂全会话）
+        if (SrUiState.scope.intValue == SrUiState.SCOPE_OFF && !batchChapterOnDisk()) return
+        if (!SrCore.settings.upscaleEnabled && !SrCore.settings.bwEnabled && !batchChapterOnDisk()) return
         val key = "$sessionChapterId:$pageIndex"
         if (!pollKeys.add(key)) return
         scope.launch(Dispatchers.IO) {
@@ -273,6 +280,27 @@ object SrPipeline {
         }
     }
 
+    /** 当前会话页表是否经过展开（条漫竖切段页/宽图二分半页）——beginSession 时算一次 */
+    @Volatile
+    private var sessionExpandedTable = false
+
+    /** ★ 批量产物页号映射（2026-10-02）：批量按**原始页号**落盘（engine.listPages 序），
+     *  阅读侧 pageIndex 可能是展开表序号——不映射会取到错页图（"只有第一页对"的另一半
+     *  根因，第一页序号恒对齐）。展开表内**所有**页（含透传页——expand 统一盖
+     *  originalPageIdx 章，段/半页插队会让透传页流位≠原始位）都走映射；未展开表恒等。
+     *  表级判定防"原始 meta 的 originalPageIdx 默认 0 被误映射"。 */
+    private fun batchPageIdx(pageIndex: Int): Int {
+        if (!sessionExpandedTable) return pageIndex
+        val m = sessionPageList.getOrNull(pageIndex) ?: return pageIndex
+        return if (m.originalPageIdx >= 0) m.originalPageIdx else pageIndex
+    }
+
+    /** 本章批量产物目录是否存在（O(1) stat，不解码不建目录）——显示链守卫用，
+     *  不再依赖会话级 sessionHasBatch 布尔（冷启动误判会挂全会话） */
+    private fun batchChapterOnDisk(): Boolean = try {
+        SrCore.diskCache.hasBatchChapter(sessionBookTitle, SRQueueItem.chapterKey(sessionBookId, sessionTreeStr))
+    } catch (_: Throwable) { false }
+
     /** 三级缓存直查：实时缓存/黑白独立缓存仅在作用域开启时生效；批量离线产物永远生效 */
     fun getCached(pageIndex: Int): Bitmap? {
         if (!sessionActive) return null
@@ -285,9 +313,8 @@ object SrPipeline {
                 return SrCore.diskCache.get(key)
             }
         }
-        val chKey = SRQueueItem.chapterKey(sessionBookId, sessionTreeStr)
-        if (SrCore.diskCache.hasBatchChapter(sessionBookTitle, chKey)) {
-            SrCore.diskCache.getBatchPage(sessionBookTitle, chKey, pageIndex)?.let { bmp ->
+        if (batchChapterOnDisk()) {
+            SrCore.diskCache.getBatchPage(sessionBookTitle, SRQueueItem.chapterKey(sessionBookId, sessionTreeStr), batchPageIdx(pageIndex))?.let { bmp ->
                 // 同步回填内存结果缓存（只进内存，不写实时磁盘区——批量产物有自己的领地，不重复占用配额）。
                 // 回填后状态指示/前后对比也能看到批量产物，不再出现"已显示超分却提示未启动"。
                 try {
@@ -335,11 +362,15 @@ object SrPipeline {
                     SrCore.manager.getCachedResult(key)?.let { return it }
                 }
             }
-            // ★ 有批量离线产物时同步查（直接吃产物，不走异步轮询避免闪烁/对比失效）
-            if (sessionHasBatch) {
-                getCached(pageIndex)?.let { return it }
+            // ★ 批量产物守卫改 stat-only（2026-10-02）：目录存在 → 交给 pollForResult 在 IO
+            //   解码回填。原实现在此同步调 getCached → getBatchPage 主线程解码大图，
+            //   违反 Fast 路径"主线程零解码"设计原则（F4.6）；事件注入不可靠（SharedFlow
+            //   无 replay），轮询从来就是兜底主通道。
+            if (batchChapterOnDisk()) {
+                pollForResult(pageIndex) { b -> SrCore.emitReady(cid, pageIndex, b) }
+                return null
             }
-            // 磁盘已有结果？只 stat 文件不解码；命中交给 pollForResult 异步回填
+            // 磁盘已有实时结果？只 stat 文件不解码；命中交给 pollForResult 异步回填
             val diskLikely = runCatching {
                 SrUiState.scope.intValue > SrUiState.SCOPE_OFF &&
                     SrCore.diskCache.contains(SrCore.manager.buildCacheKey(cid, pageIndex))
@@ -350,8 +381,9 @@ object SrPipeline {
             }
         }
 
-        // 已有离线产物的章节不再实时超分（直接吃产物；产物缺的页就显示原图）
-        if (sessionHasBatch) return null
+        // 已有离线产物的章节不再实时超分（直接吃产物；产物缺的页就显示原图）——
+        //   守卫改 stat（2026-10-02），防会话布尔误判时对已批量页重复实时烧算力
+        if (batchChapterOnDisk()) return null
 
         // ★ F4.7③：省电模式/低 RAM 设备自动停用"新起"的实时超分（缓存/批量产物照常吃）
         if (SrCore.shouldThrottleRealtimeSr()) return null
@@ -399,7 +431,11 @@ object SrPipeline {
     fun forceRetryCurrentPage(): String {
         if (!sessionActive) return "当前没有打开的书"
         if (sessionPageList.isEmpty()) return "没有可用页"
-        val p = currentPageIdx.coerceIn(0, sessionPageList.size - 1)
+        // ★ 定位修正（2026-10-02）：currentPageIdx 接线后是真实显示页；lastUserPage 兜底
+        //   （它会被左右相邻页的预绑定污染 ±2，只做退路）
+        val p = sequenceOf(currentPageIdx, lastUserPage)
+            .firstOrNull { it in sessionPageList.indices }
+            ?: return "没有可用页"
         val cached = getCached(p)
         if (cached != null && !cached.isRecycled) {
             SrCore.emitReady(sessionChapterId, p, cached)

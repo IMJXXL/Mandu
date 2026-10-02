@@ -2259,7 +2259,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                         val srTreeStr = navStack.lastOrNull() ?: book?.filePath ?: ""
                         LaunchedEffect(srTreeStr, book?.id, viewing) {
                             if (viewing && srTreeStr.isNotEmpty()) {
-                                com.mangareader.sr.SrPipeline.beginSession(ctx, srTreeStr, book?.id ?: -1L, book?.title ?: "", displayPages)
+                                com.mangareader.sr.SrPipeline.beginSession(ctx, srTreeStr, book?.id ?: -1L, book?.title ?: "", displayPages, cur)
                             } else {
                                 com.mangareader.sr.SrPipeline.endSession()
                             }
@@ -2378,6 +2378,10 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                             modifier = Modifier.fillMaxSize(),
                             onContainerReady = { readerContainerRef = it },
                             onPageChanged = { newCur ->
+                                // ★ SR 钩子接线（2026-10-02）：此前从未接线 → SrPipeline.currentPageIdx
+                                //   恒 0，勾选作用域不立即开算、仅当前页守卫错杀、整本预载失效、
+                                //   重算本页定位错。SKIP 只是进度保存守卫，页已实际显示，照常喂。
+                                try { com.mangareader.sr.SrPipeline.onPageChanged(newCur, displayPages.size) } catch (_: Exception) {}
                                 // ★ Bug C 修复：onPageChanged 可能在 setup 滚到位前被触发（webtoon RV layout 过程 / pager setCurrentItem 同步），
                                 //   首个 visible item != sp，会把 currentPage 重写为错的页码 → 冲掉 lastPage 并 save 持久化。
                                 //   守卫通过 mode 判定后用 WebtoonReaderView.isSetupScrollPending 闸：
