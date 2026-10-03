@@ -51,6 +51,35 @@ object NpuModelDownload {
         }.onFailure { Log.w(TAG, "open browser failed: ${it.message}") }
     }
 
+    /** 已安装的模型包列表（v 代插件：com.mangareader.model.v<代号>）——卸载入口用 */
+    fun installedModelPackages(context: Context): List<String> =
+        try {
+            context.packageManager.getInstalledPackages(0)
+                .asSequence()
+                .map { it.packageName }
+                .filter { it.startsWith(NpuModelPluginScanner.MODEL_PACKAGE_PREFIX) }
+                .sorted()
+                .toList()
+        } catch (_: Exception) {
+            emptyList()
+        }
+
+    /** 卸载模型包：优先系统卸载器（需 REQUEST_DELETE_PACKAGES），拉不起退应用详情页让用户手动卸 */
+    fun uninstall(context: Context, packageName: String) {
+        val launched = runCatching {
+            context.startActivity(
+                Intent(Intent.ACTION_DELETE, Uri.parse("package:$packageName"))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+        }.isSuccess
+        if (!launched) runCatching {
+            context.startActivity(
+                Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+        }.onFailure { Log.w(TAG, "uninstall launch failed: ${it.message}") }
+    }
+
     suspend fun download(context: Context, arch: Int, onProgress: (Int) -> Unit): File? =
         withContext(Dispatchers.IO) {
             val fileName = "$FILE_PREFIX$arch$FILE_SUFFIX"

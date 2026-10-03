@@ -209,6 +209,8 @@ private fun SrPanelContent(
     var npuDownloading by remember { mutableStateOf(false) }
     var npuDlProgress by remember { mutableStateOf(0) }
     var npuInstallLaunched by remember { mutableStateOf(0) }
+    // 非空=显示"卸载模型包"对话框（列出已安装的 v 代插件包）
+    var uninstallPkgs by remember { mutableStateOf<List<String>>(emptyList()) }
 
     // 本书离线状态：打开面板查一次；队列事件驱动刷新（3 秒节流）
     LaunchedEffect(bookId) { bookStatus = loadBookOfflineStatus(bookId) }
@@ -245,16 +247,15 @@ private fun SrPanelContent(
         // 诊断短码：a=HTP 代（0=未探到） m=模型包是否在位——下份日志可直接判断面板处于哪个状态
         runCatching { com.mangareader.DiagTracer.markStatic("sr: npu ui a=$arch m=$hasPkg") }
     }
-    // 装好模型包回来后自动重扫（2 秒一查，最多 60 秒）
+    // 装好/卸掉模型包回来后自动重扫（2 秒一查，最多 60 秒；就绪态双向刷新）
     LaunchedEffect(npuInstallLaunched) {
         if (npuInstallLaunched > 0) {
             repeat(30) {
                 kotlinx.coroutines.delay(2000)
                 withContext(Dispatchers.IO) { NpuModelRegistry.refresh(ctx) }
-                if (NpuModelRegistry.hasPackageFor(npuArch)) {
-                    npuModelsReady = true
-                    return@LaunchedEffect
-                }
+                val has = NpuModelRegistry.hasPackageFor(npuArch)
+                npuModelsReady = has
+                if (has) return@LaunchedEffect
             }
         }
     }
@@ -652,6 +653,17 @@ private fun SrPanelContent(
                                     Modifier.weight(1f),
                                     fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
+                                // ★ 卸载入口（2026-10-03 用户反馈）：模型包不应只进不出
+                                TextButton(onClick = {
+                                    val pkgs = NpuModelDownload.installedModelPackages(ctx)
+                                    if (pkgs.isEmpty()) {
+                                        android.widget.Toast.makeText(ctx, "未检测到已安装的模型包", android.widget.Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        uninstallPkgs = pkgs
+                                    }
+                                }) {
+                                    Text("卸载", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+                                }
                                 TextButton(onClick = { NpuModelDownload.openInBrowser(ctx, NpuModelDownload.RELEASE_PAGE_URL) }) {
                                     Text("重下/换包 · 对照表", fontSize = 12.sp)
                                 }
@@ -950,6 +962,39 @@ private fun SrPanelContent(
                 }
             }
         }
+    }
+
+    // 卸载模型包对话框：列出已安装的 v 代插件包，逐个拉系统卸载器；卸完 npuInstallLaunched 触发重扫
+    if (uninstallPkgs.isNotEmpty()) {
+        AlertDialog(
+            onDismissRequest = { uninstallPkgs = emptyList() },
+            title = { Text("卸载 NPU 模型包") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        "模型包是独立的纯资产应用（共 ${uninstallPkgs.size} 个），卸载不影响漫读本体；卸掉后对应代次的 NPU 不可用，可随时从下载入口重装。",
+                        fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    uninstallPkgs.forEach { pkg ->
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(pkg.removePrefix("com.mangareader.model."), fontSize = 14.sp)
+                            TextButton(onClick = {
+                                NpuModelDownload.uninstall(ctx, pkg)
+                                uninstallPkgs = emptyList()
+                                npuInstallLaunched++
+                            }) { Text("卸载", color = MaterialTheme.colorScheme.error) }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { uninstallPkgs = emptyList() }) { Text("取消") }
+            },
+        )
     }
 }
 

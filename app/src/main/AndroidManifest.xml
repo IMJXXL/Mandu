@@ -9,6 +9,8 @@
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
+    <!-- NPU 模型包卸载入口：拉起系统卸载器（ACTION_DELETE，API 28+ 要求声明） -->
+    <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES"/>
     <!-- NPU 模型插件发现（Android 11+ 包可见性）：扫描 com.mangareader.model.* 纯资产模型包 -->
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" tools:ignore="QueryAllPackagesPermission"/>
     <!-- 扫描诊断的对照探测包（区分"逐名查询可用、列表 API 被拦"和"全被拦"） -->

@@ -47,6 +47,7 @@ object SrBatchRunner {
                 chapters += r.first; pages += r.second
             }
             if (chapters > 0) startService(appCtx)
+            com.mangareader.DiagTracer.markStatic("sr: enq n=${books.size} ch=$chapters p=$pages")
             onDone(EnqueueResult(chapters, pages))
         }
     }
@@ -57,7 +58,11 @@ object SrBatchRunner {
     ): Pair<Int, Int> {
         return try {
             val dao = MangaDatabase.getDatabase(context).mangaDao()
-            val book = dao.getBookById(bookId) ?: return 0 to 0
+            val book = dao.getBookById(bookId)
+                ?: run {
+                    com.mangareader.DiagTracer.markStatic("sr: enq nobook id=$bookId")
+                    return 0 to 0
+                }
             val progressPaths = try {
                 dao.getAllProgressForBook(bookId).map { it.path }
             } catch (_: Exception) {
@@ -88,6 +93,18 @@ object SrBatchRunner {
                 // ★ 格式白名单放开后（2026-10-03）：真读不了的格式 listPages 返回 0 页，
                 //   不入队——让"没有找到可处理的页面"提示如实出现，而不是排队一个空章
                 .filter { it.totalPages > 0 }
+            if (built.isEmpty()) {
+                // 诊断短码：入队 0 章时报告书根形态/模式/已有进度章数——下份日志直接定位卡点
+                val kind = when {
+                    book.filePath.startsWith("a:") -> "a"
+                    book.filePath.startsWith("d:") -> "d"
+                    book.filePath.startsWith("z:") -> "z"
+                    else -> "?"
+                }
+                com.mangareader.DiagTracer.markStatic(
+                    "sr: enq0 kind=$kind whole=$includeUnread prog=${progressPaths.size}",
+                )
+            }
             // 重新入队 = 从头重做：队列里已有同章旧项时整体替换（processedPages 归零），
             // 否则残留的旧进度会让用户看到"从中间开始"。★ F4.3：经 store 锁内原子读改写。
             var addedPages = 0
@@ -107,6 +124,7 @@ object SrBatchRunner {
             built.size to addedPages
         } catch (e: Exception) {
             Log.e(TAG, "enqueue book $bookId failed", e)
+            com.mangareader.DiagTracer.markStatic("sr: enq ex ${e.javaClass.simpleName}")
             0 to 0
         }
     }
@@ -124,7 +142,8 @@ object SrBatchRunner {
         if (rootPath.startsWith("a:")) {
             return try {
                 if (engine.listPages(rootPath).isNotEmpty()) listOf(rootPath) else emptyList()
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                com.mangareader.DiagTracer.markStatic("sr: enq rootex ${e.javaClass.simpleName}")
                 emptyList()
             }
         }
