@@ -125,6 +125,14 @@ object DiagExporter {
                 sb.appendLine(tailOf(f, 256))
             } else sb.appendLine("[diag_stages] 无（未到达任何启动标记点 = 崩溃极早期）")
         }
+        // NPU 模型包扫描失败取证（扫描器扫不到任何模型包时写，成功即删）
+        runCatching {
+            val f = java.io.File(ctx.getExternalFilesDir(null) ?: return@runCatching, "npu-diag.txt")
+            if (f.exists() && f.length() > 0) {
+                sb.appendLine("----- npu-diag.txt（模型包扫描失败原因）-----")
+                sb.appendLine(tailOf(f, 16))
+            }
+        }
 
 
         val text = sb.toString()

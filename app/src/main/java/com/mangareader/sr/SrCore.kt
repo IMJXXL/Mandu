@@ -195,6 +195,10 @@ object SrCore {
 
     fun emitReady(chapterId: Long, pageIndex: Int, bitmap: android.graphics.Bitmap) {
         val ok = _readyEvents.tryEmit(SrReadyEvent(chapterId, pageIndex, bitmap))
+        // ★ 2026-10-03 审计修复：出结果必须 bump 节拍——右上角"优化完成"角标与底栏"对比"
+        //   按钮都订阅 srTick 重组；此前 pollForResult→产物回填路径不 bump，角标/按钮要等
+        //   翻页等其它重组才出现（"明明增强了却不出现"的残留根因）
+        if (ok) SrUiState.bumpSrTick()
         android.util.Log.i("SrCore", "emitReady cid=$chapterId p=$pageIndex bmp=${bitmap.width}x${bitmap.height} emitted=$ok")
     }
 

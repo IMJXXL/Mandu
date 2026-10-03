@@ -251,8 +251,17 @@ class SRDiskCache(
     fun hasArtifactsForBook(bookId: Long): Boolean =
         bookId >= 0 && File(artifactDir, bookId.toString()).isDirectory
 
+    /** 上次产物淘汰检查时刻（每次 putArtifact 都会进来，全树 walk 不能每次都跑） */
+    @Volatile
+    private var lastArtifactEvictMs = 0L
+
     /** 三件套之二：总字节超上限时按 mtime 从旧到新删，直到回落上限内（IO 线程调用） */
     private fun evictArtifactsIfNeeded() {
+        // ★ 审计修复：节流——全树 walkTopDown+排序不便宜，批量跑批连写时每页一次不可承受；
+        //   15 秒窗口内跳过（淘汰最多延迟 15 秒，可接受）
+        val now = System.currentTimeMillis()
+        if (now - lastArtifactEvictMs < 15_000) return
+        lastArtifactEvictMs = now
         val limit = try {
             artifactLimitBytes().coerceAtLeast(16L * 1024 * 1024)
         } catch (_: Throwable) {

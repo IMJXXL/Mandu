@@ -35,6 +35,47 @@ object NpuModelDownload {
     /** Release 页（含全部代次模型包与 v 代↔处理器对照表），浏览器打开自行挑包 */
     const val RELEASE_PAGE_URL = "https://github.com/IMJXXL/mandu/releases/tag/npu-model"
 
+    /**
+     * 各代包的官方 MD5（GitHub Release 对照表同源）。加速镜像是第三方代理，可能回
+     * HTML 错误页等脏内容——下载完必须校验，不匹配当作下载失败换下一路。
+     */
+    val EXPECTED_MD5: Map<Int, String> = mapOf(
+        69 to "48182db861114d11f3f3cb06cfa96e42",
+        73 to "6c3852974b09979b13109e9a53e50cc5",
+        75 to "ec5709205f6e347f33cc2bc8732d7f48",
+        79 to "bc5100f3b91a8e7b1630f0562e3ca246",
+        81 to "dc764e659eae2bdb075caca5028197ce",
+    )
+
+    private fun md5Hex(f: File): String? = try {
+        val md = java.security.MessageDigest.getInstance("MD5")
+        f.inputStream().use { input ->
+            val buf = ByteArray(64 * 1024)
+            while (true) {
+                val n = input.read(buf)
+                if (n < 0) break
+                md.update(buf, 0, n)
+            }
+        }
+        md.digest().joinToString("") { "%02x".format(it) }
+    } catch (_: Exception) {
+        null
+    }
+
+    fun apkFile(context: Context, arch: Int): File =
+        File(File(context.cacheDir, "update_apk"), "$FILE_PREFIX$arch$FILE_SUFFIX")
+
+    /**
+     * 已下载完待安装的包（2026-10-03 反馈"重进仍显示下载"）：文件在且 MD5 与官方一致才认。
+     * 面板打开时检测它——命中则按钮从"下载"变"安装"。
+     */
+    fun downloadedApk(context: Context, arch: Int): File? {
+        val f = apkFile(context, arch)
+        if (!f.isFile || f.length() < 1024 * 1024) return null
+        val expected = EXPECTED_MD5[arch] ?: return f  // 无对照值的代次：存在即认
+        return if (md5Hex(f).equals(expected, ignoreCase = true)) f else null
+    }
+
     fun urlFor(arch: Int): String = "$RELEASE_BASE/$FILE_PREFIX$arch$FILE_SUFFIX"
 
     /** 浏览器直下用 URL 列表（官方 + 加速线路，同 UpdateConstants.MIRRORS 口径） */
@@ -84,7 +125,7 @@ object NpuModelDownload {
         withContext(Dispatchers.IO) {
             val fileName = "$FILE_PREFIX$arch$FILE_SUFFIX"
             val dir = File(context.cacheDir, "update_apk").apply { mkdirs() }
-            val out = File(dir, fileName)
+            val out = apkFile(context, arch)
             val tmp = File(dir, "$fileName.tmp")
             val sources = UpdateConstants.MIRRORS.map { (prefix, _) -> prefix + urlFor(arch) }
             for (src in sources) {
@@ -117,6 +158,13 @@ object NpuModelDownload {
                     if (!tmp.renameTo(out)) {
                         tmp.copyTo(out, overwrite = true)
                         tmp.delete()
+                    }
+                    // ★ MD5 校验：镜像可能回脏文件——不匹配删掉当失败，换下一路
+                    val expected = EXPECTED_MD5[arch]
+                    if (expected != null && !md5Hex(out).equals(expected, ignoreCase = true)) {
+                        Log.w(TAG, "md5 mismatch from ${src.take(40)} — discard")
+                        out.delete()
+                        continue
                     }
                     return@withContext out
                 } catch (e: Exception) {

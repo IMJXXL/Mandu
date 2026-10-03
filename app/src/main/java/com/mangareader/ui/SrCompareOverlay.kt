@@ -11,6 +11,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -32,6 +33,8 @@ import androidx.compose.ui.unit.sp
 import com.mangareader.sr.SrCore
 import com.mangareader.sr.SrPipeline
 import com.mangareader.sr.SrUiState
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlin.math.min
 
 /**
@@ -45,21 +48,33 @@ fun SrCompareOverlay(pageIndex: Int, tick: Int, onClose: () -> Unit, bgColor: In
     if (!SrUiState.compareActive.value) return
 
     // tick 变化驱动重取（超分完成事件到来时刷新）
-    val original = remember(pageIndex, tick) { SrPipeline.peekOriginal(pageIndex) }
-    val enhanced = remember(pageIndex, tick) { SrPipeline.peekSr(pageIndex) }
+    // ★ 2026-10-03 审计修复：peekOriginal/peekSr 对产物/批量 webp 走 decodeFile——
+    //   原先在 remember{} 组合期主线程解码全尺寸大图（tick 每变一次重解一次，ANR 风险）。
+    //   改 LaunchedEffect(IO) 装载进状态，装载完成前保持空（浮层短暂空屏可接受）。
+    var original by remember(pageIndex) { mutableStateOf<android.graphics.Bitmap?>(null) }
+    var enhanced by remember(pageIndex) { mutableStateOf<android.graphics.Bitmap?>(null) }
+    LaunchedEffect(pageIndex, tick) {
+        val o = withContext(Dispatchers.IO) { SrPipeline.peekOriginal(pageIndex) }
+        val e = withContext(Dispatchers.IO) { SrPipeline.peekSr(pageIndex) }
+        original = o
+        enhanced = e
+    }
 
 
     // ★ 底色跟随阅读器背景色（非固定黑）：长页适配后两侧必然露出底色，与阅读观感保持一致
     Box(Modifier.fillMaxSize().background(Color(bgColor))) {
-        if (original != null && enhanced != null && !original.isRecycled && !enhanced.isRecycled) {
+        // 局部快照（委托属性不能 smart cast，且装载完成前保持空）
+        val originalBmp = original
+        val enhancedBmp = enhanced
+        if (originalBmp != null && enhancedBmp != null && !originalBmp.isRecycled && !enhancedBmp.isRecycled) {
             var fraction by remember(pageIndex) { mutableFloatStateOf(0.5f) }
             var panY by remember(pageIndex) { mutableFloatStateOf(0f) }
             // ★ 手势轴向自动判定（无按钮）：一次拖动手势开始后，首个有效位移决定轴——
             //   横向=只移分割线（纵向临时失效），纵向=只平移长页；松手即释放
             var axisDecided by remember(pageIndex) { mutableStateOf(false) }
             var axisVertical by remember(pageIndex) { mutableStateOf(false) }
-            val oImg = original.asImageBitmap()
-            val eImg = enhanced.asImageBitmap()
+            val oImg = originalBmp.asImageBitmap()
+            val eImg = enhancedBmp.asImageBitmap()
 
             Canvas(
                 Modifier

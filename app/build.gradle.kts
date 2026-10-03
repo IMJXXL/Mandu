@@ -132,6 +132,8 @@ dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.4")
     implementation("androidx.activity:activity-compose:1.9.1")
+    // 书架拖动排序（mihon 同款方案，sh.calvin.reorderable）：拖动时其余项实时动画让位+边缘自动滚
+    implementation("sh.calvin.reorderable:reorderable:3.1.0")
 
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")

@@ -47,7 +47,9 @@ class MainActivity : ComponentActivity() {
         if (hwHandler != null) {
             try {
                 if (hwHandler(event.keyCode, event)) return true
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                // ★ 审计修复：吞异常但留痕——handler 半途抛错时按键静默丢失，日志可查
+                android.util.Log.w("HwKeys", "key handler failed kc=${event.keyCode}: ${e.message}")
             }
         }
         if (VolumeKeyHandler.enabled && !VolumeKeyHandler.menuVisible) {

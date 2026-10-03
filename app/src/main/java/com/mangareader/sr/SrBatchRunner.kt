@@ -113,7 +113,11 @@ object SrBatchRunner {
                     val next = current.toMutableList()
                     built.forEach { fresh ->
                         val oldIdx = next.indexOfFirst { it.chapterKey == fresh.chapterKey }
-                        if (oldIdx >= 0) next[oldIdx] = fresh else {
+                        if (oldIdx >= 0) {
+                            next[oldIdx] = fresh
+                            // ★ 审计修复：重入队被替换的旧章页数也计入——否则 Toast 出现"N 章 0 页"
+                            addedPages += fresh.totalPages
+                        } else {
                             next.add(fresh)
                             addedPages += fresh.totalPages
                         }

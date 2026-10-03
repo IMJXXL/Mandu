@@ -109,7 +109,11 @@ object KeyMapStore {
                 try {
                     json.decodeFromString<List<KeyMapping>>(raw)
                 } catch (_: Exception) {
-                    emptyList()
+                    // ★ 审计修复：JSON 损坏自愈回默认表并落盘——原先静默空表，下次 save
+                    //   会把用户映射无声清空
+                    val d = defaults()
+                    prefs.edit().putString(KEY, json.encodeToString(d)).apply()
+                    d
                 }
             }
             cache = list

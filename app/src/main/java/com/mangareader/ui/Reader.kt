@@ -1879,7 +1879,18 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         lockIconJob?.cancel()
         try {
             // Step 1: All IO work on Dispatchers.IO (no state mutation)
-            val loadedBook = withContext(Dispatchers.IO) { dao.getBookById(bookId) }
+            // ★ 2026-10-03：查无此书时短间隔重试 3 次——刚导入即开书/首开竞态下 DB 可能
+            //   尚未就绪；book=null 会让画质增强离线 Tab 整个变兜底卡（不能入队）
+            var loadedBook = withContext(Dispatchers.IO) { dao.getBookById(bookId) }
+            var retries = 0
+            while (loadedBook == null && bookId > 0 && retries < 3) {
+                kotlinx.coroutines.delay(300)
+                loadedBook = withContext(Dispatchers.IO) { dao.getBookById(bookId) }
+                retries++
+            }
+            if (loadedBook == null && bookId > 0) {
+                runCatching { com.mangareader.DiagTracer.markStatic("reader: book null id=$bookId") }
+            }
             book = loadedBook
             persistDavCoverIfGated(loadedBook)
             // ★ 本地打开锚点 begin：远程书由 remote: open 系列取证，此处只记本地
@@ -2212,8 +2223,18 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                             isActive = pageBookmarked
                         ) { toggleBookmark() })
                         add(BottomBarAction(Icons.Default.AutoFixHigh, "画质增强") { showSrPanel = true })
-                        // 超分作用域已开启 或 离线批量产物存在 → 出现"对比"按钮
-                        if (com.mangareader.sr.SrUiState.scope.intValue > 0 || com.mangareader.sr.SrPipeline.sessionHasBatch) {
+                        // 超分作用域已开启 / 离线批量产物 / 本页增强结果（页级产物回填内存）→ 出现"对比"按钮
+                        // ★ 2026-10-03：读 srTick 订阅管线事件——emitReady（含产物回填出结果）会
+                        //   bump tick（SrCore.emitReady），按钮在结果落地的同一拍出现
+                        val srCompareVisible = com.mangareader.sr.SrUiState.scope.intValue > 0 ||
+                            com.mangareader.sr.SrPipeline.sessionHasBatch ||
+                            com.mangareader.sr.SrUiState.compareActive.value ||
+                            run {
+                                com.mangareader.sr.SrUiState.srTick.intValue // 订阅节拍
+                                val c = cur
+                                !com.mangareader.sr.SrPipeline.computing(c) && com.mangareader.sr.SrPipeline.peekSrMemory(c) != null
+                            }
+                        if (srCompareVisible) {
                             add(BottomBarAction(Icons.Default.CompareArrows, if (com.mangareader.sr.SrUiState.compareActive.value) "退出对比" else "对比") {
                                 com.mangareader.sr.SrUiState.compareActive.value = !com.mangareader.sr.SrUiState.compareActive.value
                             })
@@ -2481,6 +2502,10 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                             // ★ 2026-10-03：作用域关闭但本页已有增强结果（页级产物回填内存）时
                             //   也显示"优化完成"——修复"重开书后没有对比提示"（此前整个角标被
                             //   作用域门挡死，重开默认关闭 → 永远不可见）
+                            // ★ 审计修复：tick 读取必须先于 computing/done——tick 变化要重组
+                            //   【本作用域】；若只在下方 Row 里读，Row 里的 computing/done 是
+                            //   外层陈旧捕获，角标会滞留
+                            val srTickNow = com.mangareader.sr.SrUiState.srTick.intValue
                             val srBadgeComputing = com.mangareader.sr.SrPipeline.computing(cur)
                             val srBadgeDone = !srBadgeComputing && com.mangareader.sr.SrPipeline.peekSrMemory(cur) != null
                             if (com.mangareader.sr.SrUiState.scope.intValue > 0 || srBadgeComputing || srBadgeDone) {
@@ -2493,8 +2518,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                                         .padding(horizontal = 8.dp, vertical = 4.dp),
                                 ) {
                                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                        // ★ 读节拍器：调度开始/结束/出结果都会实时重组此指示器
-                                        val srTick = com.mangareader.sr.SrUiState.srTick.intValue
+                                        // ★ 读节拍器：srTickNow 已在外层读取（订阅+防陈旧捕获）
                                         val computing = srBadgeComputing
                                         val done = srBadgeDone
                                         when {
@@ -2822,7 +2846,11 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     if (showSrPanel) {
         BackHandler { showSrPanel = false }
         com.mangareader.ui.SrPanel(
-            bookId = book?.id ?: -1L,
+            // ★ 2026-10-03 关键修复：面板 bookId 用【路由 id】而非 book?.id——实测
+            //   GACHIAKUTA 199 章书 book 状态为 null（路由 id 有效、阅读正常），面板却拿到
+            //   -1 → 整个离线 Tab 变"未关联书架"兜底卡，用户无法入队。入队器/状态加载
+            //   内部都会按 id 自查 DB，路由 id 才是真实来源。
+            bookId = bookId,
             bookTitle = book?.title ?: "",
             bookPath = book?.filePath,
             onOpenQueue = {
@@ -3059,6 +3087,8 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     DisposableEffect(viewing, pageList) {
         if (viewing) {
             com.mangareader.keys.HardwareKeyRouter.handler = { keyCode, event -> handleHwKey(keyCode, event) }
+            // ★ 审计修复：预热按键映射表——首次按键在主线程触发 SharedPreferences+JSON 解码
+            scope.launch(Dispatchers.IO) { com.mangareader.keys.KeyMapStore.mappings(ctx) }
         }
         onDispose { com.mangareader.keys.HardwareKeyRouter.handler = null }
     }

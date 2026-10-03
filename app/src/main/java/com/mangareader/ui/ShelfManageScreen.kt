@@ -3,24 +3,20 @@ package com.mangareader.ui
 import android.content.Context
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -29,6 +25,8 @@ import com.mangareader.data.Bookshelf
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.rememberReorderableLazyListState
 
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
@@ -44,10 +42,28 @@ fun ShelfManageScreen(onBack: () -> Unit) {
     var editShelfName by remember { mutableStateOf("") }
     var showCreateShelf by remember { mutableStateOf(false) }
     var newShelfName by remember { mutableStateOf("") }
-    var draggedIndex by remember { mutableIntStateOf(-1) }
-    var dragOffset by remember { mutableFloatStateOf(0f) }
-    val shelfDensity = LocalDensity.current.density
-    val shelfItemHeight = 52f
+    // ★ 书架拖动排序（2026-10-03，mihon 同款 sh.calvin.reorderable 方案）：
+    //   ReorderableItem + animateItem——拖动时其余书架实时动画让位、列表边缘自动滚动；
+    //   旧实现（graphicsLayer 平移+松手才跳位）废弃。dragList = 拖动期快照，DB 全表落盘。
+    val listState = rememberLazyListState()
+    val dragList = remember { mutableStateListOf<Bookshelf>() }
+    val canDragState = remember { mutableStateOf(true) } // 搜索过滤时禁拖（过滤序≠全序，拖了会错位）；值随 shelfQuery 刷新
+    val reorderableState = rememberReorderableLazyListState(listState) { from, to ->
+        if (canDragState.value) {
+            val item = dragList.removeAt(from.index)
+            dragList.add(to.index, item)
+            // 书架数量小（几十量级），每次让位全表落盘一次，顺序永远一致
+            scope.launch(Dispatchers.IO) {
+                dragList.forEachIndexed { i, s -> dao.updateBookshelfSort(s.id, i) }
+            }
+        }
+    }
+    LaunchedEffect(bookshelves) {
+        if (!reorderableState.isAnyItemDragging) {
+            dragList.clear()
+            dragList.addAll(bookshelves)
+        }
+    }
     var isMultiSelect by remember { mutableStateOf(false) }
     var selectedShelves by remember { mutableStateOf(setOf<Long>()) }
     var showSettings by remember { mutableStateOf(false) }
@@ -62,6 +78,7 @@ fun ShelfManageScreen(onBack: () -> Unit) {
     var tagMultiSelect by remember { mutableStateOf(false) }
     val prefs = remember { ctx.getSharedPreferences("manga_reader", Context.MODE_PRIVATE) }
     var manageLayout by remember { mutableStateOf(prefs.getInt("manage_layout", 0)) }
+    LaunchedEffect(shelfQuery) { canDragState.value = shelfQuery.isBlank() }
 
     BackHandler {
         if (showSettings) showSettings = false
@@ -124,7 +141,13 @@ fun ShelfManageScreen(onBack: () -> Unit) {
                 Tab(selected = manageTab == 1, onClick = { manageTab = 1; isMultiSelect = false; selectedShelves = emptySet() }) { Text("标签", Modifier.padding(vertical = 12.dp), fontSize = 15.sp) }
             }
             if (manageTab == 0) {
-            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
+            LazyColumn(
+                Modifier.fillMaxSize().padding(16.dp),
+                state = listState,
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                contentPadding = PaddingValues(bottom = 24.dp),
+            ) {
+            item {
             OutlinedTextField(
                 value = shelfQuery,
                 onValueChange = { shelfQuery = it },
@@ -133,12 +156,19 @@ fun ShelfManageScreen(onBack: () -> Unit) {
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
-            Spacer(Modifier.height(8.dp))
-            Text(if (shelfQuery.isBlank()) "长按拖动排序" else "搜索中（拖动排序暂停）", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.height(8.dp))
-            val visibleShelfList = if (shelfQuery.isBlank()) bookshelves else bookshelves.filter { it.name.contains(shelfQuery, ignoreCase = true) }
-            if (visibleShelfList.isEmpty()) Text(if (bookshelves.isEmpty()) "还没有书架" else "没有匹配的书架", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            item {
+            Text(if (canDragState.value) "长按拖动排序" else "搜索中（拖动排序暂停）", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            // 显示列表：拖动期读快照 dragList（onMove 实时换位 + animateItem 动画），搜索时过滤
+            val visibleShelfList = if (shelfQuery.isBlank()) dragList.toList() else dragList.filter { it.name.contains(shelfQuery, ignoreCase = true) }
+            if (visibleShelfList.isEmpty()) {
+                item {
+                    Text(if (bookshelves.isEmpty()) "还没有书架" else "没有匹配的书架", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
             if (manageLayout == 1) {
+                item {
                 FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     visibleShelfList.forEach { shelf ->
                         var chipMenu by remember { mutableStateOf(false) }
@@ -154,68 +184,39 @@ fun ShelfManageScreen(onBack: () -> Unit) {
                         }
                     }
                 }
-            } else visibleShelfList.forEachIndexed { index, shelf ->
-                val maxUp = index * shelfItemHeight
-                val maxDown = (bookshelves.size - 1 - index) * shelfItemHeight
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 2.dp)
-                        .graphicsLayer {
-                            if (draggedIndex == index) {
-                                translationY = dragOffset.coerceIn(-maxUp, maxDown) * shelfDensity
-                                shadowElevation = 8f
+                }
+            } else items(visibleShelfList, key = { it.id }) { shelf ->
+                ReorderableItem(reorderableState, shelf.id) { dragging ->
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .animateItem(),
+                        shape = RoundedCornerShape(8.dp),
+                        color = if (dragging) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                    ) {
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .then(if (canDragState.value) Modifier.longPressDraggableHandle() else Modifier)
+                                .clickable { if (isMultiSelect) selectedShelves = if (shelf.id in selectedShelves) selectedShelves - shelf.id else selectedShelves + shelf.id }
+                                .padding(horizontal = 12.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            if (isMultiSelect) {
+                                Checkbox(checked = shelf.id in selectedShelves, onCheckedChange = { selectedShelves = if (it) selectedShelves + shelf.id else selectedShelves - shelf.id })
+                                Spacer(Modifier.width(4.dp))
                             }
-                        }
-                        .pointerInput(index, bookshelves.size, isMultiSelect, shelfQuery) {
-                            if (!isMultiSelect && shelfQuery.isBlank()) {
-                                detectDragGesturesAfterLongPress(
-                                onDragStart = { draggedIndex = index },
-                                onDragEnd = {
-                                    if (draggedIndex >= 0 && draggedIndex < bookshelves.size) {
-                                        val finalIndex = (draggedIndex + (dragOffset / shelfItemHeight).toInt()).coerceIn(0, bookshelves.size - 1)
-                                        if (finalIndex != draggedIndex) {
-                                            val mutable = bookshelves.toMutableList()
-                                            val item = mutable.removeAt(draggedIndex)
-                                            mutable.add(finalIndex, item)
-                                            bookshelves = mutable
-                                            scope.launch {
-                                                withContext(Dispatchers.IO) {
-                                                    mutable.forEachIndexed { i, s -> dao.updateBookshelfSort(s.id, i) }
-                                                }
-                                            }
-                                        }
-                                    }
-                                    draggedIndex = -1; dragOffset = 0f
-                                },
-                                onDragCancel = { draggedIndex = -1; dragOffset = 0f },
-                                onDrag = { change, dragAmount ->
-                                    change.consume()
-                                    val maxUp2 = draggedIndex * shelfItemHeight
-                                    val maxDown2 = (bookshelves.size - 1 - draggedIndex) * shelfItemHeight
-                                    dragOffset = (dragOffset + dragAmount.y).coerceIn(-maxUp2, maxDown2)
-                                }
-                            )
+                            if (!isMultiSelect) {
+                                Icon(Icons.Default.DragHandle, null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Spacer(Modifier.width(8.dp))
                             }
-                        },
-                    shape = RoundedCornerShape(8.dp),
-                    color = if (draggedIndex == index) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
-                ) {
-                    Row(Modifier.padding(horizontal = 12.dp, vertical = 12.dp).clickable { if (isMultiSelect) selectedShelves = if (shelf.id in selectedShelves) selectedShelves - shelf.id else selectedShelves + shelf.id }, verticalAlignment = Alignment.CenterVertically) {
-                        if (isMultiSelect) {
-                            Checkbox(checked = shelf.id in selectedShelves, onCheckedChange = { selectedShelves = if (it) selectedShelves + shelf.id else selectedShelves - shelf.id })
-                            Spacer(Modifier.width(4.dp))
-                        }
-                        if (!isMultiSelect) {
-                            Icon(Icons.Default.DragHandle, null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Icon(Icons.Default.Book, null, modifier = Modifier.size(20.dp))
                             Spacer(Modifier.width(8.dp))
-                        }
-                        Icon(Icons.Default.Book, null, modifier = Modifier.size(20.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text(shelf.name, fontSize = 14.sp, modifier = Modifier.weight(1f))
-                        if (!isMultiSelect) {
-                            IconButton(onClick = { editShelf = shelf; editShelfName = shelf.name }) { Icon(Icons.Default.Edit, "编辑", modifier = Modifier.size(20.dp)) }
-                            IconButton(onClick = { showDeleteShelf = shelf }) { Icon(Icons.Default.Delete, "删除", modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.error) }
+                            Text(shelf.name, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                            if (!isMultiSelect) {
+                                IconButton(onClick = { editShelf = shelf; editShelfName = shelf.name }) { Icon(Icons.Default.Edit, "编辑", modifier = Modifier.size(20.dp)) }
+                                IconButton(onClick = { showDeleteShelf = shelf }) { Icon(Icons.Default.Delete, "删除", modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.error) }
+                            }
                         }
                     }
                 }
