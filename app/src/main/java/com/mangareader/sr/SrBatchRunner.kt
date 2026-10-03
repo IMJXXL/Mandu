@@ -114,7 +114,24 @@ object SrBatchRunner {
      *  `a:auth|tree|doc|ext`、zip 内=`z:archive//sub/`）——chapterKey 必须与阅读会话
      *  同源，否则批量产物目录与显示链对不上。子项是否含页由 listPages 判定（IO）。
      */
+    /** 单文件书的扩展名集合：这些格式的 a: 根目录就是"一个文件"，书本身即一章。
+     *  children() 是 SAF 目录枚举，对文件型 doc 返回空——此前 mobi/epub 等单文件书
+     *  走 children 枚举必然 0 章，永远入不了队。 */
+    private val singleFileExts = setOf(
+        "zip", "cbz", "rar", "cbr", "7z", "tar", "cbt", "pdf",
+        "mobi", "azw", "azw3", "pdb", "prc", "epub",
+    )
+
     private fun chapterPaths(engine: ArchiveEngine, rootPath: String): List<String> {
+        // ★ 单文件书：根的 listPages 非空即整本一章（mobi 系走 libmobi、epub 走 zip 分支）
+        val rootExt = rootPath.substringAfterLast('|', rootPath).substringAfterLast('.', "").lowercase()
+        if (rootPath.startsWith("a:") && rootExt in singleFileExts) {
+            return try {
+                if (engine.listPages(rootPath).isNotEmpty()) listOf(rootPath) else emptyList()
+            } catch (_: Exception) {
+                emptyList()
+            }
+        }
         val candidates = LinkedHashSet<String>()
         for (item in engine.children(rootPath)) {
             if (item.auth == "smb" || item.auth == "webdav") continue

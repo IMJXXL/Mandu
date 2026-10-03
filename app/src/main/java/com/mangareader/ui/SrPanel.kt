@@ -135,18 +135,24 @@ private suspend fun loadBookOfflineStatus(bookId: Long): BookOfflineStatus? =
         }
     }
 
-/** 离线增强能力判定：压缩包/文件夹/PDF 支持；电子书容器（mobi/azw3/epub）与远程书不支持 */
+/** 离线增强能力判定（2026-10-03 v2）：ArchiveEngine 实际支持的全部格式都放开。
+ *  ★ 扩展名双口径：书架 SAF 书是竖线格式（a:auth|tree|docId|zip），普通本地书是点号路径
+ *    （/x/y.zip）——此前只按点号取扩展名，SAF 书全部误判为不支持 → 「加入增强队列」按钮
+ *    集体消失（用户实测"基本都不行/没有加入队列"的根因）。
+ *  ★ mobi/azw/azw3/pdb/prc 走 ArchiveEngine 的 libmobi 分支（listPages/loadPage 均支持），
+ *    epub 即 zip 容器——此前把它们当"不支持"是错杀。 */
 private fun offlineEnhanceSupported(bookPath: String?): Pair<Boolean, String?> {
     if (bookPath == null) return false to "本书信息缺失"
     if (bookPath.startsWith("smb:") || bookPath.startsWith("webdav:")) {
-        return false to "网络来源的书暂不支持一键离线增强（可阅读时用实时增强）"
+        return false to "网络来源的书暂不支持一键离线增强（可先下载到本地后使用）"
     }
-    val ext = bookPath.substringAfterLast('.', "").lowercase()
+    if (bookPath.startsWith("d:") || bookPath.startsWith("z:")) return true to null
+    val ext = bookPath.substringAfterLast('|', bookPath).substringAfterLast('.', "").lowercase()
     return when {
-        bookPath.startsWith("d:") -> true to null
-        ext in setOf("zip", "cbz", "rar", "cbr", "7z", "tar", "cbt", "pdf") -> true to null
-        ext in setOf("mobi", "azw", "azw3", "epub") ->
-            false to "电子书容器格式（mobi/azw3/epub）暂不支持离线增强——阅读时可用实时增强"
+        ext in setOf(
+            "zip", "cbz", "rar", "cbr", "7z", "tar", "cbt", "pdf",
+            "mobi", "azw", "azw3", "pdb", "prc", "epub",
+        ) -> true to null
         else -> false to "此格式暂不支持离线增强——阅读时可用实时增强"
     }
 }
@@ -692,7 +698,7 @@ private fun SrPanelContent(
                             Text("离线增强本书", fontSize = 14.sp, fontWeight = FontWeight.Medium)
                             Text(
                                 "提前把整本书增强存进手机：阅读零等待、结果永久生效，空闲时后台自动跑（通知栏有进度）。" +
-                                    "改档位/降噪后重进队列即可按新档重算。",
+                                    "离线的档位/降噪/黑白/引擎就是「本次阅读」页里选的那套——改好后重新加入队列即可按新配置重算。",
                                 fontSize = 12.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
