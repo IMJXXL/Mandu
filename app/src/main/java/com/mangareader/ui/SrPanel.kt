@@ -208,6 +208,14 @@ private fun SrPanelContent(
     }
     val (offlineOk, offlineReason) = offlineEnhanceSupported(bookPath)
 
+    // ★ NPU 派生值（2026-10-03 交互重做）：封锁=不可选；未实测=点选时自动实测；模型灰显用
+    val npuTierOk = npuArch > 0 && NpuModelRegistry.supports(model, denoise, npuArch)
+    val npuDeviceOk = npuProbed && npuArch > 0
+    val npuChipOk = npuDeviceOk && npuModelsReady && npuTierOk && !npuBlocked
+    var npuDownloading by remember { mutableStateOf(false) }
+    var npuDlProgress by remember { mutableStateOf(0) }
+    var npuInstallLaunched by remember { mutableStateOf(0) }
+
     // 本书离线状态：打开面板查一次；队列事件驱动刷新（3 秒节流）
     LaunchedEffect(bookId) { bookStatus = loadBookOfflineStatus(bookId) }
     LaunchedEffect(bookId) {
@@ -240,6 +248,19 @@ private fun SrPanelContent(
         npuArch = arch
         npuModelsReady = hasPkg
         npuProbed = true
+    }
+    // 装好模型包回来后自动重扫（2 秒一查，最多 60 秒）
+    LaunchedEffect(npuInstallLaunched) {
+        if (npuInstallLaunched > 0) {
+            repeat(30) {
+                kotlinx.coroutines.delay(2000)
+                withContext(Dispatchers.IO) { NpuModelRegistry.refresh(ctx) }
+                if (NpuModelRegistry.hasPackageFor(npuArch)) {
+                    npuModelsReady = true
+                    return@LaunchedEffect
+                }
+            }
+        }
     }
 
     Column(
@@ -377,7 +398,10 @@ private fun SrPanelContent(
                                             },
                                             modifier = Modifier.height(32.dp),
                                             label = { Text(m.displayName, fontSize = 12.sp) },
-                                            enabled = NativeLibraryStatus.isModelAvailable(m),
+                                            enabled = NativeLibraryStatus.isModelAvailable(m) &&
+                                                // ★ NPU 引擎下灰掉无 NPU 模型的档位（用户拍板 2026-10-03）
+                                                (engine != SrEngine.NPU || !npuDeviceOk ||
+                                                    NpuModelRegistry.supports(m, denoise, npuArch)),
                                         )
                                     }
                                 }
@@ -474,11 +498,8 @@ private fun SrPanelContent(
 
                     HorizontalDivider()
 
-                    // 处理引擎
-                    val npuTierOk = npuArch > 0 && NpuModelRegistry.supports(model, denoise, npuArch)
-                    val npuDeviceOk = npuProbed && npuArch > 0
-                    val npuChipOk = npuDeviceOk && npuModelsReady && npuTierOk
-
+                    // 处理引擎（NPU 派生值已上移到状态区；2026-10-03 交互重做：
+                    //  封锁灰掉 / 未实测点选即自动实测 / 无 NPU 模型的档位灰显 / 一键下载模型包）
                     Text("处理引擎", fontSize = 14.sp, fontWeight = FontWeight.Medium)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         listOf(
@@ -490,11 +511,39 @@ private fun SrPanelContent(
                             FilterChip(
                                 selected = engine == e,
                                 onClick = {
-                                    engine = e; settings.engine = e
-                                    scope.launch { SrCore.applySettings(bookId) }
+                                    if (e == SrEngine.NPU && !npuTestOk && npuModelsReady) {
+                                        // ★ 未实测：点选即自动实测——通过才真正选中（实测中 chip 灰掉）
+                                        npuTesting = true
+                                        scope.launch {
+                                            val r = withContext(Dispatchers.IO) {
+                                                NpuTransportProbe.run(ctx)
+                                            }
+                                            npuTestOk = r == NpuTransportProbe.Result.PASS
+                                            npuBlocked = settings.npuDeviceBlock
+                                            npuTestNote = when (r) {
+                                                NpuTransportProbe.Result.BUSY -> "正在处理页面，请稍后再试"
+                                                NpuTransportProbe.Result.BLOCKED -> "本机被系统封锁：已保持 GPU/CPU"
+                                                NpuTransportProbe.Result.NO_MODEL -> "未装模型包"
+                                                NpuTransportProbe.Result.FAILED -> "实测未通过：可重试，不影响 GPU/CPU"
+                                                else -> null
+                                            }
+                                            npuTesting = false
+                                            if (r == NpuTransportProbe.Result.BLOCKED && settings.engine == SrEngine.NPU) {
+                                                settings.engine = SrEngine.GPU
+                                            }
+                                            if (r == NpuTransportProbe.Result.PASS) {
+                                                engine = SrEngine.NPU
+                                                settings.engine = SrEngine.NPU
+                                                scope.launch { SrCore.applySettings(bookId) }
+                                            }
+                                        }
+                                    } else {
+                                        engine = e; settings.engine = e
+                                        scope.launch { SrCore.applySettings(bookId) }
+                                    }
                                 },
                                 label = { Text(label, fontSize = 12.sp) },
-                                enabled = enabled,
+                                enabled = enabled && (e != SrEngine.NPU || !npuTesting),
                             )
                         }
                     }
@@ -508,7 +557,7 @@ private fun SrPanelContent(
                                     npuTestOk -> "实测通过（v$npuArch）：最快最省电；个别页可能有轻微偏色"
                                     npuModelsReady && npuTierOk -> "模型包就绪（v$npuArch），尚未实测——不支持时会自动回 GPU/CPU"
                                     npuModelsReady -> "当前档位无 NPU 版（支持 CUGAN 2x 保守、动漫V3 2x 极速），自动用 GPU/CPU"
-                                    else -> "先安装「漫读-NPU模型-v$npuArch.apk」再选 NPU"
+                                    else -> "先下载模型包（下方按钮）再选 NPU"
                                 }
                         },
                         fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -523,11 +572,42 @@ private fun SrPanelContent(
                                         "当前档位（${model.displayName}）走 NPU 处理；${QnnEngine.archDisplayName(npuArch)}"
                                     !npuModelsReady ->
                                         "检测到 NPU（v$npuArch，${QnnEngine.archDisplayName(npuArch)}）。" +
-                                            "安装「漫读-NPU模型-v$npuArch.apk」后，支持的档位可切换 NPU 极速"
+                                            "下载模型包后，支持的档位可切换 NPU 极速"
                                     else -> "${QnnEngine.archDisplayName(npuArch)}（v$npuArch）"
                                 },
                                 fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
+                        }
+                        if (!npuModelsReady) {
+                            // ★ 一键下载模型包（GitHub Release 直链 + 加速线路，装完自动重扫）
+                            OutlinedButton(
+                                onClick = {
+                                    npuDownloading = true
+                                    scope.launch {
+                                        val f = NpuModelDownload.download(ctx, npuArch) { pr -> npuDlProgress = pr }
+                                        npuDownloading = false
+                                        if (f == null) {
+                                            android.widget.Toast.makeText(ctx, "下载失败：请检查网络后重试", android.widget.Toast.LENGTH_LONG).show()
+                                        } else {
+                                            when (NpuModelDownload.install(ctx, f)) {
+                                                NpuModelDownload.InstallResult.NEED_PERMISSION ->
+                                                    android.widget.Toast.makeText(ctx, "请在打开的设置里允许「安装未知应用」，再回来点一次下载", android.widget.Toast.LENGTH_LONG).show()
+                                                NpuModelDownload.InstallResult.LAUNCHED -> {
+                                                    android.widget.Toast.makeText(ctx, "请在安装界面确认安装模型包", android.widget.Toast.LENGTH_LONG).show()
+                                                    npuInstallLaunched++
+                                                }
+                                                else -> android.widget.Toast.makeText(ctx, "安装界面拉起失败", android.widget.Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    }
+                                },
+                                enabled = !npuDownloading,
+                            ) {
+                                Text(
+                                    if (npuDownloading) "下载中 $npuDlProgress%" else "下载 NPU 模型包（v$npuArch，约 11MB）",
+                                    fontSize = 12.sp,
+                                )
+                            }
                         }
                         if (engine == SrEngine.NPU && npuModelsReady) {
                             OutlinedButton(
