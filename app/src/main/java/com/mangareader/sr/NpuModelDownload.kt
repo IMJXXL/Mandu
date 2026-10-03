@@ -32,7 +32,24 @@ object NpuModelDownload {
     private const val CONNECT_TIMEOUT = 15000
     private const val READ_TIMEOUT = 30000
 
+    /** Release 页（含全部代次模型包与 v 代↔处理器对照表），浏览器打开自行挑包 */
+    const val RELEASE_PAGE_URL = "https://github.com/IMJXXL/mandu/releases/tag/npu-model"
+
     fun urlFor(arch: Int): String = "$RELEASE_BASE/$FILE_PREFIX$arch$FILE_SUFFIX"
+
+    /** 浏览器直下用 URL 列表（官方 + 加速线路，同 UpdateConstants.MIRRORS 口径） */
+    fun browserUrls(arch: Int): List<Pair<String, String>> =
+        UpdateConstants.MIRRORS.map { (prefix, label) -> label to (prefix + urlFor(arch)) }
+
+    /** 交给浏览器自己下载（GitHub 302、断点续传都由浏览器处理），下载完手动点开 APK 安装 */
+    fun openInBrowser(context: Context, url: String) {
+        runCatching {
+            context.startActivity(
+                Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+        }.onFailure { Log.w(TAG, "open browser failed: ${it.message}") }
+    }
 
     suspend fun download(context: Context, arch: Int, onProgress: (Int) -> Unit): File? =
         withContext(Dispatchers.IO) {

@@ -85,6 +85,9 @@ object SrBatchRunner {
                 // ★ F4.4：入队打代际戳（重启续跑不改写已有条目的代际——只有显式重新入队才刷新）
                 SRQueueItem(bookId, bookTitle, path, key, pageCount, enqueuedAt = System.currentTimeMillis())
             }
+                // ★ 格式白名单放开后（2026-10-03）：真读不了的格式 listPages 返回 0 页，
+                //   不入队——让"没有找到可处理的页面"提示如实出现，而不是排队一个空章
+                .filter { it.totalPages > 0 }
             // 重新入队 = 从头重做：队列里已有同章旧项时整体替换（processedPages 归零），
             // 否则残留的旧进度会让用户看到"从中间开始"。★ F4.3：经 store 锁内原子读改写。
             var addedPages = 0
@@ -114,18 +117,11 @@ object SrBatchRunner {
      *  `a:auth|tree|doc|ext`、zip 内=`z:archive//sub/`）——chapterKey 必须与阅读会话
      *  同源，否则批量产物目录与显示链对不上。子项是否含页由 listPages 判定（IO）。
      */
-    /** 单文件书的扩展名集合：这些格式的 a: 根目录就是"一个文件"，书本身即一章。
-     *  children() 是 SAF 目录枚举，对文件型 doc 返回空——此前 mobi/epub 等单文件书
-     *  走 children 枚举必然 0 章，永远入不了队。 */
-    private val singleFileExts = setOf(
-        "zip", "cbz", "rar", "cbr", "7z", "tar", "cbt", "pdf",
-        "mobi", "azw", "azw3", "pdb", "prc", "epub",
-    )
-
     private fun chapterPaths(engine: ArchiveEngine, rootPath: String): List<String> {
-        // ★ 单文件书：根的 listPages 非空即整本一章（mobi 系走 libmobi、epub 走 zip 分支）
-        val rootExt = rootPath.substringAfterLast('|', rootPath).substringAfterLast('.', "").lowercase()
-        if (rootPath.startsWith("a:") && rootExt in singleFileExts) {
+        // ★ a: 文件根一律先试 listPages（2026-10-03 用户拍板放开格式白名单）：
+        //   能读出页 = 整本一章（mobi 系走 libmobi、epub 走 zip 分支）；
+        //   读不出页 = 空列表，由入队层过滤并给诚实提示。children() 对文件型 doc 恒为空，不必再走。
+        if (rootPath.startsWith("a:")) {
             return try {
                 if (engine.listPages(rootPath).isNotEmpty()) listOf(rootPath) else emptyList()
             } catch (_: Exception) {

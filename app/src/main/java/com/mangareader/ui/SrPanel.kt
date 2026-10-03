@@ -146,15 +146,9 @@ private fun offlineEnhanceSupported(bookPath: String?): Pair<Boolean, String?> {
     if (bookPath.startsWith("smb:") || bookPath.startsWith("webdav:")) {
         return false to "网络来源的书暂不支持一键离线增强（可先下载到本地后使用）"
     }
-    if (bookPath.startsWith("d:") || bookPath.startsWith("z:")) return true to null
-    val ext = bookPath.substringAfterLast('|', bookPath).substringAfterLast('.', "").lowercase()
-    return when {
-        ext in setOf(
-            "zip", "cbz", "rar", "cbr", "7z", "tar", "cbt", "pdf",
-            "mobi", "azw", "azw3", "pdb", "prc", "epub",
-        ) -> true to null
-        else -> false to "此格式暂不支持离线增强——阅读时可用实时增强"
-    }
+    // ★ 格式白名单整体放开（用户拍板 2026-10-03）：库里能出现的书（文件夹/压缩包/PDF/
+    //   mobi 系/epub…）一律允许入队；真读不了的格式在入队时枚举 0 页并给诚实提示。
+    return true to null
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -248,6 +242,8 @@ private fun SrPanelContent(
         npuArch = arch
         npuModelsReady = hasPkg
         npuProbed = true
+        // 诊断短码：a=HTP 代（0=未探到） m=模型包是否在位——下份日志可直接判断面板处于哪个状态
+        runCatching { com.mangareader.DiagTracer.markStatic("sr: npu ui a=$arch m=$hasPkg") }
     }
     // 装好模型包回来后自动重扫（2 秒一查，最多 60 秒）
     LaunchedEffect(npuInstallLaunched) {
@@ -312,7 +308,8 @@ private fun SrPanelContent(
                         ) {
                             Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Text(
-                                    "上次画质增强在此设备上崩溃过，已自动切换 CPU 安全模式（慢一点但稳定）",
+                                    "上次增强处理时出过错，已自动换成更稳的方式（慢一点但稳定）；" +
+                                        "点「恢复加速」可试回快速模式，再出问题会自动退回来",
                                     Modifier.weight(1f),
                                     fontSize = 12.sp,
                                     color = MaterialTheme.colorScheme.onErrorContainer,
@@ -366,7 +363,7 @@ private fun SrPanelContent(
                         }
                     }
                     Text(
-                        "作用域=关闭时下面的设置可提前选好但不生效；已增强过的页（离线或自动保存的产物）无需开关，自动优先显示。",
+                        "关闭时不处理页面，下面的设置可以先选好。已增强过的页（离线或自动保存的）会直接优先显示，不受开关影响。",
                         fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
 
@@ -542,7 +539,18 @@ private fun SrPanelContent(
                                         scope.launch { SrCore.applySettings(bookId) }
                                     }
                                 },
-                                label = { Text(label, fontSize = 12.sp) },
+                                label = {
+                                    Text(
+                                        when {
+                                            // ★ 未实测/实测中给可见标记（技术宅走查：一点即跑基准的
+                                            //   chip 与普通 chip 无视觉差，用户以为"点了没反应"）
+                                            e == SrEngine.NPU && npuTesting -> "实测中…"
+                                            e == SrEngine.NPU && npuModelsReady && npuTierOk && !npuBlocked && !npuTestOk -> "NPU 极速·未实测"
+                                            else -> label
+                                        },
+                                        fontSize = 12.sp,
+                                    )
+                                },
                                 enabled = enabled && (e != SrEngine.NPU || !npuTesting),
                             )
                         }
@@ -557,29 +565,38 @@ private fun SrPanelContent(
                                     npuTestOk -> "实测通过（v$npuArch）：最快最省电；个别页可能有轻微偏色"
                                     npuModelsReady && npuTierOk -> "模型包就绪（v$npuArch），尚未实测——不支持时会自动回 GPU/CPU"
                                     npuModelsReady -> "当前档位无 NPU 版（支持 CUGAN 2x 保守、动漫V3 2x 极速），自动用 GPU/CPU"
-                                    else -> "先下载模型包（下方按钮）再选 NPU"
+                                    else -> "NPU 模型包未就绪，装好后重新选择 NPU"
                                 }
                         },
                         fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    // ★ NPU 状态行常驻（用户画像走查一致最疼点：灰掉零解释）——探测完成后
+                    //   无论当前选中什么引擎都显示一行，覆盖：未探到/封锁/未装包/档位不匹配/就绪
+                    if (npuProbed) {
+                        Text(
+                            when {
+                                !npuDeviceOk ->
+                                    "NPU：本机未检测到可用的 NPU（非骁龙 8 系或探测失败），GPU/CPU 增强不受影响"
+                                npuBlocked ->
+                                    "NPU：本机被系统封锁（实测失败），实际自动用 GPU/CPU；系统更新后可重测"
+                                !npuModelsReady ->
+                                    "NPU：检测到 ${QnnEngine.archDisplayName(npuArch)}（v$npuArch），" +
+                                        "下载模型包后 CUGAN 2x / 动漫V3 2x 档位可切 NPU 极速"
+                                !npuTierOk ->
+                                    "NPU：已装模型包（v$npuArch），但「${model.displayName}」没有 NPU 版——" +
+                                        "切到 CUGAN 2x 或 动漫V3 2x 即可选 NPU 极速"
+                                engine != SrEngine.NPU ->
+                                    "NPU：就绪（v$npuArch），点上方「NPU 极速」即自动实测并启用"
+                                else ->
+                                    "NPU：当前档位（${model.displayName}）走 NPU（v$npuArch，${QnnEngine.archDisplayName(npuArch)}）"
+                            },
+                            fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    // ★ 模型包管理行常驻（2026-10-03 反馈"下载 UI 看不到"：已装包后入口全消失）——
+                    //   未装=应用内下载（官方→加速线路自动回退）+浏览器直下；已装=状态+浏览器入口
                     if (npuDeviceOk) {
-                        if (engine == SrEngine.NPU || !npuModelsReady) {
-                            Text(
-                                when {
-                                    engine == SrEngine.NPU && npuTesting ->
-                                        "正在实测：真实加载一次 NPU 模型试水，约 1-3 秒…"
-                                    engine == SrEngine.NPU && npuModelsReady && npuTierOk && npuTestOk ->
-                                        "当前档位（${model.displayName}）走 NPU 处理；${QnnEngine.archDisplayName(npuArch)}"
-                                    !npuModelsReady ->
-                                        "检测到 NPU（v$npuArch，${QnnEngine.archDisplayName(npuArch)}）。" +
-                                            "下载模型包后，支持的档位可切换 NPU 极速"
-                                    else -> "${QnnEngine.archDisplayName(npuArch)}（v$npuArch）"
-                                },
-                                fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
                         if (!npuModelsReady) {
-                            // ★ 一键下载模型包（GitHub Release 直链 + 加速线路，装完自动重扫）
                             OutlinedButton(
                                 onClick = {
                                     npuDownloading = true
@@ -587,7 +604,11 @@ private fun SrPanelContent(
                                         val f = NpuModelDownload.download(ctx, npuArch) { pr -> npuDlProgress = pr }
                                         npuDownloading = false
                                         if (f == null) {
-                                            android.widget.Toast.makeText(ctx, "下载失败：请检查网络后重试", android.widget.Toast.LENGTH_LONG).show()
+                                            android.widget.Toast.makeText(
+                                                ctx,
+                                                "应用内下载失败：可用下方浏览器下载，或稍后重试",
+                                                android.widget.Toast.LENGTH_LONG,
+                                            ).show()
                                         } else {
                                             when (NpuModelDownload.install(ctx, f)) {
                                                 NpuModelDownload.InstallResult.NEED_PERMISSION ->
@@ -602,11 +623,38 @@ private fun SrPanelContent(
                                     }
                                 },
                                 enabled = !npuDownloading,
+                                modifier = Modifier.fillMaxWidth(),
                             ) {
                                 Text(
-                                    if (npuDownloading) "下载中 $npuDlProgress%" else "下载 NPU 模型包（v$npuArch，约 11MB）",
+                                    if (npuDownloading) "下载中 $npuDlProgress%"
+                                    else "下载 NPU 模型包（v$npuArch，约 11MB · 自动换加速线路）",
                                     fontSize = 12.sp,
                                 )
+                            }
+                            Text(
+                                "应用内下载失败？用浏览器下载后，在通知栏点开 APK 手动安装：",
+                                fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                NpuModelDownload.browserUrls(npuArch).forEach { (label, url) ->
+                                    TextButton(onClick = { NpuModelDownload.openInBrowser(ctx, url) }) {
+                                        Text(label, fontSize = 12.sp)
+                                    }
+                                }
+                            }
+                        } else {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Text(
+                                    "NPU 模型包：已安装（v$npuArch）",
+                                    Modifier.weight(1f),
+                                    fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                TextButton(onClick = { NpuModelDownload.openInBrowser(ctx, NpuModelDownload.RELEASE_PAGE_URL) }) {
+                                    Text("重下/换包 · 对照表", fontSize = 12.sp)
+                                }
                             }
                         }
                         if (engine == SrEngine.NPU && npuModelsReady) {
@@ -634,9 +682,11 @@ private fun SrPanelContent(
                                     fontSize = 12.sp,
                                 )
                             }
-                            npuTestNote?.let {
-                                Text(it, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
+                        }
+                        // ★ 实测结果落字不随选中态消失（技术宅走查：失败原因必须写在面板里，
+                        //   不能只回退——封锁/失败时引擎已切回 GPU，重测按钮块根本不渲染）
+                        npuTestNote?.let {
+                            Text(it, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
 
@@ -799,7 +849,7 @@ private fun SrPanelContent(
                                                 ctx,
                                                 when {
                                                     r.chapters > 0 -> "已加入队列：${r.chapters} 章 ${r.pages} 页，空闲时自动逐章处理（通知栏可看进度）"
-                                                    else -> "本书已在队列中"
+                                                    else -> "没有找到可处理的页面——这本书可能无法离线枚举；若阅读正常请导出日志反馈"
                                                 },
                                                 android.widget.Toast.LENGTH_LONG,
                                             ).show()
@@ -836,7 +886,7 @@ private fun SrPanelContent(
                         Text("增强产物（自动保存）", fontSize = 14.sp, fontWeight = FontWeight.Medium)
                         Text(
                             "实时增强过的页会自动永久保存，之后任何作用域下都优先显示增强图；" +
-                                "改档位/降噪/引擎后按新配置重新计算并覆盖。",
+                                "改档位/降噪/引擎后，重新加入队列会按新配置重算并覆盖。",
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -888,5 +938,5 @@ private fun SrPanelContent(
 private fun cacheUsageText(): String {
     val (rc, rb) = SrCore.diskCache.getRealtimeUsage()
     val (bc, bb) = SrCore.diskCache.getBatchUsage()
-    return "实时 $rc 张/${rb / 1024 / 1024}MB · 批量 $bc 张/${bb / 1024 / 1024}MB"
+    return "实时 $rc 张/${rb / 1024 / 1024}MB · 离线 $bc 张/${bb / 1024 / 1024}MB"
 }
