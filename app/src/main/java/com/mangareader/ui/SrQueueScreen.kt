@@ -10,6 +10,7 @@ import androidx.compose.ui.layout.ContentScale
 import coil3.compose.AsyncImage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.first
 import java.io.File
 import java.security.MessageDigest
 import androidx.compose.foundation.lazy.LazyColumn
@@ -117,6 +118,90 @@ fun SrQueueScreen(onBack: () -> Unit, onOpenBook: ((Long, String) -> Unit)? = nu
         }
     }
 
+    // ── 书架级批量入队（2026-10-03 重度读者走查：囤书整库增强不应一本本点）──
+    // "未增强" = 不在队列 + 无批量成品 + 无页级产物树 + 本地来源
+    var scanningAll by remember { mutableStateOf(false) }
+    var unenhancedBooks by remember { mutableStateOf<List<Pair<Long, String>>>(emptyList()) }
+    var showAllDialog by remember { mutableStateOf(false) }
+
+    fun scanUnenhancedBooks() {
+        scope.launch(Dispatchers.IO) {
+            scanningAll = true
+            try {
+                val dao = com.mangareader.data.MangaDatabase.getDatabase(ctx).mangaDao()
+                val queuedIds = SrCore.queueStore.load().map { it.bookId }.toSet()
+                val doneIds = com.mangareader.sr.SrCore.diskCache.getCompletedBatchChapters().map { it.bookId }.toSet()
+                val found = dao.getAllBooks().first()
+                    .filter { b ->
+                        !b.filePath.startsWith("smb:") && !b.filePath.startsWith("webdav:") &&
+                            b.id !in queuedIds && b.id !in doneIds &&
+                            !SrCore.diskCache.hasArtifactsForBook(b.id)
+                    }
+                    .map { it.id to it.title }
+                unenhancedBooks = found
+                if (found.isEmpty()) {
+                    withContext(Dispatchers.Main) {
+                        android.widget.Toast.makeText(ctx, "书架里的书都增强过或已在队列中", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                } else {
+                    withContext(Dispatchers.Main) { showAllDialog = true }
+                }
+            } catch (_: Exception) {
+                withContext(Dispatchers.Main) {
+                    android.widget.Toast.makeText(ctx, "扫描失败，请稍后再试", android.widget.Toast.LENGTH_SHORT).show()
+                }
+            } finally {
+                scanningAll = false
+            }
+        }
+    }
+
+    if (showAllDialog) {
+        AlertDialog(
+            onDismissRequest = { showAllDialog = false },
+            title = { Text("加入 ${unenhancedBooks.size} 本未增强的书") },
+            text = {
+                Text(
+                    "处理在空闲时后台自动进行，整库一次跑完较久；产物受「增强产物上限」控制，超限自动清最旧的。" +
+                        "增强用的档位/降噪/引擎就是「本次阅读」页当前选的那套。",
+                )
+            },
+            confirmButton = {
+                Row {
+                    TextButton(onClick = {
+                        showAllDialog = false
+                        SrBatchRunner.enqueueBooks(ctx, unenhancedBooks, false) { r ->
+                            (ctx as? android.app.Activity)?.runOnUiThread {
+                                android.widget.Toast.makeText(
+                                    ctx,
+                                    if (r.chapters > 0) "已加入队列：${r.chapters} 章 ${r.pages} 页" else "没有找到可处理的页面",
+                                    android.widget.Toast.LENGTH_LONG,
+                                ).show()
+                            }
+                        }
+                        refresh()
+                    }) { Text("仅已读章节") }
+                    TextButton(onClick = {
+                        showAllDialog = false
+                        SrBatchRunner.enqueueBooks(ctx, unenhancedBooks, true) { r ->
+                            (ctx as? android.app.Activity)?.runOnUiThread {
+                                android.widget.Toast.makeText(
+                                    ctx,
+                                    if (r.chapters > 0) "已加入队列：${r.chapters} 章 ${r.pages} 页，空闲时自动逐章处理" else "没有找到可处理的页面",
+                                    android.widget.Toast.LENGTH_LONG,
+                                ).show()
+                            }
+                        }
+                        refresh()
+                    }) { Text("整本（含未读章）") }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAllDialog = false }) { Text("取消") }
+            },
+        )
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -188,13 +273,24 @@ fun SrQueueScreen(onBack: () -> Unit, onOpenBook: ((Long, String) -> Unit)? = nu
                 }
             }
 
+            // 书架级批量入队（重度读者走查 2026-10-03）
+            item {
+                OutlinedButton(
+                    onClick = { scanUnenhancedBooks() },
+                    enabled = !scanningAll,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(if (scanningAll) "正在扫描书架…" else "把书架里未增强的书全部加入队列")
+                }
+            }
+
             // 进行中：只显示真正还在处理的；批量服务跑完的会被自动移到下方"已完成"
             item {
                 Text("进行中 / 排队中（${queue.size} 章）", fontWeight = FontWeight.Bold)
             }
             if (queue.isEmpty()) {
                 item {
-                    Text("队列为空。在书架长按选中多本书，或在阅读器画质增强面板里点“批量增强本书”。",
+                    Text("队列为空。可点上方按钮把整书架未增强的书一次性排进来；也可以在书架长按多选批量加，或在阅读器画质增强面板里入队本书。",
                         fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }

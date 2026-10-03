@@ -247,6 +247,10 @@ class SRDiskCache(
         }
     }
 
+    /** 本书是否已有任何产物树（O(1) 目录 stat）——队列页"未增强的书"筛选用 */
+    fun hasArtifactsForBook(bookId: Long): Boolean =
+        bookId >= 0 && File(artifactDir, bookId.toString()).isDirectory
+
     /** 三件套之二：总字节超上限时按 mtime 从旧到新删，直到回落上限内（IO 线程调用） */
     private fun evictArtifactsIfNeeded() {
         val limit = try {

@@ -832,6 +832,24 @@ private fun SrPanelContent(
                                 fontSize = 12.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
+                            // ★ 当前配置摘要+[去改]（重度读者走查：免跨 Tab 折返确认配置）
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                                Text(
+                                    "当前：" + model.displayName + " · 降噪" + denoise.displayName +
+                                        (if (bwOn) " · 黑白${bwLevels}级" else "") +
+                                        " · " + when (engine) {
+                                            SrEngine.CPU -> "CPU"
+                                            SrEngine.GPU -> "GPU"
+                                            SrEngine.NPU -> "NPU"
+                                        },
+                                    Modifier.weight(1f),
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                TextButton(onClick = { tab = 0 }, contentPadding = PaddingValues(horizontal = 8.dp)) {
+                                    Text("去改 ›", fontSize = 12.sp)
+                                }
+                            }
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Checkbox(checked = includeUnread, onCheckedChange = { includeUnread = it })
                                 Text(

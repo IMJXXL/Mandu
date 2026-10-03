@@ -1033,7 +1033,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                                     srMenu = false
                                     com.mangareader.sr.SrBatchRunner.enqueueBooks(ctx, targets.map { it.id to it.title }, false) { r ->
                                         (ctx as? android.app.Activity)?.runOnUiThread {
-                                            Toast.makeText(ctx, if (r.chapters > 0) "已加入队列：${r.chapters} 章 ${r.pages} 页" else "所选书籍已在队列中", Toast.LENGTH_LONG).show()
+                                            Toast.makeText(ctx, if (r.chapters > 0) "已加入队列：${r.chapters} 章 ${r.pages} 页" else "没有找到可处理的页面——所选书可能无法离线枚举", Toast.LENGTH_LONG).show()
                                         }
                                     }
                                     isMultiSelect = false; selectedBooks = emptySet()
@@ -1045,7 +1045,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                                     srMenu = false
                                     com.mangareader.sr.SrBatchRunner.enqueueBooks(ctx, targets.map { it.id to it.title }, true) { r ->
                                         (ctx as? android.app.Activity)?.runOnUiThread {
-                                            Toast.makeText(ctx, if (r.chapters > 0) "已加入队列：${r.chapters} 章 ${r.pages} 页，空闲时自动逐章处理" else "所选书籍已在队列中", Toast.LENGTH_LONG).show()
+                                            Toast.makeText(ctx, if (r.chapters > 0) "已加入队列：${r.chapters} 章 ${r.pages} 页，空闲时自动逐章处理" else "没有找到可处理的页面——所选书可能无法离线枚举", Toast.LENGTH_LONG).show()
                                         }
                                     }
                                     isMultiSelect = false; selectedBooks = emptySet()
