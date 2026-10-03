@@ -55,6 +55,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?, Int) -> Unit
 
     var showScrollModeDialog by remember { mutableStateOf(false) }
     var showReadingSettings by remember { mutableStateOf(false) }
+    var showReadingPrefs by remember { mutableStateOf(false) }
     var showKeyMap by remember { mutableStateOf(false) }
     // ★ 外观设置子页：rememberSaveable——子页内改暗色/主题会 recreate Activity，saveable 保证回到本页而不是弹回设置首页
     var showAppearanceSettings by rememberSaveable { mutableStateOf(false) }
@@ -451,6 +452,13 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?, Int) -> Unit
         ReadingSettingsScreen(
             onBack = { showReadingSettings = false },
             onOpenKeyMap = { showKeyMap = true },
+            onOpenPrefs = { showReadingPrefs = true },
+        )
+    }
+    if (showReadingPrefs) {
+        ReadingPrefsScreen(
+            onBack = { showReadingPrefs = false; showReadingSettings = true },
+            onOpenReadingSettings = { showReadingPrefs = false; showReadingSettings = true },
         )
     }
     if (showKeyMap) {

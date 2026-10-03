@@ -65,6 +65,18 @@ versionName = "1.36"
         }
     }
 
+    testOptions {
+        unitTests { isIncludeAndroidResources = true }
+    }
+
+    // ★ 单测执行器钉 JDK 21：系统 JAVA_HOME 是 JRE 1.8，默认 worker 选中它会令
+    //   Robolectric(需 Java 11+) 启动即崩（Gradle Test Executor exit 1 / connection reset）
+    tasks.withType<Test>().configureEach {
+        javaLauncher.set(javaToolchains.launcherFor {
+            languageVersion.set(JavaLanguageVersion.of(17))
+        })
+    }
+
     buildTypes {
         debug {
             signingConfig = signingConfigs.getByName("release")
@@ -253,6 +265,8 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.mockito:mockito-core:5.11.0")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
+    testImplementation("org.robolectric:robolectric:4.10.3")  // 4.10.3：本机缓存 13/14-i4 可离线引导；4.11.1 在本机引导即静默崩溃
+    testImplementation("androidx.test:core-ktx:1.5.0")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
 }

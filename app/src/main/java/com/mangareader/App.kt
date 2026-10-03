@@ -6,6 +6,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import com.mangareader.data.MangaDatabase
+import com.mangareader.data.ReaderPrefMigration
 import com.mangareader.viewer.ArchiveEngine
 import android.app.ActivityManager
 import coil3.ImageLoader
@@ -111,6 +112,9 @@ class App : Application(), SingletonImageLoader.Factory {
         DiagTracer.bindFilesDir(filesDir)
         // 轮转有文件 IO（超 2MB 时读+写各 256KB），挪后台不占启动主线程
         appScope.launch(Dispatchers.IO) { DiagTracer.rotateIfNeeded(filesDir) }
+        // ★ 阅读偏好一次性迁移（scope_mig_v1）：快照+pageLayout 消费闸门+readBackground 补种
+        //   必须先于任何 ReaderConfig.load（load 零写盘硬不变量，迁移全部收口在此）
+        appScope.launch(Dispatchers.IO) { ReaderPrefMigration.runIfNeeded(this@App) }
         try { System.loadLibrary("archive_stream") } catch (_: Throwable) {}
         DiagTracer.mark(this, "app.onCreate: phase-1 done")
         // SMB 连接池预热（对齐上游 prewarm）：SmbConfig.builder 走 ServiceLoader 读 APK，

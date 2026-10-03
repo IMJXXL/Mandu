@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -52,7 +53,11 @@ fun ReaderSettingsSheet(
     onConfigChange: (ReaderConfig) -> Unit,
     onModeChange: (Mode) -> Unit,
     onOrientationChange: (Int) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    // ★ 三层模型（2026-10-03 评审定稿）：总开关横幅 + 本书单独设置入口行
+    masterOn: Boolean = true,
+    bookOverrideCount: Int = 0,
+    onShowBookOverrides: () -> Unit = {},
 ) {
     var visible by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { visible = true }
@@ -95,7 +100,7 @@ fun ReaderSettingsSheet(
                 shape = if (landscape) SIDE_PANEL_SHAPE else SHEET_SHAPE,
                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
                 content = {
-                    ReaderSettingsContent(config, mode, onConfigChange, onModeChange, onOrientationChange)
+                    ReaderSettingsContent(config, mode, onConfigChange, onModeChange, onOrientationChange, masterOn, bookOverrideCount, onShowBookOverrides)
                 }
             )
         }
@@ -111,12 +116,45 @@ private fun ReaderSettingsContent(
     onConfigChange: (ReaderConfig) -> Unit,
     onModeChange: (Mode) -> Unit,
     onOrientationChange: (Int) -> Unit,
+    masterOn: Boolean = true,
+    bookOverrideCount: Int = 0,
+    onShowBookOverrides: () -> Unit = {},
 ) {
     val pagerState = rememberPagerState { 3 }
     val tabs = listOf("阅读模式", "常规", "滤镜")
     val scope = rememberCoroutineScope()
 
-    Column(Modifier.fillMaxWidth()) {
+    Column(Modifier.fillMaxWidth().animateContentSize()) {
+        // ★ 总开关关：本次改动不记忆（横幅收窄到单本类项口径）
+        if (!masterOn) {
+            Text(
+                "本书单独调过的设置，退出阅读后不保留",
+                Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainerHighest).padding(horizontal = 16.dp, vertical = 6.dp),
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        // ★ 本书有单独设置：入口行（点开明细逐项清除）
+        if (bookOverrideCount > 0) {
+            Row(
+                Modifier.fillMaxWidth().clickable { onShowBookOverrides() }
+                    .background(MaterialTheme.colorScheme.primaryContainer)
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    androidx.compose.material.icons.Icons.Default.PushPin, null,
+                    Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    "本书已单独设置 $bookOverrideCount 项",
+                    fontSize = 13.sp, color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.weight(1f),
+                )
+                Text("查看", fontSize = 13.sp, color = MaterialTheme.colorScheme.onPrimaryContainer)
+            }
+        }
         PrimaryTabRow(
             selectedTabIndex = pagerState.currentPage,
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,

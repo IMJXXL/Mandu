@@ -203,20 +203,63 @@ data class ReaderConfig(
     }
 
     companion object {
-        fun load(context: Context, bookId: Long = -1): ReaderConfig {
-            val prefs = context.getSharedPreferences("manga_reader", Context.MODE_PRIVATE)
+        fun load(context: Context, bookId: Long = -1): ReaderConfig =
+            load(context.getSharedPreferences("manga_reader", Context.MODE_PRIVATE), bookId)
+
+        fun load(prefs: SharedPreferences, bookId: Long = -1): ReaderConfig {
             val prefix = if (bookId >= 0) "book_${bookId}_" else ""
+            // ★ 三层模型（2026-10-03 评审定稿）：总开关关 = 本书覆盖休眠（读全局），
+            //   豁免字段（pageLayout）除外——它的覆盖恒参与解析。
+            val masterOn = ReaderScope.masterOn(prefs)
+            val pfx = if (bookId >= 0 && masterOn) prefix else ""
             // ★ 翻页闪烁「全局 > 单本」合并：全局开 = 整组接管（开关+参数全部取全局键），
             //   全局关 = 单本自决（读 book_ 前缀键）。全局键由 设置→阅读设置→墨水屏 写入。
-            //   flipFlashGlobalActive 仅作运行时标记供阅读内 UI 灰置单本设置，不落盘。
+            //   条件锁定组在总开关关时同样休眠→读全局。flipFlashGlobalActive 仅作运行时标记。
             val globalFlash = prefs.safeGetBoolean("isFlipFlashEnabled", false)
-            val flashPrefix = if (globalFlash) "" else prefix
-            // ★ 点击翻页区域：外部阅读设置写全局键——单本键缺失时回退全局，保证外部卡片生效
-            val clickPrefix = if (prefs.contains("${prefix}clickFlipType") || prefix.isEmpty()) prefix else ""
-            val clickInvertPrefix = if (prefs.contains("${prefix}clickFlipInvertH") || prefix.isEmpty()) prefix else ""
-            return ReaderConfig(
-                scrollMode = try { ScrollMode.valueOf(prefs.getString("${prefix}scrollMode", "HORIZONTAL_LEFT")!!) } catch (_: Exception) { ScrollMode.HORIZONTAL_LEFT },
-                clickFlipType = try { ClickFlipType.valueOf(prefs.getString("${clickPrefix}clickFlipType", "LEFT_RIGHT")!!) } catch (_: Exception) { ClickFlipType.LEFT_RIGHT },
+            val flashPrefix = if (globalFlash || !masterOn) "" else prefix
+            // ★ 点击翻页区域：稀疏模型下单本键缺失自然回退全局（旧防固化 guard 已废）
+            val clickPrefix = pfx
+            val clickInvertPrefix = pfx
+            // ★ 分层读取：本书覆盖存在→读之；否则全局打底；否则默认。
+            //   生效前缀按 key 现算：作用域注册表显式指定 > 豁免字段（pageLayout 恒书键）
+            //   > 条件锁定（翻页闪烁全局开=接管） > 总开关（关=休眠读全局）。
+            val scopeReg = ReaderScope.parseScopeReg(prefs)
+            fun effPrefixFor(key: String): String = when {
+                scopeReg[key] == ReaderScope.SCOPE_GLOBAL -> ""
+                key in ReaderScope.CONDITIONAL_LOCK_KEYS && globalFlash -> ""
+                key in ReaderScope.MASTER_EXEMPT_KEYS -> prefix
+                scopeReg[key] == ReaderScope.SCOPE_BOOK -> prefix
+                masterOn -> prefix
+                else -> ""
+            }
+            fun rBoolean(key: String, def: Boolean): Boolean {
+                val ep = effPrefixFor(key)
+                return if (ep.isNotEmpty() && prefs.contains("$ep$key")) prefs.safeGetBoolean("$ep$key", def)
+                else prefs.safeGetBoolean(key, def)
+            }
+            fun rInt(key: String, def: Int): Int {
+                val ep = effPrefixFor(key)
+                return if (ep.isNotEmpty() && prefs.contains("$ep$key")) prefs.safeGetInt("$ep$key", def)
+                else prefs.safeGetInt(key, def)
+            }
+            fun rFloat(key: String, def: Float): Float {
+                val ep = effPrefixFor(key)
+                return if (ep.isNotEmpty() && prefs.contains("$ep$key")) prefs.safeGetFloat("$ep$key", def)
+                else prefs.safeGetFloat(key, def)
+            }
+            fun rLong(key: String, def: Long): Long {
+                val ep = effPrefixFor(key)
+                return if (ep.isNotEmpty() && prefs.contains("$ep$key")) prefs.safeGetLong("$ep$key", def)
+                else prefs.safeGetLong(key, def)
+            }
+            fun rString(key: String, def: String): String {
+                val ep = effPrefixFor(key)
+                return if (ep.isNotEmpty() && prefs.contains("$ep$key")) prefs.getString("$ep$key", def) ?: def
+                else prefs.getString(key, def) ?: def
+            }
+            var cfg = ReaderConfig(
+                scrollMode = try { ScrollMode.valueOf(rString("scrollMode", "HORIZONTAL_LEFT")) } catch (_: Exception) { ScrollMode.HORIZONTAL_LEFT },
+                clickFlipType = try { ClickFlipType.valueOf(rString("clickFlipType", "LEFT_RIGHT")) } catch (_: Exception) { ClickFlipType.LEFT_RIGHT },
                 isFlipAnimation = prefs.safeGetBoolean("isFlipAnimation", true),
                 isPageCurlAnimation = prefs.safeGetBoolean("isPageCurlAnimation", false),
                 isCurlContentAreaOnly = prefs.safeGetBoolean("isCurlContentAreaOnly", false),
@@ -225,11 +268,11 @@ data class ReaderConfig(
                 spineShadowAlpha = prefs.safeGetFloat("spineShadowAlpha", 0.09f),
                 isShowPageNum = prefs.safeGetBoolean("isShowPageNum", true),
                 isKeepScreenOn = prefs.safeGetBoolean("isKeepScreenOn", true),
-                isTrimWhiteBorder = prefs.safeGetBoolean("${prefix}isTrimWhiteBorder", false),
-                trimFactor = prefs.safeGetFloat("${prefix}trimFactor", 0.02f),
-                trimThreshold = prefs.safeGetInt("${prefix}trimThreshold", 220),
-                trimWhiteRatio = prefs.safeGetFloat("${prefix}trimWhiteRatio", 0.90f),
-                imageMarginH = prefs.safeGetInt("${prefix}imageMarginH", 0),
+                isTrimWhiteBorder = rBoolean("isTrimWhiteBorder", false),
+                trimFactor = rFloat("trimFactor", 0.02f),
+                trimThreshold = rInt("trimThreshold", 220),
+                trimWhiteRatio = rFloat("trimWhiteRatio", 0.90f),
+                imageMarginH = rInt("imageMarginH", 0),
                 readBackground = try { ReadBackground.valueOf(prefs.getString("readBackground", "WHITE")!!) } catch (_: Exception) { ReadBackground.WHITE },
                 isEinkMode = prefs.safeGetBoolean("isEinkMode", false),
                 isEinkDither = prefs.safeGetBoolean("isEinkDither", false),
@@ -242,69 +285,193 @@ data class ReaderConfig(
                 isImmersiveMode = prefs.safeGetBoolean("isImmersiveMode", true),
                 orientation = prefs.safeGetInt("orientation", -1),
                 autoFlipInterval = prefs.safeGetInt("autoFlipInterval", 0),
-                isGrayscale = prefs.safeGetBoolean("${prefix}isGrayscale", false),
-                isInvertColors = prefs.safeGetBoolean("${prefix}isInvertColors", false),
-                isFlipFlashEnabled = prefs.safeGetBoolean("${flashPrefix}isFlipFlashEnabled", false),
-                flipFlashDuration = prefs.safeGetInt("${flashPrefix}flipFlashDuration", 100),
-                flipFlashInterval = prefs.safeGetInt("${flashPrefix}flipFlashInterval", 1),
-                flipFlashColor = prefs.safeGetInt("${flashPrefix}flipFlashColor", 0),
+                isGrayscale = rBoolean("isGrayscale", false),
+                isInvertColors = rBoolean("isInvertColors", false),
+                isFlipFlashEnabled = rBoolean("isFlipFlashEnabled", false),
+                flipFlashDuration = rInt("flipFlashDuration", 100),
+                flipFlashInterval = rInt("flipFlashInterval", 1),
+                flipFlashColor = rInt("flipFlashColor", 0),
                 flipFlashGlobalActive = globalFlash,
-                // ★ 全局语义（2026-10-03）：恒读全局键；旧数据迁移——全局键缺失时从历史
-                //   单本键挑值回填（优先双页跳过首页>双页>单页，保住用户用过的双页状态）
-                pageLayout = run {
-                    if (!prefs.contains("pageLayout")) {
-                        val donors = prefs.all.keys.filter { it.endsWith("_pageLayout") }
-                            .mapNotNull { runCatching { prefs.getString(it, null) }.getOrNull() }
-                        val chosen = listOf(PageLayout.DOUBLE_SHIFTED, PageLayout.DOUBLE)
-                            .firstOrNull { mode -> donors.any { it == mode.name } } ?: PageLayout.SINGLE
-                        prefs.edit().putString("pageLayout", chosen.name).apply()
-                    }
-                    try { PageLayout.valueOf(prefs.getString("pageLayout", "SINGLE")!!) } catch (_: Exception) { PageLayout.SINGLE }
-                },
-                useSSIV = prefs.safeGetBoolean("${prefix}useSSIV", true),
+                // ★ 豁免字段（总开关关也生效）：本书覆盖优先，其次全局键（852 语义默认层）。
+                pageLayout = try { PageLayout.valueOf(rString("pageLayout", "SINGLE")) } catch (_: Exception) { PageLayout.SINGLE },
+                useSSIV = rBoolean("useSSIV", true),
                 landscapeZoom = prefs.safeGetBoolean("landscapeZoom", false),
                 fitScreen = prefs.safeGetBoolean("fitScreen", false),
-                panNavigation = prefs.safeGetBoolean("${prefix}panNavigation", true),
-                doublePageShift = prefs.safeGetInt("${prefix}doublePageShift", 0),
-                doublePageSplit = prefs.safeGetBoolean("${prefix}doublePageSplit", false),
-                doublePageReverse = prefs.safeGetBoolean("${prefix}doublePageReverse", false),
+                panNavigation = rBoolean("panNavigation", true),
+                doublePageShift = rInt("doublePageShift", 0),
+                doublePageSplit = rBoolean("doublePageSplit", false),
+                doublePageReverse = rBoolean("doublePageReverse", false),
 
                 autoWebtoon = prefs.safeGetBoolean("autoWebtoon", true),
                 chapterTransition = prefs.safeGetBoolean("chapterTransition", true),
-                centerGapType = prefs.safeGetInt("${prefix}centerGapType", 0),
+                centerGapType = rInt("centerGapType", 0),
                 autoDoubleLandscape = prefs.safeGetBoolean("autoDoubleLandscape", false),
-                clickFlipInvertH = prefs.safeGetBoolean("${clickInvertPrefix}clickFlipInvertH", false),
+                clickFlipInvertH = rBoolean("clickFlipInvertH", false),
                 seamlessNextVolume = prefs.safeGetBoolean("seamlessNextVolume", true),
                 forceFullDecode = prefs.safeGetBoolean("forceFullDecode", false),
                 tileModeEnabled = prefs.safeGetBoolean("tileModeEnabled", false),
                 tallSplitEnabled = prefs.safeGetBoolean("tallSplitEnabled", true),
-                brightness = prefs.safeGetInt("${prefix}brightness", 0).coerceIn(-100, 100),
-                screenBrightness = prefs.safeGetInt("${prefix}screenBrightness", 0).coerceIn(-100, 100),
-                contrast = prefs.safeGetInt("${prefix}contrast", 100).coerceIn(0, 200),
-                gamma = prefs.safeGetInt("${prefix}gamma", 100).coerceIn(50, 150),
-                brightnessEnabled = if (prefs.contains("${prefix}brightnessEnabled")) prefs.safeGetBoolean("${prefix}brightnessEnabled", false) else (prefs.safeGetInt("${prefix}brightness", 0) != 0),
-                screenBrightnessEnabled = if (prefs.contains("${prefix}screenBrightnessEnabled")) prefs.safeGetBoolean("${prefix}screenBrightnessEnabled", false) else (prefs.safeGetInt("${prefix}screenBrightness", 0) != 0),
-                contrastEnabled = if (prefs.contains("${prefix}contrastEnabled")) prefs.safeGetBoolean("${prefix}contrastEnabled", false) else (prefs.safeGetInt("${prefix}contrast", 100) != 100),
-                gammaEnabled = if (prefs.contains("${prefix}gammaEnabled")) prefs.safeGetBoolean("${prefix}gammaEnabled", false) else (prefs.safeGetInt("${prefix}gamma", 100) != 100),
-                textureEnabled = prefs.safeGetBoolean("${prefix}textureEnabled", false),
-                texturePresetId = prefs.safeGetInt("${prefix}texturePresetId", 0),
-                textureAlpha = prefs.safeGetInt("${prefix}textureAlpha", 15).coerceIn(0, 40),
-                textureConcentration = prefs.safeGetInt("${prefix}textureConcentration", 100).coerceIn(0, 100),
-                textureScope = prefs.safeGetInt("${prefix}textureScope", 0).coerceIn(0, 1),
+                brightness = rInt("brightness", 0).coerceIn(-100, 100),
+                screenBrightness = rInt("screenBrightness", 0).coerceIn(-100, 100),
+                contrast = rInt("contrast", 100).coerceIn(0, 200),
+                gamma = rInt("gamma", 100).coerceIn(50, 150),
+                brightnessEnabled = if (masterOn && prefs.contains("${prefix}brightnessEnabled")) prefs.safeGetBoolean("${prefix}brightnessEnabled", false)
+                    else if (prefs.contains("brightnessEnabled")) prefs.safeGetBoolean("brightnessEnabled", false)
+                    else rInt("brightness", 0) != 0,
+                screenBrightnessEnabled = if (masterOn && prefs.contains("${prefix}screenBrightnessEnabled")) prefs.safeGetBoolean("${prefix}screenBrightnessEnabled", false)
+                    else if (prefs.contains("screenBrightnessEnabled")) prefs.safeGetBoolean("screenBrightnessEnabled", false)
+                    else rInt("screenBrightness", 0) != 0,
+                contrastEnabled = if (masterOn && prefs.contains("${prefix}contrastEnabled")) prefs.safeGetBoolean("${prefix}contrastEnabled", false)
+                    else if (prefs.contains("contrastEnabled")) prefs.safeGetBoolean("contrastEnabled", false)
+                    else rInt("contrast", 100) != 100,
+                gammaEnabled = if (masterOn && prefs.contains("${prefix}gammaEnabled")) prefs.safeGetBoolean("${prefix}gammaEnabled", false)
+                    else if (prefs.contains("gammaEnabled")) prefs.safeGetBoolean("gammaEnabled", false)
+                    else rInt("gamma", 100) != 100,
+                textureEnabled = rBoolean("textureEnabled", false),
+                texturePresetId = rInt("texturePresetId", 0),
+                textureAlpha = rInt("textureAlpha", 15).coerceIn(0, 40),
+                textureConcentration = rInt("textureConcentration", 100).coerceIn(0, 100),
+                textureScope = rInt("textureScope", 0).coerceIn(0, 1),
                 // ambienceSound v1 曾以 Int 持久化（0关/1雨/2篝火/3咖啡），v2 为 String——
                 // 裸 getString 读旧 Int 会 ClassCastException（任何加载配置的入口都崩）。
                 // 读原始值做类型归一：1→"rain"，其余旧值→""（对应音色已删）
-                ambienceSound = when (val raw = prefs.all["${prefix}ambienceSound"]) {
+                ambienceSound = when (val raw = if (masterOn && prefs.contains("${prefix}ambienceSound")) prefs.all["${prefix}ambienceSound"] else prefs.all["ambienceSound"]) {
                     is String -> raw
                     is Int -> if (raw == 1) "rain" else ""
                     is Long -> if (raw == 1L) "rain" else ""
                     else -> ""
                 },
-                ambienceVolume = prefs.safeGetInt("${prefix}ambienceVolume", 60).coerceIn(0, 100),
+                ambienceVolume = rInt("ambienceVolume", 60).coerceIn(0, 100),
                 downsampleTier = if (prefs.contains("downsampleTier")) {
                     try { DownsampleTier.valueOf(prefs.getString("downsampleTier", "STANDARD")!!) } catch (_: Exception) { DownsampleTier.STANDARD }
                 } else if (prefs.safeGetBoolean("forceFullDecode", false)) DownsampleTier.ORIGINAL else DownsampleTier.STANDARD
             )
+            // ★ 会话临时层覆盖（最高优先）：总开关关时的书内改动只存内存，退出阅读清空
+            if (bookId > 0) {
+                ReaderSessionStore.get(bookId)?.forEach { (k, v) -> cfg = applySessionOverride(cfg, k, v) }
+            }
+            return cfg
         }
+
+        /** 会话层原始值回贴（key → 字段）：仅 ReaderScope.BOOK_KEYS 内的键会出现 */
+        fun applySessionOverride(cfg: ReaderConfig, key: String, v: Any?): ReaderConfig {
+            if (v == null) return cfg
+            return when (key) {
+                "scrollMode" -> cfg.copy(scrollMode = enumOr(v, ScrollMode.HORIZONTAL_LEFT))
+                "clickFlipType" -> cfg.copy(clickFlipType = enumOr(v, ClickFlipType.LEFT_RIGHT))
+                "clickFlipInvertH" -> cfg.copy(clickFlipInvertH = v as Boolean)
+                "isTrimWhiteBorder" -> cfg.copy(isTrimWhiteBorder = v as Boolean)
+                "trimFactor" -> cfg.copy(trimFactor = v as Float)
+                "trimThreshold" -> cfg.copy(trimThreshold = v as Int)
+                "trimWhiteRatio" -> cfg.copy(trimWhiteRatio = v as Float)
+                "imageMarginH" -> cfg.copy(imageMarginH = v as Int)
+                "isGrayscale" -> cfg.copy(isGrayscale = v as Boolean)
+                "isInvertColors" -> cfg.copy(isInvertColors = v as Boolean)
+                "isFlipFlashEnabled" -> cfg.copy(isFlipFlashEnabled = v as Boolean)
+                "flipFlashDuration" -> cfg.copy(flipFlashDuration = v as Int)
+                "flipFlashInterval" -> cfg.copy(flipFlashInterval = v as Int)
+                "flipFlashColor" -> cfg.copy(flipFlashColor = v as Int)
+                "useSSIV" -> cfg.copy(useSSIV = v as Boolean)
+                "panNavigation" -> cfg.copy(panNavigation = v as Boolean)
+                "doublePageShift" -> cfg.copy(doublePageShift = v as Int)
+                "doublePageSplit" -> cfg.copy(doublePageSplit = v as Boolean)
+                "doublePageReverse" -> cfg.copy(doublePageReverse = v as Boolean)
+                "centerGapType" -> cfg.copy(centerGapType = v as Int)
+                "brightness" -> cfg.copy(brightness = v as Int)
+                "screenBrightness" -> cfg.copy(screenBrightness = v as Int)
+                "contrast" -> cfg.copy(contrast = v as Int)
+                "gamma" -> cfg.copy(gamma = v as Int)
+                "brightnessEnabled" -> cfg.copy(brightnessEnabled = v as Boolean)
+                "screenBrightnessEnabled" -> cfg.copy(screenBrightnessEnabled = v as Boolean)
+                "contrastEnabled" -> cfg.copy(contrastEnabled = v as Boolean)
+                "gammaEnabled" -> cfg.copy(gammaEnabled = v as Boolean)
+                "textureEnabled" -> cfg.copy(textureEnabled = v as Boolean)
+                "texturePresetId" -> cfg.copy(texturePresetId = v as Int)
+                "textureAlpha" -> cfg.copy(textureAlpha = v as Int)
+                "textureConcentration" -> cfg.copy(textureConcentration = v as Int)
+                "textureScope" -> cfg.copy(textureScope = v as Int)
+                "ambienceSound" -> cfg.copy(ambienceSound = v as String)
+                "ambienceVolume" -> cfg.copy(ambienceVolume = v as Int)
+                "pageLayout" -> cfg.copy(pageLayout = enumOr(v, PageLayout.SINGLE))
+                else -> cfg
+            }
+        }
+
+        private inline fun <reified T : Enum<T>> enumOr(v: Any, def: T): T =
+            if (v is T) v else try { enumValueOf<T>(v.toString()) } catch (_: Exception) { def }
+
+        // ── 字段访问表：diff（书内设置面板改了哪些项）与会话/覆盖取值共用单一来源 ──
+        val FIELD_ACCESSORS: List<Pair<String, (ReaderConfig) -> Any>> = listOf(
+            "scrollMode" to { it.scrollMode.name },
+            "clickFlipType" to { it.clickFlipType.name },
+            "clickFlipInvertH" to { it.clickFlipInvertH },
+            "isTrimWhiteBorder" to { it.isTrimWhiteBorder },
+            "trimFactor" to { it.trimFactor },
+            "trimThreshold" to { it.trimThreshold },
+            "trimWhiteRatio" to { it.trimWhiteRatio },
+            "imageMarginH" to { it.imageMarginH },
+            "isGrayscale" to { it.isGrayscale },
+            "isInvertColors" to { it.isInvertColors },
+            "isFlipFlashEnabled" to { it.isFlipFlashEnabled },
+            "flipFlashDuration" to { it.flipFlashDuration },
+            "flipFlashInterval" to { it.flipFlashInterval },
+            "flipFlashColor" to { it.flipFlashColor },
+            "useSSIV" to { it.useSSIV },
+            "panNavigation" to { it.panNavigation },
+            "doublePageShift" to { it.doublePageShift },
+            "doublePageSplit" to { it.doublePageSplit },
+            "doublePageReverse" to { it.doublePageReverse },
+            "centerGapType" to { it.centerGapType },
+            "brightness" to { it.brightness },
+            "screenBrightness" to { it.screenBrightness },
+            "contrast" to { it.contrast },
+            "gamma" to { it.gamma },
+            "brightnessEnabled" to { it.brightnessEnabled },
+            "screenBrightnessEnabled" to { it.screenBrightnessEnabled },
+            "contrastEnabled" to { it.contrastEnabled },
+            "gammaEnabled" to { it.gammaEnabled },
+            "textureEnabled" to { it.textureEnabled },
+            "texturePresetId" to { it.texturePresetId },
+            "textureAlpha" to { it.textureAlpha },
+            "textureConcentration" to { it.textureConcentration },
+            "textureScope" to { it.textureScope },
+            "ambienceSound" to { it.ambienceSound },
+            "ambienceVolume" to { it.ambienceVolume },
+            "pageLayout" to { it.pageLayout.name },
+            "isFlipAnimation" to { it.isFlipAnimation },
+            "isPageCurlAnimation" to { it.isPageCurlAnimation },
+            "isCurlContentAreaOnly" to { it.isCurlContentAreaOnly },
+            "curlBackContentAlpha" to { it.curlBackContentAlpha },
+            "curlShadowAlpha" to { it.curlShadowAlpha },
+            "spineShadowAlpha" to { it.spineShadowAlpha },
+            "isShowPageNum" to { it.isShowPageNum },
+            "isKeepScreenOn" to { it.isKeepScreenOn },
+            "readBackground" to { it.readBackground.name },
+            "isEinkMode" to { it.isEinkMode },
+            "isEinkDither" to { it.isEinkDither },
+            "einkDitherAlgorithm" to { it.einkDitherAlgorithm },
+            "einkDitherLevels" to { it.einkDitherLevels },
+            "einkEndpointPassthrough" to { it.einkEndpointPassthrough },
+            "einkDecodeSize" to { it.einkDecodeSize },
+            "einkUiHideDelay" to { it.einkUiHideDelay },
+            "pdfQuality" to { it.pdfQuality },
+            "isImmersiveMode" to { it.isImmersiveMode },
+            "orientation" to { it.orientation },
+            "autoFlipInterval" to { it.autoFlipInterval },
+            "landscapeZoom" to { it.landscapeZoom },
+            "fitScreen" to { it.fitScreen },
+            "autoWebtoon" to { it.autoWebtoon },
+            "chapterTransition" to { it.chapterTransition },
+            "autoDoubleLandscape" to { it.autoDoubleLandscape },
+            "seamlessNextVolume" to { it.seamlessNextVolume },
+            "forceFullDecode" to { it.forceFullDecode },
+            "tileModeEnabled" to { it.tileModeEnabled },
+            "downsampleTier" to { it.downsampleTier.name },
+            "tallSplitEnabled" to { it.tallSplitEnabled },
+        )
+
+        /** 书内设置面板 diff：返回真正改动的键名（含全局键——由 ReaderScope 决定写层） */
+        fun changedFields(old: ReaderConfig, new: ReaderConfig): List<String> =
+            FIELD_ACCESSORS.mapNotNull { (k, get) -> if (get(old) != get(new)) k else null }
     }
 }

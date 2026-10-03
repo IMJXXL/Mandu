@@ -109,6 +109,9 @@ class MainActivity : ComponentActivity() {
                 DisposableEffect(currentRoute) {
                     if (currentRoute != null && !currentRoute.startsWith("reader/")) {
                         showSystemBars(this@MainActivity, false)
+                        // ★ 会话临时层清空：真正退出阅读（reader 路由弹出返回栈）才清，
+                        //   书内跳书（reader→reader，路由不变）不清——从 B 返回 A 临时值还在
+                        com.mangareader.data.ReaderSessionStore.clearAll()
                     }
                     onDispose { }
                 }

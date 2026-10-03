@@ -25,16 +25,12 @@ import com.mangareader.smbbridge.SectionCard
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ReadingSettingsScreen(onBack: () -> Unit, onOpenKeyMap: (() -> Unit)? = null) {
+fun ReadingSettingsScreen(onBack: () -> Unit, onOpenKeyMap: (() -> Unit)? = null, onOpenPrefs: (() -> Unit)? = null) {
     BackHandler { onBack() }
     val ctx = LocalContext.current
     val prefs = remember { ctx.getSharedPreferences("manga_reader", Context.MODE_PRIVATE) }
-    var config by remember { mutableStateOf(com.mangareader.data.ReaderConfig.load(ctx).let {
-        if (prefs.getString("readBackground", null) == null) {
-            prefs.edit().putString("readBackground", "WHITE").apply()
-            it.copy(readBackground = com.mangareader.data.ReaderConfig.ReadBackground.WHITE)
-        } else it
-    }) }
+    // ★ load 零写盘（评审硬不变量）：readBackground 补种已移入 ReaderPrefMigration
+    var config by remember { mutableStateOf(com.mangareader.data.ReaderConfig.load(ctx)) }
     var resetTrigger by remember { mutableStateOf(0) }
     var showResetDialog by remember { mutableStateOf(false) }
 
@@ -58,6 +54,25 @@ fun ReadingSettingsScreen(onBack: () -> Unit, onOpenKeyMap: (() -> Unit)? = null
                 .wrapContentWidth(Alignment.CenterHorizontally).widthIn(max = CONTENT_MAX_WIDTH_DP)
                 .padding(16.dp)
         ) {
+
+            if (onOpenPrefs != null) item {
+                SectionCard("作用域") {
+                    Row(
+                        Modifier.fillMaxWidth().clickable { onOpenPrefs() }.padding(vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("阅读偏好", fontSize = 16.sp)
+                            Text(
+                                "本书改动单独记 · 每项可切单本或全局生效",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Text("›", fontSize = 18.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
 
             item {
                 SectionCard("显示") {
@@ -473,8 +488,11 @@ fun ReadingSettingsScreen(onBack: () -> Unit, onOpenKeyMap: (() -> Unit)? = null
             text = { Text("将清除所有阅读设置（含单本自定义），恢复到刚安装时的状态。阅读进度不受影响。\n此操作不可撤销。") },
             confirmButton = {
                 TextButton(onClick = {
-                    com.mangareader.data.ReaderConfig().save(ctx)
+                    // ★ 恢复默认前自动快照（可回滚）+ 清作用域注册表与总开关（三层模型纳管）
+                    com.mangareader.data.ReaderPrefMigration.snapshotNow(ctx)
                     prefs.edit().apply {
+                        remove("pref_center_scope_reg")
+                        remove("pref_center_book_override_enabled")
                         remove("default_read_mode")
                         remove("webtoon_tablet_cap_pct")
                         remove("page_curl_sound")

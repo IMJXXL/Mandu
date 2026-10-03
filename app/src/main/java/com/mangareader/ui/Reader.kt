@@ -106,18 +106,34 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     var lastPageCbMarkMs by remember { mutableLongStateOf(0L) }
     // ★ 本地打开耗时锚点（remote 链有 remote: open 系列，本地链补齐）
     var localOpenStartMs by remember { mutableLongStateOf(0L) }
+    // 全局类项书内改动的披露 Toast：每次会话（Reader 实例存活期）只弹一次
+    var globalWriteToastShown by remember { mutableStateOf(false) }
+    // 单本类项首改提示：按书记忆（换书重新提示一次）
+    var bookWriteToastShown by remember(bookId) { mutableStateOf(false) }
     var localOpenMarked by remember { mutableStateOf(false) }
 
 
-    // 监听 SharedPreferences 外部修改，自动触发 config 重读
+    // ★ 键无关防抖监听（2026-10-03 三层模型评审定稿）：废弃硬编码白名单（已漏 25 键），
+    //   manga_reader 任意变更 → 300ms 防抖后重读 config（load 65 次内存 get，成本可忽略）。
+    //   会话层不走 prefs，经 ReaderSessionStore.onChange 挂同一防抖通道。
     DisposableEffect(bookId) {
-        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-            if (key?.startsWith("book_${bookId}_") == true || key in setOf("scrollMode", "readBackground", "autoFlipInterval", "tileModeEnabled", "downsampleTier", "isEinkMode", "isTrimWhiteBorder", "trimThreshold", "trimWhiteRatio", "imageMarginH", "isFlipAnimation", "isPageCurlAnimation", "isCurlContentAreaOnly", "landscapeZoom", "fitScreen", "panNavigation", "doublePageSplit", "doublePageReverse", "pageLayout", "useSSIV", "forceFullDecode", "tallSplitEnabled", "isFlipFlashEnabled", "flipFlashDuration", "flipFlashInterval", "flipFlashColor", "einkDecodeSize", "einkUiHideDelay", "pdfQuality", "isGrayscale", "isInvertColors", "centerGapType", "doublePageShift", "seamlessNextVolume", "isEinkDither", "einkDitherAlgorithm", "einkDitherLevels", "einkEndpointPassthrough", "clickFlipType", "clickFlipInvertH")) {
+        var debounceJob: kotlinx.coroutines.Job? = null
+        fun scheduleReload() {
+            debounceJob?.cancel()
+            debounceJob = scope.launch {
+                kotlinx.coroutines.delay(300)
                 configVersion++
             }
         }
+        com.mangareader.data.ReaderSessionStore.onChange = { scheduleReload() }
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
+            scheduleReload()
+        }
         prefs.registerOnSharedPreferenceChangeListener(listener)
-        onDispose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+        onDispose {
+            prefs.unregisterOnSharedPreferenceChangeListener(listener)
+            com.mangareader.data.ReaderSessionStore.onChange = null
+        }
     }
 
     DisposableEffect(Unit) {
@@ -186,7 +202,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         }
         if (config.scrollMode != expectedScrollMode) {
             config = config.copy(scrollMode = expectedScrollMode)
-            config.save(ctx, bookId)
+            com.mangareader.data.ReaderScope.write(ctx, bookId, "scrollMode", expectedScrollMode.name)
         }
     }
     LaunchedEffect(config.isEinkMode) {
@@ -1676,7 +1692,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                     }
                     if (config.scrollMode != expectedScrollMode) {
                         config = config.copy(scrollMode = expectedScrollMode)
-                        config.save(ctx, newBookId)
+                        com.mangareader.data.ReaderScope.write(ctx, newBookId, "scrollMode", expectedScrollMode.name)
                     }
                 }
                 // ★ 切书落点分发：文件夹书(d:)走 openFolder 列目录；单文件书(a:/z:)直达正文
@@ -2843,6 +2859,51 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
 
 
 
+    var showBookOverrides by remember { mutableStateOf(false) }
+    var overridesVersion by remember { mutableIntStateOf(0) }
+
+    if (showBookOverrides) {
+        val overrideKeys = com.mangareader.data.ReaderScope.overriddenKeys(prefs, bookId).sorted()
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showBookOverrides = false },
+            title = { Text("本书已单独设置 ${overrideKeys.size} 项") },
+            text = {
+                if (overrideKeys.isEmpty()) {
+                    Text("没有单独设置的项，全部跟随全局默认")
+                } else {
+                    Column(Modifier.verticalScroll(rememberScrollState())) {
+                        overrideKeys.forEach { key ->
+                            val label = com.mangareader.ui.PREF_ROWS.firstOrNull { it.key == key }?.label ?: key
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(label, fontSize = 14.sp)
+                                    Text(
+                                        com.mangareader.ui.prefRawValue(prefs, key, bookId) ?: "",
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                TextButton(onClick = {
+                                    com.mangareader.data.ReaderScope.clearBook(ctx, bookId, key)
+                                    overridesVersion++
+                                }) { Text("清除", fontSize = 13.sp) }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    com.mangareader.data.ReaderScope.clearAllBook(ctx, bookId)
+                    overridesVersion++
+                    showBookOverrides = false
+                    android.widget.Toast.makeText(ctx, "已清除全部本书设置，恢复全局默认", android.widget.Toast.LENGTH_SHORT).show()
+                }) { Text("全部恢复", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { showBookOverrides = false }) { Text("取消") } },
+        )
+    }
+
     if (showSrPanel) {
         BackHandler { showSrPanel = false }
         com.mangareader.ui.SrPanel(
@@ -2936,16 +2997,41 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             mode = mode,
             bookId = bookId,
 
+            masterOn = com.mangareader.data.ReaderScope.masterOn(prefs),
+            bookOverrideCount = com.mangareader.data.ReaderScope.overriddenKeys(prefs, bookId).size,
+            onShowBookOverrides = { showBookOverrides = true },
             onConfigChange = { newConfig ->
+                val changed = com.mangareader.data.ReaderConfig.changedFields(config, newConfig)
                 config = newConfig
-                newConfig.save(ctx, bookId)
+                val accessor = com.mangareader.data.ReaderConfig.FIELD_ACCESSORS
+                changed.forEach { key ->
+                    val v = accessor.first { it.first == key }.second(newConfig)
+                    com.mangareader.data.ReaderScope.write(ctx, bookId, key, v)
+                }
+                // 全局类项在书内被改动 → 即时披露（每会话首次，防连发）
+                if (changed.any { it in com.mangareader.data.ReaderScope.GLOBAL_ONLY_KEYS || it in com.mangareader.data.ReaderScope.CONDITIONAL_LOCK_KEYS } && !globalWriteToastShown) {
+                    globalWriteToastShown = true
+                    android.widget.Toast.makeText(ctx, "已对所有书生效", android.widget.Toast.LENGTH_SHORT).show()
+                }
+                // 单本类项改动 → 每本书首次带书名提示（总开关关=仅本次提示）
+                val bookChanged = changed.any { it in com.mangareader.data.ReaderScope.BOOK_KEYS || it in com.mangareader.data.ReaderScope.MASTER_EXEMPT_KEYS }
+                if (bookChanged && !bookWriteToastShown) {
+                    bookWriteToastShown = true
+                    val masterNow = com.mangareader.data.ReaderScope.masterOn(prefs)
+                    android.widget.Toast.makeText(
+                        ctx,
+                        if (masterNow) "已记住，只对《${book?.title ?: "本书"}》生效"
+                        else "本次调整退出阅读后不保留，下次进书回到全局默认",
+                        android.widget.Toast.LENGTH_SHORT,
+                    ).show()
+                }
                 configVersion++
             },
             onModeChange = { newMode -> applyModeChange(newMode) },
             onOrientationChange = { orientation ->
                 saveOrientation(orientation)
                 config = config.copy(orientation = orientation)
-                config.save(ctx, bookId)
+                com.mangareader.data.ReaderScope.writeGlobal(ctx, "orientation", orientation)
                 configVersion++
             },
             onDismiss = { showSettings = false }
@@ -2964,7 +3050,8 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         val v = (base + delta).coerceIn(-100, 100)
         val nc = config.copy(screenBrightness = v, screenBrightnessEnabled = true)
         config = nc
-        nc.save(ctx, bookId)
+        com.mangareader.data.ReaderScope.write(ctx, bookId, "screenBrightness", v)
+        com.mangareader.data.ReaderScope.write(ctx, bookId, "screenBrightnessEnabled", true)
         configVersion++
     }
 
@@ -3056,7 +3143,8 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                 else com.mangareader.data.ReaderConfig.PageLayout.SINGLE
                 val nc = config.copy(pageLayout = next)
                 config = nc
-                nc.save(ctx, bookId)
+                // 豁免字段：任何状态（含总开关关）都写本书覆盖——"按了就记住"
+                com.mangareader.data.ReaderScope.write(ctx, bookId, "pageLayout", next.name)
                 configVersion++
             }
             com.mangareader.keys.KeyAction.TOGGLE_AUTO_FLIP -> {
@@ -3069,11 +3157,12 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                 }
                 val nc = config.copy(autoFlipInterval = next)
                 config = nc
-                nc.save(ctx, bookId)
+                // 全局语义字段（恒全局项）：写全局键，Toast 带作用域披露
+                com.mangareader.data.ReaderScope.write(ctx, bookId, "autoFlipInterval", next)
                 configVersion++
                 android.widget.Toast.makeText(
                     ctx,
-                    if (next > 0) "自动翻页：开（${"%.1f".format(next / 1000.0f)} 秒/页）" else "自动翻页：关",
+                    (if (next > 0) "自动翻页：开（${"%.1f".format(next / 1000.0f)} 秒/页）" else "自动翻页：关") + " · 已对所有书生效",
                     android.widget.Toast.LENGTH_SHORT,
                 ).show()
             }
