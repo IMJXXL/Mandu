@@ -131,7 +131,8 @@ fun SrQueueScreen(onBack: () -> Unit, onOpenBook: ((Long, String) -> Unit)? = nu
                 val dao = com.mangareader.data.MangaDatabase.getDatabase(ctx).mangaDao()
                 val queuedIds = SrCore.queueStore.load().map { it.bookId }.toSet()
                 val doneIds = com.mangareader.sr.SrCore.diskCache.getCompletedBatchChapters().map { it.bookId }.toSet()
-                val found = dao.getAllBooks().first()
+                // getVisibleBooks 过滤 isHidden——书架管理里隐藏的书不参与批量入队
+                val found = dao.getVisibleBooks().first()
                     .filter { b ->
                         !b.filePath.startsWith("smb:") && !b.filePath.startsWith("webdav:") &&
                             b.id !in queuedIds && b.id !in doneIds &&
