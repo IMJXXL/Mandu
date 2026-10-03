@@ -5,8 +5,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
@@ -37,7 +39,7 @@ fun KeyMapScreen(onBack: () -> Unit) {
     val ctx = LocalContext.current
     val prefs = remember { ctx.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE) }
 
-    var masterOn by remember { mutableStateOf(prefs.getBoolean("reader_hw_keys_enabled", true)) }
+    var masterOn by remember { mutableStateOf(prefs.getBoolean("reader_hw_keys_enabled", false)) }
     var mappings by remember { mutableStateOf(KeyMapStore.mappings(ctx).sortedBy { it.keyCode }) }
     var editing by remember { mutableStateOf<KeyMapping?>(null) }
     var adding by remember { mutableStateOf(false) }
@@ -91,8 +93,9 @@ fun KeyMapScreen(onBack: () -> Unit) {
                                 Spacer(Modifier.height(4.dp))
                                 Text(
                                     "蓝牙遥控器、翻页器、蓝牙键盘、电纸书侧键都是标准键盘设备：系统里配对后，" +
-                                        "点右下角「添加按键」→点「侦测」→按一下遥控器上的键，键码会自动抓进来绑到功能。" +
-                                        "默认表已覆盖常见按键，打开一本书即可直接用遥控器操作。",
+                                        "先打开下方「硬件按键翻页」总开关，再点右下角「添加按键」——" +
+                                        "对话框默认就是侦测模式，按一下遥控器上的键，键码自动抓进来绑到功能。" +
+                                        "默认表已覆盖常见按键，改绑/删除随意。",
                                     fontSize = 12.sp, color = MaterialTheme.colorScheme.onPrimaryContainer,
                                 )
                             }
@@ -231,8 +234,10 @@ private fun KeyEditDialog(
     var codeText by remember { mutableStateOf(initial?.keyCode?.toString() ?: "") }
     var label by remember { mutableStateOf(initial?.label ?: "") }
     var action by remember { mutableStateOf(initial?.actionEnum() ?: KeyAction.NEXT_PAGE) }
-    var detecting by remember { mutableStateOf(false) }
+    // 打开对话框默认即进入侦测（用户拍板 2026-10-03）：编辑时直接按遥控器任意键即改绑
+    var detecting by remember { mutableStateOf(true) }
     var ddExpanded by remember { mutableStateOf(false) }
+    var confirmDelete by remember { mutableStateOf(false) }
 
     // 侦测模式：全局抓下一个按下的键（MainActivity.dispatchKeyEvent 会把按键先送到这里），
     // 期间吞掉一切按键（含音量键）防外漏；BACK 键用于退出侦测而不是填入。
@@ -261,7 +266,11 @@ private fun KeyEditDialog(
         onDismissRequest = { if (detecting) detecting = false else onDismiss() },
         title = { Text(if (initial == null) "添加按键" else "编辑按键") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            // 内容可滚动：小屏 + 输入法弹起时不再被裁切
+            Column(
+                Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
                 OutlinedTextField(
                     value = codeText,
                     onValueChange = { s -> codeText = s.filter { it.isDigit() }.take(4) },
@@ -269,22 +278,27 @@ private fun KeyEditDialog(
                     isError = codeText.isNotEmpty() && !codeValid,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true,
-                    trailingIcon = {
-                        TextButton(onClick = { detecting = !detecting }) {
-                            Text(if (detecting) "停止" else "侦测")
-                        }
-                    },
                     modifier = Modifier.fillMaxWidth(),
                 )
+                OutlinedButton(
+                    onClick = { detecting = !detecting },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        if (detecting) "侦测中…请按遥控器/键盘任意键（返回键停止）"
+                        else "点此侦测：按遥控器任意键自动填入按键码",
+                        fontSize = 12.sp,
+                    )
+                }
                 Text(
                     when {
-                        detecting -> "正在侦测…请按遥控器/键盘上的任意键（返回键退出侦测）"
-                        codeText.isEmpty() -> "可手动输入按键码数字，或点「侦测」后按任意键自动填入"
+                        codeText.isEmpty() -> "也可手动输入按键码数字（点「侦测」更省事）"
                         !codeValid -> "无法识别的按键码"
-                        else -> "按键码 ${KeyMapStore.keyCodeName(code)}"
+                        else -> "按键码：${KeyMapStore.keyCodeName(code)}"
                     },
                     fontSize = 11.sp,
-                    color = if (detecting) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = if (!codeValid && codeText.isNotEmpty()) MaterialTheme.colorScheme.error
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 OutlinedTextField(
                     value = label,
@@ -320,7 +334,7 @@ private fun KeyEditDialog(
         confirmButton = {
             Row {
                 if (onDelete != null) {
-                    TextButton(onClick = onDelete) { Text("删除", color = MaterialTheme.colorScheme.error) }
+                    TextButton(onClick = { confirmDelete = true }) { Text("删除", color = MaterialTheme.colorScheme.error) }
                 }
                 TextButton(onClick = onDismiss) { Text("取消") }
                 Button(
@@ -330,4 +344,27 @@ private fun KeyEditDialog(
             }
         },
     )
+
+    if (confirmDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text("删除这条映射？") },
+            text = {
+                Text(
+                    "「${(initial?.label ?: "").ifBlank { KeyMapStore.keyCodeName(initial?.keyCode ?: 0) }}」" +
+                        "（${KeyMapStore.keyCodeName(initial?.keyCode ?: 0)} → ${initial?.actionEnum()?.label}）将被移除。" +
+                        "删除后该按键不再被漫读拦截（音量键等交还系统）。",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmDelete = false
+                    onDelete?.invoke()
+                }) { Text("删除", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDelete = false }) { Text("取消") }
+            },
+        )
+    }
 }

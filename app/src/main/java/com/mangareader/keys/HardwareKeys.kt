@@ -26,6 +26,7 @@ enum class KeyAction(val label: String) {
     SCROLL_FORWARD("顺向滚动并换页"),
     SCROLL_BACKWARD("逆向滚动并换页"),
     TOGGLE_MENU("呼出/关闭菜单"),
+    TOGGLE_READER_SETTINGS("打开/关闭阅读设置"),
     ADD_BOOKMARK("插入/取消书签"),
     BOOKMARK_LIST("书签列表"),
     NEXT_CHAPTER("下一章/下一卷"),
@@ -33,6 +34,12 @@ enum class KeyAction(val label: String) {
     BRIGHTNESS_UP("亮度调亮"),
     BRIGHTNESS_DOWN("亮度调暗"),
     TOGGLE_DIRECTION("切换左右阅读方向"),
+    /** 单页→双页(横开)→单页…与设置面板同一条 config 路径 */
+    TOGGLE_PAGE_LAYOUT("单页/双页切换"),
+    /** VERT→FLIP→RTL→VERT 循环；条漫变体(VERT_PAGER/WEBTOON_GAP)归入 VERT 位 */
+    MODE_CYCLE("循环切换阅读模式"),
+    /** 开=用记住的间隔(无则 8 秒)；关=停。间隔本体仍在阅读设置里调 */
+    TOGGLE_AUTO_FLIP("自动翻页 开/关"),
 }
 
 @Serializable
