@@ -76,7 +76,18 @@ object SrBatchRunner {
                     val enumerated = chapterPaths(probe, book.filePath)
                     (enumerated + book.filePath + progressPaths).distinct()
                 }
-                else -> progressPaths.ifEmpty { listOf(book.filePath) }
+                // ★ 0 进度死区修复（2026-10-03 用户实测"不能加入队列"）：默认模式只入
+                //   读过的章，从未读过的书 progressPaths 为空 → 退化书根 listPages——对
+                //   文件夹/多章压缩包书得 0 页，被 totalPages>0 滤光 → Toast"没有找到可
+                //   处理的页面"。未读书没有"跳过未读"可言，直接退化为整本枚举才符合
+                //   按钮本意；部分读过的书仍只入读过的章（省存储的语义不变）。
+                else -> {
+                    if (progressPaths.isNotEmpty()) progressPaths
+                    else {
+                        val probe = ArchiveEngine(context.applicationContext)
+                        (chapterPaths(probe, book.filePath) + book.filePath).distinct()
+                    }
+                }
             }
 
             val probe = ArchiveEngine(context.applicationContext)

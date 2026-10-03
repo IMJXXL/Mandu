@@ -835,6 +835,15 @@ private fun SrPanelContent(
                         .padding(top = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
+                    // ★ 持久短码（2026-10-03）：面板拿到哪个 id、能力判定结果——落
+                    //   diag_stages.txt（进程死了也在），下次导日志必看
+                    LaunchedEffect(bookId, offlineOk) {
+                        runCatching {
+                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                com.mangareader.DiagTracer.markStatic("sr: panel off id=$bookId ok=$offlineOk")
+                            }
+                        }
+                    }
                     if (bookId < 0) {
                         // book 为 null（bookId=-1）：书未关联书架条目。此前这里整体空白，
                         // 用户看到"离线 Tab 什么都没有"（mobi 实测踩中）。留诊断短码定位路径。

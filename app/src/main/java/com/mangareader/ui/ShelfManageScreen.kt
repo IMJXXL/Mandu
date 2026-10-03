@@ -24,6 +24,8 @@ import com.mangareader.App
 import com.mangareader.data.Bookshelf
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
@@ -48,13 +50,22 @@ fun ShelfManageScreen(onBack: () -> Unit) {
     val listState = rememberLazyListState()
     val dragList = remember { mutableStateListOf<Bookshelf>() }
     val canDragState = remember { mutableStateOf(true) } // 搜索过滤时禁拖（过滤序≠全序，拖了会错位）；值随 shelfQuery 刷新
+    // ★ 闪退修复（2026-10-03 实测"拖动闪退"）：库回调的 from/to.index 是整个 LazyColumn 的
+    //   绝对索引——本列表前面还有搜索框、提示文字两个静态 item{}（0/1），第一个书架的索引是 2。
+    //   直接拿 from.index 当 dragList 下标会越界 IndexOutOfBoundsException（书架少时必崩）。
+    //   改按 key 映射回 dragList 下标，头部 item 增减都不受影响。
+    val saveOrderMutex = remember { Mutex() }
     val reorderableState = rememberReorderableLazyListState(listState) { from, to ->
-        if (canDragState.value) {
-            val item = dragList.removeAt(from.index)
-            dragList.add(to.index, item)
-            // 书架数量小（几十量级），每次让位全表落盘一次，顺序永远一致
-            scope.launch(Dispatchers.IO) {
-                dragList.forEachIndexed { i, s -> dao.updateBookshelfSort(s.id, i) }
+        if (!canDragState.value) return@rememberReorderableLazyListState
+        val f = dragList.indexOfFirst { it.id == from.key }
+        val t = dragList.indexOfFirst { it.id == to.key }
+        if (f < 0 || t < 0 || f == t) return@rememberReorderableLazyListState
+        dragList.add(t, dragList.removeAt(f))
+        // 快照在主线程先取好，IO 侧用互斥串行落盘——防止连续让位时多个全表重写并发互相踩
+        val snapshot = dragList.toList()
+        scope.launch(Dispatchers.IO) {
+            saveOrderMutex.withLock {
+                snapshot.forEachIndexed { i, s -> dao.updateBookshelfSort(s.id, i) }
             }
         }
     }

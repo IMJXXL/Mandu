@@ -149,6 +149,8 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     //   inflightAnimLoads：正在 IO 中的 idx Set，防同 idx 并发多次触发 loadAnim
     private val animRawCache = java.util.LinkedHashMap<Int, ByteArray>(16, 0.75f, true)
     private val inflightAnimLoads = java.util.Collections.synchronizedSet(HashSet<Int>())
+    /** 动图 drawable 构造失败页：翻回静图路径后不再反复重试动图（防"失败→重探→再失败"死循环） */
+    private val animFailedIdx = java.util.Collections.newSetFromMap(java.util.concurrent.ConcurrentHashMap<Int, Boolean>())
 
     /**
      * ★ §34.1 动图修复：APNG4Android 旁路 Coil（2026-09-05 恢复 v1.2 方案，仅本地路径使用）。
@@ -201,6 +203,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     private fun ensureAnimKindAsync(idx: Int) {
         // ★ SMB/WebDAV：远程页由 Coil 解码自动识别动图，无需 peek（peek 会撞 ArchiveEngine 守卫）
         if (remotePageSupply != null) return
+        if (animFailedIdx.contains(idx)) return  // 构造失败过：静图路径接管，不再重试
         val e = engine ?: return
         val meta = pageList.getOrNull(idx) ?: return
         loadScope.launch {
@@ -227,6 +230,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         val e = engine ?: return
         val meta = pageList.getOrNull(idx) ?: return
         val kind = pageAnimFlags.firstOrNull { it.pageIdx == idx }?.kind ?: return
+        if (animFailedIdx.contains(idx)) return  // 构造失败过：静图路径接管，不再重试
         // ★ Bug#9：命中 raw cache 直接复用，不重走 IO；命中已构造 drawable 直接补 start
         if (pageAnimDrawables[idx] != null) {
             val existingDrawable = pageAnimDrawables[idx]!!
@@ -245,7 +249,10 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 val drawable = withContext(Dispatchers.IO) {
                     try { makeAnimDrawable(cachedRaw, kind) } catch (_: Exception) { null }
                 }
-                if (drawable == null) return@launch
+                if (drawable == null) {
+                    markAnimFailed(idx)
+                    return@launch
+                }
                 withContext(Dispatchers.Main) {
                     val pos = holder.bindingAdapterPosition
                     val fresh = pos != androidx.recyclerview.widget.RecyclerView.NO_POSITION && pos in pageList.indices
@@ -263,6 +270,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             return
         }
         loadScope.launch {
+            val t0 = android.os.SystemClock.uptimeMillis()
             try {
                 // ★ mmap 优先：File 可用时跳过 readBytes，12MB 落 native memory 不占 Java 堆
                 val realFile = withContext(Dispatchers.IO) { e.getRealFileForPage(treePath, meta) }
@@ -274,7 +282,10 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                     val raw = withContext(Dispatchers.IO) {
                         try { e.loadPageRaw(meta, treePath) } catch (_: Exception) { null }
                     }
-                    if (raw == null) return@launch
+                    if (raw == null) {
+                        markAnimFailed(idx)
+                        return@launch
+                    }
                     synchronized(animRawCache) {
                         animRawCache[idx] = raw
                         while (animRawCache.size > 6) {
@@ -286,7 +297,15 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                         try { makeAnimDrawable(raw, kind) } catch (_: Exception) { null }
                     }
                 }
-                if (drawable == null) return@launch
+                if (drawable == null) {
+                    markAnimFailed(idx)
+                    return@launch
+                }
+                val ms = android.os.SystemClock.uptimeMillis() - t0
+                if (ms > 2500) runCatching {
+                    // 慢动图取证（"打开 GIF 几十秒"专项）：超 2.5s 落持久短码
+                    com.mangareader.DiagTracer.markStatic("reader: animslow ms=$ms kind=$kind idx=$idx")
+                }
                 withContext(Dispatchers.Main) {
                     // ★ Bug#7 holder-freshness 守卫：异步载入期间 holder 可能已被 Recycler 复用到别的页位置。
                     //   若 holder.bindingAdapterPosition 已 NO_POSITION 或映射到的 realIdx ≠ 当前请求的 idx，
@@ -306,6 +325,14 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 inflightAnimLoads.remove(idx)
             }
         }
+    }
+
+    /** 动图构造失败：翻回静图路径（移除动图标记 + 重绑），animFailedIdx 挡住重探防死循环 */
+    private fun markAnimFailed(idx: Int) {
+        animFailedIdx.add(idx)
+        inflightAnimLoads.remove(idx)
+        pageAnimFlags = pageAnimFlags.filter { it.pageIdx != idx }
+        post { pagerAdapter?.notifyItemChanged(idx) }
     }
 
     /** 启动当前页动图（PagerReaderView 单页同时只有一页可见，逻辑极简）
@@ -692,6 +719,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             pageAnimDrawables.clear()
             pageAnimFlags = emptyList()
             animatedCount = 0
+            animFailedIdx.clear()
             currentPlayingAnimIdx = -1
             // ★ ① 修复：切章必须清 inflightAnimLoads 和 animRawCache。
             //   原因：viewPager/NativeReaderScreen 实例跨 setup 复用（remember{} 创建同一 PagerReaderView），
@@ -1330,6 +1358,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         currentPlayingAnimIdx = -1
         pageAnimFlags = emptyList()
         animatedCount = 0
+        animFailedIdx.clear()
 
         loadScope.cancel()
         loadJobs.clear() // ★ 调度修复：release 时注册表同步清空
@@ -1605,7 +1634,14 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 holder.clear()
                 if (!isScrolling) {
                     holder.loadingBar?.visibility = View.VISIBLE
-                    loadPageAsync(realIdx)
+                    // ★ 已知动图页跳过静解码（2026-10-03"打开 GIF 几十秒"专项）：长条 GIF 首帧
+                    //   全尺寸解码可达百 MB 级——直接走动图加载；构造失败由 markAnimFailed 翻回静图
+                    val knownAnim = pageAnimFlags.firstOrNull { it.pageIdx == realIdx }?.kind
+                    if (knownAnim != null && knownAnim != AnimKind.NONE) {
+                        loadAnimPageAsync(realIdx, holder)
+                    } else {
+                        loadPageAsync(realIdx)
+                    }
                 }
             }
         }

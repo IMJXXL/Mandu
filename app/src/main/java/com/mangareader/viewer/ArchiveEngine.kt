@@ -1255,6 +1255,16 @@ class ArchiveEngine(private val ctx: Context) {
     }
 
     private suspend fun peekAnimKindFallback(treeStr: String, meta: PageMeta): AnimKind {
+        // ★ 提速（2026-10-03"打开 GIF 几十秒"专项）：先试 64KB 头部截读——GIF 魔数 6B、
+        //   动图 WebP VP8X ~30B 内可判，APNG acTL 通常 <64KB；判不出才全量读。
+        //   压缩包内大 GIF 免掉一次纯为嗅探的全量解压（此前 zip/rar/7z 每页全读一遍）。
+        val head = try { loadPageHeadBytes(meta, treeStr) } catch (_: Exception) { null }
+        if (head != null && head.isNotEmpty()) {
+            animKindFromHead(head, head.size)?.let {
+                lastPeekBytes = head.size
+                return it
+            }
+        }
         val raw = try { loadPageRaw(meta, treeStr) } catch (_: Exception) { null } ?: run { lastPeekBytes = 0; return AnimKind.NONE }
         lastPeekBytes = raw.size
         return peekAnimKindFromRaw(raw)
@@ -1446,9 +1456,9 @@ class ArchiveEngine(private val ctx: Context) {
             if (realFile != null && realFile.exists() && realFile.length() > 0) {
                 val boundsOpts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                 BitmapFactory.decodeFile(realFile.absolutePath, boundsOpts)
-                // ★ 动图首帧不降采样（条漫动图页按静帧显示，全分辨率观感）；OOM 降级兜底
-                val animated = runCatching { isAnimatedBytes(readHeadBytes(realFile, 64 * 1024)) }.getOrDefault(false)
-                val sampleSize = if (animated || downsampleThreshold >= Long.MAX_VALUE || boundsOpts.outWidth <= 0 || boundsOpts.outHeight <= 0) {
+                // ★ 动图首帧同样按 screenMax 采样（2026-10-03"打开 GIF 几十秒"专项）：
+                //   长条 GIF 全尺寸首帧可达 200MB+ 位图；该帧只是动图 drawable 的临时占位
+                val sampleSize = if (downsampleThreshold >= Long.MAX_VALUE || boundsOpts.outWidth <= 0 || boundsOpts.outHeight <= 0) {
                     1
                 } else {
                     calculateSampleSize(boundsOpts.outWidth, boundsOpts.outHeight, screenMax)
@@ -1464,10 +1474,7 @@ class ArchiveEngine(private val ctx: Context) {
         // fallback: SAF URI
         val boundsOpts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         try { ctx.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, boundsOpts) } } catch (_: Exception) {}
-        val animated = try {
-            ctx.contentResolver.openInputStream(uri)?.use { input -> isAnimatedBytes(readHeadBytes(input, 64 * 1024)) } ?: false
-        } catch (_: Exception) { false }
-        val sampleSize = if (animated || downsampleThreshold >= Long.MAX_VALUE || boundsOpts.outWidth <= 0 || boundsOpts.outHeight <= 0) {
+        val sampleSize = if (downsampleThreshold >= Long.MAX_VALUE || boundsOpts.outWidth <= 0 || boundsOpts.outHeight <= 0) {
             1
         } else {
             calculateSampleSize(boundsOpts.outWidth, boundsOpts.outHeight, screenMax)
@@ -1485,15 +1492,7 @@ class ArchiveEngine(private val ctx: Context) {
         } catch (_: Exception) { null }
     }
 
-    /** 读文件头部字节（动图嗅探用；读不满返回实际长度） */
-    private fun readHeadBytes(f: File, max: Int): ByteArray {
-        return try {
-            f.inputStream().use { input -> readHeadBytes(input, max) }
-        } catch (_: Exception) {
-            ByteArray(0)
-        }
-    }
-
+    /** 读流头部字节（动图嗅探用；读不满返回实际长度） */
     private fun readHeadBytes(input: java.io.InputStream, max: Int): ByteArray {
         return try {
             val buf = ByteArray(max)
@@ -1551,10 +1550,11 @@ class ArchiveEngine(private val ctx: Context) {
             val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             BitmapFactory.decodeByteArray(data, 0, data.size, bounds)
             var sample = 1
-            // ★ 动图页跳过降采样：inSampleSize 不省动图解码成本、只毁首帧画质（对齐上游 animated→ORIGIN）。
-            //   全尺寸解码的 OOM 风险由下方 catch 兜底。
-            val animated = isAnimatedBytes(data)
-            if (!animated && bounds.outWidth > 0 && bounds.outHeight > 0) {
+            // ★ 动图首帧也降采样（2026-10-03"打开 GIF 几十秒"专项）：此前动图页强制 sample=1，
+            //   长条 GIF 第一帧=整屏逻辑尺寸（1080×50000 → 216MB 位图），解一次几十秒+GC 风暴。
+            //   该帧只是动图 drawable 就位前的临时占位（已知动图页在阅读器侧直接跳过静解码），
+            //   按 screenMax 采样不影响动图播放画质；普通尺寸 GIF sample=1 无变化。
+            if (bounds.outWidth > 0 && bounds.outHeight > 0) {
                 val px = bounds.outWidth.toLong() * bounds.outHeight.toLong()
                 while (px / (sample.toLong() * sample) > downsampleThreshold) sample *= 2
             }
@@ -1568,7 +1568,7 @@ class ArchiveEngine(private val ctx: Context) {
             }.also { bmp ->
                 if (bmp == null) {
                     val magic = data.take(4).joinToString("") { "%02X".format(it) }
-                    e(TAG, "decodeBitmap NULL bytes=${data.size} bounds=${bounds.outWidth}x${bounds.outHeight} sample=$sample animated=$animated magic=$magic")
+                    e(TAG, "decodeBitmap NULL bytes=${data.size} bounds=${bounds.outWidth}x${bounds.outHeight} sample=$sample magic=$magic")
                 }
             } ?: decodeWithImageDecoder(data)
 

@@ -288,6 +288,8 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
     @Volatile private var animatedCount: Int = 0
     private val webtoonAnimDrawables = java.util.concurrent.ConcurrentHashMap<Int, android.graphics.drawable.Drawable>()
     private val animInflight = java.util.Collections.newSetFromMap(java.util.concurrent.ConcurrentHashMap<Int, Boolean>())
+    /** 动图 drawable 构造失败页：翻回静图路径后不再反复重试动图（防"失败→重探→再失败"死循环） */
+    private val animFailed = java.util.Collections.newSetFromMap(java.util.concurrent.ConcurrentHashMap<Int, Boolean>())
     /** §24 二代 hook：检测到 ≥3 张动图卷时回调 Reader.kt 弹"条漫下只能静态看，是否切翻页"对话框 */
     var onAnimDetected: ((animatedCount: Int) -> Unit)? = null
 
@@ -510,6 +512,7 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
             //   animatedCount 不归零导致提前误触发"切翻页"对话框
             pageAnimFlags = emptyList()
             animatedCount = 0
+            animFailed.clear()
             adapter?.notifyDataSetChanged()
         }
         // ★ v1.11 P0-B3：mihon 方案 B——recycler 已在 init 冻结为 GONE，此处直接登记目标位并解冻，
@@ -974,6 +977,7 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
         // ★ §24 二代：释放信号状态（E4 起条漫播放动图，Drawable 一并停帧清空）
         pageAnimFlags = emptyList()
         animatedCount = 0
+        animFailed.clear()
         onAnimDetected = null
         webtoonAnimDrawables.values.forEach { (it as? android.graphics.drawable.Animatable)?.stop() }
         webtoonAnimDrawables.clear()
@@ -1160,8 +1164,16 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
             }
             // 静图页：原路径（§24 撤回，条漫不再处理动图渲染——所有页在条漫下都按静图渲染）
             val cached = synchronized(bitmapCache) { bitmapCache[pos] }
+            val knownAnimKind = pageAnimFlags.firstOrNull { it.pageIdx == pos }?.kind
             if (cached != null && !cached.isRecycled && cached.width > 1) {
                 h.set(cached)
+            } else if (knownAnimKind != null && knownAnimKind != AnimKind.NONE) {
+                // ★ 已知动图页跳过静解码（2026-10-03"打开 GIF 几十秒"专项）：长条 GIF 首帧=
+                //   整屏逻辑尺寸，全尺寸解一帧可达百 MB 级——纯浪费，动图 drawable 马上接管；
+                //   构造失败时 loadAnimAsync 会翻回静图路径（animFailed），不会白屏。
+                //   仍给一屏占位（setAnim 会复位），防等待期 item 高度≈0 扰动条漫锚定
+                h.iv.minimumHeight = if (recycler.height > 0) recycler.height
+                                     else h.itemView.resources.displayMetrics.heightPixels
             } else {
                 // ★ v1.11 一屏占位（mihon WebtoonPageHolder.kt:54-58/:265 同构机制，官方注释
                 //   "keep a minimum height size of the holder"防 adapter 填屏）：无图 item 高度≈0
@@ -1198,6 +1210,7 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
         private fun ensureAnimKindAsync(pos: Int) {
             val e = engine ?: return
             val meta = pageList.getOrNull(pos) ?: return
+            if (animFailed.contains(pos)) return  // 构造失败过：静图路径接管，不再重试
             if (pageAnimFlags.any { it.pageIdx == pos }) return  // 已 peek 过
             loadScope.launch {
                 val kind = withContext(Dispatchers.IO) {
@@ -1241,25 +1254,39 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
             if (kind == AnimKind.NONE) return
             if (!animInflight.add(pos)) return
             loadScope.launch {
-                try {
-                    val meta = pageList.getOrNull(pos) ?: return@launch
-                    val drawable = withContext(Dispatchers.IO) {
-                        try {
-                            val supply = remotePageSupply
-                            val realFile = if (supply == null) engine?.getRealFileForPage(treePath, meta) else null
-                            if (realFile != null && realFile.exists() && realFile.length() > 0) {
-                                makeAnimDrawable(ByteArray(0), kind, realFile)
+                val t0 = android.os.SystemClock.uptimeMillis()
+                val meta = pageList.getOrNull(pos) ?: return@launch
+                val drawable = withContext(Dispatchers.IO) {
+                    try {
+                        val supply = remotePageSupply
+                        val realFile = if (supply == null) engine?.getRealFileForPage(treePath, meta) else null
+                        if (realFile != null && realFile.exists() && realFile.length() > 0) {
+                            makeAnimDrawable(ByteArray(0), kind, realFile)
+                        } else {
+                            val raw = if (supply != null) {
+                                runCatching { supply.loadPageRaw(pos) }.getOrNull()
                             } else {
-                                val raw = if (supply != null) {
-                                    runCatching { supply.loadPageRaw(pos) }.getOrNull()
-                                } else {
-                                    runCatching { engine?.loadPageRaw(meta, treePath) }.getOrNull()
-                                }
-                                raw?.let { makeAnimDrawable(it, kind) }
+                                runCatching { engine?.loadPageRaw(meta, treePath) }.getOrNull()
                             }
-                        } catch (_: Exception) { null }
-                    }
-                    if (drawable == null) return@launch  // 构造失败：静图首帧兜底已在位
+                            raw?.let { makeAnimDrawable(it, kind) }
+                        }
+                    } catch (_: Exception) { null }
+                }
+                val ms = android.os.SystemClock.uptimeMillis() - t0
+                if (ms > 2500) runCatching {
+                    // 慢动图取证（"打开 GIF 几十秒"专项）：超 2.5s 落持久短码
+                    com.mangareader.DiagTracer.markStatic("reader: animslow ms=$ms kind=$kind idx=$pos")
+                }
+                if (drawable == null) {
+                    // ★ 构造失败翻回静图路径（bind 见动图标记会跳过静解码，不翻标就白屏）；
+                    //   animFailed 挡住 ensureAnimKindAsync 重探，防"失败→重探→再失败"循环
+                    animFailed.add(pos)
+                    animInflight.remove(pos)
+                    pageAnimFlags = pageAnimFlags.filter { it.pageIdx != pos }
+                    recycler.post { adapter?.notifyItemChanged(pos) }
+                    return@launch
+                }
+                try {
                     synchronized(webtoonAnimDrawables) {
                         webtoonAnimDrawables[pos] = drawable
                         while (webtoonAnimDrawables.size > 6) {

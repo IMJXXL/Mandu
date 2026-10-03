@@ -33,6 +33,12 @@ object DiagLogExporter {
         runCatching { appendSrState(sb, context) }.onFailure { sb.appendLine("超分状态读取失败: $it") }
         runCatching { appendCleanupSelfTest(sb) }.onFailure { sb.appendLine("清理档自检失败: $it") }
         sb.appendLine()
+        sb.appendLine("==== diag_stages（持久短码：跨进程存活，崩溃/上次进程的入队路径在这里）====")
+        runCatching { appendDiagStages(sb, context) }.onFailure { sb.appendLine("diag_stages 读取失败: $it") }
+        sb.appendLine()
+        sb.appendLine("==== logcat (crash buffer，含已崩溃进程的堆栈) ====")
+        runCatching { appendCrashBuffer(sb) }.onFailure { sb.appendLine("crash buffer 读取失败: $it") }
+        sb.appendLine()
         sb.appendLine("==== logcat (本应用进程全部) ====")
         runCatching { appendLogcat(sb) }.onFailure { sb.appendLine("logcat 读取失败: $it") }
 
@@ -97,19 +103,57 @@ object DiagLogExporter {
         }
     }
 
+    /** 与 DiagExporter 同一隐私口径：路径/书名→<book>，网盘与 IP→<server>，类名中性化 */
+    private fun sanitize(text: String): String = text
+        .replace(Regex("""/storage/[^\s"'）)\\]+|/data/user/[^\s"'）)\\]+|/sdcard/[^\s"'）)\\]+"""), "<book>")
+        .replace(Regex("""\b(?:https?|smb|ftp|ftps|webdav|webdavs)://[^\s"'）)\\]+"""), "<server>")
+        .replace(Regex("""\\\\[\w.-]+[^\s"']*"""), "<server>")
+        .replace(Regex("""\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?::\d+)?\b"""), "<server>")
+        .replace(Regex("""\b(?:com\.)?mangareader\.[\w.]+"""), "m.*")
+
+    /** diag_stages.txt = DiagTracer 持久短码（进程死了也在）：入队 enq 系列/面板 nobook/
+     *  崩溃前最后一步都靠它。只取末尾 64KB 防膨胀。 */
+    private fun appendDiagStages(sb: StringBuilder, context: Context) {
+        val f = File(context.filesDir, "diag_stages.txt")
+        if (!f.exists() || f.length() <= 0L) {
+            sb.appendLine("（无记录）")
+            return
+        }
+        val max = 64 * 1024
+        val text = if (f.length() <= max) f.readText() else {
+            val raf = java.io.RandomAccessFile(f, "r")
+            try {
+                raf.seek(f.length() - max)
+                val bytes = ByteArray(max)
+                raf.readFully(bytes)
+                String(bytes)
+            } finally {
+                raf.close()
+            }
+        }
+        sb.append(sanitize(text))
+    }
+
+    /** crash buffer 跨进程存活——上一进程的 FATAL 堆栈在这里。按记录块拆分后只留
+     *  本应用相关的块（堆栈含包名/头部带截断进程名 com.mangareade），其他应用崩溃不导出。 */
+    private fun appendCrashBuffer(sb: StringBuilder) {
+        val proc = Runtime.getRuntime().exec(arrayOf("logcat", "-d", "-b", "crash", "-v", "time"))
+        val text = proc.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+        proc.waitFor()
+        val mine = text.split(Regex("""(?=\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3})"""))
+            .filter { it.contains("mangaread", ignoreCase = true) }
+        if (mine.isEmpty()) {
+            sb.appendLine("（crash buffer 无本应用崩溃记录）")
+        } else {
+            sb.append(sanitize(mine.joinToString("")))
+        }
+    }
+
     private fun appendLogcat(sb: StringBuilder) {
         val proc = Runtime.getRuntime().exec(arrayOf("logcat", "-d", "--pid=${android.os.Process.myPid()}", "-v", "time"))
         val text = proc.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
         proc.waitFor()
-        // 与 DiagExporter 同一隐私口径：路径/书名→<book>，网盘与 IP→<server>，类名中性化
-        sb.append(
-            text
-                .replace(Regex("""/storage/[^\s"'）)\\]+|/data/user/[^\s"'）)\\]+|/sdcard/[^\s"'）)\\]+"""), "<book>")
-                .replace(Regex("""\b(?:https?|smb|ftp|ftps|webdav|webdavs)://[^\s"'）)\\]+"""), "<server>")
-                .replace(Regex("""\\\\[\w.-]+[^\s"']*"""), "<server>")
-                .replace(Regex("""\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?::\d+)?\b"""), "<server>")
-                .replace(Regex("""\b(?:com\.)?mangareader\.[\w.]+"""), "m.*")
-        )
+        sb.append(sanitize(text))
         if (text.isBlank()) sb.appendLine("（logcat 为空：系统未返回本应用日志，需换抓取方式）")
     }
 
