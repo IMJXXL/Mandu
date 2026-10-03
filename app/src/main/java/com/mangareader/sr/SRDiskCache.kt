@@ -180,40 +180,46 @@ class SRDiskCache(
     private fun artifactChapterDir(bookId: Long, chapterKey: String): File =
         File(artifactDir, "$bookId/${DiskUtil.buildValidFilename(chapterKey)}")
 
-    private fun artifactFile(bookId: Long, chapterKey: String, cacheKey: String): File {
+    // ★ 布局 v2（2026-10-03）：artifacts/<bookId>/<章节key>/<指纹目录>/pNNN.webp
+    //   指纹必须来自 **设置**（模型/降噪/黑白/引擎）而非 manager 运行态——
+    //   冷启动先于引擎装载时 manager 的模型是 unknown，用 buildCacheKey 会在重开书时
+    //   算出不同键 → 产物永远 miss → "退出重进不显示增强图"。
+    private fun artifactPageFile(bookId: Long, chapterKey: String, fp: String, pageIndex: Int): File {
         val ext = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) "webp" else "jpg"
-        val safeKey = DiskUtil.buildValidFilename(cacheKey)
-        return File(artifactChapterDir(bookId, chapterKey), "$safeKey.$ext")
+        return File(
+            File(artifactChapterDir(bookId, chapterKey), DiskUtil.buildValidFilename(fp)),
+            "${pageIndex.toString().padStart(4, '0')}.$ext",
+        )
     }
 
     /** 实时增强成功后调用（须在 IO 线程）：落盘 + 超限自动清最旧 */
-    fun putArtifact(bookId: Long, chapterKey: String, cacheKey: String, bitmap: Bitmap) {
+    fun putArtifact(bookId: Long, chapterKey: String, fp: String, pageIndex: Int, bitmap: Bitmap) {
         if (bookId < 0) return
         try {
-            val file = artifactFile(bookId, chapterKey, cacheKey)
+            val file = artifactPageFile(bookId, chapterKey, fp, pageIndex)
             file.parentFile?.mkdirs()
             writeBitmapAtomic(file, bitmap)
             evictArtifactsIfNeeded()
         } catch (e: Exception) {
-            Log.e(TAG, "putArtifact failed: $cacheKey", e)
+            Log.e(TAG, "putArtifact failed p$pageIndex", e)
         }
     }
 
     /** 只判断产物文件是否存在（O(1) stat，不解码）——显示链 Fast 路径守卫用 */
-    fun hasArtifact(bookId: Long, chapterKey: String, cacheKey: String): Boolean =
-        bookId >= 0 && artifactFile(bookId, chapterKey, cacheKey).exists()
+    fun hasArtifact(bookId: Long, chapterKey: String, fp: String, pageIndex: Int): Boolean =
+        bookId >= 0 && artifactPageFile(bookId, chapterKey, fp, pageIndex).exists()
 
     /** 本章是否已有任何页级产物（O(1) 目录 stat）——pollForResult 守卫用 */
     fun hasArtifactChapter(bookId: Long, chapterKey: String): Boolean =
         bookId >= 0 && artifactChapterDir(bookId, chapterKey).isDirectory
 
-    fun getArtifact(bookId: Long, chapterKey: String, cacheKey: String): Bitmap? {
-        val file = artifactFile(bookId, chapterKey, cacheKey)
+    fun getArtifact(bookId: Long, chapterKey: String, fp: String, pageIndex: Int): Bitmap? {
+        val file = artifactPageFile(bookId, chapterKey, fp, pageIndex)
         if (!file.exists()) return null
         return try {
             BitmapFactory.decodeFile(file.absolutePath)
         } catch (e: Exception) {
-            Log.e(TAG, "read artifact failed: $cacheKey", e)
+            Log.e(TAG, "read artifact failed p$pageIndex", e)
             null
         }
     }

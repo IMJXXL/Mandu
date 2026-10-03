@@ -119,9 +119,9 @@ object SrPipeline {
     /** 对比叠层"右侧"取图：页级持久产物优先；超分结果次之；黑白独立模式下退而求其次取黑白优化结果；
      *  最后兜底查批量离线产物（手动开超分切换模型后内存缓存键不命中时仍可对比） */
     fun peekSr(pageIndex: Int): Bitmap? {
-        artifactKey(pageIndex)?.let { ck ->
-            SrCore.diskCache.getArtifact(sessionBookId, artifactChapterKey(), ck)?.let { return it }
-        }
+        SrCore.diskCache.getArtifact(
+            sessionBookId, artifactChapterKey(), artifactFingerprint(), pageIndex,
+        )?.let { return it }
         val srBmp = SrCore.dispatcher.getSrBitmap(sessionChapterId, pageIndex)
         if (srBmp != null) return srBmp
         if (!SrCore.settings.upscaleEnabled && SrCore.settings.bwEnabled) {
@@ -315,10 +315,22 @@ object SrPipeline {
         SrCore.diskCache.hasArtifactChapter(sessionBookId, artifactChapterKey())
     } catch (_: Throwable) { false }
 
-    /** 当前页的产物键 = 实时缓存键（自带档位/降噪/黑白/引擎完整指纹，改设置自动走新键） */
-    private fun artifactKey(pageIndex: Int): String? = try {
-        SrCore.manager.buildCacheKey(sessionChapterId, pageIndex)
-    } catch (_: Throwable) { null }
+    /** ★ 产物指纹：从 **设置** 派生（模型/倍率/降噪/黑白/引擎），与 manager.buildCacheKey 同语义
+     *  但不依赖 manager 运行态——冷启动引擎未装载时 manager 的模型是 unknown，用缓存键做产物
+     *  路径会在"退出重进"时算出不同键 → 产物永远 miss（2026-10-03 用户实测踩中，已改）。 */
+    private fun artifactFingerprint(): String {
+        val m = try {
+            SrCore.settings.effectiveModel(sessionBookId)
+        } catch (_: Throwable) {
+            SrCore.settings.model
+        }
+        val bwPart = if (SrCore.settings.bwEnabled) {
+            "_bw${SrCore.settings.bwGrayLevels}${if (SrCore.settings.bwDensityCorrection) "d" else ""}"
+        } else ""
+        // 与 manager.buildCacheKey 引擎段同口径：NPU 产物与 GPU/CPU 不混用
+        val enginePart = if (SrCore.settings.engine == SrEngine.NPU) "enpu_ng" else SrCore.settings.engine.key
+        return "${m.key}_${m.scale}_${SrCore.settings.denoise.key}$bwPart" + "_e$enginePart"
+    }
 
     /** ★ 批量礼让信号（2026-10-02）：最近一次实时超分调度时间（SystemClock.elapsedRealtime）。
      *  批量服务页间检查：用户在阅读且 15 秒内有实时请求 → 让出引擎，
@@ -336,15 +348,14 @@ object SrPipeline {
     fun getCached(pageIndex: Int): Bitmap? {
         if (!sessionActive) return null
         // ★ 页级持久产物：任何作用域下最高优先（"只要有过且产物在就优先显示增强过的"）；
-        //   键含完整指纹——改档位/降噪/引擎后自动 miss 走新键现算
-        artifactKey(pageIndex)?.let { ck ->
-            SrCore.diskCache.getArtifact(sessionBookId, artifactChapterKey(), ck)?.let { bmp ->
-                // 回填内存结果缓存（同批量回填：状态指示/前后对比可见）
-                try {
-                    SrCore.manager.putCachedResult(SrCore.manager.buildCacheKey(sessionChapterId, pageIndex), bmp)
-                } catch (_: Throwable) {}
-                return bmp
-            }
+        //   指纹来自设置——改档位/降噪/引擎后自动 miss 走新键现算
+        val fp = artifactFingerprint()
+        SrCore.diskCache.getArtifact(sessionBookId, artifactChapterKey(), fp, pageIndex)?.let { bmp ->
+            // 回填内存结果缓存（同批量回填：状态指示/前后对比可见）
+            try {
+                SrCore.manager.putCachedResult(SrCore.manager.buildCacheKey(sessionChapterId, pageIndex), bmp)
+            } catch (_: Throwable) {}
+            return bmp
         }
         if (SrUiState.scope.intValue > SrUiState.SCOPE_OFF) {
             SrCore.dispatcher.getSrBitmap(sessionChapterId, pageIndex)?.let { return it }
@@ -404,13 +415,11 @@ object SrPipeline {
                     SrCore.manager.getCachedResult(key)?.let { return it }
                 }
             }
-            // ★ 页级持久产物守卫（2026-10-03）：键含完整指纹，stat 命中即交给 pollForResult
-            //   在 IO 解码回填——任何作用域下最高优先显示，且不重复实时烧算力
-            artifactKey(pageIndex)?.let { ck ->
-                if (SrCore.diskCache.hasArtifact(sessionBookId, artifactChapterKey(), ck)) {
-                    pollForResult(pageIndex) { b -> SrCore.emitReady(cid, pageIndex, b) }
-                    return null
-                }
+            // ★ 页级持久产物守卫（2026-10-03）：设置派生指纹 + O(1) stat，命中即交给
+            //   pollForResult 在 IO 解码回填——任何作用域下最高优先显示，且不重复实时烧算力
+            if (SrCore.diskCache.hasArtifact(sessionBookId, artifactChapterKey(), artifactFingerprint(), pageIndex)) {
+                pollForResult(pageIndex) { b -> SrCore.emitReady(cid, pageIndex, b) }
+                return null
             }
             // ★ 批量产物守卫改 stat-only（2026-10-02）：目录存在 → 交给 pollForResult 在 IO
             //   解码回填。原实现在此同步调 getCached → getBatchPage 主线程解码大图，
@@ -472,10 +481,10 @@ object SrPipeline {
     fun revertCurrentToOriginal() {
         val p = lastUserPage
         if (p < 0 || !sessionActive) return
-        val ck = artifactKey(p)
-        if (ck != null && SrCore.diskCache.hasArtifact(sessionBookId, artifactChapterKey(), ck)) {
+        val fp = artifactFingerprint()
+        if (SrCore.diskCache.hasArtifact(sessionBookId, artifactChapterKey(), fp, p)) {
             scope.launch(Dispatchers.IO) {
-                SrCore.diskCache.getArtifact(sessionBookId, artifactChapterKey(), ck)?.let {
+                SrCore.diskCache.getArtifact(sessionBookId, artifactChapterKey(), fp, p)?.let {
                     SrCore.emitReady(sessionChapterId, p, it)
                 }
             }
@@ -629,9 +638,9 @@ object SrPipeline {
                     //   批量章节不落这里（batchChapterOnDisk 时 scheduleInternal 不会跑到这）。
                     if (sessionBookId >= 0) {
                         runCatching {
-                            artifactKey(pageIndex)?.let { ck ->
-                                SrCore.diskCache.putArtifact(sessionBookId, artifactChapterKey(), ck, result)
-                            }
+                            SrCore.diskCache.putArtifact(
+                                sessionBookId, artifactChapterKey(), artifactFingerprint(), pageIndex, result,
+                            )
                         }
                     }
                 } else {

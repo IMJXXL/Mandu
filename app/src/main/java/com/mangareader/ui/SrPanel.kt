@@ -256,7 +256,11 @@ private fun SrPanelContent(
         )
         Text("画质增强", fontSize = 18.sp, fontWeight = FontWeight.Bold)
 
-        TabRow(selectedTabIndex = tab) {
+        // containerColor 透明：默认 surface 与面板容器色不一致，两个标签呈现突兀白底
+        TabRow(
+            selectedTabIndex = tab,
+            containerColor = Color.Transparent,
+        ) {
             Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("本次阅读") })
             Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("离线增强") })
         }
@@ -622,6 +626,27 @@ private fun SrPanelContent(
                         .padding(top = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
+                    if (bookId < 0) {
+                        // book 为 null（bookId=-1）：书未关联书架条目。此前这里整体空白，
+                        // 用户看到"离线 Tab 什么都没有"（mobi 实测踩中）。留诊断短码定位路径。
+                        runCatching {
+                            com.mangareader.DiagTracer.markStatic("sr: panel nobook")
+                        }
+                        Card(
+                            Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                            ),
+                        ) {
+                            Text(
+                                "本书未关联到书架条目。离线增强与产物管理不可用；" +
+                                    "本次阅读（实时增强）不受影响，可到上一页使用。",
+                                Modifier.padding(12.dp),
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
                     if (bookId >= 0) {
                         val st = bookStatus
                         Card(

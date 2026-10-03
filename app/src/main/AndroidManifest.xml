@@ -25,6 +25,12 @@
     <uses-permission android:name="com.mangareader.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"/>
 
     <application android:allowBackup="true" android:appComponentFactory="androidx.core.app.CoreComponentFactory" android:icon="@mipmap/ic_launcher" android:label="@string/app_name" android:name="com.mangareader.App" android:largeHeap="true" android:requestLegacyExternalStorage="true" android:roundIcon="@mipmap/ic_launcher_round" android:supportsRtl="true" android:theme="@style/Theme.MangaReader" android:usesCleartextTraffic="true">
+        <!-- ★ NPU(QNN/HTP) 必需（2026-10-03 K80 根因定案）：libcdsprpc.so 是 CDSP FastRPC 驱动库，
+             非 Android 公开 SDK 库——targetSdk≥31 时必须在 manifest 显式声明，否则链接器阻止加载，
+             症状为主机侧 QNN 全部成功而 deviceCreate 建 CDSP 传输即 loadRemoteSymbols 4000/14001。
+             Komiho(ruzhe85) 同款声明可证。required=false：无 CDSP 的设备不阻塞安装。 -->
+        <uses-native-library android:name="libcdsprpc.so" android:required="false"/>
+        <uses-native-library android:name="libadsprpc.so" android:required="false"/>
         <activity android:exported="true" android:name="com.mangareader.MainActivity" android:theme="@style/Theme.MangaReader" android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
