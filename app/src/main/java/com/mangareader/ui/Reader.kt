@@ -2478,7 +2478,12 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                             val iconColor = if (lum > 0.5f) Color.Black else Color.White
                             // 是否绘制视觉：UI 显示（开锁态，跟顶/底栏一起显）或 锁图标弹出（锁定+点过锁位置唤出）
                             // 超分运行状态指示灯（右上角）：当前页的在算什么一看就知道
-                            if (com.mangareader.sr.SrUiState.scope.intValue > 0) {
+                            // ★ 2026-10-03：作用域关闭但本页已有增强结果（页级产物回填内存）时
+                            //   也显示"优化完成"——修复"重开书后没有对比提示"（此前整个角标被
+                            //   作用域门挡死，重开默认关闭 → 永远不可见）
+                            val srBadgeComputing = com.mangareader.sr.SrPipeline.computing(cur)
+                            val srBadgeDone = !srBadgeComputing && com.mangareader.sr.SrPipeline.peekSrMemory(cur) != null
+                            if (com.mangareader.sr.SrUiState.scope.intValue > 0 || srBadgeComputing || srBadgeDone) {
                                 Box(
                                     modifier = Modifier
                                         .align(Alignment.TopEnd)
@@ -2490,8 +2495,8 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                         // ★ 读节拍器：调度开始/结束/出结果都会实时重组此指示器
                                         val srTick = com.mangareader.sr.SrUiState.srTick.intValue
-                                        val computing = com.mangareader.sr.SrPipeline.computing(cur)
-                                        val done = !computing && com.mangareader.sr.SrPipeline.peekSr(cur) != null
+                                        val computing = srBadgeComputing
+                                        val done = srBadgeDone
                                         when {
                                             computing -> {
                                                 CircularProgressIndicator(

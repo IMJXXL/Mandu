@@ -116,6 +116,17 @@ object SrPipeline {
         } else bmp
     }
 
+    /** 仅内存态结果查询（UI 角标用，零磁盘 IO）：实时内存缓存 + 管理器结果缓存。
+     *  页级产物命中显示时会回填内存缓存（getCached 产物分支），故角标据此可判"优化完成"。 */
+    fun peekSrMemory(pageIndex: Int): Bitmap? {
+        SrCore.dispatcher.getSrBitmap(sessionChapterId, pageIndex)?.let { return it }
+        return try {
+            SrCore.manager.getCachedResult(SrCore.manager.buildCacheKey(sessionChapterId, pageIndex))
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
     /** 对比叠层"右侧"取图：页级持久产物优先；超分结果次之；黑白独立模式下退而求其次取黑白优化结果；
      *  最后兜底查批量离线产物（手动开超分切换模型后内存缓存键不命中时仍可对比） */
     fun peekSr(pageIndex: Int): Bitmap? {
@@ -351,6 +362,7 @@ object SrPipeline {
         //   指纹来自设置——改档位/降噪/引擎后自动 miss 走新键现算
         val fp = artifactFingerprint()
         SrCore.diskCache.getArtifact(sessionBookId, artifactChapterKey(), fp, pageIndex)?.let { bmp ->
+            Log.i(TAG, "pc r hit p$pageIndex fp=$fp")
             // 回填内存结果缓存（同批量回填：状态指示/前后对比可见）
             try {
                 SrCore.manager.putCachedResult(SrCore.manager.buildCacheKey(sessionChapterId, pageIndex), bmp)

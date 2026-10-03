@@ -199,9 +199,10 @@ class SRDiskCache(
             val file = artifactPageFile(bookId, chapterKey, fp, pageIndex)
             file.parentFile?.mkdirs()
             writeBitmapAtomic(file, bitmap)
+            Log.i(TAG, "pc w ok p$pageIndex fp=$fp")
             evictArtifactsIfNeeded()
         } catch (e: Exception) {
-            Log.e(TAG, "putArtifact failed p$pageIndex", e)
+            Log.e(TAG, "pc w fail p$pageIndex fp=$fp", e)
         }
     }
 
