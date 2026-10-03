@@ -25,7 +25,7 @@ import com.mangareader.smbbridge.SectionCard
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ReadingSettingsScreen(onBack: () -> Unit) {
+fun ReadingSettingsScreen(onBack: () -> Unit, onOpenKeyMap: (() -> Unit)? = null) {
     BackHandler { onBack() }
     val ctx = LocalContext.current
     val prefs = remember { ctx.getSharedPreferences("manga_reader", Context.MODE_PRIVATE) }
@@ -177,6 +177,19 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
                             }
                             Switch(checked = volInvert, onCheckedChange = { volInvert = it; prefs.edit().putBoolean("reader_volume_keys_inverted", it).apply() })
                         }
+                    }
+
+                    // ★ 按键自定义入口（2026-10-03）：蓝牙遥控器/翻页器/键盘映射管理页
+                    Row(
+                        Modifier.fillMaxWidth().padding(vertical = 10.dp).clickable { onOpenKeyMap?.invoke() },
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("按键自定义（遥控器/键盘）", fontSize = 16.sp)
+                            Text("蓝牙遥控器、翻页器、蓝牙键盘的按键功能映射，支持按键码自动侦测", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Text("›", fontSize = 20.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
 
                     var longPressSave by remember(resetTrigger) { mutableStateOf(prefs.getBoolean("long_press_save", false)) }

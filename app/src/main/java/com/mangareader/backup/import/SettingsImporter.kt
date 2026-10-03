@@ -11,6 +11,7 @@ object SettingsImporter {
         "panNavigation", "doublePageSplit", "doublePageReverse", "autoWebtoon",
         "chapterTransition", "seamlessNextVolume", "forceFullDecode",
         "reader_volume_keys", "reader_volume_keys_inverted", "long_press_save",
+        "reader_hw_keys_enabled",
         "bookmark_note_enabled", "sr_enabled", "sr_upscale_enabled", "sr_enable_gpu",
         "sr_bw_enabled", "sr_compare",
     )

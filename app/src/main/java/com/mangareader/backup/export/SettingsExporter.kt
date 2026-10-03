@@ -16,6 +16,7 @@ object SettingsExporter {
         "orientation", "landscapeZoom", "fitScreen", "autoWebtoon", "chapterTransition",
         "seamlessNextVolume",
         "reader_volume_keys", "reader_volume_keys_inverted", "long_press_save",
+        "reader_hw_keys_enabled", "hw_key_mappings",
         "bookmark_note_enabled", "default_read_mode",
         "sr_enabled", "sr_upscale_enabled", "sr_model", "sr_denoise", "sr_quality",
         "sr_enable_gpu", "sr_bw_enabled", "sr_bw_gray_levels", "sr_bw_density",

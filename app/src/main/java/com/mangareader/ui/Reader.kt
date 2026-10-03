@@ -2837,6 +2837,70 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         com.mangareader.ui.SrQueueScreen(onBack = { showSrQueue = false }, onOpenBook = onOpenBook)
     }
 
+    // ★ 模式切换动作体（自 onModeChange 提取为局部函数，2026-10-03）：硬件按键"切换左右
+    //   阅读方向"（遥控器）与设置面板共用同一条路径——页表展开/还原、进度映射、prefs 落盘
+    //   一处不漏。★ v1.13 C-2：mode state 提交【前】同步截图——此刻旧 delegate 还在屏上，
+    //   拿到的是切换前的真实画面（Compose 重组在下一帧，同步 draw 零竞态）
+    fun applyModeChange(newMode: Mode) {
+        showSwitchMask()
+        // ★ 会话内切到条漫族：与视图 setup 同款【只读不探】展开先在 Reader 侧做掉——
+        //   Reader 与视图跑同一份尺寸表 → 两侧页表恒一致，消除"视图本地展开 vs Reader
+        //   原始表"的页号分叉（进度条/书签/保存错位）。allowProbe=false 主线程只有一次
+        //   小 JSON 读（视图 setup 本来也做）；未探测过的长图本会话不拆，下次进入由入口
+        //   探测补齐。已展开表（含 segmentIndex>0）不重复展开。当前页按 originalPageIdx
+        //   映射进展开表保持阅读位置
+        val toWebtoon = newMode == Mode.VERT || newMode == Mode.WEBTOON_GAP
+        val curTree = navStack.lastOrNull() ?: book?.filePath ?: ""
+        if (toWebtoon && config.tallSplitEnabled && pageList.isNotEmpty() && pageList.all { it.segmentIndex == 0 }) {
+            if (curTree.isNotEmpty()) {
+                val rawCur = cur
+                val sm = maxOf(ctx.resources.displayMetrics.widthPixels, ctx.resources.displayMetrics.heightPixels)
+                val sw = ctx.resources.displayMetrics.widthPixels
+                val expanded = try {
+                    com.mangareader.engine.pdf.VirtualPageExpander.expand(
+                        pageList, true, true, sm, sw, engine, curTree, allowProbe = false,
+                        wideSplitEnabled = config.doublePageSplit,
+                        splitLeftFirst = !(isRtl != config.doublePageReverse)
+                    )
+                } catch (_: Exception) { null }
+                if (expanded != null && expanded.size > pageList.size) {
+                    preExpandPages = curTree to pageList
+                    val mapped = expanded.indexOfFirst { it.originalPageIdx == rawCur }
+                    pageList = expanded
+                    if (mapped >= 0) cur = mapped
+                }
+            }
+        } else if (!toWebtoon && preExpandPages?.first == curTree) {
+            // 切回 pager 族：还原原始页表（竖切段页只在条漫视图可渲染），页号按 originalPageIdx 映回；
+            //   宽图二分在翻页模式同样成立：还原后重跑宽图展开（只读尺寸缓存不探测），半页序保持
+            val raw = preExpandPages!!.second
+            val back = pageList.getOrNull(cur)?.originalPageIdx ?: -1
+            val reSplit = if (config.doublePageSplit &&
+                config.pageLayout == com.mangareader.data.ReaderConfig.PageLayout.SINGLE) {
+                val sm = maxOf(ctx.resources.displayMetrics.widthPixels, ctx.resources.displayMetrics.heightPixels)
+                val sw = ctx.resources.displayMetrics.widthPixels
+                try {
+                    com.mangareader.engine.pdf.VirtualPageExpander.expand(
+                        raw, false, false, sm, sw, engine, curTree, allowProbe = false,
+                        wideSplitEnabled = true, splitLeftFirst = !(isRtl != config.doublePageReverse)
+                    )
+                } catch (_: Exception) { raw }
+            } else raw
+            pageList = reSplit
+            cur = if (back in raw.indices) {
+                reSplit.indexOfFirst { it.originalPageIdx == back }
+                    .takeIf { it >= 0 } ?: back.coerceIn(0, reSplit.lastIndex)
+            } else cur.coerceIn(0, reSplit.lastIndex.coerceAtLeast(0))
+            preExpandPages = null
+        }
+        mode = newMode
+        prefs.edit().putInt("read_mode_$bookId", newMode.ordinal).apply()
+        configVersion++
+        // 切换模式时显示导航区域提示，3秒后自动消失
+        showNavOverlay = true
+        scope.launch { delay(3000); showNavOverlay = false }
+    }
+
     if (showSettings) {
         BackHandler { showSettings = false }
         com.mangareader.ui.ReaderSettingsSheet(
@@ -2849,67 +2913,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                 newConfig.save(ctx, bookId)
                 configVersion++
             },
-            onModeChange = { newMode ->
-                // ★ v1.13 C-2：mode state 提交【前】同步截图——此刻旧 delegate 还在屏上，
-                //   拿到的是切换前的真实画面（Compose 重组在下一帧，同步 draw 零竞态）
-                showSwitchMask()
-                // ★ 会话内切到条漫族：与视图 setup 同款【只读不探】展开先在 Reader 侧做掉——
-                //   Reader 与视图跑同一份尺寸表 → 两侧页表恒一致，消除"视图本地展开 vs Reader
-                //   原始表"的页号分叉（进度条/书签/保存错位）。allowProbe=false 主线程只有一次
-                //   小 JSON 读（视图 setup 本来也做）；未探测过的长图本会话不拆，下次进入由入口
-                //   探测补齐。已展开表（含 segmentIndex>0）不重复展开。当前页按 originalPageIdx
-                //   映射进展开表保持阅读位置
-                val toWebtoon = newMode == Mode.VERT || newMode == Mode.WEBTOON_GAP
-                val curTree = navStack.lastOrNull() ?: book?.filePath ?: ""
-                if (toWebtoon && config.tallSplitEnabled && pageList.isNotEmpty() && pageList.all { it.segmentIndex == 0 }) {
-                    if (curTree.isNotEmpty()) {
-                        val rawCur = cur
-                        val sm = maxOf(ctx.resources.displayMetrics.widthPixels, ctx.resources.displayMetrics.heightPixels)
-                        val sw = ctx.resources.displayMetrics.widthPixels
-                        val expanded = try {
-                            com.mangareader.engine.pdf.VirtualPageExpander.expand(
-                                pageList, true, true, sm, sw, engine, curTree, allowProbe = false,
-                                wideSplitEnabled = config.doublePageSplit,
-                                splitLeftFirst = !(isRtl != config.doublePageReverse)
-                            )
-                        } catch (_: Exception) { null }
-                        if (expanded != null && expanded.size > pageList.size) {
-                            preExpandPages = curTree to pageList
-                            val mapped = expanded.indexOfFirst { it.originalPageIdx == rawCur }
-                            pageList = expanded
-                            if (mapped >= 0) cur = mapped
-                        }
-                    }
-                } else if (!toWebtoon && preExpandPages?.first == curTree) {
-                    // 切回 pager 族：还原原始页表（竖切段页只在条漫视图可渲染），页号按 originalPageIdx 映回；
-                    //   宽图二分在翻页模式同样成立：还原后重跑宽图展开（只读尺寸缓存不探测），半页序保持
-                    val raw = preExpandPages!!.second
-                    val back = pageList.getOrNull(cur)?.originalPageIdx ?: -1
-                    val reSplit = if (config.doublePageSplit &&
-                        config.pageLayout == com.mangareader.data.ReaderConfig.PageLayout.SINGLE) {
-                        val sm = maxOf(ctx.resources.displayMetrics.widthPixels, ctx.resources.displayMetrics.heightPixels)
-                        val sw = ctx.resources.displayMetrics.widthPixels
-                        try {
-                            com.mangareader.engine.pdf.VirtualPageExpander.expand(
-                                raw, false, false, sm, sw, engine, curTree, allowProbe = false,
-                                wideSplitEnabled = true, splitLeftFirst = !(isRtl != config.doublePageReverse)
-                            )
-                        } catch (_: Exception) { raw }
-                    } else raw
-                    pageList = reSplit
-                    cur = if (back in raw.indices) {
-                        reSplit.indexOfFirst { it.originalPageIdx == back }
-                            .takeIf { it >= 0 } ?: back.coerceIn(0, reSplit.lastIndex)
-                    } else cur.coerceIn(0, reSplit.lastIndex.coerceAtLeast(0))
-                    preExpandPages = null
-                }
-                mode = newMode
-                prefs.edit().putInt("read_mode_$bookId", newMode.ordinal).apply()
-                configVersion++
-                // 切换模式时显示导航区域提示，3秒后自动消失
-                showNavOverlay = true
-                scope.launch { delay(3000); showNavOverlay = false }
-            },
+            onModeChange = { newMode -> applyModeChange(newMode) },
             onOrientationChange = { orientation ->
                 saveOrientation(orientation)
                 config = config.copy(orientation = orientation)
@@ -2918,6 +2922,95 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             },
             onDismiss = { showSettings = false }
         )
+    }
+
+    // ════ 硬件按键映射（蓝牙遥控器/翻页器/键盘，2026-10-03）════
+    // MainActivity.dispatchKeyEvent 第一直接力转发到 HardwareKeyRouter.handler（下面挂载）。
+    // 规则：未映射的键一律不消费（音量键原样落到旧"音量键翻页"链路，保留反转与菜单守卫）；
+    // 菜单/目录/设置浮层打开时只放行"呼出菜单"键逐层关闭，其余不抢（防遥控在浮层后翻页）；
+    // 长按连发只属于条漫滚动（首按滚 0.8 屏，连发小步滚），翻页/章节/书签不连发防飞页。
+    var hwConsumedCode by remember { mutableIntStateOf(-1) }
+
+    fun hwBrightness(delta: Int) {
+        val base = if (config.screenBrightnessEnabled) config.screenBrightness else 0
+        val v = (base + delta).coerceIn(-100, 100)
+        val nc = config.copy(screenBrightness = v, screenBrightnessEnabled = true)
+        config = nc
+        nc.save(ctx, bookId)
+        configVersion++
+    }
+
+    fun scrollHw(dir: Int, repeat: Int) {
+        if (isVerticalMode) {
+            val rv = activeWebtoonRef ?: return
+            rv.scrollViewport(if (repeat == 0) 0.8f * dir else 0.12f * dir)
+        } else {
+            if (repeat == 0) go(dir) // 翻页族：卷动即换页
+        }
+    }
+
+    fun handleHwKey(keyCode: Int, event: android.view.KeyEvent): Boolean {
+        if (!viewing) return false
+        if (!prefs.getBoolean("reader_hw_keys_enabled", true)) return false
+        val mapping = com.mangareader.keys.KeyMapStore.mappings(ctx).firstOrNull { it.keyCode == keyCode } ?: return false
+        val action = mapping.actionEnum()
+        when (event.action) {
+            android.view.KeyEvent.ACTION_DOWN -> {}
+            android.view.KeyEvent.ACTION_UP -> {
+                val was = hwConsumedCode == keyCode
+                if (was) hwConsumedCode = -1
+                return was // 与已消费的 DOWN 成对吞掉，避免音量键等漏到系统
+            }
+            else -> return false
+        }
+        if (showSettings || showToc || ui) {
+            if (event.repeatCount == 0 && action == com.mangareader.keys.KeyAction.TOGGLE_MENU) {
+                when {
+                    showSettings -> showSettings = false
+                    showToc -> showToc = false
+                    else -> ui = false
+                }
+                hwConsumedCode = keyCode
+                return true
+            }
+            return false
+        }
+        if (event.repeatCount > 0) {
+            // 长按连发：只有滚动类动作；其余吞掉重复事件但不动作
+            when (action) {
+                com.mangareader.keys.KeyAction.SCROLL_FORWARD -> { scrollHw(1, event.repeatCount); return true }
+                com.mangareader.keys.KeyAction.SCROLL_BACKWARD -> { scrollHw(-1, event.repeatCount); return true }
+                else -> return true
+            }
+        }
+        when (action) {
+            com.mangareader.keys.KeyAction.NONE -> return false
+            com.mangareader.keys.KeyAction.NEXT_PAGE -> go(1)
+            com.mangareader.keys.KeyAction.PREV_PAGE -> go(-1)
+            com.mangareader.keys.KeyAction.SCROLL_FORWARD -> scrollHw(1, 0)
+            com.mangareader.keys.KeyAction.SCROLL_BACKWARD -> scrollHw(-1, 0)
+            com.mangareader.keys.KeyAction.TOGGLE_MENU -> ui = !ui
+            com.mangareader.keys.KeyAction.ADD_BOOKMARK -> toggleBookmark()
+            com.mangareader.keys.KeyAction.BOOKMARK_LIST -> { showSettings = false; showToc = true }
+            com.mangareader.keys.KeyAction.NEXT_CHAPTER -> switchToNext()
+            com.mangareader.keys.KeyAction.PREV_CHAPTER -> switchToPrevious()
+            com.mangareader.keys.KeyAction.BRIGHTNESS_UP -> hwBrightness(10)
+            com.mangareader.keys.KeyAction.BRIGHTNESS_DOWN -> hwBrightness(-10)
+            com.mangareader.keys.KeyAction.TOGGLE_DIRECTION -> when (mode) {
+                Mode.RTL -> applyModeChange(Mode.FLIP)
+                Mode.FLIP -> applyModeChange(Mode.RTL)
+                else -> {}
+            }
+        }
+        hwConsumedCode = keyCode
+        return true
+    }
+
+    DisposableEffect(viewing) {
+        if (viewing) {
+            com.mangareader.keys.HardwareKeyRouter.handler = { keyCode, event -> handleHwKey(keyCode, event) }
+        }
+        onDispose { com.mangareader.keys.HardwareKeyRouter.handler = null }
     }
 
     // ★ 子卷自定义封面批量查询（IO 一次列 covers/ 目录算完，防每卷一次 listFiles 的 O(n²)）。

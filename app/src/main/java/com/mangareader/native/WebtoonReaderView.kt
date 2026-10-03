@@ -652,6 +652,21 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
         recycler.scrollToPosition(p)
         preloadAround(p, jump = distance > 5)
     }
+
+    /**
+     * 硬件按键/遥控条漫滚动（2026-10-03）：按视口高度比例平滑滚动。
+     * ratio 正=顺向（向下），负=逆向（向上）；首按 0.8 屏，长按连发 0.12 屏/次。
+     * 不动 currentPage/锚点——与手势滚动同一条自然路径，落点由既有的校准循环兜住。
+     */
+    fun scrollViewport(ratio: Float) {
+        val dy = (height * ratio).toInt()
+        if (dy == 0) return
+        try {
+            if (kotlin.math.abs(ratio) >= 0.5f) recycler.smoothScrollBy(0, dy)
+            else recycler.scrollBy(0, dy)
+        } catch (_: Exception) {
+        }
+    }
     fun nextPage() { if (currentPage < pageList.size - 1) goToPage(currentPage + 1) }
     fun prevPage() { if (currentPage > 0) goToPage(currentPage - 1) }
 

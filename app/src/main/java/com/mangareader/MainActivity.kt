@@ -41,6 +41,15 @@ import com.mangareader.komgabridge.ui.KomgaSeriesVolumesScreen
 
 class MainActivity : ComponentActivity() {
     override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+        // ★ 硬件按键映射（蓝牙遥控器/翻页器/键盘）：Reader 或侦测对话框挂了 handler 就先给它。
+        //   显式映射优先；未映射的音量键在 handler 里返回 false，落到下方旧音量链路（保留反转/菜单守卫）。
+        val hwHandler = com.mangareader.keys.HardwareKeyRouter.handler
+        if (hwHandler != null) {
+            try {
+                if (hwHandler(event.keyCode, event)) return true
+            } catch (_: Exception) {
+            }
+        }
         if (VolumeKeyHandler.enabled && !VolumeKeyHandler.menuVisible) {
             when (event.keyCode) {
                 android.view.KeyEvent.KEYCODE_VOLUME_DOWN -> {
