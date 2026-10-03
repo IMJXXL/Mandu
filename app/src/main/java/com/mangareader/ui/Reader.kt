@@ -2941,7 +2941,9 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     }
 
     fun scrollHw(dir: Int, repeat: Int) {
-        if (isVerticalMode) {
+        // mode 现读（state delegate）——捕获的 isVerticalMode 是重组期普通 val 会变旧（切模式后失真）
+        val verticalNow = mode == Mode.VERT || mode == Mode.WEBTOON_GAP
+        if (verticalNow) {
             val rv = activeWebtoonRef ?: return
             rv.scrollViewport(if (repeat == 0) 0.8f * dir else 0.12f * dir)
         } else {
@@ -3006,7 +3008,9 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         return true
     }
 
-    DisposableEffect(viewing) {
+    // 键 viewing + pageList：pageList 变化（章节切换/长图展开/宽图二分）时重挂载，
+    // 重捕获 go——其内部引用的 displayPages 是 remember(pageList) 的普通 val，闭包持有会陈旧
+    DisposableEffect(viewing, pageList) {
         if (viewing) {
             com.mangareader.keys.HardwareKeyRouter.handler = { keyCode, event -> handleHwKey(keyCode, event) }
         }
