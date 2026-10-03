@@ -162,7 +162,9 @@ data class ReaderConfig(
             putInt("${flashPrefix}flipFlashDuration", flipFlashDuration)
             putInt("${flashPrefix}flipFlashInterval", flipFlashInterval)
             putInt("${flashPrefix}flipFlashColor", flipFlashColor)
-            putString("${prefix}pageLayout", pageLayout.name)
+            // ★ 2026-10-03 用户拍板：单双页（含"双页跳过首页"）改全局语义——恒写全局键，
+            //   阅读内切换/遥控键切换/设置页下拉对所有书一并生效
+            putString("pageLayout", pageLayout.name)
             putBoolean("${prefix}useSSIV", useSSIV)
             putBoolean("landscapeZoom", landscapeZoom)
             putBoolean("fitScreen", fitScreen)
@@ -247,7 +249,18 @@ data class ReaderConfig(
                 flipFlashInterval = prefs.safeGetInt("${flashPrefix}flipFlashInterval", 1),
                 flipFlashColor = prefs.safeGetInt("${flashPrefix}flipFlashColor", 0),
                 flipFlashGlobalActive = globalFlash,
-                pageLayout = try { PageLayout.valueOf(prefs.getString("${prefix}pageLayout", "SINGLE")!!) } catch (_: Exception) { PageLayout.SINGLE },
+                // ★ 全局语义（2026-10-03）：恒读全局键；旧数据迁移——全局键缺失时从历史
+                //   单本键挑值回填（优先双页跳过首页>双页>单页，保住用户用过的双页状态）
+                pageLayout = run {
+                    if (!prefs.contains("pageLayout")) {
+                        val donors = prefs.all.keys.filter { it.endsWith("_pageLayout") }
+                            .mapNotNull { runCatching { prefs.getString(it, null) }.getOrNull() }
+                        val chosen = listOf(PageLayout.DOUBLE_SHIFTED, PageLayout.DOUBLE)
+                            .firstOrNull { mode -> donors.any { it == mode.name } } ?: PageLayout.SINGLE
+                        prefs.edit().putString("pageLayout", chosen.name).apply()
+                    }
+                    try { PageLayout.valueOf(prefs.getString("pageLayout", "SINGLE")!!) } catch (_: Exception) { PageLayout.SINGLE }
+                },
                 useSSIV = prefs.safeGetBoolean("${prefix}useSSIV", true),
                 landscapeZoom = prefs.safeGetBoolean("landscapeZoom", false),
                 fitScreen = prefs.safeGetBoolean("fitScreen", false),
