@@ -315,11 +315,11 @@ fun ReadingPrefsScreen(onBack: () -> Unit) {
                     }
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        "· 徽章「全局」的项：在书里调它＝所有没单独调过的书都跟着变；这页只是预设默认值",
+                        "· 行尾状态是「全局」的项：在书里调它＝所有没单独调过的书都跟着变；这页只是预设默认值",
                         fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
-                        "· 行尾徽章「本书」的项：这页参数锁定（灰着），进书里调成啥算啥，只记那一本书",
+                        "· 行尾状态是「本书」的项：这页参数锁定（灰着），进书里调成啥算啥，只记那一本书",
                         fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
@@ -423,7 +423,7 @@ fun ReadingPrefsScreen(onBack: () -> Unit) {
             text = {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
                     Text(
-                        "假设亮度默认值是 0，徽章是「全局」：",
+                        "假设亮度默认值是 0，亮度这行的状态是「全局」：",
                         fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(Modifier.height(8.dp))
@@ -433,17 +433,17 @@ fun ReadingPrefsScreen(onBack: () -> Unit) {
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        "② 徽章切成「本书」后，你在《漫画B》里把亮度调到 30。\n→ 只有《漫画B》是 30，别的书还是 70。",
+                        "② 先把亮度的状态切成「本书」，再在《漫画B》里把亮度调到 30。\n→ 只有《漫画B》是 30，别的书还是 70。",
                         fontSize = 13.sp,
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        "③ 《漫画B》行尾出现「单独·1本」。\n→ 书里调过的永远优先：《漫画B》一直用自己的 30。\n　 想让它重新跟默认值走：点「单独·1本」清除。",
+                        "③ 这时《漫画B》行尾会挂出「单独·1本」小标签，意思是：有 1 本书的亮度跟默认值不一样。\n→ 只要这个标签在，《漫画B》就一直用自己的 30，默认值改成多少都影响不到它。\n　 哪天想让《漫画B》回到默认值：点「单独·1本」→ 清除，它就重新跟着默认值走。",
                         fontSize = 13.sp,
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        "④ 关掉「本书改动单独记」后再在书里调亮度。\n→ 这次调整退出阅读就还原（当次内仍生效）；\n　 已经记住的（《漫画B》的 30）不受影响。",
+                        "④ 把顶部「本书改动单独记」开关关掉以后，你再在书里调亮度：\n→ 当次阅读里照样生效，但退出这本书就还原、不被记住；\n　 之前已经记住的（《漫画B》的 30）原样保留——开关只管「以后调的记不记」，动不了已经记下的。",
                         fontSize = 13.sp,
                     )
                     Spacer(Modifier.height(8.dp))
