@@ -8,6 +8,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -63,8 +65,9 @@ internal sealed interface PrefEditor {
 internal data class PrefRow(
     val key: String,
     val label: String,
-    val group: String,
+    val tab: Int, // 0=阅读模式 1=常规 2=滤镜——与阅读界面设置三个页签同名同序，用户按原位置找
     val editor: PrefEditor,
+    val section: String? = null, // Tab 内小节标题（对应书内面板的 GroupTitle）
     val subKeys: List<String> = emptyList(),
 ) {
     val allKeys: List<String> get() = listOf(key) + subKeys
@@ -114,110 +117,112 @@ internal val PREF_DEFAULTS: Map<String, Any> = mapOf(
 private val pct: (Float) -> String = { "${(it * 100).toInt()}%" }
 
 internal val PREF_ROWS: List<PrefRow> = listOf(
-    // 翻页与模式
-    PrefRow(ReaderScope.READ_MODE_KEY, "阅读模式", "翻页与模式", PrefEditor.ReadMode),
-    PrefRow("pageLayout", "单双页布局", "翻页与模式", PrefEditor.Chips(
+    // ── Tab 0 阅读模式（顺序=书内面板第一页）──
+    PrefRow(ReaderScope.READ_MODE_KEY, "阅读模式", 0, PrefEditor.ReadMode),
+    PrefRow("pageLayout", "页面布局", 0, PrefEditor.Chips(
         listOf("单页" to "SINGLE", "双页" to "DOUBLE", "双页跳过首页" to "DOUBLE_SHIFTED"))),
-    PrefRow("orientation", "屏幕方向", "翻页与模式", PrefEditor.Chips(
-        listOf("默认" to -1, "跟随系统" to -2, "竖屏" to ActivityInfo.SCREEN_ORIENTATION_PORTRAIT,
-            "横屏" to ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE,
-            "锁定竖屏" to ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT,
-            "锁定横屏" to ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE))),
-    PrefRow("autoFlipInterval", "自动翻页间隔", "翻页与模式", PrefEditor.Slider(0f, 30000f, 29,
-        { if (it <= 0f) "关闭" else if (it % 1000f == 0f) "${(it / 1000f).toInt()}秒" else String.format(java.util.Locale.US, "%.1f秒", it / 1000f) })),
-    PrefRow("isFlipAnimation", "翻页动画", "翻页与模式", PrefEditor.Group(listOf(
+    PrefRow("isTrimWhiteBorder", "裁白边", 0, PrefEditor.Group(listOf(
+        PrefEditor.Part("isTrimWhiteBorder", "裁白边", PrefEditor.Toggle()),
+        PrefEditor.Part("trimThreshold", "检测阈值（默认 220）", PrefEditor.Slider(180f, 250f, 69, { "阈值 ${it.toInt()}" })),
+        PrefEditor.Part("trimWhiteRatio", "白色比例（默认90%）", PrefEditor.Slider(0.5f, 0.95f, 45, pct)),
+    )), subKeys = listOf("trimThreshold", "trimWhiteRatio", "trimFactor")),
+    PrefRow("landscapeZoom", "自动放大横向图片", 0, PrefEditor.Toggle(info = "平板上建议关闭，关闭时宽图完整显示")),
+    PrefRow("isFlipAnimation", "翻页动画", 0, PrefEditor.Group(listOf(
         PrefEditor.Part("isFlipAnimation", "翻页动画（点击翻页过渡）", PrefEditor.Toggle()),
         PrefEditor.Part("isPageCurlAnimation", "仿真翻页Beta（仅静图左右翻页生效）", PrefEditor.Toggle()),
         PrefEditor.Part("isCurlContentAreaOnly", "翻页仅限画面区域", PrefEditor.Toggle()),
         PrefEditor.Part("curlBackContentAlpha", "背面透出程度（默认10%）", PrefEditor.Slider(0f, 1f, 19, pct)),
         PrefEditor.Part("curlShadowAlpha", "翻页阴影浓度（0=关闭，默认20%）", PrefEditor.Slider(0f, 0.5f, 9, pct)),
         PrefEditor.Part("spineShadowAlpha", "书脊阴影浓度（双页书脊沟，默认9%）", PrefEditor.Slider(0f, 0.3f, 29, pct)),
-    )), subKeys = listOf("isPageCurlAnimation", "isCurlContentAreaOnly", "curlBackContentAlpha", "curlShadowAlpha", "spineShadowAlpha")),
-    // 画面
-    PrefRow("fitScreen", "画面缩放", "画面与缩放", PrefEditor.Chips(
-        listOf("完整显示" to true, "铺满屏幕" to false)),
-        subKeys = listOf()),
-    PrefRow("landscapeZoom", "自动放大横向图片", "画面与缩放", PrefEditor.Toggle(info = "平板上建议关闭，关闭时宽图完整显示")),
-    PrefRow("useSSIV", "高清缩放", "画面与缩放", PrefEditor.Toggle()),
-    PrefRow("doublePageSplit", "拆分双页", "画面与缩放", PrefEditor.Group(listOf(
+    )), section = "翻页",
+        subKeys = listOf("isPageCurlAnimation", "isCurlContentAreaOnly", "curlBackContentAlpha", "curlShadowAlpha", "spineShadowAlpha")),
+    PrefRow("autoFlipInterval", "自动翻页间隔", 0, PrefEditor.Slider(0f, 30000f, 29,
+        { if (it <= 0f) "关闭" else if (it % 1000f == 0f) "${(it / 1000f).toInt()}秒" else String.format(java.util.Locale.US, "%.1f秒", it / 1000f) }),
+        section = "翻页"),
+    PrefRow("fitScreen", "画面缩放", 0, PrefEditor.Chips(
+        listOf("完整显示" to true, "铺满屏幕" to false)), section = "画面"),
+    PrefRow("useSSIV", "高清缩放", 0, PrefEditor.Toggle(), section = "画面"),
+    PrefRow("doublePageSplit", "拆分双页", 0, PrefEditor.Group(listOf(
         PrefEditor.Part("doublePageSplit", "拆分双页（跨页图拆成左右两页）", PrefEditor.Toggle()),
         PrefEditor.Part("doublePageReverse", "反转双页", PrefEditor.Toggle()),
-    )), subKeys = listOf("doublePageReverse")),
-    PrefRow("centerGapType", "双页中缝", "画面与缩放", PrefEditor.Chips(
-        listOf("贴合" to 0, "窄缝" to 1, "中缝" to 2, "宽缝" to 3))),
-    // 滤镜
-    PrefRow("isGrayscale", "灰度模式", "画面滤镜", PrefEditor.Toggle()),
-    PrefRow("isInvertColors", "反色", "画面滤镜", PrefEditor.Toggle()),
-    PrefRow("brightness", "图片亮度", "画面滤镜", PrefEditor.Group(listOf(
-        PrefEditor.Part("brightnessEnabled", "启用图片亮度", PrefEditor.Toggle()),
-        PrefEditor.Part("brightness", "亮度（默认 0）", PrefEditor.Slider(-100f, 100f, 199, { "${it.toInt()}" })),
-    )), subKeys = listOf("brightnessEnabled", "brightness")),
-    PrefRow("screenBrightness", "屏幕亮度", "画面滤镜", PrefEditor.Group(listOf(
-        PrefEditor.Part("screenBrightnessEnabled", "启用屏幕亮度", PrefEditor.Toggle()),
-        PrefEditor.Part("screenBrightness", "屏幕亮度（默认 0）", PrefEditor.Slider(-100f, 100f, 199, { "${it.toInt()}" })),
-    )), subKeys = listOf("screenBrightnessEnabled", "screenBrightness")),
-    PrefRow("contrast", "对比度", "画面滤镜", PrefEditor.Group(listOf(
-        PrefEditor.Part("contrastEnabled", "启用对比度", PrefEditor.Toggle()),
-        PrefEditor.Part("contrast", "对比度（默认 100）", PrefEditor.Slider(0f, 200f, 199, { "${it.toInt()}" })),
-    )), subKeys = listOf("contrastEnabled", "contrast")),
-    PrefRow("gamma", "伽马", "画面滤镜", PrefEditor.Group(listOf(
-        PrefEditor.Part("gammaEnabled", "启用伽马", PrefEditor.Toggle()),
-        PrefEditor.Part("gamma", "伽马（默认 100）", PrefEditor.Slider(50f, 150f, 99, { "${it.toInt()}" })),
-    )), subKeys = listOf("gammaEnabled", "gamma")),
-    PrefRow("textureEnabled", "纸张纹理", "画面滤镜", PrefEditor.Group(listOf(
-        PrefEditor.Part("textureEnabled", "纸张纹理", PrefEditor.Toggle()),
-        PrefEditor.Part("texturePresetId", "纸张类型", PrefEditor.Chips(PaperTexture.PRESETS.mapIndexed { i, (_, label) -> label to i })),
-        PrefEditor.Part("textureConcentration", "纸感浓度（默认100%=真实纸感）", PrefEditor.Slider(0f, 100f, 99, { "${it.toInt()}%" })),
-        PrefEditor.Part("textureScope", "生效范围", PrefEditor.Chips(listOf("仅图片" to 0, "全屏幕" to 1))),
-    )), subKeys = listOf("texturePresetId", "textureConcentration", "textureScope", "textureAlpha")),
-    // 裁白边与边距
-    PrefRow("isTrimWhiteBorder", "裁白边", "裁白边与边距", PrefEditor.Group(listOf(
-        PrefEditor.Part("isTrimWhiteBorder", "裁白边", PrefEditor.Toggle()),
-        PrefEditor.Part("trimThreshold", "检测阈值（默认 220）", PrefEditor.Slider(180f, 250f, 69, { "阈值 ${it.toInt()}" })),
-        PrefEditor.Part("trimWhiteRatio", "白色比例（默认90%）", PrefEditor.Slider(0.5f, 0.95f, 45, pct)),
-    )), subKeys = listOf("trimThreshold", "trimWhiteRatio", "trimFactor")),
-    PrefRow("imageMarginH", "侧边留白", "裁白边与边距", PrefEditor.Slider(-20f, 50f, 70, { "${it.toInt()}dp" })),
-    // 墨水屏
-    PrefRow("isEinkMode", "墨水屏模式", "墨水屏", PrefEditor.Group(listOf(
-        PrefEditor.Part("isEinkMode", "墨水屏模式", PrefEditor.Toggle()),
-        PrefEditor.Part("isEinkDither", "灰阶抖动", PrefEditor.Toggle()),
-        PrefEditor.Part("einkDitherAlgorithm", "抖动算法", PrefEditor.Chips(listOf("细腻" to 0, "胶片颗粒" to 1, "柔和" to 2, "规则纹理" to 3))),
-        PrefEditor.Part("einkEndpointPassthrough", "白底保护（档位越高白底越干净）", PrefEditor.Slider(0f, 8f, 7, { "档位 ${it.toInt()}" })),
-        PrefEditor.Part("einkDitherLevels", "灰阶档位（越大过渡越平滑）", PrefEditor.Chips(listOf("16级" to 16, "32级" to 32, "64级" to 64))),
-    )), subKeys = listOf("isEinkDither", "einkDitherAlgorithm", "einkEndpointPassthrough", "einkDitherLevels")),
-    PrefRow("einkDecodeSize", "解码分辨率", "墨水屏", PrefEditor.Chips(
-        listOf("1072·6寸" to 1072, "1440·8寸" to 1440, "1920·默认" to 1920, "原图" to 4096))),
-    PrefRow("einkUiHideDelay", "界面隐藏时间", "墨水屏", PrefEditor.Chips(
-        listOf("3秒" to 3000L, "6秒" to 6000L, "10秒" to 10000L, "不隐藏" to 0L))),
-    PrefRow("isFlipFlashEnabled", "翻页闪烁", "墨水屏", PrefEditor.Group(listOf(
+    )), section = "画面", subKeys = listOf("doublePageReverse")),
+    PrefRow("imageMarginH", "侧边留白", 0, PrefEditor.Slider(-20f, 50f, 70, { "${it.toInt()}dp" }), section = "画面"),
+    PrefRow("centerGapType", "双页中缝", 0, PrefEditor.Chips(
+        listOf("贴合" to 0, "窄缝" to 1, "中缝" to 2, "宽缝" to 3)), section = "画面"),
+    PrefRow("orientation", "屏幕方向", 0, PrefEditor.Chips(
+        listOf("默认" to -1, "跟随系统" to -2, "竖屏" to ActivityInfo.SCREEN_ORIENTATION_PORTRAIT,
+            "横屏" to ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE,
+            "锁定竖屏" to ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT,
+            "锁定横屏" to ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE))),
+    PrefRow("clickFlipType", "点击翻页区域", 0, PrefEditor.Chips(
+        listOf("关闭" to "NO", "左右分区" to "LEFT_RIGHT", "L型" to "L_SHAPE")), section = "点击与手势"),
+    PrefRow("clickFlipInvertH", "点击翻页左手镜像", 0, PrefEditor.Toggle(info = "开启后：点右侧=上一页、点左侧=下一页"),
+        section = "点击与手势"),
+    PrefRow("panNavigation", "画面拖动导航", 0, PrefEditor.Toggle(), section = "点击与手势"),
+    // ── Tab 1 常规（顺序=书内面板第二页）──
+    PrefRow("isShowPageNum", "显示页码", 1, PrefEditor.Toggle()),
+    PrefRow("isImmersiveMode", "沉浸模式", 1, PrefEditor.Toggle(info = "重进阅读后生效")),
+    PrefRow("isKeepScreenOn", "保持亮屏", 1, PrefEditor.Toggle()),
+    PrefRow("seamlessNextVolume", "无缝续读下一卷", 1, PrefEditor.Toggle(info = "读到卷末自动进入同书下一卷，无过渡页")),
+    PrefRow("isFlipFlashEnabled", "翻页闪烁", 1, PrefEditor.Group(listOf(
         PrefEditor.Part("isFlipFlashEnabled", "翻页时闪烁", PrefEditor.Toggle()),
         PrefEditor.Part("flipFlashDuration", "持续时间", PrefEditor.Slider(50f, 1500f, 14, { "${it.toInt()}ms" })),
         PrefEditor.Part("flipFlashInterval", "间隔页数", PrefEditor.Slider(1f, 10f, 9, { "每${it.toInt()}页" })),
         PrefEditor.Part("flipFlashColor", "闪烁颜色", PrefEditor.Chips(listOf("白色" to 0, "黑色" to 1, "黑白两段" to 2))),
     )), subKeys = listOf("flipFlashDuration", "flipFlashInterval", "flipFlashColor")),
-    // 性能与解码
-    PrefRow("pdfQuality", "PDF 清晰度", "性能与解码", PrefEditor.Slider(1f, 5f, 15, { String.format(java.util.Locale.US, "%.1fx", it) })),
-    PrefRow("tileModeEnabled", "按需解码", "性能与解码", PrefEditor.Toggle(info = "只解码可见区域，内存占用更低；裁白边开启时自动停用")),
-    PrefRow("tallSplitEnabled", "长图分割", "性能与解码", PrefEditor.Toggle(info = "超长 PDF 页与长图切割分段渲染，长图不再发糊")),
-    PrefRow("downsampleTier", "降采样档位", "性能与解码", PrefEditor.Chips(
-        listOf("标准" to "STANDARD", "高清" to "HD", "超清" to "ULTRA_HD", "原图" to "ORIGINAL"))),
-    PrefRow("forceFullDecode", "强制完整解码", "性能与解码", PrefEditor.Toggle()),
-    // 氛围音
-    PrefRow("ambienceSound", "氛围音", "氛围音", PrefEditor.AmbienceSound),
-    PrefRow("ambienceVolume", "氛围音音量", "氛围音", PrefEditor.Slider(0f, 100f, 19, { "${it.toInt()}%" })),
-    // 阅读行为
-    PrefRow("readBackground", "阅读背景", "阅读行为", PrefEditor.Chips(
+    PrefRow("autoWebtoon", "自动进入条漫模式", 1, PrefEditor.Toggle(info = "新书首开按图片宽高比智能判定")),
+    PrefRow("autoDoubleLandscape", "横屏自动双页", 1, PrefEditor.Toggle(info = "仅页面布局为单页时生效")),
+    PrefRow("ambienceSound", "氛围音", 1, PrefEditor.AmbienceSound),
+    PrefRow("ambienceVolume", "氛围音音量", 1, PrefEditor.Slider(0f, 100f, 19, { "${it.toInt()}%" })),
+    PrefRow("readBackground", "阅读背景", 1, PrefEditor.Chips(
         listOf("白色" to "WHITE", "黑色" to "DARK", "跟随主题" to "DEFAULT"))),
-    PrefRow("isShowPageNum", "显示页码", "阅读行为", PrefEditor.Toggle()),
-    PrefRow("isKeepScreenOn", "保持亮屏", "阅读行为", PrefEditor.Toggle()),
-    PrefRow("isImmersiveMode", "沉浸模式", "阅读行为", PrefEditor.Toggle(info = "重进阅读后生效")),
-    PrefRow("seamlessNextVolume", "无缝续读下一卷", "阅读行为", PrefEditor.Toggle(info = "读到卷末自动进入同书下一卷，无过渡页")),
-    PrefRow("autoWebtoon", "自动进入条漫模式", "阅读行为", PrefEditor.Toggle(info = "新书首开按图片宽高比智能判定")),
-    PrefRow("autoDoubleLandscape", "横屏自动双页", "阅读行为", PrefEditor.Toggle(info = "仅页面布局为单页时生效")),
-    PrefRow("clickFlipType", "点击翻页区域", "阅读行为", PrefEditor.Chips(
-        listOf("关闭" to "NO", "左右分区" to "LEFT_RIGHT", "L型" to "L_SHAPE"))),
-    PrefRow("clickFlipInvertH", "点击翻页左手镜像", "阅读行为", PrefEditor.Toggle(info = "开启后：点右侧=上一页、点左侧=下一页")),
-    PrefRow("panNavigation", "画面拖动导航", "阅读行为", PrefEditor.Toggle()),
+    // ── Tab 2 滤镜（顺序=书内面板第三页）──
+    PrefRow("isGrayscale", "灰度模式", 2, PrefEditor.Toggle()),
+    PrefRow("isInvertColors", "反色", 2, PrefEditor.Toggle()),
+    PrefRow("brightness", "图片亮度", 2, PrefEditor.Group(listOf(
+        PrefEditor.Part("brightnessEnabled", "启用图片亮度", PrefEditor.Toggle()),
+        PrefEditor.Part("brightness", "亮度（默认 0）", PrefEditor.Slider(-100f, 100f, 199, { "${it.toInt()}" })),
+    )), subKeys = listOf("brightnessEnabled", "brightness")),
+    PrefRow("screenBrightness", "屏幕亮度", 2, PrefEditor.Group(listOf(
+        PrefEditor.Part("screenBrightnessEnabled", "启用屏幕亮度", PrefEditor.Toggle()),
+        PrefEditor.Part("screenBrightness", "屏幕亮度（默认 0）", PrefEditor.Slider(-100f, 100f, 199, { "${it.toInt()}" })),
+    )), subKeys = listOf("screenBrightnessEnabled", "screenBrightness")),
+    PrefRow("contrast", "对比度", 2, PrefEditor.Group(listOf(
+        PrefEditor.Part("contrastEnabled", "启用对比度", PrefEditor.Toggle()),
+        PrefEditor.Part("contrast", "对比度（默认 100）", PrefEditor.Slider(0f, 200f, 199, { "${it.toInt()}" })),
+    )), subKeys = listOf("contrastEnabled", "contrast")),
+    PrefRow("gamma", "伽马", 2, PrefEditor.Group(listOf(
+        PrefEditor.Part("gammaEnabled", "启用伽马", PrefEditor.Toggle()),
+        PrefEditor.Part("gamma", "伽马（默认 100）", PrefEditor.Slider(50f, 150f, 99, { "${it.toInt()}" })),
+    )), subKeys = listOf("gammaEnabled", "gamma")),
+    PrefRow("textureEnabled", "纸张纹理", 2, PrefEditor.Group(listOf(
+        PrefEditor.Part("textureEnabled", "纸张纹理", PrefEditor.Toggle()),
+        PrefEditor.Part("texturePresetId", "纸张类型", PrefEditor.Chips(PaperTexture.PRESETS.mapIndexed { i, (_, label) -> label to i })),
+        PrefEditor.Part("textureConcentration", "纸感浓度（默认100%=真实纸感）", PrefEditor.Slider(0f, 100f, 99, { "${it.toInt()}%" })),
+        PrefEditor.Part("textureScope", "生效范围", PrefEditor.Chips(listOf("仅图片" to 0, "全屏幕" to 1))),
+    )), subKeys = listOf("texturePresetId", "textureConcentration", "textureScope", "textureAlpha")),
+    PrefRow("isEinkMode", "墨水屏模式", 2, PrefEditor.Group(listOf(
+        PrefEditor.Part("isEinkMode", "墨水屏模式", PrefEditor.Toggle()),
+        PrefEditor.Part("isEinkDither", "灰阶抖动", PrefEditor.Toggle()),
+        PrefEditor.Part("einkDitherAlgorithm", "抖动算法", PrefEditor.Chips(listOf("细腻" to 0, "胶片颗粒" to 1, "柔和" to 2, "规则纹理" to 3))),
+        PrefEditor.Part("einkEndpointPassthrough", "白底保护（档位越高白底越干净）", PrefEditor.Slider(0f, 8f, 7, { "档位 ${it.toInt()}" })),
+        PrefEditor.Part("einkDitherLevels", "灰阶档位（越大过渡越平滑）", PrefEditor.Chips(listOf("16级" to 16, "32级" to 32, "64级" to 64))),
+    )), section = "墨水屏",
+        subKeys = listOf("isEinkDither", "einkDitherAlgorithm", "einkEndpointPassthrough", "einkDitherLevels")),
+    PrefRow("einkDecodeSize", "解码分辨率", 2, PrefEditor.Chips(
+        listOf("1072·6寸" to 1072, "1440·8寸" to 1440, "1920·默认" to 1920, "原图" to 4096)), section = "墨水屏"),
+    PrefRow("einkUiHideDelay", "界面隐藏时间", 2, PrefEditor.Chips(
+        listOf("3秒" to 3000L, "6秒" to 6000L, "10秒" to 10000L, "不隐藏" to 0L)), section = "墨水屏"),
+    PrefRow("tileModeEnabled", "按需解码", 2, PrefEditor.Toggle(info = "只解码可见区域，内存占用更低；裁白边开启时自动停用"),
+        section = "性能与解码"),
+    PrefRow("tallSplitEnabled", "长图分割", 2, PrefEditor.Toggle(info = "超长 PDF 页与长图切割分段渲染，长图不再发糊"),
+        section = "性能与解码"),
+    PrefRow("downsampleTier", "降采样档位", 2, PrefEditor.Chips(
+        listOf("标准" to "STANDARD", "高清" to "HD", "超清" to "ULTRA_HD", "原图" to "ORIGINAL")),
+        section = "性能与解码"),
+    PrefRow("pdfQuality", "PDF 清晰度", 2, PrefEditor.Slider(1f, 5f, 15, { String.format(java.util.Locale.US, "%.1fx", it) }),
+        section = "性能与解码"),
+    PrefRow("forceFullDecode", "强制完整解码", 2, PrefEditor.Toggle(), section = "性能与解码"),
 )
 
 /** 单键原始值（书内明细对话框用）：本书键 > 全局键 > null(出厂默认) */
@@ -289,7 +294,7 @@ fun ReadingPrefsScreen(onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     var masterOn by remember { mutableStateOf(ReaderScope.masterOn(prefs)) }
     var version by remember { mutableIntStateOf(0) } // 作用域/覆盖/全局值变更时刷新
-    var filter by remember { mutableStateOf(0) } // 0=全部 1=本书生效 2=全局生效 3=已单独设置
+    val pagerState = rememberPagerState(pageCount = { 3 }) // 三个页签：阅读模式/常规/滤镜
     var sheetRow by remember { mutableStateOf<PrefRow?>(null) }
     var showResetDialog by remember { mutableStateOf(false) }
     var toast by remember { mutableStateOf<String?>(null) }
@@ -369,95 +374,45 @@ fun ReadingPrefsScreen(onBack: () -> Unit) {
                 }
             }
 
-            // ── 过滤钮 ──
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            // ── 三个页签：与阅读界面设置同名同序（阅读模式 / 常规 / 滤镜），一找就找到 ──
+            PrimaryTabRow(
+                selectedTabIndex = pagerState.currentPage,
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                contentColor = MaterialTheme.colorScheme.primary,
+                divider = {},
             ) {
-                val presets = listOf("全部 ${PREF_ROWS.size}" to 0, "本书生效" to 1, "全局生效" to 2, "已单独设置 $totalCoveredRows" to 3)
-                presets.forEach { (label, idx) ->
-                    val count = when (idx) {
-                        1 -> PREF_ROWS.count { ReaderScope.isBookScope(prefs, it.key) }
-                        2 -> PREF_ROWS.count { !ReaderScope.isBookScope(prefs, it.key) }
-                        3 -> totalCoveredRows
-                        else -> PREF_ROWS.size
-                    }
-                    FilterChip(
-                        selected = filter == idx,
-                        onClick = { filter = idx },
-                        enabled = count > 0 || idx == 0,
-                        label = { Text(if (idx == 1 || idx == 2) "$label $count" else label, fontSize = 12.sp) },
+                listOf("阅读模式", "常规", "滤镜").forEachIndexed { index, title ->
+                    Tab(
+                        selected = pagerState.currentPage == index,
+                        onClick = { scope.launch { pagerState.animateScrollToPage(index) } },
+                        text = { Text(title, fontSize = 14.sp) },
+                        unselectedContentColor = MaterialTheme.colorScheme.onSurface,
                     )
                 }
             }
-
-            // ── 分组列表 ──
-            LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
-                PREF_ROWS.groupBy { it.group }.forEach { (group, rows) ->
-                    val visible = rows.filter {
-                        when (filter) {
-                            1 -> ReaderScope.isBookScope(prefs, it.key)
-                            2 -> !ReaderScope.isBookScope(prefs, it.key)
-                            3 -> coveredOf(it) > 0
-                            else -> true
+            HorizontalPager(
+                state = pagerState,
+                verticalAlignment = Alignment.Top,
+                modifier = Modifier.weight(1f),
+            ) { page ->
+                Column(
+                    Modifier.fillMaxSize().padding(horizontal = 16.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    val rows = PREF_ROWS.filter { it.tab == page }
+                    rows.forEachIndexed { idx, row ->
+                        row.section?.takeIf { idx == 0 || rows[idx - 1].section != row.section }?.let { section ->
+                            Text(
+                                section, fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                                modifier = Modifier.padding(top = 14.dp, bottom = 2.dp),
+                            )
                         }
+                        PrefRowItem(row, prefs, countByItem) { sheetRow = row }
                     }
-                    if (visible.isEmpty()) return@forEach
-                    item(key = "g_$group") {
-                        Text(
-                            group, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(top = 14.dp, bottom = 4.dp),
-                        )
-                    }
-                    items(visible.size, key = { visible[it].key }) { idx ->
-                        val row = visible[idx]
-                        val covered = coveredOf(row)
-                        val isBook = ReaderScope.isBookScope(prefs, row.key)
-                        val locked = row.key in ReaderScope.GLOBAL_LOCKED_KEYS
-                        Row(
-                            Modifier.fillMaxWidth()
-                                .clickable { sheetRow = row }
-                                .padding(vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Column(Modifier.weight(1f)) {
-                                Text(row.label, fontSize = 15.sp)
-                                Text(
-                                    prefSummary(prefs, row),
-                                    fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                            if (locked) {
-                                Icon(Icons.Default.Lock, null, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Spacer(Modifier.width(4.dp))
-                                Text("固定全局", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            } else {
-                                Text(
-                                    if (isBook) "本书" else "全局",
-                                    fontSize = 11.sp,
-                                    color = if (isBook) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.background(
-                                        if (isBook) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
-                                        RoundedCornerShape(6.dp),
-                                    ).padding(horizontal = 6.dp, vertical = 2.dp),
-                                )
-                            }
-                            if (covered > 0) {
-                                Spacer(Modifier.width(6.dp))
-                                Row(
-                                    Modifier.background(MaterialTheme.colorScheme.secondaryContainer, RoundedCornerShape(6.dp))
-                                        .padding(horizontal = 6.dp, vertical = 2.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Icon(Icons.Default.MenuBook, null, Modifier.size(12.dp), tint = MaterialTheme.colorScheme.onSecondaryContainer)
-                                    Spacer(Modifier.width(3.dp))
-                                    Text("单独·${covered}本", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSecondaryContainer)
-                                }
-                            }
-                        }
-                    }
+                    Spacer(Modifier.height(28.dp))
                 }
-                item { Spacer(Modifier.height(28.dp)) }
             }
         }
     }
@@ -596,6 +551,53 @@ fun ReadingPrefsScreen(onBack: () -> Unit) {
                 }) { Text("撤销上次重置") }
             },
         )
+    }
+}
+
+/** 偏好行：名称 + 当前全局默认值摘要 + 作用域徽章（🔒固定全局 / 本书 / 全局 / 单独·N本） */
+@Composable
+private fun PrefRowItem(row: PrefRow, prefs: SharedPreferences, countByItem: Map<String, Int>, onOpen: () -> Unit) {
+    val covered = row.allKeys.maxOf { countByItem[it] ?: 0 }
+    val locked = row.key in ReaderScope.GLOBAL_LOCKED_KEYS
+    val isBook = !locked && ReaderScope.isBookScope(prefs, row.key)
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onOpen).padding(vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(row.label, fontSize = 15.sp)
+            Text(
+                prefSummary(prefs, row),
+                fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        if (locked) {
+            Icon(Icons.Default.Lock, null, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.width(4.dp))
+            Text("固定全局", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else {
+            Text(
+                if (isBook) "本书" else "全局",
+                fontSize = 11.sp,
+                color = if (isBook) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.background(
+                    if (isBook) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                    RoundedCornerShape(6.dp),
+                ).padding(horizontal = 6.dp, vertical = 2.dp),
+            )
+        }
+        if (covered > 0) {
+            Spacer(Modifier.width(6.dp))
+            Row(
+                Modifier.background(MaterialTheme.colorScheme.secondaryContainer, RoundedCornerShape(6.dp))
+                    .padding(horizontal = 6.dp, vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Default.MenuBook, null, Modifier.size(12.dp), tint = MaterialTheme.colorScheme.onSecondaryContainer)
+                Spacer(Modifier.width(3.dp))
+                Text("单独·${covered}本", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSecondaryContainer)
+            }
+        }
     }
 }
 
