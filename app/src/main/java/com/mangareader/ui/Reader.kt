@@ -3213,7 +3213,24 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                 val treeStr = navStack.lastOrNull() ?: book?.filePath ?: ""
                 { idx ->
                     if (idx < pageList.size) {
-                        engine.loadPageRaw(pageList[idx], treeStr)?.let { decodeThumbBytes(it) }
+                        val meta = pageList[idx]
+                        val raw = engine.loadPageRaw(meta, treeStr)
+                        if (raw != null) {
+                            decodeThumbBytes(raw)
+                        } else {
+                            // ★ PDF 缩略图兜底（2026-10-04）：raw 字节路径对 PDF 硬返回 null
+                            //   （ArchiveEngine.loadPageRaw "当前未实现 PDF 的 raw 路径"）→ 目录浏览
+                            //   页签整版只剩灰底页码。回退 loadPage（PDF 正文同款渲染管线）取整页
+                            //   降采样成缩略图。★ 不 recycle 返回的 full——loadPage 的产物是引擎
+                            //   缓存持有的共享位图（正文还要用），生命周期归 GC/引擎缓存管
+                            engine.loadPage(meta, treeStr)?.let { full ->
+                                runCatching {
+                                    val tw = 360
+                                    val th = (full.height.toLong() * tw / full.width.coerceAtLeast(1)).toInt().coerceAtLeast(1)
+                                    Bitmap.createScaledBitmap(full, tw, th, true)
+                                }.getOrNull()
+                            }
+                        }
                     } else null
                 }
             } else null,
