@@ -77,16 +77,20 @@ class SmbPageAdapter(
         }
     }
 
-    /** loader 就绪后由会话 block 调用；等待页数稳定（TAR 渐进索引会增长）再放行 */
-    suspend fun attach(loader: PageLoader, source: com.hippo.ehviewer.library.ArchiveByteSource?) {
+    /** loader 就绪后由会话 block 调用；等待页数稳定（TAR 渐进索引会增长）再放行。
+     *  ★ P2（2026-10-04）：sizeSettled=true（zip 族/epub/pdf 等开包即定页数的格式）直接放行，
+     *  免掉固定 2×250ms 稳定采样——页数已定的格式这是纯白等 500ms。 */
+    suspend fun attach(loader: PageLoader, source: com.hippo.ehviewer.library.ArchiveByteSource?, sizeSettled: Boolean = false) {
         sourceRef = source
         var last = loader.size
-        var stable = 0
-        val t0 = System.currentTimeMillis()
-        while (stable < 2 && System.currentTimeMillis() - t0 < PAGE_SIZE_STABILIZE_TIMEOUT_MS) {
-            delay(250)
-            val s = loader.size
-            if (s == last) stable++ else { last = s; stable = 0 }
+        if (!sizeSettled) {
+            var stable = 0
+            val t0 = System.currentTimeMillis()
+            while (stable < 2 && System.currentTimeMillis() - t0 < PAGE_SIZE_STABILIZE_TIMEOUT_MS) {
+                delay(250)
+                val s = loader.size
+                if (s == last) stable++ else { last = s; stable = 0 }
+            }
         }
         pageCountField = last
         loaderReady.complete(loader)
@@ -119,6 +123,15 @@ class SmbPageAdapter(
         for (attempt in 0..1) {
             try {
                 val loader = loaderReady.await()
+                // ★ P3（2026-10-04）：先直读——openSource 自身会驱动提取并返回字节，就绪时一次
+                //   解压直达；旧流程先 probe（openSource 整页解压后 close 丢弃）再 read，同一页
+                //   解压两遍（本地下载缓存路径 ArchivePageLoader 每次都是全量重解压）
+                readPageBytes(loader, index)?.let { bytes ->
+                    if (focusIndex == -1 || focusIndex == index) navigateTimeout(loader, index)
+                    checkPageCountGrow(loader)
+                    return@withContext bytes
+                }
+                // 未就绪/提取失败 → 需求驱动等待循环兜底（保持旧焦点/navigate 语义）
                 val extracted = driveAndAwaitExtract(loader, index)
                 if (extracted && (focusIndex == -1 || focusIndex == index)) {
                     navigateTimeout(loader, index)

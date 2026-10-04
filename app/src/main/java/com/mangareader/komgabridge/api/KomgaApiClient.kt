@@ -188,7 +188,7 @@ class KomgaApiClient(
     suspend fun searchSeries(search: String, libraryId: String? = null, page: Int = 0): PageableDto<SeriesDto> =
         getSeries(libraryId = libraryId, search = search, page = page)
 
-    fun close() {
-        client.close()
-    }
+    /** ★ P7（2026-10-04）：client 已改为进程内共享（KomgaHttpClient 缓存），close 改 no-op
+     *  防止任何调用点关掉共享连接池。保留函数签名兼容既有调用。 */
+    fun close() = Unit
 }

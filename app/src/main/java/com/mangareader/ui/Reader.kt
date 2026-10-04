@@ -171,6 +171,9 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     var pageList by remember { mutableStateOf(listOf<ArchiveEngine.PageMeta>()) }
     var cur by remember { mutableIntStateOf(0) }
     var expandedPageCount by remember { mutableIntStateOf(0) }
+    // ★ B4②（2026-10-04）：双页布局拆分书的续读半页位——enterReader 恢复块写入，
+    //   NativeReaderScreen setup 前注入 PagerReaderView 作初始交替位（仅未展开表有语义）
+    var initialHalfRightRestore by remember { mutableStateOf(false) }
     // ★ v1.11 全局默认阅读模式：原先三处重复的 mode 加载逻辑统一收敛到此函数。
     //   优先级（用户拍板：全局最低，只作"新书第一次进入"的初始状态）：
     //     ① read_mode_$bookId（书内手动切换过，最高）
@@ -492,6 +495,27 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         }
     }
 
+    // ★ 进度页号语义统一（2026-10-04 修"拆分书彻底退出重进向前跳页"）：
+    //   save() 与 onDispose 兜底是仅有的两条进度写入路径，页号/半页位必须同语义，否则恢复块
+    //   无法解释。三件事在这里集中定义，两条路径共用：
+    //   ① lastPage 一律存物理页（originalPageIdx）——展开流位随拆分开关/屏宽变化，物理页恒定；
+    //   ② halfRight 列统一编码为"阅读序第二半"：展开表下=条目 splitSide==secondSide（LTR 即右半；
+    //     RTL 右开本先读右半，secondSide=1——采集/恢复两端用同一编码所以自洽）；未展开表
+    //    （双页布局拆分）下=视图交替位（视图语义本就是"第二半"）；
+    //   ③ 历史页码 pagesRead 同步用物理页。
+    //   ★ 注意：这些函数会被 DisposableEffect(Unit) 的 onDispose 闭包捕获（首组合实例），
+    //     isRtl 是普通 val 会变旧——首半编码必须从 mode/config 状态委托现读。
+    fun progressFirstSplitSide(): Int {
+        val rtlNow = mode == Mode.RTL
+        return if (!(rtlNow != config.doublePageReverse)) 1 else 2
+    }
+    fun progressIsExpandedTable(list: List<com.mangareader.viewer.ArchiveEngine.PageMeta>): Boolean =
+        list.any { it.segmentIndex > 0 || it.splitSide != 0 }
+    fun progressPhysicalPage(list: List<com.mangareader.viewer.ArchiveEngine.PageMeta>, curIdx: Int): Int =
+        if (progressIsExpandedTable(list)) (list.getOrNull(curIdx)?.originalPageIdx ?: curIdx) else curIdx
+    fun progressHalfSide(list: List<com.mangareader.viewer.ArchiveEngine.PageMeta>, curIdx: Int, viewHalfRight: Boolean): Boolean =
+        if (progressIsExpandedTable(list)) (list.getOrNull(curIdx)?.splitSide == 3 - progressFirstSplitSide()) else viewHalfRight
+
     // ★ 3+5 改动4：扩展 onDispose 兜底 save —— 与 goBack() 的 save() 互补。
     //   场景：用户按 Home 键离开后系统回收 Activity、或非 goBack 路径退出 Reader 时，
     //   Composable dispose 但 saveJob 可能未 commit。兜底再发一次 save 到 appScope 确保写盘。
@@ -517,15 +541,19 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                 val done = effectiveSize > 1 && curSnap >= effectiveSize - 1
                 android.util.Log.d("ReaderProgress", "onDispose-save bookId=${b.id} chPath=$chPathSnap cur=$curSnap size=$effectiveSize done=$done")
                 val sx = scrollX; val sy = scrollY; val zs = zoomLevel
-                val halfRightSnap = activePagerRef?.currentHalfRight ?: false
+                val viewHalfRightSnap = activePagerRef?.currentHalfRight ?: false
+                // ★ B1（2026-10-04）：与 save() 同语义——存物理页 + 统一半页位口径。
+                //   旧版这里写展开流位 curSnap，恢复块按物理页解释 → 拆分书彻底退出重进向前跳页
+                val savedPageSnap = progressPhysicalPage(pageListSnap, curSnap)
+                val halfRightSnap = progressHalfSide(pageListSnap, curSnap, viewHalfRightSnap)
                 app.appScope.launch {
                     try {
                         val history = ReadingHistory(
-                            bookId = b.id, pagesRead = curSnap + 1,
+                            bookId = b.id, pagesRead = savedPageSnap + 1,
                             scrollX = sx, scrollY = sy, zoomLevel = zs
                         )
                         withContext(Dispatchers.IO) {
-                            dao.saveReaderProgressBatch(b.id, curSnap + 1, now, chPathSnap, curSnap, done, history, effectiveSize)
+                            dao.saveReaderProgressBatch(b.id, savedPageSnap + 1, now, chPathSnap, savedPageSnap, done, history, effectiveSize)
                             // ★ 半页位补写（splitHalfRight 是纯字段，release 后读取安全）
                             runCatching { dao.updateProgressHalfRight(b.id, chPathSnap, halfRightSnap, now) }
                         }
@@ -547,8 +575,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         val cx = activePagerRef?.currentCenterX?.toInt() ?: scrollX
         val cy = activePagerRef?.currentCenterY?.toInt() ?: scrollY
         val zs = activePagerRef?.currentZoomScale ?: zoomLevel
-        // ★ 拆分双页半页位（2026-10-04）：lastPage 两半同值，右半标记随进度落库
-        val halfRight = activePagerRef?.currentHalfRight ?: false
+        val viewHalfRight = activePagerRef?.currentHalfRight ?: false
         scrollX = cx; scrollY = cy; zoomLevel = zs
         // ★ R2 主线程同步快照所有进入协程的 Compose state
         val pageListSnap = pageList
@@ -556,9 +583,9 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         val curSnap = cur
         // ★ 进度持久化存物理页（originalPageIdx）：宽图二分/竖切展开后的流位随拆分开关/屏幕
         //   尺寸变化，物理页恒定。未展开表 originalPageIdx 无意义（默认 0），按展开特征判定。
-        val isExpandedTable = pageListSnap.any { it.segmentIndex > 0 || it.splitSide != 0 }
-        val savedPage = if (isExpandedTable)
-            (pageListSnap.getOrNull(curSnap)?.originalPageIdx ?: curSnap) else curSnap
+        //   ★ B1（2026-10-04）：换算收口到 progressPhysicalPage/progressHalfSide，与 onDispose 共用
+        val savedPage = progressPhysicalPage(pageListSnap, curSnap)
+        val halfRight = progressHalfSide(pageListSnap, curSnap, viewHalfRight)
         val chPathSnap = navStack.lastOrNull() ?: b.filePath
         val now = System.currentTimeMillis()
         val effectiveSize = if (expandedPageCount > 0) expandedPageCount else pageListSnap.size
@@ -996,14 +1023,35 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                 val treeStr = path
                 var totalRatio = 0f
                 var count = 0
+                // ★ P6（2026-10-04）：探测接尺寸表——先查 PageSizeCacheStore（与 expand 同一张表、
+                //   同一个 stamp），命中零 IO；未命中用 loadPageBounds 头部探测（zip/dir 64KB 快路径，
+                //   pdf 走 pdfGetPageSize），结果合并写回。旧版 loadPageSize 对图片源每页全量解压
+                //   且结果不落盘，跨进程每次重付 3 次全条目解压。
+                val stamp = com.mangareader.engine.pdf.VirtualPageExpander.sizeStamp(pages)
+                val store = withContext(Dispatchers.IO) { engine.loadPageSizeCache(treeStr, stamp) }
+                val fresh = HashMap<String, IntArray>()
                 for (i in 0 until minOf(3, pages.size)) {
                     try {
-                        val sz = withContext(Dispatchers.IO) { engine.loadPageSize(pages[i], treeStr) }
-                        if (sz != null && sz.size >= 2 && sz[0] > 0 && sz[1] > 0) {
-                            totalRatio += sz[0].toFloat() / sz[1].toFloat()
-                            count++
+                        val meta = pages[i]
+                        val key = "${meta.localIdx}|${meta.source}"
+                        val cached = store?.get(key)
+                        val sz = cached ?: withContext(Dispatchers.IO) {
+                            if (meta.source == "pdf") engine.loadPageSize(meta, treeStr)
+                            else engine.loadPageBounds(meta, treeStr)?.let { intArrayOf(it.width, it.height) }
+                        }
+                        if (sz != null) {
+                            if (cached == null) fresh[key] = sz
+                            if (sz.size >= 2 && sz[0] > 0 && sz[1] > 0) {
+                                totalRatio += sz[0].toFloat() / sz[1].toFloat()
+                                count++
+                            }
                         }
                     } catch (_: Exception) {}
+                }
+                if (fresh.isNotEmpty()) {
+                    runCatching {
+                        withContext(Dispatchers.IO) { engine.savePageSizeCache(treeStr, stamp, (store ?: emptyMap()) + fresh) }
+                    }
                 }
                 if (count > 0 && totalRatio / count < 0.55f) {
                     mode = Mode.VERT
@@ -1057,16 +1105,12 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         // ★ §37(14) 要点2 修"读完未变已读"：progress.completed=false 但 lastPage 已是末页 → 历史上曾读到末页，
         //   但完成位没被 save() 写进去（停在末页未翻页 → onPageChanged 没 fire → done=true 那次 save 没机会触发）。
         //   顺手在此时补 completed=true，保证下次回卷/查徽章能命中"已读完"。
-        // ★ PDF 分割跨形态重映射（2026-09-25 实查）：进度行存的是"保存时的展开形态"索引
-        //   （totalPages=当时的展开总页数）。分割开关切换/换设备（屏宽不同→段数不同）后两个
-        //   空间对不上：直接用会落错页，且 lastPage(旧空间) ≥ 当前末页会误触发"读完"标记。
-        //   按比例映射回当前形态；同形态（含旧数据 totalPages=0）原样透传。
+        // ★ 恢复页号（2026-10-04 B3）：lastPage 语义=物理页（save/onDispose 统一存 originalPageIdx）。
+        //   旧版此处有一段"跨形态比例重映射"（totalPages 变化时按比例换算）——那是展开序语义
+        //   时代的设计；物理页语义下比例换算只会把页号算坏（改拆分开关/换屏宽后恢复必错一次），
+        //   已删除。物理页跨形态天然稳定，下方恢复块按 originalPageIdx 匹配即可。
         val savedIdx = progress?.lastPage ?: 0
-        val savedSize = progress?.totalPages ?: 0
-        val remappedLastPage = if (progress != null && savedSize > 0 && savedSize != expandedSize && savedIdx > 0) {
-            ((savedIdx.toLong() * expandedSize) / savedSize).toInt()
-                .coerceIn(0, (expandedSize - 1).coerceAtLeast(0))
-        } else savedIdx
+        val remappedLastPage = savedIdx
         // ★ ⑦B 修复：willMarkRead 是「本次进卷正在补完成位」的本地信号。
         //   下方 lastPage 判定必须用同一个信号——否则 388 行 upsert 把 DB 改 completed=true
         //   但本地 val progress 仍 false → 走 else 分支 cur=末页，与"已读完卷再入应跳第 1 页"语义矛盾。
@@ -1083,23 +1127,39 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         // 书签直跳优先级最高：targetPage 显式覆盖
         cur = (if (targetPage >= 0) targetPage else lastPage).coerceIn(0, (expandedSize - 1).coerceAtLeast(0))
 
-        // ★ 拆分双页恢复修正（2026-10-04，"顺序经常有问题"的续读一半根因）：save 对拆分书存
-        //   lastPage=原页号（originalPageIdx，左右半同值），此前直接当展开序用——停在原页3右半
-        //   （展开序7）回来会落在序3（原页1右半），错一整跨页。现按 原页号+半页位 落位：
-        //   halfRight=true 落右半，否则左半；书签直跳（targetPage≥0）与已完成重进（lastPage=0）不适用。
-        if (targetPage < 0 && lastPage > 0 && progress != null && expandedPages.any { it.splitSide != 0 }) {
-            val wantSide = if (progress.halfRight) 2 else 1
+        // ★ 拆分双页恢复修正（2026-10-04；B2/B4③ 扩展）：save 对拆分/分割书存 lastPage=原页号
+        //  （originalPageIdx，左右半同值），此前直接当展开序用——停在原页3右半（展开序7）回来
+        //   会落在序3（原页1右半），错一整跨页。现按 原页号+半页位 落位。
+        //   B2：守卫放宽到竖切段页（segmentIndex>0）——竖切书同样存物理页需映射（wantSide 匹配
+        //   不到段页时 fallback 到首个 originalPageIdx 命中=该页第一段）。
+        //   B4③：允许 lastPage=0（停在原页0右半也能恢复）；completed/willMarkRead 时 lastPage
+        //   已被置 0 且 halfRight 可能是旧值，明确排除防错落第二半。
+        //   半页编码：halfRight=true=阅读序第二半 → wantSide=3-firstSide，否则 firstSide
+        //  （firstSide 与 expand 的 splitLeftFirst 同式，RTL 右开本先读右半=side2）。
+        val restoreHalf = targetPage < 0 && progress != null && !progress.completed && !willMarkRead &&
+            expandedPages.any { it.segmentIndex > 0 || it.splitSide != 0 }
+        if (restoreHalf) {
+            val firstSide = if (!(isRtl != config.doublePageReverse)) 1 else 2
+            val wantSide = if (progress.halfRight) 3 - firstSide else firstSide
             val mapped = expandedPages.indexOfFirst { it.originalPageIdx == cur && it.splitSide == wantSide }
                 .takeIf { it >= 0 }
                 ?: expandedPages.indexOfFirst { it.originalPageIdx == cur }
             if (mapped >= 0) cur = mapped
         }
+        // ★ B4②：未展开表（双页布局拆分，页表无 splitSide 条目）恢复块匹配不到——半页位改经
+        //   initialHalfRightRestore 传入 PagerReaderView 作初始交替位（NES setup 前注入、setup 消费）。
+        //   视图 splitHalfRight 语义="阅读序第二半"，与 halfRight 列编码一致。
+        initialHalfRightRestore = targetPage < 0 && progress != null && !progress.completed && !willMarkRead &&
+            progress.halfRight && !progressIsExpandedTable(expandedPages)
 
         // ★ v1.13 用户需求：卷级封面后台生成（阅读历史显示各卷自己的封面而非书架总封面）
         //   写 covers/md5(卷path).thumb；HistoryScreen CoverThumb 双键查找时命中
+        //   ★ P9（2026-10-04）：延迟 3.5s 再跑——旧版进卷立即与正文首页解码抢 CPU/IO，
+        //     首帧出图被分走算力；封面晚几秒无感。
         if (pages.isNotEmpty()) {
             scope.launch(Dispatchers.IO) {
                 try {
+                    kotlinx.coroutines.delay(3500)
                     val key = java.security.MessageDigest.getInstance("MD5")
                         .digest(path.toByteArray()).joinToString("") { "%02x".format(it) }
                     val f = java.io.File(ctx.filesDir, "covers/$key.thumb")
@@ -2006,38 +2066,11 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                     if (b.totalPages == 0 && pages.isNotEmpty()) withContext(Dispatchers.IO) { dao.updateBook(b.copy(totalPages = pages.size)) }
                 }
             }
-            // Pre-decode first page SYNCHRONOUSLY before showing reader (instant open)
-            if (pageList.isNotEmpty() && loadedBook?.filePath?.startsWith("a:") == true) {
-                try {
-                    val realPath = withContext(Dispatchers.IO) { engine.getRealFileForPath(loadedBook.filePath) }
-                    if (realPath.isNotEmpty()) {
-                        val archive = com.mangareader.native.NativeEngine.openArchive(realPath)
-                        if (archive != null) {
-                            try {
-                                val screenMax = maxOf(ctx.resources.displayMetrics.widthPixels, ctx.resources.displayMetrics.heightPixels)
-                                val raw = com.mangareader.native.NativeEngine.readPageRaw(archive, cur)
-                                if (raw != null) {
-                                    val bmp = com.mangareader.native.NativeEngine.decodeRaw(raw, screenMax, screenMax)
-                                    if (bmp != null) {
-                                        try { com.mangareader.native.NativeEngine.cacheDecodedBitmap(archive, cur, bmp) } catch (_: Throwable) {}
-                                    }
-                                }
-                                for (i in 1 until minOf(5, pageList.size)) {
-                                    try {
-                                        val raw2 = com.mangareader.native.NativeEngine.readPageRaw(archive, i)
-                                        if (raw2 != null) {
-                                            val bmp2 = com.mangareader.native.NativeEngine.decodeRaw(raw2, screenMax, screenMax)
-                                            if (bmp2 != null) {
-                                                try { com.mangareader.native.NativeEngine.cacheDecodedBitmap(archive, i, bmp2) } catch (_: Throwable) {}
-                                            }
-                                        }
-                                    } catch (_: Exception) {}
-                                }
-                            } finally { archive.close() }
-                        }
-                    }
-                } catch (_: Exception) {}
-            }
+            // ★ P1（2026-10-04）：删除"a: 书主线程同步预解码 5 页"旧块——它在主线程串行解码
+            //   当前页+1..4 页（单页 p50≈400ms，合计约 2s），把 loading=false 和整个 UI 冻在原地；
+            //   且解码结果挂在随即 close() 的 native 句柄上，正文走 engine.loadPage 另一套缓存，
+            //   两不相通——对首帧零帮助纯冻结。首页解码由 PagerReaderView.setup→preloadAround
+            //   立即发起（当前页不受预载信号量限制），更快也不卡 UI。
             loading = false; if (viewing) hideUi()
             if (loadedBook == null) { showErrorDialog = true; loading = false }
         } catch (e: Exception) { errorMsg = "加载失败: ${e.message}"; loading = false }
@@ -2377,6 +2410,8 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                             treePath = navStack.lastOrNull() ?: book?.filePath ?: "",
                             pages = displayPages,
                             startPage = safeCur,
+                            // ★ B4②（2026-10-04）：双页布局拆分书续读半页位（enterReader 恢复块写入）
+                            initialHalfRight = initialHalfRightRestore,
                             isVertical = vertical,
                             isRtl = isRtl,
                             grayscale = config.isGrayscale,

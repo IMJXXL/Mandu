@@ -2403,23 +2403,17 @@ class ArchiveEngine(private val ctx: Context) {
                     pages.add(PageMeta(i, "dir", childDocId))
                 }
             } else {
-                arcs.sortedWith(Comparator<File> { a, b ->
+                // ★ P10（2026-10-04）：子压缩包页数并行统计——旧版逐个串行 listZipPages/countPdfPages，
+                //   多子包父书首开线性变慢；各子包独立开包无共享状态，按序组装
+                val subArcs = arcs.sortedWith(Comparator<File> { a, b ->
                     com.mangareader.zip.CommonsZipHelper.compareNatural(a.name, b.name)
-                }).forEach { f ->
-                    val childDocId = "$doc/${f.name}"
-                    val ext = f.name.substringAfterLast(".").lowercase()
-                    when (ext) {
-                        "cbz", "zip", "epub" -> {
-                            val arcUri = DocumentsContract.buildDocumentUriUsingTree(tree, childDocId)
-                            val count = try { listZipPages(arcUri).size } catch (_: Exception) { 0 }
-                            for (localI in 0 until count) pages.add(PageMeta(pages.size, "zip", childDocId, localI))
-                        }
-                        "pdf" -> {
-                            val arcUri = DocumentsContract.buildDocumentUriUsingTree(tree, childDocId)
-                            val count = try { countPdfPages(arcUri) } catch (_: Exception) { 0 }
-                            for (localI in 0 until count) pages.add(PageMeta(pages.size, "pdf", childDocId, localI))
-                        }
-                    }
+                }).map { SubArcDoc(it.name.substringAfterLast(".").lowercase(), "$doc/${it.name}") }
+                    .filter { it.ext == "cbz" || it.ext == "zip" || it.ext == "epub" || it.ext == "pdf" }
+                val counts = countSubArchivesParallel(tree, subArcs)
+                subArcs.forEachIndexed { idx, item ->
+                    val count = counts[idx]
+                    val src = if (item.ext == "pdf") "pdf" else "zip"
+                    for (localI in 0 until count) pages.add(PageMeta(pages.size, src, item.docId, localI))
                 }
             }
             d(TAG, "scanDirFast: ${pages.size} pages from ${dirFile.absolutePath}")
@@ -2456,20 +2450,15 @@ class ArchiveEngine(private val ctx: Context) {
                         pages.add(PageMeta(i, "dir", id))
                     }
                 } else {
-                    arcs.sortedWith(Comparator<Pair<String, String>> { a, b -> com.mangareader.zip.CommonsZipHelper.compareNatural(a.first, b.first) }).forEach { (name, id) ->
-                        val ext = name.substringAfterLast(".").lowercase()
-                        when (ext) {
-                            "cbz", "zip", "epub" -> {
-                                val arcUri = DocumentsContract.buildDocumentUriUsingTree(tree, id)
-                                val count = try { listZipPages(arcUri).size } catch (_: Exception) { 0 }
-                                for (localI in 0 until count) pages.add(PageMeta(pages.size, "zip", id, localI))
-                            }
-                            "pdf" -> {
-                                val arcUri = DocumentsContract.buildDocumentUriUsingTree(tree, id)
-                                val count = try { countPdfPages(arcUri) } catch (_: Exception) { 0 }
-                                for (localI in 0 until count) pages.add(PageMeta(pages.size, "pdf", id, localI))
-                            }
-                        }
+                    // ★ P10：子压缩包页数并行统计（同 scanDirFast）
+                    val subArcs = arcs.sortedWith(Comparator<Pair<String, String>> { a, b -> com.mangareader.zip.CommonsZipHelper.compareNatural(a.first, b.first) })
+                        .map { SubArcDoc(it.first.substringAfterLast(".").lowercase(), it.second) }
+                        .filter { it.ext == "cbz" || it.ext == "zip" || it.ext == "epub" || it.ext == "pdf" }
+                    val counts = countSubArchivesParallel(tree, subArcs)
+                    subArcs.forEachIndexed { idx, item ->
+                        val count = counts[idx]
+                        val src = if (item.ext == "pdf") "pdf" else "zip"
+                        for (localI in 0 until count) pages.add(PageMeta(pages.size, src, item.docId, localI))
                     }
                 }
             }
@@ -2478,6 +2467,29 @@ class ArchiveEngine(private val ctx: Context) {
     }
 
     private val realFileCache2 = mutableMapOf<String, java.io.File>()
+
+    // ★ P10（2026-10-04）：d: 父书子压缩包页数并行统计
+    private class SubArcDoc(val ext: String, val docId: String)
+
+    private fun countSubArchivesParallel(tree: Uri, items: List<SubArcDoc>): IntArray {
+        if (items.isEmpty()) return IntArray(0)
+        val counts = IntArray(items.size)
+        if (items.size == 1) { counts[0] = countOneSubArchive(tree, items[0]); return counts }
+        val pool = java.util.concurrent.Executors.newFixedThreadPool(minOf(4, items.size))
+        try {
+            val futures = items.mapIndexed { i, item -> pool.submit { counts[i] = countOneSubArchive(tree, item) } }
+            futures.forEach { it.get() }
+        } catch (_: Exception) {
+        } finally { pool.shutdown() }
+        return counts
+    }
+
+    private fun countOneSubArchive(tree: Uri, item: SubArcDoc): Int {
+        val arcUri = DocumentsContract.buildDocumentUriUsingTree(tree, item.docId)
+        return try {
+            if (item.ext == "pdf") countPdfPages(arcUri) else listZipPages(arcUri).size
+        } catch (_: Exception) { 0 }
+    }
 
     private fun scanFile(tree: Uri, doc: String, ext: String, name: String): List<PageMeta> {
         val uri = DocumentsContract.buildDocumentUriUsingTree(tree, doc)

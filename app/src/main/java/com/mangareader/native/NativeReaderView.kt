@@ -101,8 +101,8 @@ class NativeReaderView(context: Context) : SurfaceView(context), SurfaceHolder.C
     private val pageHeightCache = java.util.concurrent.ConcurrentHashMap<Int, Float>()
     private val scroller = OverScroller(context, DecelerateInterpolator(1.2f))
 
-    private var nativeArchive: com.mangareader.native.NativeEngine.Archive? = null
-    private var nativeArchivePath = ""
+    // ★ P4（2026-10-04）：删除 nativeArchive 死句柄——打开的归档句柄全程无读取方，
+    //   每次开书白付一次 mmap+中央目录解析；curl 页面解码走 engine/loadPage 管线
 
     private var overscrollY = 0f
     private var isOverscrolling = false
@@ -215,22 +215,12 @@ class NativeReaderView(context: Context) : SurfaceView(context), SurfaceHolder.C
         pageHeightCache[pageIdx] = h; return h
     }
 
-    private suspend fun ensureNativeArchive() {
-        val eng = engine ?: return
-        val path = withContext(Dispatchers.IO) { try { eng.getRealFileForPath(treePath) } catch (_: Exception) { "" } }
-        if (path.isEmpty()) return
-        if (path == nativeArchivePath && nativeArchive != null) return
-        nativeArchive?.close()
-        nativeArchive = withContext(Dispatchers.IO) { try { com.mangareader.native.NativeEngine.openArchive(path) } catch (_: Exception) { null } }
-        nativeArchivePath = path
-    }
-
     private fun loadPagesAround(centerIdx: Int) {
         val eng = engine ?: return
         val hasCenter = pageCache.containsKey(centerIdx)
         if (!hasCenter) drawJob?.cancel()
         drawJob = scope.launch {
-            ensureNativeArchive()
+            // ★ P4：原 ensureNativeArchive() 调用已删（死句柄，无任何读取方）
             val screenMax = maxOf(surfaceWidth, surfaceHeight).coerceAtLeast(1)
             val preloadForward = if (isVertical) 10 else 5
             val preloadBack = 4
@@ -505,7 +495,6 @@ class NativeReaderView(context: Context) : SurfaceView(context), SurfaceHolder.C
         drawJob?.cancel()
         Choreographer.getInstance().removeFrameCallback(flingFrameCallback)
         removeCallbacks(tapTimeoutRunnable); removeCallbacks(renderRunnable)
-        nativeArchive?.close(); nativeArchive = null; nativeArchivePath = ""
         pageCache.clear(); pageHeightCache.clear()
     }
 }

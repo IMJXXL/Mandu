@@ -86,7 +86,8 @@ object SmbBookRouter {
         sessionScope.launch {
             try {
                 dispatchLoaderSession(source, password, ref, startPage, passwdProvider) { loader, byteSource ->
-                    adapter.attach(loader, byteSource)
+                    // ★ P2：zip 族/epub/pdf 开包即定页数，跳过 500ms 稳定采样；tar/rar/7z 等渐进索引格式保留
+                    adapter.attach(loader, byteSource, sizeSettled = ref.ext.lowercase() in SETTLED_COUNT_EXTS)
                     adapter.awaitClose()
                 }
             } catch (e: CancellationException) {
@@ -312,4 +313,6 @@ object SmbBookRouter {
 
     private const val OPEN_TIMEOUT_MS = 15_000L
     private const val TAG = "SmbBookRouter"
+    /** ★ P2（2026-10-04）：开包即定页数的扩展名——attach 跳过 500ms 页数稳定采样 */
+    private val SETTLED_COUNT_EXTS = setOf("zip", "cbz", "epub", "pdf")
 }

@@ -57,9 +57,8 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
     /** 只读暴露当前页（遮罩超时重载等外部只读场景用；写入仍走内部流程/ goToPage） */
     val currentPageForKick: Int get() = currentPage
     private val loadScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-    private val archiveMutex = Mutex()
-    private var archive: com.mangareader.native.NativeEngine.Archive? = null
-    private var archivePath = ""
+    // ★ P4（2026-10-04）：删除 ensureArchive/nativeArchive 死句柄——打开的归档句柄全程无读取方，
+    //   每次开书白付一次 mmap+中央目录解析；正文解码走 engine.loadPage 独立缓存
     @Volatile private var scrolling = false
     @Volatile var isSetupScrollPending: Boolean = false
         private set
@@ -965,19 +964,6 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
         }
     }
 
-    private suspend fun ensureArchive() {
-        val e = engine ?: return
-        val p = withContext(Dispatchers.IO) { try { e.getRealFileForPath(treePath) } catch (_: Exception) { "" } }
-        if (p.isEmpty()) return
-        if (p == archivePath && archive != null) return
-        archiveMutex.withLock {
-            if (p == archivePath && archive != null) return
-            archive?.close()
-            archive = withContext(Dispatchers.IO) { try { com.mangareader.native.NativeEngine.openArchive(p) } catch (_: Exception) { null } }
-            archivePath = p
-        }
-    }
-
     /** ★ v1.13：当前页是否已出图 */
     override fun isCurrentPageReady(): Boolean {
         val lm = recycler.layoutManager as? androidx.recyclerview.widget.LinearLayoutManager ?: return false
@@ -1004,7 +990,6 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
         inflightLoads.clear() // ★ 白屏工单任务3
         clearBitmapCacheRecycling()  // ★ ⑧ 修复硬伤：WebtoonReaderView.release() 原本完全不 recycle 任何 bitmap
                                         //   （PagerReaderView 至少 release 里有 recycle）→ 独立严重缺陷
-        archive?.close(); archive = null; archivePath = ""
         try {
             // ★ v1.13 C-1：消除提前 return（engine==null 会跳过尾部清身份字段）——改 if 包裹
             val e = engine

@@ -20,6 +20,9 @@ object VirtualPageExpander {
 
     private val SPLIT_SOURCES = setOf("pdf", "dir", "zip", "rar", "7z", "tar")
 
+    // ★ P5（2026-10-04）：顺流介质（solid archive）——单 fd 顺流遍历，乱序随机访问要反复重绕
+    private val SOLID_SOURCES = setOf("rar", "7z", "tar")
+
     /** 最近一次 expand 统计（诊断取证）：入口页数/输出页数/探测失败整页透传数 */
     @Volatile
     var lastStats: String = ""
@@ -51,9 +54,14 @@ object VirtualPageExpander {
         }
         val result = mutableListOf<ArchiveEngine.PageMeta>()
         var unprobedCount = 0
-        // ★ 并行预探（并发 4，仅 allowProbe=true 的入口路径）：几百页未探测章的串行头部探测
-        //   最坏数十秒（rar/7z 每页全量解压 ×2 次重试 + 失败页 sleep 120ms），全程挡在"正在打开…"。
-        //   预探只提前发起 IO，结果仍走下方 pending 合并落盘——输出与串行版本完全一致
+        // ★ 并行预探（仅 allowProbe=true 的入口路径）：几百页未探测章的串行头部探测
+        //   最坏数十秒，全程挡在"正在打开…"。预探只提前发起 IO，结果仍走下方 pending 合并
+        //   落盘——输出与串行版本完全一致。
+        //   ★ P5（2026-10-04）探测调度按介质分流：rar/7z/tar 是顺流介质（fd 单锁），乱序并发
+        //   探测会反复重绕流——最坏 O(N²) 数据流过。改单线程按页序探测：loadPageBounds 底层
+        //   loadArchiveEntryViaFdCache 每次顺流顺带收集 target..+2 进 adjacentPrereadCache，
+        //   升序提交时邻页直接命中，整章一遍顺流=物理下限。zip/dir 头部读取是随机访问
+        //  （ZipFile 按名直取/文件头 64KB），保持并行池。
         val preProbed = HashMap<String, IntArray?>()
         if (allowProbe) {
             val stamp0 = sizeStamp(pages)
@@ -63,22 +71,26 @@ object VirtualPageExpander {
             val needProbe = pages.filter { it.segmentIndex <= 0 && it.source in SPLIT_SOURCES && it.source != "pdf" }
                 .distinctBy { "${it.localIdx}|${it.source}" }
                 .filter { (store0 ?: emptyMap())["${it.localIdx}|${it.source}"] == null }
-            if (needProbe.size > 1) {
-                val pool = java.util.concurrent.Executors.newFixedThreadPool(minOf(4, needProbe.size))
+            fun probeOne(meta: ArchiveEngine.PageMeta) {
+                val b = try { engine.loadPageBounds(meta, treePath) } catch (_: Exception) { null }
+                synchronized(preProbed) {
+                    preProbed["${meta.localIdx}|${meta.source}"] = b?.let { intArrayOf(it.width, it.height) }
+                }
+            }
+            val solid = needProbe.filter { it.source in SOLID_SOURCES }.sortedBy { it.localIdx }
+            val random = needProbe.filter { it.source !in SOLID_SOURCES }
+            solid.forEach { probeOne(it) }
+            if (random.size > 1) {
+                val pool = java.util.concurrent.Executors.newFixedThreadPool(minOf(4, random.size))
                 try {
-                    val futures = needProbe.map { meta ->
-                        pool.submit {
-                            val b = try { engine.loadPageBounds(meta, treePath) } catch (_: Exception) { null }
-                            synchronized(preProbed) {
-                                preProbed["${meta.localIdx}|${meta.source}"] = b?.let { intArrayOf(it.width, it.height) }
-                            }
-                        }
-                    }
+                    val futures = random.map { meta -> pool.submit { probeOne(meta) } }
                     futures.forEach { it.get() }
                 } catch (_: Exception) {
                 } finally {
                     pool.shutdown()
                 }
+            } else {
+                random.forEach { probeOne(it) }
             }
         }
         for ((origIdx, meta) in pages.withIndex()) {
@@ -157,7 +169,9 @@ object VirtualPageExpander {
     }
 
     /** 尺寸表失效戳：页数 + ext/source 序列摘要。加删页/换类型即失效；同内容替换由渲染器侧尺寸复核兜底 */
-    private fun sizeStamp(pages: List<ArchiveEngine.PageMeta>): String {
+    // ★ P6（2026-10-04）：internal 供 Reader.autoWebtoon 复用——autoWebtoon 探测与 expand
+    //   共享同一张尺寸表必须用同一个 stamp（页数+ext 序列指纹）
+    internal fun sizeStamp(pages: List<ArchiveEngine.PageMeta>): String {
         val sb = StringBuilder(pages.size).append(':')
         for (m in pages) sb.append(m.ext.length).append('.').append(m.source).append(';')
         val body = sb.toString()

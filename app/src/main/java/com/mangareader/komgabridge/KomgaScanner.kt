@@ -89,7 +89,7 @@ object KomgaScanner {
             Log.e(TAG, "scan failed server=$serverId", t)
             throw t
         } finally {
-            client.close()
+            // ★ P7：client 进程内共享（KomgaHttpClient 缓存），不再 close——关掉会杀共享连接池
         }
     }
 

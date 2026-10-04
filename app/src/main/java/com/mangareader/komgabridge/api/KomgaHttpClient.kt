@@ -15,7 +15,28 @@ object KomgaHttpClient {
 
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
+    // ★ P7（2026-10-04）：client 进程内共享缓存——旧版每次开书 new 整套 OkHttp+Ktor，
+    //   TCP+TLS 握手重付、浏览与阅读连接池互不复用。按 allowSelfSigned 缓存两套；
+    //   生命周期=进程，所有调用点禁止 close()（KomgaApiClient.close 已改为 no-op）。
+    @Volatile private var cachedSecure: HttpClient? = null
+    @Volatile private var cachedInsecure: HttpClient? = null
+
     fun client(allowSelfSigned: Boolean): HttpClient {
+        if (allowSelfSigned) {
+            cachedInsecure?.let { return it }
+            synchronized(this) {
+                cachedInsecure?.let { return it }
+                return build(allowSelfSigned).also { cachedInsecure = it }
+            }
+        }
+        cachedSecure?.let { return it }
+        synchronized(this) {
+            cachedSecure?.let { return it }
+            return build(false).also { cachedSecure = it }
+        }
+    }
+
+    private fun build(allowSelfSigned: Boolean): HttpClient {
         val okHttpBuilder = OkHttpClient.Builder()
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)

@@ -163,6 +163,9 @@ fun NativeReaderScreen(
     /** ★ SMB/WebDAV 页面供给（design.md 2.2.2）：非 null 时阅读页面走远程会话。
      *   以参数形式在 setup() 之前注入 delegate，消除"setup 早于供给挂接"的竞态窗口。 */
     remoteSupply: com.mangareader.native.RemotePageSupply? = null,
+    /** ★ B4②（2026-10-04）：双页布局拆分书续读半页位（true=恢复到阅读序第二半）。
+     *   setup 前注入 PagerReaderView，setup 消费一次；展开表/条漫视图无影响。 */
+    initialHalfRight: Boolean = false,
     modifier: Modifier = Modifier,
     onPageChanged: (Int) -> Unit = {},
     onPageCountChanged: (Int) -> Unit = {},
@@ -272,6 +275,8 @@ fun NativeReaderScreen(
         // ★ 纸张纹理：全局烘焙设置必须在 setup 前同步——setup 内 preloadAround 立刻开始解码，
         //   晚了首页就会以无纹理位图入缓存（appliedTexture SideEffect 只管运行时变化）
         com.mangareader.filter.PaperPageTexture.sync(ctx, textureEnabled, texturePresetId, textureConcentration, textureScope != 0)
+        // ★ B4②：续读半页位必须在 setup 前注入——setup 内消费一次作初始交替位
+        if (delegate is PagerReaderView) delegate.setInitialSplitHalfRight(initialHalfRight)
         // ★ §34.3：verticalPager 传给 pagerView.setup（webtoon 走默认 false 无影响）
         // ★ 点击翻页区域接线（此前硬编码 0=关闭，区域设置从未生效——2026-09-29 修复）
         delegate.setup(engine, treePath, pages, savedPage, isVertical, clickFlip, isRtl, verticalPager)

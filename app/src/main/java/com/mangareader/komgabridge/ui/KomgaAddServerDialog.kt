@@ -182,7 +182,7 @@ fun KomgaAddServerDialog(
                                 onSuccess = { testResult = "OK" },
                                 onFailure = { testResult = it.message ?: "failed" },
                             )
-                            client.close()
+                            // ★ P7：client 进程内共享，不再 close
                         } catch (t: Throwable) {
                             testResult = t.message ?: "failed"
                         } finally {

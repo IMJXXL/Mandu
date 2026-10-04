@@ -125,10 +125,12 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     /** ★ 跳页调度（2026-09-09）：inflight 加载 job 注册表，prioritizeLoad 取消窗口外 job 释放 IO 资源 */
     private val loadJobs = java.util.concurrent.ConcurrentHashMap<Int, kotlinx.coroutines.Job>()
     private val decodeSemaphore = Semaphore(2)
-    private val archiveMutex = Mutex()
 
-    @Volatile private var nativeArchive: com.mangareader.native.NativeEngine.Archive? = null
-    private var nativeArchivePath = ""
+    // ★ B4②（2026-10-04）：续读半页位初始值——Reader 恢复块经 NES setup 前注入，setup 消费一次。
+    //   语义="阅读序第二半"（与 halfRight 列一致）。仅双页布局未展开表有实际效果；
+    //   展开表（宽图二分）下视图交替休眠，置了也无影响；非拆分页首次翻页即被清。
+    @Volatile private var pendingInitialHalfRight = false
+    fun setInitialSplitHalfRight(v: Boolean) { pendingInitialHalfRight = v }
 
     // ★ §24 二代（翻页化）：动图状态——只在翻页模式下处理动图播放。条漫不再处理（条漫看到动图按静图渲染首帧）
     private data class AnimFlag(val pageIdx: Int, val kind: AnimKind)
@@ -695,6 +697,12 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         val rtlChanged = this.isRtl != rtl
         val engineChanged = this.engine != engine
         this.engine = engine; this.treePath = treePath; this.pageList = pages; this.isRtl = rtl
+        // ★ B4②：消费续读半页位（只在有待恢复值时置 true——setup 可能因配置变化重入，
+        //   无条件赋 false 会把运行中的右半状态清掉，画面/状态背离）
+        if (pendingInitialHalfRight) {
+            splitHalfRight = true
+            pendingInitialHalfRight = false
+        }
         // ★ 上报本视图真实页数：expandedPageCount 只被条漫视图回调更新，pager/curl 章
         //   setup 不上报会让上一章条漫的展开页数残留 → 进度条越界、goToPage 吞页、done 误标读完
         onPageCountChanged?.invoke(pageList.size)
@@ -1032,18 +1040,24 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             return
         }
         if (doublePageMode) {
-            splitHalfRight = false
-            pendingLandingSplitHalfRight = false  // 前进落地恒左半
+            // ★ B5（2026-10-04）：状态清移入可翻分支——到末跨页翻不动时不再清 splitHalfRight，
+            //   画面（右半）与状态保持一致；旧版边界失败即清，此时退出会把右半记成左半
             val target = when {
                 shiftDoublePage && currentPage == 0 -> 1
                 currentPage < pageList.size - 1 -> currentPage + 2
                 else -> -1
             }
-            if (target >= 0) goToPage(target, smooth = true)
+            if (target >= 0) {
+                splitHalfRight = false
+                pendingLandingSplitHalfRight = false  // 前进落地恒左半
+                goToPage(target, smooth = true)
+            }
         } else {
-            splitHalfRight = false
-            pendingLandingSplitHalfRight = false
-            if (currentPage < pageList.size - 1) goToPage(currentPage + 1, smooth = true)
+            if (currentPage < pageList.size - 1) {
+                splitHalfRight = false
+                pendingLandingSplitHalfRight = false
+                goToPage(currentPage + 1, smooth = true)
+            }
         }
     }
     fun prevPage() {
@@ -1166,8 +1180,9 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             var acquired = false
             if (isPreload) { preloadSemaphore.acquire(); acquired = true }
             try {
-            // ★ SMB/WebDAV：远程供给会话不使用本地 native archive 句柄
-            if (remotePageSupply == null) ensureNativeArchive()
+            // ★ P4（2026-10-04）：删除 ensureNativeArchive()——旧代码每次开书 mmap 全文件+完整
+            //   解析中央目录，打开的 nativeArchive 字段全程无任何读取方（纯簿记），纯浪费一次
+            //   全包索引且占 native 句柄表名额
 
             val supply = remotePageSupply
             if (tileModeEnabled && !trimWhiteBorder && !fixedCropActive && !doublePageMode &&
@@ -1406,19 +1421,6 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         }
     }
 
-    private suspend fun ensureNativeArchive() {
-        val eng = engine ?: return
-        val path = withContext(Dispatchers.IO) { try { eng.getRealFileForPath(treePath) } catch (_: Exception) { "" } }
-        if (path.isEmpty()) return
-        if (path == nativeArchivePath && nativeArchive != null) return
-        archiveMutex.withLock {
-            if (path == nativeArchivePath && nativeArchive != null) return
-            nativeArchive?.close()
-            nativeArchive = withContext(Dispatchers.IO) { try { com.mangareader.native.NativeEngine.openArchive(path) } catch (_: Exception) { null } }
-            nativeArchivePath = path
-        }
-    }
-
     override fun release() {
 
         srEventJob?.cancel(); srEventJob = null
@@ -1433,9 +1435,6 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         loadScope.cancel()
         loadJobs.clear() // ★ 调度修复：release 时注册表同步清空
         inflightLoads.clear() // ★ 白屏工单任务3
-        nativeArchive?.close()
-        nativeArchive = null
-        nativeArchivePath = ""
         // ★ v102: 不 recycle（SSIV 可能仍持有引用，同 clearBitmapCacheRecycling）；evict 后 GC 自动回收
         bitmapCache.evictAll()
         clearTileFileCache()
