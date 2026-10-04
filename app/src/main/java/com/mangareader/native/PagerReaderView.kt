@@ -503,11 +503,14 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     private var centerGapType: Int = 0
     private var doublePageReverseEnabled: Boolean = false
     private var doublePageSplitEnabled: Boolean = false
-    // ★ 拆分翻页状态机（2026-09-30 修"翻一次翻两页"）：拆分跨页一次只显示半页，
-    //   翻页应先切到同份文件的另一半（同一跨页内），再进下一跨页——原来一次 +2
-    //   直接跳过半个内容。splitHalfRight=当前跨页正显示右半；splitActivePositions=
-    //   bind 时走了拆分分支的位置集合（判定翻页步进用）
+    // ★ 拆分翻页状态机（2026-09-30 修"翻一次翻两页"；2026-10-04 修"第二次翻页不显示右半"）：
+    //   拆分跨页一次只显示半页，翻页应先切到同份文件的另一半（同一跨页内），再进下一跨页。
+    //   splitHalfRight=当前跨页正显示右半；splitActivePositions=bind 时走了拆分分支的位置
+    //   集合（位图未就绪时的判定兜底）；pendingLandingSplitHalfRight=跨页回退时预挂的半页位，
+    //   onPageSelected 落地时消费——回退进上一跨页应从其右半继续阅读序，而落地回调无条件
+    //   重置会把它清掉（回退显示左半=顺序错乱感的根源），改由 pending 精确传达。
     private var splitHalfRight = false
+    private var pendingLandingSplitHalfRight = false
     private val splitActivePositions = java.util.Collections.newSetFromMap(java.util.concurrent.ConcurrentHashMap<Int, Boolean>())
 
     private fun isCurrentPageZoomed(): Boolean {
@@ -544,7 +547,11 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                     val realPos = pageIdx
                     com.mangareader.viewer.ArchiveEngine.d("PagerView", "onPageSelected pos=$position pageIdx=$pageIdx realPos=$realPos rtl=$isRtl double=$doublePageMode total=${pageList.size} curPage=$currentPage")
                     if (realPos in pageList.indices && realPos != currentPage) {
-                        resetSplitHalf()
+                        // ★ 跨页落地半页位（2026-10-04）：按 pending 恢复——前进/跳页=左半，
+                        //   拆分回退=右半（从上一跨页右半继续阅读序）。旧逻辑无条件 reset
+                        //   把回退的右半意图清掉，回退恒显示左半
+                        splitHalfRight = pendingLandingSplitHalfRight
+                        pendingLandingSplitHalfRight = false
                         currentPage = realPos; onPageChanged?.invoke(currentPage)
 
                         // ★ 2026-09-09 跳页调度：翻页选中即取消远端 inflight，不等 IDLE
@@ -992,10 +999,21 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     /** 跨页/页变更即重置半页交替（半页状态只在同一跨页内有效） */
     private fun resetSplitHalf() {
         splitHalfRight = false
+        pendingLandingSplitHalfRight = false
     }
 
-    private fun splitActiveNow(): Boolean =
-        doublePageSplitEnabled && positionOf(currentPage).let { it in splitActivePositions }
+    private fun splitActiveNow(): Boolean {
+        if (!doublePageSplitEnabled) return false
+        // ★ 位图就绪以位图宽高为准（即时准确）；未就绪（快翻/刚跳页尚未重绑）用绑定
+        //   登记兜底——原实现只看登记，进书后立刻翻页时登记缺失会绕过半页交替直跳，
+        //   右半被整页跳过（"第二次翻页不显示右半"的时序根因）
+        val bmp = bitmapCache[currentPage]
+        if (bmp != null && !bmp.isRecycled) return bmp.width > bmp.height
+        return positionOf(currentPage).let { it in splitActivePositions }
+    }
+
+    /** 当前半页位（仅拆分跨页激活时有语义）：true=正显示右半。进度保存采集用（恢复时精确落回看过的那半页） */
+    val currentHalfRight: Boolean get() = splitHalfRight
 
     private fun rebindCurrent() {
         val pos = positionOf(currentPage)
@@ -1005,39 +1023,57 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     fun nextPage() {
         // navigateToPan: 缩放时先平移到边缘再翻页
         if (panNavigation && tryPanIfZoomed(forward = !isRtl)) return
-        // ★ 拆分跨页：先翻到同文件右半（位置不动），再进下一跨页
-        if (splitActiveNow()) {
-            if (!splitHalfRight) {
-                splitHalfRight = true
-                rebindCurrent()
-                return
-            }
-            splitHalfRight = false
+        // ★ 拆分跨页（2026-10-04 单一决策重写）：先翻到同文件右半（位置不动），再进下一跨页。
+        //   跨页目标先算、可翻才动状态——到底/到顶失败不再残留半页标记
+        //   （旧逻辑在边界失败后 splitHalfRight 残留，下一次翻页跳过右半）
+        if (splitActiveNow() && !splitHalfRight) {
+            splitHalfRight = true
+            rebindCurrent()
+            return
         }
         if (doublePageMode) {
-            if (shiftDoublePage && currentPage == 0) goToPage(1, smooth = true)
-            else if (currentPage < pageList.size - 1) goToPage(currentPage + 2, smooth = true)
+            splitHalfRight = false
+            pendingLandingSplitHalfRight = false  // 前进落地恒左半
+            val target = when {
+                shiftDoublePage && currentPage == 0 -> 1
+                currentPage < pageList.size - 1 -> currentPage + 2
+                else -> -1
+            }
+            if (target >= 0) goToPage(target, smooth = true)
         } else {
+            splitHalfRight = false
+            pendingLandingSplitHalfRight = false
             if (currentPage < pageList.size - 1) goToPage(currentPage + 1, smooth = true)
         }
     }
     fun prevPage() {
         // navigateToPan: 缩放时先平移到边缘再翻页
         if (panNavigation && tryPanIfZoomed(forward = isRtl)) return
-        // ★ 拆分跨页回翻：在左半则回退到上一跨页的右半；在右半则切回左半
-        if (splitActiveNow()) {
-            if (splitHalfRight) {
-                splitHalfRight = false
-                rebindCurrent()
-                return
-            }
-            splitHalfRight = true
+        // ★ 拆分跨页回翻（2026-10-04 单一决策重写）：在右半则切回左半（位置不动）；
+        //   在左半则回退进上一跨页、从其右半继续阅读序——半页位经 pendingLanding 在
+        //   onPageSelected 落地时生效（旧逻辑落地即被 reset 清掉，回退恒显示左半）。
+        //   到顶不可翻时不设 pending、不动 splitHalfRight（旧逻辑残留 true 导致之后
+        //   前进跳过右半——"第二次翻页不显示右边那页"的根因）
+        if (splitActiveNow() && splitHalfRight) {
+            splitHalfRight = false
+            rebindCurrent()
+            return
         }
         if (doublePageMode) {
-            if (shiftDoublePage && currentPage <= 1) goToPage(0, smooth = true)
-            else if (currentPage > 0) goToPage(currentPage - 2, smooth = true)
+            val target = when {
+                shiftDoublePage && currentPage <= 1 -> 0
+                currentPage > 0 -> currentPage - 2
+                else -> -1
+            }
+            if (target >= 0) {
+                if (splitActiveNow()) pendingLandingSplitHalfRight = true
+                goToPage(target, smooth = true)
+            }
         } else {
-            if (currentPage > 0) goToPage(currentPage - 1, smooth = true)
+            if (currentPage > 0) {
+                if (splitActiveNow()) pendingLandingSplitHalfRight = true
+                goToPage(currentPage - 1, smooth = true)
+            }
         }
     }
 

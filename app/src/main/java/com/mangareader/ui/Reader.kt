@@ -517,6 +517,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                 val done = effectiveSize > 1 && curSnap >= effectiveSize - 1
                 android.util.Log.d("ReaderProgress", "onDispose-save bookId=${b.id} chPath=$chPathSnap cur=$curSnap size=$effectiveSize done=$done")
                 val sx = scrollX; val sy = scrollY; val zs = zoomLevel
+                val halfRightSnap = activePagerRef?.currentHalfRight ?: false
                 app.appScope.launch {
                     try {
                         val history = ReadingHistory(
@@ -525,6 +526,8 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                         )
                         withContext(Dispatchers.IO) {
                             dao.saveReaderProgressBatch(b.id, curSnap + 1, now, chPathSnap, curSnap, done, history, effectiveSize)
+                            // ★ 半页位补写（splitHalfRight 是纯字段，release 后读取安全）
+                            runCatching { dao.updateProgressHalfRight(b.id, chPathSnap, halfRightSnap, now) }
                         }
                         syncBookStatusFromProgress(b, now, effectiveSize)
                     } catch (_: Exception) {}
@@ -544,6 +547,8 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         val cx = activePagerRef?.currentCenterX?.toInt() ?: scrollX
         val cy = activePagerRef?.currentCenterY?.toInt() ?: scrollY
         val zs = activePagerRef?.currentZoomScale ?: zoomLevel
+        // ★ 拆分双页半页位（2026-10-04）：lastPage 两半同值，右半标记随进度落库
+        val halfRight = activePagerRef?.currentHalfRight ?: false
         scrollX = cx; scrollY = cy; zoomLevel = zs
         // ★ R2 主线程同步快照所有进入协程的 Compose state
         val pageListSnap = pageList
@@ -569,6 +574,8 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                 )
                 withContext(Dispatchers.IO) {
                     dao.saveReaderProgressBatch(b.id, savedPage + 1, now, chPathSnap, savedPage, done, history, pageListSnap.size)
+                    // ★ 半页位补写（同事务外单条 UPDATE；lastPage 两半同值，halfRight 区分右半）
+                    runCatching { dao.updateProgressHalfRight(b.id, chPathSnap, halfRight, now) }
                 }
                 syncBookStatusFromProgress(b, now, pageListSnap.size)
             } catch (_: Exception) {
@@ -1075,6 +1082,18 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         val lastPage = if (progress?.completed == true || willMarkRead) 0 else remappedLastPage
         // 书签直跳优先级最高：targetPage 显式覆盖
         cur = (if (targetPage >= 0) targetPage else lastPage).coerceIn(0, (expandedSize - 1).coerceAtLeast(0))
+
+        // ★ 拆分双页恢复修正（2026-10-04，"顺序经常有问题"的续读一半根因）：save 对拆分书存
+        //   lastPage=原页号（originalPageIdx，左右半同值），此前直接当展开序用——停在原页3右半
+        //   （展开序7）回来会落在序3（原页1右半），错一整跨页。现按 原页号+半页位 落位：
+        //   halfRight=true 落右半，否则左半；书签直跳（targetPage≥0）与已完成重进（lastPage=0）不适用。
+        if (targetPage < 0 && lastPage > 0 && progress != null && expandedPages.any { it.splitSide != 0 }) {
+            val wantSide = if (progress.halfRight) 2 else 1
+            val mapped = expandedPages.indexOfFirst { it.originalPageIdx == cur && it.splitSide == wantSide }
+                .takeIf { it >= 0 }
+                ?: expandedPages.indexOfFirst { it.originalPageIdx == cur }
+            if (mapped >= 0) cur = mapped
+        }
 
         // ★ v1.13 用户需求：卷级封面后台生成（阅读历史显示各卷自己的封面而非书架总封面）
         //   写 covers/md5(卷path).thumb；HistoryScreen CoverThumb 双键查找时命中
@@ -3030,6 +3049,17 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         configVersion++
     }
 
+    /** ★ 蓝牙翻页（2026-10-04 修翻页环路）：翻页视图可见时直接走视图 nextPage/prevPage——
+     *  与点击翻页完全同路（双页跨页步进/拆分半页交替/平移导航一致），页号只由视图回调
+     *  单源回写。旧路径 go(±1) 改 cur → 跟随机制 goToPage → 回调按跨页映射回写 ±1 错位 →
+     *  cur 振荡（日志实锤 9→8→7→8→9 + 每 8ms 重组风暴）。条漫/仿真翻页视图非活动时兜底 go。 */
+    fun hwFlip(dir: Int) {
+        val pager = activePagerRef
+        if (pager != null && pager.visibility == android.view.View.VISIBLE) {
+            if (dir > 0) pager.nextPage() else pager.prevPage()
+        } else go(dir)
+    }
+
     fun scrollHw(dir: Int, repeat: Int) {
         // mode 现读（state delegate）——捕获的 isVerticalMode 是重组期普通 val 会变旧（切模式后失真）
         val verticalNow = mode == Mode.VERT || mode == Mode.WEBTOON_GAP
@@ -3037,7 +3067,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             val rv = activeWebtoonRef ?: return
             rv.scrollViewport(if (repeat == 0) 0.8f * dir else 0.12f * dir)
         } else {
-            if (repeat == 0) go(dir) // 翻页族：卷动即换页
+            if (repeat == 0) hwFlip(dir) // 翻页族：卷动即换页
         }
     }
 
@@ -3109,8 +3139,8 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                     } else ui = !ui
                     com.mangareader.keys.KeyAction.TOGGLE_READER_SETTINGS -> if (ui) { ui = false; showSettings = true } else showSettings = !showSettings
                     com.mangareader.keys.KeyAction.BOOKMARK_LIST -> { showSettings = false; showToc = true }
-                    com.mangareader.keys.KeyAction.NEXT_PAGE -> go(1)
-                    com.mangareader.keys.KeyAction.PREV_PAGE -> go(-1)
+                    com.mangareader.keys.KeyAction.NEXT_PAGE -> hwFlip(1)
+                    com.mangareader.keys.KeyAction.PREV_PAGE -> hwFlip(-1)
                     com.mangareader.keys.KeyAction.SCROLL_FORWARD -> {}
                     com.mangareader.keys.KeyAction.SCROLL_BACKWARD -> {}
                     com.mangareader.keys.KeyAction.ADD_BOOKMARK -> toggleBookmark()

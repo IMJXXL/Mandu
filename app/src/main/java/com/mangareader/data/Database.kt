@@ -181,7 +181,11 @@ data class ReadingProgress(
     // ★ v1.13 A'：该卷真实页数（enterReader listPages 结果写入）。
     //   历史页"第 X/N 页"的 N 改读此卷级值，摆脱 manga_books.totalPages 被多卷聚合污染的问题
     @ColumnInfo(defaultValue = "0")
-    val totalPages: Int = 0
+    val totalPages: Int = 0,
+    // ★ 拆分双页半页位（2026-10-04）：lastPage 存的是原页号（左右半同值），此标记区分
+    //   看到的是右半——恢复时精确落回看过的那半页，不再恒落左半（顺序错乱感）
+    @ColumnInfo(defaultValue = "0")
+    val halfRight: Boolean = false
 )
 
 /**
@@ -844,6 +848,10 @@ interface MangaDao {
         updateProgress(bookId, path, lastPage, completed, updatedAt, totalPages)
     }
 
+    /** ★ 拆分双页半页位（2026-10-04）：save 主流程后单独补写——lastPage 两半同值，此列区分右半 */
+    @Query("UPDATE reading_progress SET halfRight = :halfRight, updatedAt = :updatedAt WHERE bookId = :bookId AND path = :path")
+    suspend fun updateProgressHalfRight(bookId: Long, path: String, halfRight: Boolean, updatedAt: Long)
+
     // ★ 3+5 改动2：@Transaction 批量保存阅读进度——把 updateReadingProgress + upsertProgress + insertHistory
     //   三条写入打包在单个事务内，save/兜底 save 共用此方法。@Transaction 保证不读到半折叠状态。
     //   绝对不包 syncBookStatusFromProgress：它含 engine.children 文件 IO + nested scope.launch，
@@ -1437,7 +1445,7 @@ data class KomgaProgressSyncQueueEntity(
 
 @Database(
     entities = [Book::class, Folder::class, ReadingHistory::class, Bookshelf::class, BookshelfItem::class, Tag::class, TagLink::class, ReadingProgress::class, Bookmark::class, com.ehviewer.core.database.model.SmbSourceEntity::class, com.ehviewer.core.database.model.LibraryRootEntity::class, com.ehviewer.core.database.model.LocalGalleryEntity::class, com.ehviewer.core.database.model.WebDavSourceEntity::class, DownloadTaskEntity::class, KomgaSeriesCacheEntity::class, KomgaBookMemoEntity::class, KomgaProgressSyncQueueEntity::class],
-    version = 25,
+    version = 26,
     exportSchema = false
 )
 abstract class MangaDatabase : com.ehviewer.core.database.LocalLibraryDatabase() {
@@ -1723,6 +1731,13 @@ abstract class MangaDatabase : com.ehviewer.core.database.LocalLibraryDatabase()
             }
         }
 
+        private val MIGRATION_25_26 = object : androidx.room.migration.Migration(25, 26) {
+            override fun migrate(database: androidx.sqlite.db.SupportSQLiteDatabase) {
+                // 拆分双页半页位（恢复时精确落回看过的那半页）；默认 0=左半，存量零感知
+                database.execSQL("ALTER TABLE reading_progress ADD COLUMN halfRight INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         private val MIGRATION_23_24 = object : androidx.room.migration.Migration(23, 24) {
             override fun migrate(database: androidx.sqlite.db.SupportSQLiteDatabase) {
                 database.execSQL("ALTER TABLE tags ADD COLUMN sortOrder INTEGER NOT NULL DEFAULT 0")
@@ -1754,7 +1769,7 @@ abstract class MangaDatabase : com.ehviewer.core.database.LocalLibraryDatabase()
                     context.applicationContext,
                     MangaDatabase::class.java,
                     "manga_reader_db"
-                ).addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25)
+                ).addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26)
                 .fallbackToDestructiveMigrationOnDowngrade()
                 .build()
                 INSTANCE = instance
