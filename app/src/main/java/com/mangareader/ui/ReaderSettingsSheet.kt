@@ -433,20 +433,17 @@ private fun GeneralTab(config: ReaderConfig, onConfigChange: (ReaderConfig) -> U
 
     // ★ N1：无缝续读（默认关；仅同本分卷；开启时读到卷末静默进入下一卷，无过渡页无确认弹窗）
     CheckboxItem("无缝续读下一卷", config.seamlessNextVolume, info = "读到卷末自动进入同书下一卷，无过渡页、无确认弹窗") { onConfigChange(config.copy(seamlessNextVolume = it)) }
-    // ★ 翻页闪烁「全局 > 单本」：全局接管时常规只保留一行灰置开关（子项不可改故不显示），
-    //   全局未开启时为常规的单本完整设置组
-    val flashGlobal = config.flipFlashGlobalActive
+    // ★ 翻页闪烁固定全局（2026-10-04）：书内开关直接写全局键，对所有书生效
     CheckboxItem(
         "翻页时闪烁",
         config.isFlipFlashEnabled,
-        enabled = !flashGlobal,
-        info = if (flashGlobal) "全局接管中：设置 → 阅读设置 → 墨水屏" else "开启后可降低墨水屏残影",
+        info = "全局生效：对所有漫画生效",
     ) { onConfigChange(config.copy(isFlipFlashEnabled = it)) }
-    if (config.isFlipFlashEnabled && !flashGlobal) {
-        SliderItem("持续时间", config.flipFlashDuration.toFloat(), 50f..1500f, 14, "${config.flipFlashDuration}ms", enabled = !flashGlobal) {
+    if (config.isFlipFlashEnabled) {
+        SliderItem("持续时间", config.flipFlashDuration.toFloat(), 50f..1500f, 14, "${config.flipFlashDuration}ms") {
             onConfigChange(config.copy(flipFlashDuration = it.toInt()))
         }
-        SliderItem("间隔页数", config.flipFlashInterval.toFloat(), 1f..10f, 9, "${config.flipFlashInterval}页", enabled = !flashGlobal) {
+        SliderItem("间隔页数", config.flipFlashInterval.toFloat(), 1f..10f, 9, "${config.flipFlashInterval}页") {
             onConfigChange(config.copy(flipFlashInterval = it.toInt()))
         }
         SettingsChipRow("闪烁颜色") {
@@ -454,7 +451,6 @@ private fun GeneralTab(config: ReaderConfig, onConfigChange: (ReaderConfig) -> U
                 FilterChip(
                     selected = value == config.flipFlashColor,
                     onClick = { onConfigChange(config.copy(flipFlashColor = value)) },
-                    enabled = !flashGlobal,
                     label = { Text(label, fontSize = 13.sp) },
                 )
             }

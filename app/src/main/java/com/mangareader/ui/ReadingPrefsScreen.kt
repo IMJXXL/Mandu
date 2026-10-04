@@ -413,7 +413,7 @@ fun ReadingPrefsScreen(onBack: () -> Unit) {
                         val row = visible[idx]
                         val covered = coveredOf(row)
                         val isBook = ReaderScope.isBookScope(prefs, row.key)
-                        val locked = row.key in ReaderScope.CONDITIONAL_LOCK_KEYS && ReaderScope.conditionalLockActive(prefs)
+                        val locked = row.key in ReaderScope.GLOBAL_LOCKED_KEYS
                         Row(
                             Modifier.fillMaxWidth()
                                 .clickable { sheetRow = row }
@@ -430,7 +430,7 @@ fun ReadingPrefsScreen(onBack: () -> Unit) {
                             if (locked) {
                                 Icon(Icons.Default.Lock, null, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                                 Spacer(Modifier.width(4.dp))
-                                Text("全局接管", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("固定全局", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             } else {
                                 Text(
                                     if (isBook) "本书" else "全局",
@@ -464,8 +464,8 @@ fun ReadingPrefsScreen(onBack: () -> Unit) {
 
     // ── 单项底部面板：作用域切换 + 值编辑 + 覆盖清理 ──
     sheetRow?.let { row ->
-        val locked = row.key in ReaderScope.CONDITIONAL_LOCK_KEYS && ReaderScope.conditionalLockActive(prefs)
-        val isBook = ReaderScope.isBookScope(prefs, row.key)
+        val locked = row.key in ReaderScope.GLOBAL_LOCKED_KEYS
+        val isBook = !locked && ReaderScope.isBookScope(prefs, row.key)
         val covered = coveredOf(row)
         var writeToastShown by remember { mutableStateOf(false) }
         val onWrite: (String, Any) -> Unit = { k, v ->
@@ -481,39 +481,45 @@ fun ReadingPrefsScreen(onBack: () -> Unit) {
                 Text(row.label, fontSize = 18.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Medium)
                 Spacer(Modifier.height(12.dp))
 
-                // ── 作用域 ──
+                // ── 作用域（固定全局项不提供切换）──
                 Text("生效范围", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.height(6.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(
-                        selected = !isBook,
-                        onClick = {
-                            row.allKeys.forEach { ReaderScope.setScope(prefs, it, ReaderScope.SCOPE_GLOBAL) }
-                            version++
-                            notify("在书里调这项会对所有书生效")
-                        },
-                        enabled = !locked,
-                        label = { Text("全局生效") },
-                    )
-                    FilterChip(
-                        selected = isBook,
-                        onClick = {
-                            row.allKeys.forEach { ReaderScope.setScope(prefs, it, ReaderScope.SCOPE_BOOK) }
-                            version++
-                            notify("在书里调这项，只记在那一本书上")
-                        },
-                        enabled = !locked,
-                        label = { Text("本书单独") },
+                if (locked) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Lock, null, Modifier.size(15.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(Modifier.width(5.dp))
+                        Text(
+                            "固定全局：这项在 设置 › 阅读设置 里也有入口，对所有书生效",
+                            fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                } else {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(
+                            selected = !isBook,
+                            onClick = {
+                                row.allKeys.forEach { ReaderScope.setScope(prefs, it, ReaderScope.SCOPE_GLOBAL) }
+                                version++
+                                notify("在书里调这项会对所有书生效")
+                            },
+                            label = { Text("全局生效") },
+                        )
+                        FilterChip(
+                            selected = isBook,
+                            onClick = {
+                                row.allKeys.forEach { ReaderScope.setScope(prefs, it, ReaderScope.SCOPE_BOOK) }
+                                version++
+                                notify("在书里调这项，只记在那一本书上")
+                            },
+                            label = { Text("本书单独") },
+                        )
+                    }
+                    Text(
+                        if (isBook) "这项按书记忆：书里调过只影响那本书，没调过的书跟全局默认"
+                        else "这项预设全局：书里调它对所有书生效",
+                        fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                Text(
-                    when {
-                        locked -> "全局翻页闪烁开着，整组接管中；可在 阅读设置 › 墨水屏 关闭后再单独设置"
-                        isBook -> "这项预设按书记忆：书里调过只影响那本书，没调过的书跟全局默认"
-                        else -> "这项预设全局：书里调它对所有书生效"
-                    },
-                    fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
                 Spacer(Modifier.height(10.dp))
                 HorizontalDivider()
                 Spacer(Modifier.height(10.dp))

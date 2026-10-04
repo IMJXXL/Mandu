@@ -15,7 +15,8 @@ import java.util.concurrent.ConcurrentHashMap
  * - 【全局值】该项对所有书生效的默认值，偏好页/阅读设置页直接改；
  * - 【本书覆盖】作用域为本书时，书内改动写 book_<id>_<key>，只对本书生效；
  * - 【临时值】总开关关时书内改动只进内存会话层，退出阅读（reader 路由弹出返回栈）全清；
- * - 【条件锁定】翻页闪烁组：全局开关开着=整组接管（读写全局），关了=单本自决——沿用既有语义。
+ * - 【固定全局】大设置 › 阅读设置 纳管的项（自动翻页/性能解码/墨水屏/翻页闪烁/点击翻页
+ *   区域/阅读背景）恒全局：写读恒走全局键，显式作用域与总开关都改变不了。
  *
  * 写入必须走 [write]/[writeGlobal]/[clearBook] 单键路由，禁止整包 save 写书内键
  * （全量种子化是 852 时代"改一个滑条写 66 键"的根源，QA 红线）。
@@ -45,6 +46,8 @@ object ReaderScope {
         "isEinkMode", "isEinkDither", "einkDitherAlgorithm", "einkDitherLevels",
         "einkEndpointPassthrough", "einkDecodeSize", "einkUiHideDelay",
         "pdfQuality", "forceFullDecode", "tileModeEnabled", "downsampleTier", "tallSplitEnabled",
+        "isFlipFlashEnabled", "flipFlashDuration", "flipFlashInterval", "flipFlashColor",
+        "autoFlipInterval", "clickFlipType", "clickFlipInvertH", "readBackground",
     )
 
     /** 预设"本书单独"项（= 引入前 save 带前缀写的全集）：书内改动只记本书 */
@@ -52,7 +55,6 @@ object ReaderScope {
         "scrollMode", "clickFlipType", "clickFlipInvertH", "panNavigation",
         "isTrimWhiteBorder", "trimFactor", "trimThreshold", "trimWhiteRatio", "imageMarginH",
         "isGrayscale", "isInvertColors",
-        "isFlipFlashEnabled", "flipFlashDuration", "flipFlashInterval", "flipFlashColor",
         "doublePageShift", "doublePageSplit", "doublePageReverse", "centerGapType",
         "brightness", "screenBrightness", "contrast", "gamma",
         "brightnessEnabled", "screenBrightnessEnabled", "contrastEnabled", "gammaEnabled",
@@ -63,9 +65,18 @@ object ReaderScope {
     /** 全部纳管键（清除/统计用） */
     val ALL_KEYS: Set<String> = PRESET_GLOBAL_KEYS + BOOK_KEYS + READ_MODE_KEY
 
-    /** 条件锁定组（全局开=接管读写全局，关=单本自决）：翻页闪烁组，沿用既有语义 */
-    val CONDITIONAL_LOCK_KEYS: Set<String> = setOf(
+    /**
+     * 固定全局项（2026-10-04 用户定稿）：大设置 › 阅读设置 里有的项一律恒全局，
+     * 偏好页不提供"本书单独"切换（自动翻页/性能解码/墨水屏/翻页闪烁/点击翻页区域/阅读背景）。
+     * 写读恒走全局键，显式作用域与总开关都改变不了。
+     */
+    val GLOBAL_LOCKED_KEYS: Set<String> = setOf(
+        "autoFlipInterval",
+        "pdfQuality", "tileModeEnabled", "tallSplitEnabled", "downsampleTier", "forceFullDecode",
+        "isEinkMode", "isEinkDither", "einkDitherAlgorithm", "einkDitherLevels",
+        "einkEndpointPassthrough", "einkDecodeSize", "einkUiHideDelay",
         "isFlipFlashEnabled", "flipFlashDuration", "flipFlashInterval", "flipFlashColor",
+        "clickFlipType", "clickFlipInvertH", "readBackground",
     )
 
     fun masterOn(prefs: SharedPreferences): Boolean = prefs.safeGetBoolean(MASTER_KEY, true)
@@ -106,11 +117,7 @@ object ReaderScope {
 
     /** 偏好页用：某项当前被指为"本书单独"吗 */
     fun isBookScope(prefs: SharedPreferences, key: String): Boolean =
-        userScope(prefs, key) == SCOPE_BOOK
-
-    /** 条件锁定是否生效（翻页闪烁全局开关开着） */
-    fun conditionalLockActive(prefs: SharedPreferences): Boolean =
-        prefs.safeGetBoolean("isFlipFlashEnabled", false)
+        userScope(prefs, key) == SCOPE_BOOK && key !in GLOBAL_LOCKED_KEYS
 
     /** 该键此次写入应落的层：GLOBAL=全局键；BOOK=本书覆盖；SESSION=会话层 */
     enum class Layer { GLOBAL, BOOK, SESSION }
@@ -118,9 +125,9 @@ object ReaderScope {
     fun resolveLayer(prefs: SharedPreferences, bookId: Long, key: String): Layer {
         val explicit = parseScopeReg(prefs)[key]
         return when {
-            explicit == SCOPE_GLOBAL -> Layer.GLOBAL
-            key in CONDITIONAL_LOCK_KEYS && conditionalLockActive(prefs) -> Layer.GLOBAL
+            key in GLOBAL_LOCKED_KEYS -> Layer.GLOBAL // 阅读设置纳管的项：恒全局
             bookId <= 0 -> Layer.GLOBAL
+            explicit == SCOPE_GLOBAL -> Layer.GLOBAL
             explicit == SCOPE_BOOK -> Layer.BOOK // 用户显式指单本：压过预设全局，豁免总开关
             key in PRESET_GLOBAL_KEYS -> Layer.GLOBAL // 预设全局（书内改动对所有书生效）
             masterOn(prefs) -> Layer.BOOK

@@ -58,7 +58,6 @@ data class ReaderConfig(
     val flipFlashColor: Int = 0,
     /** ★ 运行时标记（不落盘）：全局翻页闪烁已开启 → 本组值整组来自全局键，
      *   阅读内常规据此灰掉单本设置（全局 > 单本，见 load 的合并逻辑） */
-    val flipFlashGlobalActive: Boolean = false,
     val pageLayout: PageLayout = PageLayout.SINGLE,
     val useSSIV: Boolean = true,
     val landscapeZoom: Boolean = false,
@@ -155,13 +154,11 @@ data class ReaderConfig(
             putInt("autoFlipInterval", autoFlipInterval)
             putBoolean("${prefix}isGrayscale", isGrayscale)
             putBoolean("${prefix}isInvertColors", isInvertColors)
-            // ★ 与 load 的合并逻辑镜像：全局接管时闪烁组写回全局键（值本就取自全局键，幂等），
-            //   防止把全局读到的值污染进单本键——否则全局关闭后单本会被残留值顶替
-            val flashPrefix = if (flipFlashGlobalActive) "" else prefix
-            putBoolean("${flashPrefix}isFlipFlashEnabled", isFlipFlashEnabled)
-            putInt("${flashPrefix}flipFlashDuration", flipFlashDuration)
-            putInt("${flashPrefix}flipFlashInterval", flipFlashInterval)
-            putInt("${flashPrefix}flipFlashColor", flipFlashColor)
+            // ★ 翻页闪烁组固定全局（2026-10-04）：恒写全局键，值本就取自全局键（幂等）
+            putBoolean("isFlipFlashEnabled", isFlipFlashEnabled)
+            putInt("flipFlashDuration", flipFlashDuration)
+            putInt("flipFlashInterval", flipFlashInterval)
+            putInt("flipFlashColor", flipFlashColor)
             // ★ 2026-10-03 用户拍板：单双页（含"双页跳过首页"）改全局语义——恒写全局键，
             //   阅读内切换/遥控键切换/设置页下拉对所有书一并生效
             putString("pageLayout", pageLayout.name)
@@ -212,22 +209,18 @@ data class ReaderConfig(
             //   豁免字段（pageLayout）除外——它的覆盖恒参与解析。
             val masterOn = ReaderScope.masterOn(prefs)
             val pfx = if (bookId >= 0 && masterOn) prefix else ""
-            // ★ 翻页闪烁「全局 > 单本」合并：全局开 = 整组接管（开关+参数全部取全局键），
-            //   全局关 = 单本自决（读 book_ 前缀键）。全局键由 设置→阅读设置→墨水屏 写入。
-            //   条件锁定组在总开关关时同样休眠→读全局。flipFlashGlobalActive 仅作运行时标记。
-            val globalFlash = prefs.safeGetBoolean("isFlipFlashEnabled", false)
-            val flashPrefix = if (globalFlash || !masterOn) "" else prefix
+            // ★ 翻页闪烁组为固定全局项（2026-10-04）：读恒走全局键（rBoolean 走 effPrefixFor）
             // ★ 点击翻页区域：稀疏模型下单本键缺失自然回退全局（旧防固化 guard 已废）
             val clickPrefix = pfx
             val clickInvertPrefix = pfx
             // ★ 分层读取：本书覆盖存在→读之；否则全局打底；否则默认。
-            //   生效前缀按 key 现算：显式作用域（用户亲选，压过预设） > 条件锁定（翻页闪烁
-            //   全局开=接管） > 预设作用域（=852 时代 save 无前缀全集，仅设置页可改的项恒全局）
+            //   生效前缀按 key 现算：固定全局（阅读设置纳管的项恒全局） > 显式作用域
+            //   （用户亲选，压过预设） > 预设作用域（=852 时代 save 无前缀全集）
             //   > 总开关（关=预设单本项休眠读全局）。
             val scopeReg = ReaderScope.parseScopeReg(prefs)
             fun effPrefixFor(key: String): String = when {
+                key in ReaderScope.GLOBAL_LOCKED_KEYS -> ""
                 scopeReg[key] == ReaderScope.SCOPE_GLOBAL -> ""
-                key in ReaderScope.CONDITIONAL_LOCK_KEYS && globalFlash -> ""
                 scopeReg[key] == ReaderScope.SCOPE_BOOK -> prefix
                 key in ReaderScope.PRESET_GLOBAL_KEYS -> ""
                 masterOn -> prefix
@@ -292,7 +285,6 @@ data class ReaderConfig(
                 flipFlashDuration = rInt("flipFlashDuration", 100),
                 flipFlashInterval = rInt("flipFlashInterval", 1),
                 flipFlashColor = rInt("flipFlashColor", 0),
-                flipFlashGlobalActive = globalFlash,
                 // ★ 豁免字段（总开关关也生效）：本书覆盖优先，其次全局键（852 语义默认层）。
                 pageLayout = try { PageLayout.valueOf(rString("pageLayout", "SINGLE")) } catch (_: Exception) { PageLayout.SINGLE },
                 useSSIV = rBoolean("useSSIV", true),

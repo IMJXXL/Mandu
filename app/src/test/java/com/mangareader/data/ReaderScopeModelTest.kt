@@ -102,15 +102,15 @@ class ReaderScopeModelTest {
     }
 
     @Test
-    fun `explicit book scope overrides preset global`() {
-        // 用户在偏好页把 PDF 清晰度（预设全局）切成"本书单独"→ 写读都走本书键
+    fun `preset global pdfQuality is locked now`() {
+        // 性能与解码组已按用户定稿固定全局：显式切单本也无效
         ReaderScope.setScope(prefs, "pdfQuality", ReaderScope.SCOPE_BOOK)
         putGlobal("pdfQuality", 3.0f)
         ReaderScope.write(prefs, 1L, "pdfQuality", 4.5f)
-        assertEquals(4.5f, prefs.getFloat("book_1_pdfQuality", -1f), 0.001f)
+        assertEquals(4.5f, prefs.getFloat("pdfQuality", -1f), 0.001f)
+        assertFalse(prefs.contains("book_1_pdfQuality"))
         assertEquals(4.5f, ReaderConfig.load(prefs, 1L).pdfQuality, 0.001f)
-        // 其他书不受影响
-        assertEquals(3.0f, ReaderConfig.load(prefs, 2L).pdfQuality, 0.001f)
+        assertEquals(4.5f, ReaderConfig.load(prefs, 2L).pdfQuality, 0.001f)
     }
 
     @Test
@@ -164,30 +164,45 @@ class ReaderScopeModelTest {
         assertEquals(2, ReaderScope.readModeOrdinal(prefs, 1L))
     }
 
-    // ── 条件锁定（翻页闪烁组）──
+    // ── 固定全局（翻页闪烁组等阅读设置纳管的项，2026-10-04 定稿）──
 
     @Test
-    fun `flash global takeover when global on`() {
-        putGlobal("isFlipFlashEnabled", true)
+    fun `flash group locked global - book key ignored on read and write`() {
         putGlobal("flipFlashDuration", 200)
         putGlobal("book_1_flipFlashDuration", 300)
-        // 全局接管：书键不参与
+        // 固定全局：书键不参与解析
         assertEquals(200, ReaderConfig.load(prefs, 1L).flipFlashDuration)
+        // 书内调整（总开关开）也写全局键
+        ReaderScope.write(prefs, 1L, "flipFlashDuration", 250)
+        assertEquals(250, prefs.getInt("flipFlashDuration", -1))
+        assertEquals(250, ReaderConfig.load(prefs, 1L).flipFlashDuration)
     }
 
     @Test
-    fun `flash book decides when global off and master on`() {
-        putGlobal("isFlipFlashEnabled", false)
-        putGlobal("book_1_flipFlashDuration", 300)
-        assertEquals(300, ReaderConfig.load(prefs, 1L).flipFlashDuration)
+    fun `global locked ignores explicit book scope`() {
+        ReaderScope.setScope(prefs, "clickFlipType", ReaderScope.SCOPE_BOOK)
+        ReaderScope.write(prefs, 1L, "clickFlipType", "NO")
+        assertEquals("NO", prefs.getString("clickFlipType", null))
+        assertFalse(prefs.contains("book_1_clickFlipType"))
     }
 
     @Test
-    fun `flash dormant when global off and master off`() {
-        putGlobal("isFlipFlashEnabled", false)
-        putGlobal("book_1_flipFlashDuration", 300)
+    fun `autoFlipInterval locked global survives master off`() {
         prefs.edit().putBoolean(ReaderScope.MASTER_KEY, false).apply()
-        assertEquals(100, ReaderConfig.load(prefs, 1L).flipFlashDuration) // 出厂默认
+        ReaderScope.write(prefs, 1L, "autoFlipInterval", 5000)
+        assertEquals(5000, prefs.getInt("autoFlipInterval", 0))
+        assertEquals(-1, prefs.getInt("book_1_autoFlipInterval", -1))
+    }
+
+    @Test
+    fun `explicit book scope on preset global works - fitScreen`() {
+        // 画面缩放：预设全局、可切单本（不在固定全局集）
+        ReaderScope.setScope(prefs, "fitScreen", ReaderScope.SCOPE_BOOK)
+        ReaderScope.write(prefs, 1L, "fitScreen", true)
+        assertEquals(true, prefs.getBoolean("book_1_fitScreen", false))
+        assertEquals(true, ReaderConfig.load(prefs, 1L).fitScreen)
+        // 其他书不受影响（出厂默认 false）
+        assertEquals(false, ReaderConfig.load(prefs, 2L).fitScreen)
     }
 
     // ── 写路由 ──
