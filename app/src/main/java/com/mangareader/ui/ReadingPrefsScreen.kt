@@ -22,6 +22,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -136,9 +137,6 @@ internal val PREF_ROWS: List<PrefRow> = listOf(
         PrefEditor.Part("spineShadowAlpha", "书脊阴影浓度（双页书脊沟，默认9%）", PrefEditor.Slider(0f, 0.3f, 29, pct)),
     )), section = "翻页",
         subKeys = listOf("isPageCurlAnimation", "isCurlContentAreaOnly", "curlBackContentAlpha", "curlShadowAlpha", "spineShadowAlpha")),
-    PrefRow("autoFlipInterval", "自动翻页间隔", 0, PrefEditor.Slider(0f, 30000f, 29,
-        { if (it <= 0f) "关闭" else if (it % 1000f == 0f) "${(it / 1000f).toInt()}秒" else String.format(java.util.Locale.US, "%.1f秒", it / 1000f) }),
-        section = "翻页"),
     PrefRow("fitScreen", "画面缩放", 0, PrefEditor.Chips(
         listOf("完整显示" to true, "铺满屏幕" to false)), section = "画面"),
     PrefRow("useSSIV", "高清缩放", 0, PrefEditor.Toggle(), section = "画面"),
@@ -154,28 +152,16 @@ internal val PREF_ROWS: List<PrefRow> = listOf(
             "横屏" to ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE,
             "锁定竖屏" to ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT,
             "锁定横屏" to ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE))),
-    PrefRow("clickFlipType", "点击翻页区域", 0, PrefEditor.Chips(
-        listOf("关闭" to "NO", "左右分区" to "LEFT_RIGHT", "L型" to "L_SHAPE")), section = "点击与手势"),
-    PrefRow("clickFlipInvertH", "点击翻页左手镜像", 0, PrefEditor.Toggle(info = "开启后：点右侧=上一页、点左侧=下一页"),
-        section = "点击与手势"),
     PrefRow("panNavigation", "画面拖动导航", 0, PrefEditor.Toggle(), section = "点击与手势"),
     // ── Tab 1 常规（顺序=书内面板第二页）──
     PrefRow("isShowPageNum", "显示页码", 1, PrefEditor.Toggle()),
     PrefRow("isImmersiveMode", "沉浸模式", 1, PrefEditor.Toggle(info = "重进阅读后生效")),
     PrefRow("isKeepScreenOn", "保持亮屏", 1, PrefEditor.Toggle()),
     PrefRow("seamlessNextVolume", "无缝续读下一卷", 1, PrefEditor.Toggle(info = "读到卷末自动进入同书下一卷，无过渡页")),
-    PrefRow("isFlipFlashEnabled", "翻页闪烁", 1, PrefEditor.Group(listOf(
-        PrefEditor.Part("isFlipFlashEnabled", "翻页时闪烁", PrefEditor.Toggle()),
-        PrefEditor.Part("flipFlashDuration", "持续时间", PrefEditor.Slider(50f, 1500f, 14, { "${it.toInt()}ms" })),
-        PrefEditor.Part("flipFlashInterval", "间隔页数", PrefEditor.Slider(1f, 10f, 9, { "每${it.toInt()}页" })),
-        PrefEditor.Part("flipFlashColor", "闪烁颜色", PrefEditor.Chips(listOf("白色" to 0, "黑色" to 1, "黑白两段" to 2))),
-    )), subKeys = listOf("flipFlashDuration", "flipFlashInterval", "flipFlashColor")),
     PrefRow("autoWebtoon", "自动进入条漫模式", 1, PrefEditor.Toggle(info = "新书首开按图片宽高比智能判定")),
     PrefRow("autoDoubleLandscape", "横屏自动双页", 1, PrefEditor.Toggle(info = "仅页面布局为单页时生效")),
     PrefRow("ambienceSound", "氛围音", 1, PrefEditor.AmbienceSound),
     PrefRow("ambienceVolume", "氛围音音量", 1, PrefEditor.Slider(0f, 100f, 19, { "${it.toInt()}%" })),
-    PrefRow("readBackground", "阅读背景", 1, PrefEditor.Chips(
-        listOf("白色" to "WHITE", "黑色" to "DARK", "跟随主题" to "DEFAULT"))),
     // ── Tab 2 滤镜（顺序=书内面板第三页）──
     PrefRow("isGrayscale", "灰度模式", 2, PrefEditor.Toggle()),
     PrefRow("isInvertColors", "反色", 2, PrefEditor.Toggle()),
@@ -201,28 +187,6 @@ internal val PREF_ROWS: List<PrefRow> = listOf(
         PrefEditor.Part("textureConcentration", "纸感浓度（默认100%=真实纸感）", PrefEditor.Slider(0f, 100f, 99, { "${it.toInt()}%" })),
         PrefEditor.Part("textureScope", "生效范围", PrefEditor.Chips(listOf("仅图片" to 0, "全屏幕" to 1))),
     )), subKeys = listOf("texturePresetId", "textureConcentration", "textureScope", "textureAlpha")),
-    PrefRow("isEinkMode", "墨水屏模式", 2, PrefEditor.Group(listOf(
-        PrefEditor.Part("isEinkMode", "墨水屏模式", PrefEditor.Toggle()),
-        PrefEditor.Part("isEinkDither", "灰阶抖动", PrefEditor.Toggle()),
-        PrefEditor.Part("einkDitherAlgorithm", "抖动算法", PrefEditor.Chips(listOf("细腻" to 0, "胶片颗粒" to 1, "柔和" to 2, "规则纹理" to 3))),
-        PrefEditor.Part("einkEndpointPassthrough", "白底保护（档位越高白底越干净）", PrefEditor.Slider(0f, 8f, 7, { "档位 ${it.toInt()}" })),
-        PrefEditor.Part("einkDitherLevels", "灰阶档位（越大过渡越平滑）", PrefEditor.Chips(listOf("16级" to 16, "32级" to 32, "64级" to 64))),
-    )), section = "墨水屏",
-        subKeys = listOf("isEinkDither", "einkDitherAlgorithm", "einkEndpointPassthrough", "einkDitherLevels")),
-    PrefRow("einkDecodeSize", "解码分辨率", 2, PrefEditor.Chips(
-        listOf("1072·6寸" to 1072, "1440·8寸" to 1440, "1920·默认" to 1920, "原图" to 4096)), section = "墨水屏"),
-    PrefRow("einkUiHideDelay", "界面隐藏时间", 2, PrefEditor.Chips(
-        listOf("3秒" to 3000L, "6秒" to 6000L, "10秒" to 10000L, "不隐藏" to 0L)), section = "墨水屏"),
-    PrefRow("tileModeEnabled", "按需解码", 2, PrefEditor.Toggle(info = "只解码可见区域，内存占用更低；裁白边开启时自动停用"),
-        section = "性能与解码"),
-    PrefRow("tallSplitEnabled", "长图分割", 2, PrefEditor.Toggle(info = "超长 PDF 页与长图切割分段渲染，长图不再发糊"),
-        section = "性能与解码"),
-    PrefRow("downsampleTier", "降采样档位", 2, PrefEditor.Chips(
-        listOf("标准" to "STANDARD", "高清" to "HD", "超清" to "ULTRA_HD", "原图" to "ORIGINAL")),
-        section = "性能与解码"),
-    PrefRow("pdfQuality", "PDF 清晰度", 2, PrefEditor.Slider(1f, 5f, 15, { String.format(java.util.Locale.US, "%.1fx", it) }),
-        section = "性能与解码"),
-    PrefRow("forceFullDecode", "强制完整解码", 2, PrefEditor.Toggle(), section = "性能与解码"),
 )
 
 /** 单键原始值（书内明细对话框用）：本书键 > 全局键 > null(出厂默认) */
@@ -243,46 +207,6 @@ internal fun prefRawValue(prefs: SharedPreferences, key: String, bookId: Long? =
     }
 }
 
-/** 行尾摘要：当前全局默认值的短文案 */
-internal fun prefSummary(prefs: SharedPreferences, row: PrefRow): String {
-    val primary = when (val ed = row.editor) {
-        is PrefEditor.Group -> ed.parts.first().key
-        else -> row.key
-    }
-    return when (val ed = row.editor) {
-        is PrefEditor.ReadMode -> {
-            val v = prefs.getInt(ReaderScope.READ_MODE_GLOBAL_KEY, -1)
-            if (v in Mode.entries.indices) Mode.entries[v].label else "按书籍自动"
-        }
-        is PrefEditor.AmbienceSound -> when (val v = prefGlobalValue(prefs, primary) as? String ?: "") {
-            "" -> "关"; "rain" -> "下雨"; else -> v.substringBeforeLast('.').take(8)
-        }
-        is PrefEditor.Chips -> {
-            val cur = prefGlobalValue(prefs, primary)
-            ed.options.firstOrNull { it.second == cur }?.first ?: cur?.toString() ?: "默认"
-        }
-        is PrefEditor.Slider -> ed.fmt((prefGlobalValue(prefs, primary) as? Number)?.toFloat() ?: ed.min)
-        is PrefEditor.Toggle -> if (prefGlobalValue(prefs, primary) == true) "开" else "关"
-        is PrefEditor.Group -> when (val cur = prefGlobalValue(prefs, primary)) {
-            is Boolean -> if (!cur) "关"
-            else {
-                // 开：带出首个非默认子项的摘要（纹理=图案名，亮度=数值，卷页=浓度）
-                val sub = ed.parts.drop(1).firstOrNull { p ->
-                    prefGlobalValue(prefs, p.key) != PREF_DEFAULTS[p.key]
-                }
-                when {
-                    sub != null && sub.editor is PrefEditor.Chips ->
-                        sub.editor.options.firstOrNull { it.second == prefGlobalValue(prefs, sub.key) }?.first ?: "开"
-                    sub != null && sub.editor is PrefEditor.Slider ->
-                        sub.editor.fmt((prefGlobalValue(prefs, sub.key) as Number).toFloat())
-                    else -> "开"
-                }
-            }
-            else -> "默认"
-        }
-    }
-}
-
 // ── 屏幕 ───────────────────────────────────────────────────────────────────
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -295,11 +219,29 @@ fun ReadingPrefsScreen(onBack: () -> Unit) {
     var masterOn by remember { mutableStateOf(ReaderScope.masterOn(prefs)) }
     var version by remember { mutableIntStateOf(0) } // 作用域/覆盖/全局值变更时刷新
     val pagerState = rememberPagerState(pageCount = { 3 }) // 三个页签：阅读模式/常规/滤镜
-    var sheetRow by remember { mutableStateOf<PrefRow?>(null) }
+    var clearTarget by remember { mutableStateOf<Pair<PrefRow, Int>?>(null) } // 行内"单独·N本"徽章 → 清除确认
+    var writeToastShown by remember { mutableStateOf(false) }
     var showResetDialog by remember { mutableStateOf(false) }
     var toast by remember { mutableStateOf<String?>(null) }
 
     fun notify(t: String) { toast = t }
+    // 行内写值（全部写全局默认值；固定全局项与可切项一致）
+    val onWrite: (String, Any) -> Unit = { k, v ->
+        ReaderScope.writeGlobal(prefs, k, v)
+        version++
+        if (!writeToastShown) {
+            writeToastShown = true
+            notify("已保存，对所有书生效（单独设置过的书不受影响）")
+        }
+    }
+    // 行尾"全局/本书"小徽章：点一下切换作用域（固定全局项不渲染此徽章）
+    val onScopeSwitch: (PrefRow) -> Unit = { row ->
+        val target = if (ReaderScope.isBookScope(prefs, row.key)) ReaderScope.SCOPE_GLOBAL else ReaderScope.SCOPE_BOOK
+        row.allKeys.forEach { ReaderScope.setScope(prefs, it, target) }
+        version++
+        notify(if (target == ReaderScope.SCOPE_BOOK) "在书里调这项，只记在那一本书上" else "在书里调这项会对所有书生效")
+    }
+
     LaunchedEffect(toast) {
         toast?.let {
             android.widget.Toast.makeText(ctx, it, android.widget.Toast.LENGTH_SHORT).show()
@@ -366,9 +308,7 @@ fun ReadingPrefsScreen(onBack: () -> Unit) {
                     }
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        "全局预设 ${PREF_ROWS.count { ReaderScope.presetScope(it.key) == ReaderScope.SCOPE_GLOBAL }} 项 · " +
-                            "本书预设 ${PREF_ROWS.count { ReaderScope.presetScope(it.key) == ReaderScope.SCOPE_BOOK }} 项 · " +
-                            "已单独设置 $totalCoveredRows 项（$bookCount 本书）",
+                        "共 ${PREF_ROWS.size} 项 · 已单独设置 $totalCoveredRows 项（$bookCount 本书）",
                         fontSize = 11.sp, color = MaterialTheme.colorScheme.primary,
                     )
                 }
@@ -409,7 +349,7 @@ fun ReadingPrefsScreen(onBack: () -> Unit) {
                                 modifier = Modifier.padding(top = 14.dp, bottom = 2.dp),
                             )
                         }
-                        PrefRowItem(row, prefs, countByItem) { sheetRow = row }
+                        PrefRowBlock(row, prefs, countByItem, onScopeSwitch, onWrite) { r, c -> clearTarget = r to c }
                     }
                     Spacer(Modifier.height(28.dp))
                 }
@@ -417,100 +357,34 @@ fun ReadingPrefsScreen(onBack: () -> Unit) {
         }
     }
 
-    // ── 单项底部面板：作用域切换 + 值编辑 + 覆盖清理 ──
-    sheetRow?.let { row ->
-        val locked = row.key in ReaderScope.GLOBAL_LOCKED_KEYS
-        val isBook = !locked && ReaderScope.isBookScope(prefs, row.key)
-        val covered = coveredOf(row)
-        var writeToastShown by remember { mutableStateOf(false) }
-        val onWrite: (String, Any) -> Unit = { k, v ->
-            ReaderScope.writeGlobal(prefs, k, v)
-            version++
-            if (!writeToastShown) {
-                writeToastShown = true
-                notify("已保存，对所有书生效（单独设置过的书不受影响）")
-            }
-        }
-        ModalBottomSheet(onDismissRequest = { sheetRow = null }) {
-            Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).verticalScroll(rememberScrollState())) {
-                Text(row.label, fontSize = 18.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Medium)
-                Spacer(Modifier.height(12.dp))
-
-                // ── 作用域（固定全局项不提供切换）──
-                Text("生效范围", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(Modifier.height(6.dp))
-                if (locked) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Lock, null, Modifier.size(15.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Spacer(Modifier.width(5.dp))
-                        Text(
-                            "固定全局：这项在 设置 › 阅读设置 里也有入口，对所有书生效",
-                            fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                } else {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilterChip(
-                            selected = !isBook,
-                            onClick = {
-                                row.allKeys.forEach { ReaderScope.setScope(prefs, it, ReaderScope.SCOPE_GLOBAL) }
-                                version++
-                                notify("在书里调这项会对所有书生效")
-                            },
-                            label = { Text("全局生效") },
-                        )
-                        FilterChip(
-                            selected = isBook,
-                            onClick = {
-                                row.allKeys.forEach { ReaderScope.setScope(prefs, it, ReaderScope.SCOPE_BOOK) }
-                                version++
-                                notify("在书里调这项，只记在那一本书上")
-                            },
-                            label = { Text("本书单独") },
-                        )
-                    }
-                    Text(
-                        if (isBook) "这项按书记忆：书里调过只影响那本书，没调过的书跟全局默认"
-                        else "这项预设全局：书里调它对所有书生效",
-                        fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Spacer(Modifier.height(10.dp))
-                HorizontalDivider()
-                Spacer(Modifier.height(10.dp))
-
-                // ── 值编辑（全局默认值，控件与阅读界面设置同款）──
-                Text("全局默认值", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(Modifier.height(4.dp))
-                PrefValueEditor(row, prefs, onWrite)
-                Spacer(Modifier.height(10.dp))
-
-                // ── 覆盖清理 ──
-                if (covered > 0) {
-                    HorizontalDivider()
-                    Spacer(Modifier.height(8.dp))
-                    Text("有 $covered 本书单独调过这项，不受全局影响", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    TextButton(onClick = {
-                        scope.launch {
-                            withContext(Dispatchers.IO) {
-                                if (row.key == ReaderScope.READ_MODE_KEY) {
-                                    // 阅读模式的单本记录是独立键族 read_mode_<id>
-                                    prefs.all.keys.filter { it.startsWith("read_mode_") }
-                                        .forEach { prefs.edit().remove(it).apply() }
-                                } else {
-                                    prefs.all.keys.filter { k ->
-                                        k.startsWith("book_") && row.allKeys.any { k.endsWith("_$it") }
-                                    }.forEach { prefs.edit().remove(it).apply() }
-                                }
+    // ── 清除单项覆盖（点行内"单独·N本"徽章触发）──
+    clearTarget?.let { (row, covered) ->
+        AlertDialog(
+            onDismissRequest = { clearTarget = null },
+            title = { Text("清除「${row.label}」的单独设置") },
+            text = { Text("有 $covered 本书单独调过这项，不受全局影响。\n清除后这些书恢复跟随全局默认。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    scope.launch {
+                        withContext(Dispatchers.IO) {
+                            if (row.key == ReaderScope.READ_MODE_KEY) {
+                                // 阅读模式的单本记录是独立键族 read_mode_<id>
+                                prefs.all.keys.filter { it.startsWith("read_mode_") }
+                                    .forEach { prefs.edit().remove(it).apply() }
+                            } else {
+                                prefs.all.keys.filter { k ->
+                                    k.startsWith("book_") && row.allKeys.any { k.endsWith("_$it") }
+                                }.forEach { prefs.edit().remove(it).apply() }
                             }
-                            version++
-                            notify("已清除 $covered 本书的此项设置")
                         }
-                    }) { Text("清除这些书的单独设置", color = MaterialTheme.colorScheme.error, fontSize = 13.sp) }
-                }
-                Spacer(Modifier.height(24.dp))
-            }
-        }
+                        version++
+                        clearTarget = null
+                        notify("已清除 $covered 本书的此项设置")
+                    }
+                }) { Text("清除", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { clearTarget = null }) { Text("取消") } },
+        )
     }
 
     // ── 恢复默认（分层：仅清所有书的单独设置）──
@@ -554,147 +428,174 @@ fun ReadingPrefsScreen(onBack: () -> Unit) {
     }
 }
 
-/** 偏好行：名称 + 当前全局默认值摘要 + 作用域徽章（🔒固定全局 / 本书 / 全局 / 单独·N本） */
+/** 行内编辑块：勾选/滑条/选项块直接操作（与阅读界面设置同款）。
+ *  行尾徽章：「本书/全局」点一下切作用域；「单独·N本」点按清除这些书的覆盖。 */
 @Composable
-private fun PrefRowItem(row: PrefRow, prefs: SharedPreferences, countByItem: Map<String, Int>, onOpen: () -> Unit) {
+private fun PrefRowBlock(
+    row: PrefRow,
+    prefs: SharedPreferences,
+    countByItem: Map<String, Int>,
+    onScopeSwitch: (PrefRow) -> Unit,
+    onWrite: (String, Any) -> Unit,
+    onClear: (PrefRow, Int) -> Unit,
+) {
     val covered = row.allKeys.maxOf { countByItem[it] ?: 0 }
-    val locked = row.key in ReaderScope.GLOBAL_LOCKED_KEYS
-    val isBook = !locked && ReaderScope.isBookScope(prefs, row.key)
-    Row(
-        Modifier.fillMaxWidth().clickable(onClick = onOpen).padding(vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(row.label, fontSize = 15.sp)
-            Text(
-                prefSummary(prefs, row),
-                fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        if (locked) {
-            Icon(Icons.Default.Lock, null, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.width(4.dp))
-            Text("固定全局", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        } else {
-            Text(
-                if (isBook) "本书" else "全局",
-                fontSize = 11.sp,
-                color = if (isBook) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.background(
-                    if (isBook) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
-                    RoundedCornerShape(6.dp),
-                ).padding(horizontal = 6.dp, vertical = 2.dp),
-            )
-        }
-        if (covered > 0) {
-            Spacer(Modifier.width(6.dp))
-            Row(
-                Modifier.background(MaterialTheme.colorScheme.secondaryContainer, RoundedCornerShape(6.dp))
-                    .padding(horizontal = 6.dp, vertical = 2.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(Icons.Default.MenuBook, null, Modifier.size(12.dp), tint = MaterialTheme.colorScheme.onSecondaryContainer)
-                Spacer(Modifier.width(3.dp))
-                Text("单独·${covered}本", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSecondaryContainer)
-            }
-        }
-    }
-}
-
-// ── 值编辑控件（与阅读界面设置同款：开关行 / 滑条 / 选项块）────────────────
-
-@Composable
-private fun PrefValueEditor(row: PrefRow, prefs: SharedPreferences, onWrite: (String, Any) -> Unit) {
+    val isBook = ReaderScope.isBookScope(prefs, row.key)
     when (val ed = row.editor) {
-        is PrefEditor.ReadMode -> ReadModeEditor(prefs, onWrite)
-        is PrefEditor.AmbienceSound -> AmbienceEditor(prefs, onWrite)
         is PrefEditor.Group -> {
             val primary = ed.parts.first()
-            val primaryOn = (prefGlobalValue(prefs, primary.key) as? Boolean) ?: false
-            EditorPart(primary.label, primary.key, primary.editor, prefs, onWrite)
-            if (primaryOn) {
-                Column(Modifier.padding(start = 8.dp)) {
-                    ed.parts.drop(1).forEach { p -> EditorPart(p.label, p.key, p.editor, prefs, onWrite) }
+            val on = prefGlobalValue(prefs, primary.key) as? Boolean ?: false
+            Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(checked = on, onCheckedChange = { onWrite(primary.key, it) })
+                Text(primary.label, fontSize = 15.sp, modifier = Modifier.weight(1f))
+                ScopeBadges(row, isBook, covered, onScopeSwitch, onClear)
+            }
+            // 勾选后子设置就地展开（与阅读界面设置一致）
+            if (on) {
+                Column(Modifier.padding(start = 16.dp)) {
+                    ed.parts.drop(1).forEach { InlinePart(it, prefs, onWrite) }
                 }
             }
         }
-        else -> EditorPart(row.label, row.key, ed, prefs, onWrite)
-    }
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun EditorPart(label: String, key: String, ed: PrefEditor, prefs: SharedPreferences, onWrite: (String, Any) -> Unit) {
-    when (ed) {
         is PrefEditor.Toggle -> {
-            var v by remember(key) { mutableStateOf((prefGlobalValue(prefs, key) as? Boolean) ?: false) }
-            Row(
-                Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
+            val on = prefGlobalValue(prefs, row.key) as? Boolean ?: false
+            Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(checked = on, onCheckedChange = { onWrite(row.key, it) })
                 Column(Modifier.weight(1f)) {
-                    Text(label, fontSize = 15.sp)
-                    ed.info?.let {
-                        Text(it, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
+                    Text(row.label, fontSize = 15.sp)
+                    ed.info?.let { Text(it, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 }
-                Switch(checked = v, onCheckedChange = { on -> v = on; onWrite(key, on) })
+                ScopeBadges(row, isBook, covered, onScopeSwitch, onClear)
             }
         }
-        is PrefEditor.Slider -> {
-            var v by remember(key) { mutableStateOf((prefGlobalValue(prefs, key) as? Number)?.toFloat() ?: ed.min) }
+        is PrefEditor.Slider -> SliderBlock(row.label, row.key, ed, prefs, onWrite) {
+            ScopeBadges(row, isBook, covered, onScopeSwitch, onClear)
+        }
+        is PrefEditor.Chips -> {
             Column(Modifier.padding(vertical = 6.dp)) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text(label, fontSize = 14.sp, modifier = Modifier.weight(1f))
-                    Text(ed.fmt(v), fontSize = 14.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.primary)
+                    Text(row.label, fontSize = 15.sp, modifier = Modifier.weight(1f))
+                    ScopeBadges(row, isBook, covered, onScopeSwitch, onClear)
                 }
-                Slider(
-                    value = v,
-                    onValueChange = { v = it },
-                    onValueChangeFinished = {
-                        onWrite(key, if (ed.isFloat) v else Math.round(v))
-                    },
-                    valueRange = ed.min..ed.max, steps = ed.steps, modifier = Modifier.fillMaxWidth(),
+                InlineChips(null, prefGlobalValue(prefs, row.key), row.key, ed.options, onWrite)
+            }
+        }
+        is PrefEditor.ReadMode -> {
+            Column(Modifier.padding(vertical = 6.dp)) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("阅读模式", fontSize = 15.sp)
+                        Text("新书第一次打开按这个模式进入", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    ScopeBadges(row, isBook, covered, onScopeSwitch, onClear)
+                }
+                InlineChips(
+                    null, prefs.getInt(ReaderScope.READ_MODE_GLOBAL_KEY, -1), ReaderScope.READ_MODE_KEY,
+                    listOf("按书籍自动" to -1) + Mode.entries.map { it.label to it.ordinal }, onWrite,
                 )
             }
         }
-        is PrefEditor.Chips -> {
-            var v by remember(key) { mutableStateOf(prefGlobalValue(prefs, key)) }
+        is PrefEditor.AmbienceSound -> {
             Column(Modifier.padding(vertical = 6.dp)) {
-                Text(label, fontSize = 14.sp)
-                FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ed.options.forEach { (optLabel, value) ->
-                        FilterChip(
-                            selected = v == value,
-                            onClick = { v = value; onWrite(key, value) },
-                            label = { Text(optLabel, fontSize = 13.sp) },
-                        )
-                    }
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("氛围音", fontSize = 15.sp, modifier = Modifier.weight(1f))
+                    ScopeBadges(row, isBook, covered, onScopeSwitch, onClear)
+                }
+                AmbienceChips(prefs, onWrite)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ScopeBadges(
+    row: PrefRow, isBook: Boolean, covered: Int,
+    onScopeSwitch: (PrefRow) -> Unit, onClear: (PrefRow, Int) -> Unit,
+) {
+    if (covered > 0) {
+        Box(
+            Modifier.clip(RoundedCornerShape(6.dp))
+                .background(MaterialTheme.colorScheme.secondaryContainer)
+                .clickable { onClear(row, covered) }
+                .padding(horizontal = 6.dp, vertical = 3.dp)
+        ) {
+            Text("单独·${covered}本", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSecondaryContainer)
+        }
+        Spacer(Modifier.width(6.dp))
+    }
+    Box(
+        Modifier.clip(RoundedCornerShape(6.dp))
+            .background(if (isBook) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant)
+            .clickable { onScopeSwitch(row) }
+            .padding(horizontal = 8.dp, vertical = 3.dp)
+    ) {
+        Text(
+            if (isBook) "本书" else "全局", fontSize = 11.sp,
+            color = if (isBook) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun InlinePart(part: PrefEditor.Part, prefs: SharedPreferences, onWrite: (String, Any) -> Unit) {
+    when (val ed = part.editor) {
+        is PrefEditor.Toggle -> {
+            val on = prefGlobalValue(prefs, part.key) as? Boolean ?: false
+            Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(checked = on, onCheckedChange = { onWrite(part.key, it) })
+                Column(Modifier.weight(1f)) {
+                    Text(part.label, fontSize = 14.sp)
+                    ed.info?.let { Text(it, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 }
             }
         }
+        is PrefEditor.Slider -> SliderBlock(part.label, part.key, ed, prefs, onWrite)
+        is PrefEditor.Chips -> InlineChips(part.label, prefGlobalValue(prefs, part.key), part.key, ed.options, onWrite)
         else -> {}
     }
 }
 
+@Composable
+private fun SliderBlock(
+    label: String, key: String, ed: PrefEditor.Slider,
+    prefs: SharedPreferences, onWrite: (String, Any) -> Unit,
+    trailing: @Composable () -> Unit = {},
+) {
+    var v by remember(key) { mutableStateOf((prefGlobalValue(prefs, key) as? Number)?.toFloat() ?: ed.min) }
+    Column(Modifier.padding(vertical = 4.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(label, fontSize = 14.sp, modifier = Modifier.weight(1f))
+            Text(
+                ed.fmt(v), fontSize = 13.sp,
+                fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Spacer(Modifier.width(8.dp))
+            trailing()
+        }
+        Slider(
+            value = v,
+            onValueChange = { v = it },
+            onValueChangeFinished = { onWrite(key, if (ed.isFloat) v else Math.round(v)) },
+            valueRange = ed.min..ed.max, steps = ed.steps, modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ReadModeEditor(prefs: SharedPreferences, onWrite: (String, Any) -> Unit) {
-    var v by remember { mutableStateOf(prefs.getInt(ReaderScope.READ_MODE_GLOBAL_KEY, -1)) }
-    Column {
-        Text(
-            "新书第一次打开按这个模式进入；在书里切换模式按「生效范围」记忆",
-            fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(Modifier.height(6.dp))
+private fun InlineChips(
+    label: String?, current: Any?, key: String,
+    options: List<Pair<String, Any>>, onWrite: (String, Any) -> Unit,
+) {
+    Column(Modifier.padding(vertical = 4.dp)) {
+        label?.let { Text(it, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            val options = listOf("按书籍自动" to -1) + Mode.entries.map { it.label to it.ordinal }
-            options.forEach { (label, ord) ->
+            options.forEach { (optLabel, value) ->
                 FilterChip(
-                    selected = v == ord,
-                    onClick = { v = ord; onWrite(ReaderScope.READ_MODE_KEY, ord) },
-                    label = { Text(label, fontSize = 13.sp) },
+                    selected = current == value,
+                    onClick = { onWrite(key, value) },
+                    label = { Text(optLabel, fontSize = 13.sp) },
                 )
             }
         }
@@ -703,11 +604,11 @@ private fun ReadModeEditor(prefs: SharedPreferences, onWrite: (String, Any) -> U
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun AmbienceEditor(prefs: SharedPreferences, onWrite: (String, Any) -> Unit) {
+private fun AmbienceChips(prefs: SharedPreferences, onWrite: (String, Any) -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var imported by remember { mutableStateOf(listImportedAmbience(ctx)) }
-    var v by remember { mutableStateOf(prefGlobalValue(prefs, "ambienceSound") as? String ?: "") }
+    val current = prefGlobalValue(prefs, "ambienceSound") as? String ?: ""
     val importLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
     ) { uri ->
@@ -715,7 +616,6 @@ private fun AmbienceEditor(prefs: SharedPreferences, onWrite: (String, Any) -> U
             val name = withContext(Dispatchers.IO) { importAmbienceFile(ctx, uri) }
             if (name != null) {
                 imported = listImportedAmbience(ctx)
-                v = name
                 onWrite("ambienceSound", name)
             }
         }
@@ -723,15 +623,15 @@ private fun AmbienceEditor(prefs: SharedPreferences, onWrite: (String, Any) -> U
     FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         listOf("关闭" to "", "下雨" to "rain").forEach { (label, value) ->
             FilterChip(
-                selected = v == value,
-                onClick = { v = value; onWrite("ambienceSound", value) },
+                selected = current == value,
+                onClick = { onWrite("ambienceSound", value) },
                 label = { Text(label, fontSize = 13.sp) },
             )
         }
         imported.forEach { name ->
             FilterChip(
-                selected = v == name,
-                onClick = { v = name; onWrite("ambienceSound", name) },
+                selected = current == name,
+                onClick = { onWrite("ambienceSound", name) },
                 label = { Text(name.substringBeforeLast('.').take(10), fontSize = 13.sp) },
             )
         }
