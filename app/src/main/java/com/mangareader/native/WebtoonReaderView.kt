@@ -265,6 +265,18 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
         }
     var trimThreshold: Int = 220
     var trimWhiteRatio: Float = 0.90f
+    // ★ 固定裁剪（仅本书功能 2026-10-04）：条漫长图"页高"概念不同，上下按比例裁会裁掉大量
+    //   内容 → 条漫只应用左右。变更走 setFixedCropLR 清缓存重绑。
+    var cropLeftPct: Float = 0f
+    var cropRightPct: Float = 0f
+
+    fun setFixedCropLR(left: Float, right: Float) {
+        if (cropLeftPct == left && cropRightPct == right) return
+        cropLeftPct = left; cropRightPct = right
+        clearTileFileCache()
+        synchronized(bitmapCache) { bitmapCache.evictAll() }
+        adapter?.notifyDataSetChanged()
+    }
     var rotationAdapt: Boolean = false
     var rotationReverse: Boolean = false
     var pageBgColor: Int = android.graphics.Color.parseColor("#E8E8E8")
@@ -297,6 +309,11 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
     private fun processBitmap(bmp: Bitmap?): Bitmap? {
         if (bmp == null || bmp.isRecycled || bmp.width <= 10 || bmp.height <= 10) return bmp
         var result = bmp
+        if (cropLeftPct > 0.001f || cropRightPct > 0.001f) {
+            try {
+                result = com.mangareader.viewer.ImageTrimmer.applyFixedCrop(result!!, cropLeftPct, 0f, cropRightPct, 0f)
+            } catch (_: Exception) {}
+        }
         if (trimWhiteBorder) {
             try {
                 result = com.mangareader.viewer.ImageTrimmer.ensurePixelReadable(result!!)
@@ -788,7 +805,7 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
             try {
             // ★ 段页不走 tile：tile 按「整图文件+区域」渲染，不认识 segmentIndex，会显示错误区域；
             //   宽图二分半页（splitSide）同理——tile 整图渲染会漏掉裁半（2026-10-02）
-            if (tileModeEnabled && !trimWhiteBorder && meta.segmentIndex <= 0 && meta.splitSide == 0) {
+            if (tileModeEnabled && !trimWhiteBorder && !(cropLeftPct > 0.001f || cropRightPct > 0.001f) && meta.segmentIndex <= 0 && meta.splitSide == 0) {
                 val tileFile = obtainTileFile(idx)
                 if (tileFile != null) {
                     ArchiveEngine.d("WebtoonRV", "tile OK idx=$idx file=${tileFile.length()}B")

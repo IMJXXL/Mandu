@@ -28,6 +28,11 @@ class CurlPageLoader(
     var trimWhiteBorder: Boolean = false
     var trimThreshold: Int = 220
     var trimWhiteRatio: Float = 0.90f
+    // ★ 固定四边裁剪（仅本书功能 2026-10-04）：条漫分割段图（segmentTotal>1）只裁左右
+    @Volatile var cropL: Float = 0f
+    @Volatile var cropT: Float = 0f
+    @Volatile var cropR: Float = 0f
+    @Volatile var cropB: Float = 0f
     /** ★ 墨水屏灰阶抖动参数（解码管线参数，单/双页 curl 共用本 loader；变更经 applyEinkDitherNow 即时生效） */
     var einkDither: Boolean = false
     var einkDitherAlgorithm: Int = 0
@@ -110,6 +115,13 @@ class CurlPageLoader(
                         return@launch
                     }
 
+                    val cropActive = cropL > 0.001f || cropT > 0.001f || cropR > 0.001f || cropB > 0.001f
+                    if (cropActive && bmp.width > 10 && bmp.height > 10) {
+                        try {
+                            val segTall = meta.segmentTotal > 1
+                            bmp = com.mangareader.viewer.ImageTrimmer.applyFixedCrop(bmp, cropL, if (segTall) 0f else cropT, cropR, if (segTall) 0f else cropB)
+                        } catch (_: Exception) {}
+                    }
                     if (trimWhiteBorder && bmp.width > 10 && bmp.height > 10) {
                         try {
                             bmp = com.mangareader.viewer.ImageTrimmer.ensurePixelReadable(bmp)
@@ -147,6 +159,13 @@ class CurlPageLoader(
                     val image = result.image
                     if (image is coil3.BitmapImage) {
                         var bmp = image.bitmap
+                        val cropActive = cropL > 0.001f || cropT > 0.001f || cropR > 0.001f || cropB > 0.001f
+                        if (cropActive && bmp.width > 10 && bmp.height > 10) {
+                            try {
+                                val segTall = meta.segmentTotal > 1
+                                bmp = com.mangareader.viewer.ImageTrimmer.applyFixedCrop(bmp, cropL, if (segTall) 0f else cropT, cropR, if (segTall) 0f else cropB)
+                            } catch (_: Exception) {}
+                        }
                         if (trimWhiteBorder && bmp.width > 10 && bmp.height > 10) {
                             try {
                                 bmp = com.mangareader.viewer.ImageTrimmer.ensurePixelReadable(bmp)

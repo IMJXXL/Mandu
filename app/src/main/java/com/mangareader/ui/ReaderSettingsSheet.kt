@@ -32,6 +32,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.mangareader.data.BookCrop
 import com.mangareader.data.ReaderConfig
 import kotlinx.coroutines.launch
 
@@ -52,6 +53,9 @@ fun ReaderSettingsSheet(
     onConfigChange: (ReaderConfig) -> Unit,
     onModeChange: (Mode) -> Unit,
     onOrientationChange: (Int) -> Unit,
+    /** ★ 固定四边裁剪（仅本书功能）：值由 Reader.kt 持有并持久化到 BookCropStore */
+    fixedCrop: BookCrop = BookCrop.OFF,
+    onCropChange: (BookCrop) -> Unit = {},
     onDismiss: () -> Unit,
 ) {
     var visible by remember { mutableStateOf(false) }
@@ -95,7 +99,7 @@ fun ReaderSettingsSheet(
                 shape = if (landscape) SIDE_PANEL_SHAPE else SHEET_SHAPE,
                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
                 content = {
-                    ReaderSettingsContent(config, mode, onConfigChange, onModeChange, onOrientationChange)
+                    ReaderSettingsContent(config, mode, bookId, onConfigChange, onModeChange, onOrientationChange, fixedCrop, onCropChange)
                 }
             )
         }
@@ -107,10 +111,13 @@ fun ReaderSettingsSheet(
 private fun ReaderSettingsContent(
     config: ReaderConfig,
     mode: Mode,
+    bookId: Long,
 
     onConfigChange: (ReaderConfig) -> Unit,
     onModeChange: (Mode) -> Unit,
     onOrientationChange: (Int) -> Unit,
+    fixedCrop: BookCrop,
+    onCropChange: (BookCrop) -> Unit,
 ) {
     val pagerState = rememberPagerState { 3 }
     val tabs = listOf("阅读模式", "常规", "滤镜")
@@ -146,7 +153,7 @@ private fun ReaderSettingsContent(
                     .verticalScroll(rememberScrollState())
             ) {
                 when (page) {
-                    0 -> ReadingModeTab(config, mode, onConfigChange, onModeChange, onOrientationChange)
+                    0 -> ReadingModeTab(config, mode, bookId, onConfigChange, onModeChange, onOrientationChange, fixedCrop, onCropChange)
                     1 -> GeneralTab(config, onConfigChange)
                     2 -> FilterTab(config, onConfigChange)
                 }
@@ -255,8 +262,9 @@ private fun SliderItem(label: String, value: Float, range: ClosedFloatingPointRa
 // ===== Tab 0 =====
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ReadingModeTab(config: ReaderConfig, mode: Mode, onConfigChange: (ReaderConfig) -> Unit,
-    onModeChange: (Mode) -> Unit, onOrientationChange: (Int) -> Unit) {
+private fun ReadingModeTab(config: ReaderConfig, mode: Mode, bookId: Long, onConfigChange: (ReaderConfig) -> Unit,
+    onModeChange: (Mode) -> Unit, onOrientationChange: (Int) -> Unit,
+    fixedCrop: BookCrop, onCropChange: (BookCrop) -> Unit) {
 
     SettingsChipRow("阅读模式（切换模式后如遇问题请返回书架重进）") {
         val modeList = listOf("单页式（从左到右）" to 0, "单页式（从右到左）" to 1,
@@ -296,6 +304,37 @@ private fun ReadingModeTab(config: ReaderConfig, mode: Mode, onConfigChange: (Re
             // 白色比例：一行/列中白色像素占比达到此值才算"白边"，越小越容易判定
             SliderItem("白色比例（默认90%）", config.trimWhiteRatio, 0.50f..0.95f, 45, "${(config.trimWhiteRatio * 100).toInt()}%") {
                 onConfigChange(config.copy(trimWhiteRatio = it))
+            }
+        }
+
+        // ★ 固定裁剪（仅本书功能 2026-10-04）：给这本书记四边裁剪比例，解码时裁掉再铺满——
+        //   裁后画面无"放大态"，翻页手势照常。bookId<=0（未入库临时打开）不显示也不持久化。
+        if (bookId > 0) {
+            CheckboxItem("固定裁剪（本书）", fixedCrop.active) { on ->
+                onCropChange(if (on) BookCrop(0.05f, 0.05f, 0.05f, 0.05f) else BookCrop.OFF)
+            }
+            if (fixedCrop.active) {
+                SliderItem("裁上边", fixedCrop.top, 0f..BookCrop.MAX, 39, "${(fixedCrop.top * 100).toInt()}%") {
+                    onCropChange(fixedCrop.copy(top = it))
+                }
+                SliderItem("裁下边", fixedCrop.bottom, 0f..BookCrop.MAX, 39, "${(fixedCrop.bottom * 100).toInt()}%") {
+                    onCropChange(fixedCrop.copy(bottom = it))
+                }
+                SliderItem("裁左边", fixedCrop.left, 0f..BookCrop.MAX, 39, "${(fixedCrop.left * 100).toInt()}%") {
+                    onCropChange(fixedCrop.copy(left = it))
+                }
+                SliderItem("裁右边", fixedCrop.right, 0f..BookCrop.MAX, 39, "${(fixedCrop.right * 100).toInt()}%") {
+                    onCropChange(fixedCrop.copy(right = it))
+                }
+                Text(
+                    "拖滑条当前页实时看效果，整本书记住，下次进书仍生效（与阅读偏好开关无关）。\n" +
+                        "与裁白边可叠加（先固定裁、再自动裁白边）；条漫模式只裁左右；动图页不裁。",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f), fontSize = 11.sp,
+                    modifier = Modifier.padding(start = HORIZONTAL_PAD, end = HORIZONTAL_PAD, bottom = VERTICAL_PAD),
+                )
+                TextButton(onClick = { onCropChange(BookCrop.OFF) }, modifier = Modifier.padding(start = 12.dp)) {
+                    Text("重置裁剪", fontSize = 13.sp)
+                }
             }
         }
 

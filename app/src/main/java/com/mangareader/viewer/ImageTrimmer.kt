@@ -61,6 +61,24 @@ object ImageTrimmer {
         return TrimResult(left, top, right, bottom)
     }
 
+    /**
+     * 固定四边裁剪（仅本书功能 2026-10-04）：按原图宽高的比例裁掉四边，比例已由 UI 限制 ≤40%/边。
+     * 与 applyTrim 同语义：产生独立新位图、原对象不 recycle（SSIV 可能仍持有引用）；
+     * 全零比例或裁后剩不下 8px 均原样返回。HARDWARE 位图先转可读（同 trimWhiteBorders 前置）。
+     */
+    fun applyFixedCrop(bitmap: Bitmap, left: Float, top: Float, right: Float, bottom: Float): Bitmap {
+        if (left <= 0f && top <= 0f && right <= 0f && bottom <= 0f) return bitmap
+        val w = bitmap.width
+        val h = bitmap.height
+        val x = (w * left).toInt().coerceIn(0, w - 1)
+        val y = (h * top).toInt().coerceIn(0, h - 1)
+        val cw = w - x - (w * right).toInt().coerceIn(0, w - 1)
+        val ch = h - y - (h * bottom).toInt().coerceIn(0, h - 1)
+        if (cw < 8 || ch < 8) return bitmap
+        val src = ensurePixelReadable(bitmap)
+        return Bitmap.createBitmap(src, x, y, cw, ch)
+    }
+
     fun applyTrim(bitmap: Bitmap, trim: TrimResult): Bitmap {
         val x = trim.left.coerceIn(0, bitmap.width - 1)
         val y = trim.top.coerceIn(0, bitmap.height - 1)

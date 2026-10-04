@@ -75,6 +75,14 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     private var trimWhiteBorder = false
     private var trimThreshold: Int = 220
     private var trimWhiteRatio: Float = 0.90f
+    // ★ 固定四边裁剪（仅本书功能 2026-10-04）：解码后按比例裁掉四边再入缓存——
+    //   画面里不存在"放大态"，翻页手势不受影响。条漫分割段图（segmentTotal>1）只裁左右。
+    private var cropL = 0f
+    private var cropT = 0f
+    private var cropR = 0f
+    private var cropB = 0f
+    private val fixedCropActive: Boolean
+        get() = cropL > 0.001f || cropT > 0.001f || cropR > 0.001f || cropB > 0.001f
     private var panNavigation = false
     /** ★ 墨水屏灰阶抖动参数（解码管线参数，非 UI 状态；变更经 applyEinkDitherNow 即时生效） */
     private var einkDither = false
@@ -806,6 +814,19 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         }
     }
 
+    /** ★ 固定裁剪即时生效（仅本书功能）：同 setTrimWhiteBorder 的无白屏策略——瓦片缓存作废
+     *  （裁剪与条漫分割瓦片互斥）、当前±窗口逐页重载，旧图保持显示直到新图就绪。
+     *  滑条拖动逐次调用安全：值未变时直接返回。 */
+    fun setFixedCrop(l: Float, t: Float, r: Float, b: Float) {
+        if (cropL == l && cropT == t && cropR == r && cropB == b) return
+        cropL = l; cropT = t; cropR = r; cropB = b
+        clearTileFileCache()
+        val cur = currentPage
+        (cur - 2..cur + 5).forEach {
+            if (it in pageList.indices) { bitmapCache.remove(it); inflightLoads.remove(it); loadPageAsync(it) }
+        }
+    }
+
     fun setPanNavigation(pan: Boolean) {
         this.panNavigation = pan
     }
@@ -1113,7 +1134,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             if (remotePageSupply == null) ensureNativeArchive()
 
             val supply = remotePageSupply
-            if (tileModeEnabled && !trimWhiteBorder && !doublePageMode &&
+            if (tileModeEnabled && !trimWhiteBorder && !fixedCropActive && !doublePageMode &&
                 pageList[idx].splitSide == 0 && pageList[idx].segmentIndex <= 0 &&
                 pageAnimFlags.none { it.pageIdx == idx && it.kind != AnimKind.NONE }) {
                 val tileFile = obtainTileFile(idx, supply)
@@ -1182,6 +1203,13 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                     inflightLoads.remove(idx) // ★ 允许立即重试（失败/取消场景不留 5s 去重窗口）
                     return@launch
                 }
+                if (fixedCropActive && bmp.width > 10 && bmp.height > 10) {
+                    try {
+                        // 条漫分割段图（PDF/长图分段）：纵向切片，上下裁剪语义错 → 只裁左右
+                        val segTall = meta.segmentTotal > 1
+                        bmp = com.mangareader.viewer.ImageTrimmer.applyFixedCrop(bmp, cropL, if (segTall) 0f else cropT, cropR, if (segTall) 0f else cropB)
+                    } catch (_: Exception) {}
+                }
                 if (trimWhiteBorder && bmp.width > 10 && bmp.height > 10) {
                     val w0 = bmp.width; val h0 = bmp.height
                     try {
@@ -1247,6 +1275,12 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 // 静图：提取 Bitmap → 超分 → bitmapCache → SSIV
                 var bmp = image.bitmap
                 com.mangareader.viewer.ArchiveEngine.d("PagerView", "loaded idx=$idx bmp=${bmp.width}x${bmp.height} source=${meta.source} trimOn=$trimWhiteBorder tileOn=$tileModeEnabled")
+                if (fixedCropActive && bmp.width > 10 && bmp.height > 10) {
+                    try {
+                        val segTall = pageList[idx].segmentTotal > 1
+                        bmp = com.mangareader.viewer.ImageTrimmer.applyFixedCrop(bmp, cropL, if (segTall) 0f else cropT, cropR, if (segTall) 0f else cropB)
+                    } catch (_: Exception) {}
+                }
                 if (trimWhiteBorder && bmp.width > 10 && bmp.height > 10) {
                     val w0 = bmp.width; val h0 = bmp.height
                     try {

@@ -117,6 +117,11 @@ fun NativeReaderScreen(
     trimWhiteBorder: Boolean = false,
     trimThreshold: Int = 220,
     trimWhiteRatio: Float = 0.90f,
+    /** ★ 固定四边裁剪（仅本书功能 2026-10-04）：0=不裁；条漫长图只应用左右（上下忽略） */
+    fixedCropL: Float = 0f,
+    fixedCropT: Float = 0f,
+    fixedCropR: Float = 0f,
+    fixedCropB: Float = 0f,
     panNavigation: Boolean = false,
     pageLayout: Int = 0,
     // ★ 点击翻页区域（0=关 1=左右分区 4=L型）+ 水平对调——此前 setup 硬编码 0 从未生效
@@ -277,6 +282,7 @@ fun NativeReaderScreen(
             delegate.setLandscapeZoom(landscapeZoom)
             delegate.setFitScreen(fitScreen)
             delegate.setTrimWhiteBorder(trimWhiteBorder, trimThreshold, trimWhiteRatio)
+            delegate.setFixedCrop(fixedCropL, fixedCropT, fixedCropR, fixedCropB)
             delegate.setPanNavigation(panNavigation)
             delegate.setEinkDither(einkDither, einkDitherAlgorithm, einkDitherLevels, einkEndpointPassthrough)
         }
@@ -289,6 +295,7 @@ fun NativeReaderScreen(
             delegate.trimWhiteBorder = trimWhiteBorder
             delegate.trimThreshold = trimThreshold
             delegate.trimWhiteRatio = trimWhiteRatio
+            delegate.setFixedCropLR(fixedCropL, fixedCropR)
             delegate.setEinkDither(einkDither, einkDitherAlgorithm, einkDitherLevels, einkEndpointPassthrough)
         }
         if (delegate is com.mangareader.native.curl.CurlReaderView) {
@@ -297,6 +304,7 @@ fun NativeReaderScreen(
             delegate.fitScreen = fitScreen
             delegate.curlContentAreaOnly = curlContentAreaOnly
             delegate.setTrimWhiteBorder(trimWhiteBorder, trimThreshold, trimWhiteRatio)
+            delegate.setFixedCrop(fixedCropL, fixedCropT, fixedCropR, fixedCropB)
             delegate.setPanNavigation(panNavigation)
             delegate.setEinkDither(einkDither, einkDitherAlgorithm, einkDitherLevels, einkEndpointPassthrough)
             delegate.onChapterEnd = onChapterEnd
@@ -307,6 +315,7 @@ fun NativeReaderScreen(
             delegate.fitScreen = fitScreen
             delegate.curlContentAreaOnly = curlContentAreaOnly
             delegate.setTrimWhiteBorder(trimWhiteBorder, trimThreshold, trimWhiteRatio)
+            delegate.setFixedCrop(fixedCropL, fixedCropT, fixedCropR, fixedCropB)
             delegate.setPanNavigation(panNavigation)
             delegate.setEinkDither(einkDither, einkDitherAlgorithm, einkDitherLevels, einkEndpointPassthrough)
 
@@ -334,6 +343,15 @@ fun NativeReaderScreen(
             delegate.release()
             lastReleasedDelegate = null
         }
+    }
+
+    // ★ 固定裁剪即时生效（仅本书功能）：值变化 → 四个视图各自清缓存重载（setter 幂等，
+    //   setup 首挂已带同值时此 effect 空转；滑条拖动逐值触发，无白屏策略由各 setter 内部保证）
+    LaunchedEffect(fixedCropL, fixedCropT, fixedCropR, fixedCropB) {
+        pagerView.setFixedCrop(fixedCropL, fixedCropT, fixedCropR, fixedCropB)
+        webtoonView.setFixedCropLR(fixedCropL, fixedCropR)
+        curlReaderView.setFixedCrop(fixedCropL, fixedCropT, fixedCropR, fixedCropB)
+        curlDoublePageView.setFixedCrop(fixedCropL, fixedCropT, fixedCropR, fixedCropB)
     }
 
     // ★ 背面透出程度/阴影浓度走轻量同步：故意不进上面 DisposableEffect 的 key——滑块拖动

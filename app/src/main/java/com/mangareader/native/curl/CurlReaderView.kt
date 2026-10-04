@@ -149,6 +149,15 @@ class CurlReaderView(context: Context) : FrameLayout(context), ReaderViewDelegat
         loader.trimWhiteRatio = whiteRatio
     }
 
+    /** ★ 固定裁剪即时生效（仅本书功能）：清缓存重载当前页周边（同 applyEinkDitherNow 模式，低频操作可接受） */
+    fun setFixedCrop(l: Float, t: Float, r: Float, b: Float) {
+        if (loader.cropL == l && loader.cropT == t && loader.cropR == r && loader.cropB == b) return
+        loader.cropL = l; loader.cropT = t; loader.cropR = r; loader.cropB = b
+        cache.clear()
+        reloadTrigger.intValue++
+        loader.preloadAround(currentPage, pageList.size) { reloadTrigger.intValue++ }
+    }
+
     /** ★ 墨水屏灰阶抖动透传 loader（单/双页 curl 共用解码管线） */
     fun setEinkDither(enabled: Boolean, algorithm: Int, levels: Int, endpointPassthrough: Int = 0) {
         loader.einkDither = enabled

@@ -103,6 +103,9 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     var currentBookId by remember { mutableLongStateOf(bookId) }
     var config by remember { mutableStateOf(com.mangareader.data.ReaderConfig.load(ctx, bookId)) }
     var configVersion by remember { mutableIntStateOf(0) }
+    // ★ 固定四边裁剪（仅本书功能 2026-10-04）：状态在本层持有；书内面板改 → 存 BookCropStore
+    //   （刻意不走作用域系统：书的数据，不受「本书改动单独记」总开关影响）+ 下传视图即时生效
+    var fixedCrop by remember(bookId) { mutableStateOf(com.mangareader.data.BookCropStore.load(ctx, bookId)) }
     var lastPageCbMarkMs by remember { mutableLongStateOf(0L) }
     // ★ 本地打开耗时锚点（remote 链有 remote: open 系列，本地链补齐）
     var localOpenStartMs by remember { mutableLongStateOf(0L) }
@@ -2365,6 +2368,10 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                             trimWhiteBorder = config.isTrimWhiteBorder,
                             trimThreshold = config.trimThreshold,
                             trimWhiteRatio = config.trimWhiteRatio,
+                            fixedCropL = fixedCrop.left,
+                            fixedCropT = fixedCrop.top,
+                            fixedCropR = fixedCrop.right,
+                            fixedCropB = fixedCrop.bottom,
                             panNavigation = config.panNavigation,
                             clickFlip = config.clickFlipType.ordinal,
                             clickFlipInvert = config.clickFlipInvertH,
@@ -2983,6 +2990,11 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                 configVersion++
             },
             onModeChange = { newMode -> applyModeChange(newMode) },
+            fixedCrop = fixedCrop,
+            onCropChange = { c ->
+                fixedCrop = c
+                com.mangareader.data.BookCropStore.save(ctx, bookId, c)
+            },
             onOrientationChange = { orientation ->
                 saveOrientation(orientation)
                 config = config.copy(orientation = orientation)

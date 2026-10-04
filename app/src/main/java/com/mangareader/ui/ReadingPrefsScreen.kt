@@ -254,9 +254,13 @@ fun ReadingPrefsScreen(onBack: () -> Unit) {
         val books = mutableSetOf<String>()
         prefs.all.keys.forEach { k ->
             if (k.startsWith("book_")) {
-                val base = k.substringAfter("book_").substringAfter('_')
+                val rest = k.substringAfter("book_")
+                val base = rest.substringAfter('_')
+                // ★ 固定裁剪键（cropL/T/R/B，2026-10-04）是书的数据不是阅读偏好，不计入覆盖统计
+                if (base == "cropL" || base == "cropT" || base == "cropR" || base == "cropB") return@forEach
                 map[base] = (map[base] ?: 0) + 1
-                books.add(k.substringBefore('_'))
+                // ★ 修 bookId 提取：原来 substringBefore('_') 取到字面 "book"，本数恒显示 1
+                books.add(rest.substringBefore('_'))
             } else if (k.startsWith("read_mode_")) {
                 map[ReaderScope.READ_MODE_KEY] = (map[ReaderScope.READ_MODE_KEY] ?: 0) + 1
                 books.add(k.removePrefix("read_mode_"))
