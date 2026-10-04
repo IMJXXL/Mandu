@@ -643,6 +643,9 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         }
         val lastPage = if (saved?.completed == true) 0 else (saved?.lastPage ?: 0)
         cur = (if (targetPage >= 0) targetPage else lastPage).coerceIn(0, (pages.size - 1).coerceAtLeast(0))
+        // ★ B4② 远程书对齐：远程页表恒不展开（本地宽分只作用于本地书），双页布局+拆分的远程书
+        //   save 照写 halfRight，重进须经同一注入路径落位——否则远程拆分书续读恒落第一半
+        initialHalfRightRestore = targetPage < 0 && saved != null && !saved.completed && saved.halfRight
         viewing = true
         loading = false
         // ★ 本地打开锚点 ok：点开→首页可看整链路
@@ -1034,7 +1037,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                 for (i in 0 until minOf(3, pages.size)) {
                     try {
                         val meta = pages[i]
-                        val key = "${meta.localIdx}|${meta.source}"
+                        val key = com.mangareader.engine.pdf.VirtualPageExpander.pageSizeKey(meta)
                         val cached = store?.get(key)
                         val sz = cached ?: withContext(Dispatchers.IO) {
                             if (meta.source == "pdf") engine.loadPageSize(meta, treeStr)
@@ -1111,14 +1114,19 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         //   时代的设计；物理页语义下比例换算只会把页号算坏（改拆分开关/换屏宽后恢复必错一次），
         //   已删除。物理页跨形态天然稳定，下方恢复块按 originalPageIdx 匹配即可。
         val savedIdx = progress?.lastPage ?: 0
-        val remappedLastPage = savedIdx
+        // B1 语义切换防旧脏行：2652f6d0 前 onDispose 兜底写的是展开流位，按物理页解释会向前
+        //   跳一跨页——超出物理页范围的一律视为旧语义脏行钳到物理末页（一次性自愈，此后
+        //   新写入行恒在范围内；落在范围内无法甄别的旧行不处理）
+        val remappedLastPage = if (savedIdx in pages.indices) savedIdx else (pages.size - 1).coerceAtLeast(0)
         // ★ ⑦B 修复：willMarkRead 是「本次进卷正在补完成位」的本地信号。
         //   下方 lastPage 判定必须用同一个信号——否则 388 行 upsert 把 DB 改 completed=true
         //   但本地 val progress 仍 false → 走 else 分支 cur=末页，与"已读完卷再入应跳第 1 页"语义矛盾。
         //   修复后：willMarkRead=true 时也跳第 1 页，与 progress.completed==true 一致。
         //   下次回卷进 enterReader 重读 progress（DB 已 true）走第 1 个分支，自愈。
         // ★ v1.11：willMarkRead 加 pages.size > 1 守卫（单页列表不构成"读到过末页"，与 save() 的 done 守卫对齐）
-        val willMarkRead = !healed && progress != null && !progress.completed && expandedSize > 1 && remappedLastPage >= expandedSize - 1
+        // ★ 二轮独立审查实锤：lastPage 已是物理页口径，比较基准必须同为物理页数——
+        //   expandedSize 是展开后条目数，展开书里 物理末页 < expandedSize-1 恒成立，自愈永不触发
+        val willMarkRead = !healed && progress != null && !progress.completed && pages.size > 1 && remappedLastPage >= pages.size - 1
         if (willMarkRead) {
             val now = System.currentTimeMillis()
             try { withContext(Dispatchers.IO) { dao.upsertProgress(b.id, path, remappedLastPage, true, now, expandedSize) } } catch (_: Exception) {}
@@ -2411,8 +2419,10 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                             treePath = navStack.lastOrNull() ?: book?.filePath ?: "",
                             pages = displayPages,
                             startPage = safeCur,
-                            // ★ B4②（2026-10-04）：双页布局拆分书续读半页位（enterReader 恢复块写入）
+                            // ★ B4②（2026-10-04）：双页布局拆分书续读半页位（enterReader 恢复块写入）；
+                            //   消费后回写复位，key() 重建 NES 时不得重注入进书时刻的旧位
                             initialHalfRight = initialHalfRightRestore,
+                            onInitialHalfRightConsumed = { initialHalfRightRestore = false },
                             isVertical = vertical,
                             isRtl = isRtl,
                             grayscale = config.isGrayscale,

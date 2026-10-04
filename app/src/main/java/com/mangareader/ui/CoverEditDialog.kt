@@ -261,7 +261,8 @@ internal fun CoverEditDialog(
                                             if (invalidator("")) "" else throw IllegalStateException("该压缩包需要密码，请先在阅读器中打开一次")
                                         },
                                     ) { loader ->
-                                        adapter.attach(loader, null)
+                                        // 本地整档 ArchivePageLoader 构造前已全量索引，页数开包即定
+                                        adapter.attach(loader, null, sizeSettled = true)
                                         adapter.awaitClose()
                                     }
                                 } catch (e: CancellationException) {

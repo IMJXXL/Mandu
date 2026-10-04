@@ -133,6 +133,10 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     fun setInitialSplitHalfRight(v: Boolean) {
         if (!v) return
         splitHalfRight = true
+        // 双页模式就位的落地事件（setDoublePageModeAndShift 的 post setCurrentItem →
+        // onPageSelected）会用 pendingLandingSplitHalfRight 重写本位——恢复位必须同时
+        // 登记为落地意图，否则停在跨页第二半的书重进后被落地清回第一半
+        pendingLandingSplitHalfRight = true
         // 防御：若首个绑定先于本调用发生，重绑一次让右半生效（同一主线程帧内通常尚未绑定，空操作）
         val pos = positionOf(currentPage)
         if (pos >= 0) pagerAdapter?.notifyItemChanged(pos)

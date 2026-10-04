@@ -164,7 +164,7 @@ object WebDavBookRouter {
             val job = sessionScope.launch {
                 try {
                     dispatchLoaderSession(source, password, ref, 0) { loader, byteSource ->
-                        adapter.attach(loader, byteSource)
+                        adapter.attach(loader, byteSource, sizeSettled = ref.ext.lowercase() in SETTLED_COUNT_EXTS)
                         result.complete(runCatching { block(loader, adapter) })
                         adapter.awaitClose()
                     }

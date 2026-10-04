@@ -70,15 +70,18 @@ object VirtualPageExpander {
             storeStamp = stamp0
             storeSizes = store0
             val needProbe = pages.filter { it.segmentIndex <= 0 && it.source in SPLIT_SOURCES && it.source != "pdf" }
-                .distinctBy { "${it.localIdx}|${it.source}" }
-                .filter { (store0 ?: emptyMap())["${it.localIdx}|${it.source}"] == null }
+                .distinctBy { pageSizeKey(it) }
+                .filter { (store0 ?: emptyMap())[pageSizeKey(it)] == null }
             fun probeOne(meta: ArchiveEngine.PageMeta) {
                 val b = try { engine.loadPageBounds(meta, treePath) } catch (_: Exception) { null }
                 synchronized(preProbed) {
-                    preProbed["${meta.localIdx}|${meta.source}"] = b?.let { intArrayOf(it.width, it.height) }
+                    preProbed[pageSizeKey(meta)] = b?.let { intArrayOf(it.width, it.height) }
                 }
             }
-            val solid = needProbe.filter { it.source in SOLID_SOURCES }.sortedBy { it.localIdx }
+            // 排序键 ext→localIdx：多子包书各子包 localIdx 皆从 0 起，仅按 localIdx 会把子包页
+            //   交错（0,0,1,1…）打散顺流预读；按 ext 分组后包内升序（当前子包过滤只放行
+            //   zip/epub/pdf/mobi、solid 罕见多包——防御性，防未来放行即踩）
+            val solid = needProbe.filter { it.source in SOLID_SOURCES }.sortedWith(compareBy({ it.ext }, { it.localIdx }))
             val random = needProbe.filter { it.source !in SOLID_SOURCES }
             solid.forEach { probeOne(it) }
             if (random.size > 1) {
@@ -111,7 +114,7 @@ object VirtualPageExpander {
             if (meta.source == "pdf") {
                 size = try { engine.loadPageSize(meta, treePath) } catch (_: Exception) { null }
             } else {
-                val key = "${meta.localIdx}|${meta.source}"
+                val key = pageSizeKey(meta)
                 val cached = sizesForImages()?.get(key)
                 when {
                     cached != null -> { size = cached; fromStore = true }
@@ -149,7 +152,7 @@ object VirtualPageExpander {
                     result.add(meta.copy(splitSide = if (splitLeftFirst) 2 else 1, originalPageIdx = origIdx))
                     continue
                 }
-                if (!fromStore) pending["${meta.localIdx}|${meta.source}"] = intArrayOf(pw.toInt(), ph.toInt())
+                if (!fromStore) pending[pageSizeKey(meta)] = intArrayOf(pw.toInt(), ph.toInt())
                 result.add(meta.copy(originalPageIdx = origIdx))
                 continue
             }
@@ -169,11 +172,18 @@ object VirtualPageExpander {
         return result
     }
 
+    /** 尺寸表条目键。localIdx|source 在 dir 源（ext=文档ID、localIdx 恒 0）与 d:/z: 多子包书
+     *  （各子包 localIdx 皆从 0 起）上跨页/跨包碰撞——一页尺寸被整本共用、竖切/宽图判定全错；
+     *  掺 ext（各源 PageMeta 第三参：dir/子包=文档ID，整档书=档自身 docId 恒定不碍事）消歧。
+     *  expand 与 Reader.autoWebtoon 两侧必须共用本函数，保证同一张表读写同键 */
+    internal fun pageSizeKey(m: ArchiveEngine.PageMeta): String = "${m.localIdx}|${m.source}|${m.ext}"
+
     /** 尺寸表失效戳：页数 + ext/source 序列摘要。加删页/换类型即失效；同内容替换由渲染器侧尺寸复核兜底 */
     // ★ P6（2026-10-04）：internal 供 Reader.autoWebtoon 复用——autoWebtoon 探测与 expand
     //   共享同一张尺寸表必须用同一个 stamp（页数+ext 序列指纹）
     internal fun sizeStamp(pages: List<ArchiveEngine.PageMeta>): String {
-        val sb = StringBuilder(pages.size).append(':')
+        // v2：键格式掺 ext 后旧表条目永不命中，整体升版作废重探，防新旧键混存只增不减
+        val sb = StringBuilder("v2|").append(pages.size).append(':')
         for (m in pages) sb.append(m.ext.length).append('.').append(m.source).append(';')
         val body = sb.toString()
         return try {

@@ -166,6 +166,10 @@ fun NativeReaderScreen(
     /** ★ B4②（2026-10-04）：双页布局拆分书续读半页位（true=恢复到阅读序第二半）。
      *   setup 前注入 PagerReaderView，setup 消费一次；展开表/条漫视图无影响。 */
     initialHalfRight: Boolean = false,
+    // ★ 半页位注入回执：进书恢复位是一次性的，被消费后必须通知 Reader 层复位——
+    //   否则 key() 五元组重建 NES 实例（阅读中改动画/布局/方向等）时新实例会把
+    //   进书那一刻的半页位重注入，当前页错跳到另一半
+    onInitialHalfRightConsumed: () -> Unit = {},
     modifier: Modifier = Modifier,
     onPageChanged: (Int) -> Unit = {},
     onPageCountChanged: (Int) -> Unit = {},
@@ -330,12 +334,25 @@ fun NativeReaderScreen(
             delegate.onChapterEnd = onChapterEnd
         }
         // ★ B4②：续读半页位注入——必须在全部会 resetSplitHalf 的配置注入（PagerReaderView 的
-        //   setDoublePageSplit / CurlDoublePageView 的 setDoublePageModeAndShift）之后，否则刚置的
-        //   半页位立即被清零（独立审查实锤：注入放 setup 前会被同一次 effect 内的
-        //   setDoublePageSplit reset 掉，双页布局续读半页完全失效）。consume-once 见上。
-        if (delegate is PagerReaderView && !initialHalfRightConsumed) {
-            delegate.setInitialSplitHalfRight(initialHalfRight)
+        //   setDoublePageSplit、双视图的 setDoublePageModeAndShift）之后，否则刚置的半页位立即
+        //   被清零（独立审查实锤：注入放 setup 前会被同一次 effect 内的 setDoublePageSplit reset）。
+        //   二轮独立审查实锤：PagerReaderView 的双页模式原先由其后更晚执行的
+        //   LaunchedEffect(isVertical,isRtl,pageLayout) 设置——新视图 doublePageMode 初值恒 false
+        //   使幂等守卫必失效，resetSplitHalf 把注入值再清一次（双页布局续读恒落左半）。
+        //   故并入本 effect 且必须先于注入；该 LaunchedEffect 已删——其 key 集是本 effect 的
+        //   子集，且外层 key() 五元组含这三项，变化时本 effect 必随新实例重跑，行为全覆盖。
+        if (!isVertical && delegate is PagerReaderView) {
+            delegate.setDoublePageModeAndShift(pageLayout == 1 || pageLayout == 2, pageLayout == 2)
+        }
+        // consume-once 不分视图类型：首次 effect 即消费并回执复位，仅对 PagerReaderView 注入。
+        // 旧逻辑只在 delegate==PagerReaderView 时置位——非 Pager 入口（条漫/仿真）不消费，
+        // 换配置触发重建后会把进书时刻的半页位迟到注入到用户已读半程的当前跨页。
+        if (!initialHalfRightConsumed) {
             initialHalfRightConsumed = true
+            onInitialHalfRightConsumed()
+            if (delegate is PagerReaderView) {
+                delegate.setInitialSplitHalfRight(initialHalfRight)
+            }
         }
         // ★ P0-2：切换交接——本次 setup 后立即从总线接管旧实例移交的位图（跨实例），首帧绑定直接命中缓存
         android.util.Log.w("NES", "setup delegate=${System.identityHashCode(delegate)} v=$isVertical vp=$verticalPager tree=$treePath")
@@ -443,15 +460,9 @@ fun NativeReaderScreen(
         com.mangareader.sound.AmbiencePlayer.play(ctx, ambienceSound)
     }
 
-    // Handle pageLayout: SINGLE=0, DOUBLE=1, DOUBLE_SHIFTED=2
-    LaunchedEffect(isVertical, isRtl, pageLayout) {
-        if (!isVertical && pagerView is PagerReaderView) {
-            val doubleMode = pageLayout == 1 || pageLayout == 2
-            val shiftMode = pageLayout == 2
-            // Single update: set both flags then refresh once
-            pagerView.setDoublePageModeAndShift(doubleMode, shiftMode)
-        }
-    }
+    // Handle pageLayout: SINGLE=0, DOUBLE=1, DOUBLE_SHIFTED=2 —— 已并入上方主 DisposableEffect
+    // （先于半页位注入；旧独立 LaunchedEffect 会在注入后把新视图 doublePageMode 从默认 false
+    //   切到 true，触发 resetSplitHalf 清掉刚注入的续读半页位——二轮独立审查实锤）
 
 
     LaunchedEffect(startPage) {

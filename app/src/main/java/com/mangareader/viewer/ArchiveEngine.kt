@@ -2478,7 +2478,11 @@ class ArchiveEngine(private val ctx: Context) {
         val pool = java.util.concurrent.Executors.newFixedThreadPool(minOf(4, items.size))
         try {
             val futures = items.mapIndexed { i, item -> pool.submit { counts[i] = countOneSubArchive(tree, item) } }
-            futures.forEach { it.get() }
+            // 逐个收结果：一个任务失败（含 Error 穿透）不得弃掉其余子包的页数——
+            // 整批 forEach{get()} 会在首异常处中断，剩余 counts 恒 0 → 父书静默缺页
+            futures.forEachIndexed { i, f ->
+                try { f.get() } catch (e: Exception) { Log.d(TAG, "countSubArchivesParallel: sub[$i] failed: ${e.message}") }
+            }
         } catch (e: Exception) {
             Log.d(TAG, "countSubArchivesParallel: ${e.message}")
         } finally { pool.shutdown() }

@@ -76,7 +76,7 @@ object KomgaBookRouter {
                 if (pagesCache.size > 64) {
                     val now = System.currentTimeMillis()
                     pagesCache.entries.removeIf { now - it.value.fetchedAt > PAGES_TTL_MS }
-                    if (pagesCache.size > 256) pagesCache.clear()
+                    if (pagesCache.size > 64) pagesCache.clear()
                 }
                 pagesCache[cacheKey] = CachedPages(System.currentTimeMillis(), pages, isPdf, title)
                 if (existing != null && existing.coverPath != coverPath) dao.updateBookCoverPath(existing.id, coverPath)
