@@ -171,7 +171,10 @@ private fun SrPanelContent(
     // ── 全部状态集中声明 ──
     var tab by remember { mutableStateOf(0) }
     var upscaleOn by remember { mutableStateOf(settings.upscaleEnabled) }
-    var model by remember { mutableStateOf(settings.effectiveModel(bookId)) }
+    // ★ 离线锚点 id：路由 id 查无库条目时由下方 LaunchedEffect 解析/登记（先声明，供 model 初始化用）
+    var effectiveBookId by remember { mutableStateOf(bookId) }
+
+    var model by remember { mutableStateOf(settings.effectiveModel(effectiveBookId)) }
     var denoise by remember { mutableStateOf(settings.denoise) }
     var bwOn by remember { mutableStateOf(settings.bwEnabled) }
     var bwLevels by remember { mutableStateOf(settings.bwGrayLevels) }
@@ -209,7 +212,42 @@ private fun SrPanelContent(
         !vulkanOk -> "此设备不支持 Vulkan 图形加速，画质增强不可用"
         else -> null
     }
-    val (offlineOk, offlineReason) = offlineEnhanceSupported(bookId, bookPath)
+    var anchorToastShown by remember { mutableStateOf(false) }
+    LaunchedEffect(bookId, bookPath) {
+        if (bookId > 0) { effectiveBookId = bookId; return@LaunchedEffect }
+        val p = bookPath
+        if (p.isNullOrEmpty() || p.startsWith("smb:") || p.startsWith("webdav:")) return@LaunchedEffect
+        val resolved = withContext(Dispatchers.IO) {
+            try {
+                val d = com.mangareader.data.MangaDatabase.getDatabase(ctx).mangaDao()
+                d.getBookByPath(p) ?: d.getAllBooksList().firstOrNull { b ->
+                    val fp = b.filePath
+                    fp.isNotEmpty() && (p.startsWith(fp) || fp.startsWith(p))
+                }
+            } catch (_: Exception) { null }
+        }
+        val finalBook = resolved ?: withContext(Dispatchers.IO) {
+            // 自动登记：标题取路径末段（SAF 竖线路径取 doc 段文件名）
+            val title = p.substringAfterLast('/').substringBefore('|').ifBlank { "未命名" }
+            try {
+                val d = com.mangareader.data.MangaDatabase.getDatabase(ctx).mangaDao()
+                val newId = d.insertBook(com.mangareader.data.Book(title = title, filePath = p))
+                if (newId > 0) runCatching { d.getBookById(newId) }.getOrNull() else null
+            } catch (_: Exception) { null }
+        }
+        if (finalBook != null) {
+            effectiveBookId = finalBook.id
+            if (!anchorToastShown) {
+                anchorToastShown = true
+                android.widget.Toast.makeText(
+                    ctx,
+                    if (resolved == null) "已自动关联到书库，离线增强可用" else "已关联到书库《${finalBook.title}》，离线增强可用",
+                    android.widget.Toast.LENGTH_SHORT,
+                ).show()
+            }
+        }
+    }
+    val (offlineOk, offlineReason) = offlineEnhanceSupported(effectiveBookId, bookPath)
 
     // ★ NPU 派生值（2026-10-03 交互重做）：封锁=不可选；未实测=点选时自动实测；模型灰显用
     val npuTierOk = npuArch > 0 && NpuModelRegistry.supports(model, denoise, npuArch)
@@ -225,20 +263,20 @@ private fun SrPanelContent(
     var uninstallPkgs by remember { mutableStateOf<List<String>>(emptyList()) }
 
     // 本书离线状态：打开面板查一次；队列事件驱动刷新（3 秒节流）
-    LaunchedEffect(bookId) { bookStatus = loadBookOfflineStatus(bookId) }
+    LaunchedEffect(effectiveBookId) { bookStatus = loadBookOfflineStatus(effectiveBookId) }
     LaunchedEffect(bookId) {
         var lastRefresh = 0L
         SrCore.queueProgress.collect {
             val now = System.currentTimeMillis()
             if (now - lastRefresh > 3000) {
                 lastRefresh = now
-                bookStatus = loadBookOfflineStatus(bookId)
+                bookStatus = loadBookOfflineStatus(effectiveBookId)
             }
         }
     }
     // 产物用量：切到离线 Tab 时查一次（IO 走树统计，不在组合期做）
-    LaunchedEffect(tab, bookId) {
-        if (tab == 1 && bookId >= 0) {
+    LaunchedEffect(tab, effectiveBookId) {
+        if (tab == 1 && effectiveBookId >= 0) {
             val (n, bytes) = withContext(Dispatchers.IO) { SrCore.diskCache.artifactUsage() }
             artifactText = "$n 张 / ${bytes / 1024 / 1024} MB（上限 ${settings.artifactCacheLimitMb} MB）"
         }
@@ -443,12 +481,12 @@ private fun SrPanelContent(
                                             if (r == NpuTransportProbe.Result.PASS) {
                                                 engine = SrEngine.NPU
                                                 settings.engine = SrEngine.NPU
-                                                scope.launch { SrCore.applySettings(bookId) }
+                                                scope.launch { SrCore.applySettings(effectiveBookId) }
                                             }
                                         }
                                     } else {
                                         engine = e; settings.engine = e
-                                        scope.launch { SrCore.applySettings(bookId) }
+                                        scope.launch { SrCore.applySettings(effectiveBookId) }
                                     }
                                 },
                                 label = {
@@ -653,7 +691,7 @@ private fun SrPanelContent(
                                             selected = model == m,
                                             onClick = {
                                                 model = m; settings.model = m
-                                                scope.launch { SrCore.applySettings(bookId) }
+                                                scope.launch { SrCore.applySettings(effectiveBookId) }
                                             },
                                             modifier = Modifier.height(32.dp),
                                             label = { Text(m.displayName, fontSize = 12.sp) },
@@ -688,7 +726,7 @@ private fun SrPanelContent(
                                 selected = denoise == d,
                                 onClick = {
                                     denoise = d; settings.denoise = d
-                                    scope.launch { SrCore.applySettings(bookId) }
+                                    scope.launch { SrCore.applySettings(effectiveBookId) }
                                 },
                                 label = { Text(d.displayName, fontSize = 12.sp) },
                                 enabled = denoiseCapable,
@@ -706,7 +744,7 @@ private fun SrPanelContent(
                             checked = bwOn,
                             onCheckedChange = {
                                 bwOn = it; settings.bwEnabled = it
-                                scope.launch { SrCore.applySettings(bookId) }
+                                scope.launch { SrCore.applySettings(effectiveBookId) }
                                 SrPipeline.onSettingsChanged()
                             },
                         )
@@ -719,7 +757,7 @@ private fun SrPanelContent(
                                     selected = bwLevels == lv,
                                     onClick = {
                                         bwLevels = lv; settings.bwGrayLevels = lv
-                                        scope.launch { SrCore.applySettings(bookId) }
+                                        scope.launch { SrCore.applySettings(effectiveBookId) }
                                         SrPipeline.onSettingsChanged()
                                     },
                                     label = { Text("$lv 级", fontSize = 12.sp) },
@@ -732,7 +770,7 @@ private fun SrPanelContent(
                                 checked = bwDensity,
                                 onCheckedChange = {
                                     bwDensity = it; settings.bwDensityCorrection = it
-                                    scope.launch { SrCore.applySettings(bookId) }
+                                    scope.launch { SrCore.applySettings(effectiveBookId) }
                                     SrPipeline.onSettingsChanged()
                                 },
                             )
@@ -837,18 +875,18 @@ private fun SrPanelContent(
                 ) {
                     // ★ 持久短码（2026-10-03）：面板拿到哪个 id、能力判定结果——落
                     //   diag_stages.txt（进程死了也在），下次导日志必看
-                    LaunchedEffect(bookId, offlineOk) {
+                    LaunchedEffect(effectiveBookId, offlineOk) {
                         runCatching {
                             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                                com.mangareader.DiagTracer.markStatic("sr: panel off id=$bookId ok=$offlineOk")
+                                com.mangareader.DiagTracer.markStatic("sr: panel off id=$effectiveBookId ok=$offlineOk")
                             }
                         }
                     }
-                    if (bookId < 0) {
+                    if (effectiveBookId < 0) {
                         // book 为 null（bookId=-1）：书未关联书架条目。此前这里整体空白，
                         // 用户看到"离线 Tab 什么都没有"（mobi 实测踩中）。留诊断短码定位路径。
                         runCatching {
-                            com.mangareader.DiagTracer.markStatic("sr: panel nobook id=$bookId")
+                            com.mangareader.DiagTracer.markStatic("sr: panel nobook id=$effectiveBookId")
                         }
                         Card(
                             Modifier.fillMaxWidth(),
@@ -865,7 +903,7 @@ private fun SrPanelContent(
                             )
                         }
                     }
-                    if (bookId >= 0) {
+                    if (effectiveBookId >= 0) {
                         val st = bookStatus
                         Card(
                             onClick = onOpenQueue,
@@ -943,7 +981,7 @@ private fun SrPanelContent(
                             }
                             FilledTonalButton(
                                 onClick = {
-                                    SrBatchRunner.enqueueBook(ctx, bookId, bookTitle, includeUnread) { r ->
+                                    SrBatchRunner.enqueueBook(ctx, effectiveBookId, bookTitle, includeUnread) { r ->
                                         (ctx as? android.app.Activity)?.runOnUiThread {
                                             android.widget.Toast.makeText(
                                                 ctx,
@@ -954,7 +992,7 @@ private fun SrPanelContent(
                                                 android.widget.Toast.LENGTH_LONG,
                                             ).show()
                                         }
-                                        scope.launch { bookStatus = loadBookOfflineStatus(bookId) }
+                                        scope.launch { bookStatus = loadBookOfflineStatus(effectiveBookId) }
                                     }
                                 },
                                 modifier = Modifier.fillMaxWidth(),
@@ -1019,7 +1057,7 @@ private fun SrPanelContent(
                         )
                         TextButton(
                             onClick = {
-                                SrCore.diskCache.removeArtifacts(bookId)
+                                SrCore.diskCache.removeArtifacts(effectiveBookId)
                                 scope.launch {
                                     val (n, bytes) = withContext(Dispatchers.IO) { SrCore.diskCache.artifactUsage() }
                                     artifactText = "$n 张 / ${bytes / 1024 / 1024} MB（上限 ${settings.artifactCacheLimitMb} MB）"

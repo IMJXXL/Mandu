@@ -2873,7 +2873,8 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             //   内部都会按 id 自查 DB，路由 id 才是真实来源。
             bookId = bookId,
             bookTitle = book?.title ?: "",
-            bookPath = book?.filePath,
+            // ★ 路由 id 查无库条目时（历史入口/重扫重建），面板用当前树路径做锚点解析
+            bookPath = book?.filePath ?: navStack.lastOrNull()?.takeIf { it.isNotEmpty() },
             onOpenQueue = {
                 showSrPanel = false
                 showSrQueue = true
@@ -3010,7 +3011,14 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     // 规则：未映射的键一律不消费（音量键原样落到旧"音量键翻页"链路，保留反转与菜单守卫）；
     // 菜单/目录/设置浮层打开时只放行"呼出菜单"键逐层关闭，其余不抢（防遥控在浮层后翻页）；
     // 长按连发只属于条漫滚动（首按滚 0.8 屏，连发小步滚），翻页/章节/书签不连发防飞页。
-    var hwConsumedCode by remember { mutableIntStateOf(-1) }
+    // ★ 2026-10-04 修"个别按键按两次才生效"：①消费标记由单变量改集合——两键 DOWN 交错时
+    //   旧单变量会被后键覆盖，先按的键 UP 判"未消费"漏到系统；②翻页类动作统一 UP 触发
+    //  （DOWN 只标记消费），DOWN/UP 时序怪癖的遥控器/翻页器不再丢首按，与音量键旧链路同语义；
+    //  ③滚动类保留 DOWN 首按+repeat 连发（长按连续滚依赖 DOWN 序列）。
+    val hwConsumedCodes = remember { java.util.Collections.newSetFromMap(java.util.concurrent.ConcurrentHashMap<Int, Boolean>()) }
+    // 未映射键提示去重（每键码会话一次）：蓝牙翻页器常见"一次按键发多个键码"，只绑其中一个
+    // 时另一码静默漏出，体感=时灵时不灵——提示用户还有码可绑
+    val hwUnmappedHinted = remember { java.util.Collections.newSetFromMap(java.util.concurrent.ConcurrentHashMap<Int, Boolean>()) }
 
     fun hwBrightness(delta: Int) {
         val base = if (config.screenBrightnessEnabled) config.screenBrightness else 0
@@ -3037,105 +3045,126 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         if (!viewing) return false
         // 总开关默认关（用户拍板 2026-10-03）：按键默认交还系统，想用遥控先到按键自定义里打开
         if (!prefs.getBoolean("reader_hw_keys_enabled", false)) return false
-        val mapping = com.mangareader.keys.KeyMapStore.mappings(ctx).firstOrNull { it.keyCode == keyCode } ?: return false
-        val action = mapping.actionEnum()
-        when (event.action) {
-            android.view.KeyEvent.ACTION_DOWN -> {}
-            android.view.KeyEvent.ACTION_UP -> {
-                val was = hwConsumedCode == keyCode
-                if (was) hwConsumedCode = -1
-                return was // 与已消费的 DOWN 成对吞掉，避免音量键等漏到系统
-            }
-            else -> return false
-        }
-        // 浮层打开：与该浮层对应的键负责关闭（OK/菜单键通用"返回"），其余不抢（防遥控在浮层后翻页）
-        if (showSettings || showToc || ui) {
-            if (event.repeatCount > 0) return false
-            val relevant = when {
-                showSettings -> action == com.mangareader.keys.KeyAction.TOGGLE_MENU ||
-                    action == com.mangareader.keys.KeyAction.TOGGLE_READER_SETTINGS
-                showToc -> action == com.mangareader.keys.KeyAction.TOGGLE_MENU ||
-                    action == com.mangareader.keys.KeyAction.BOOKMARK_LIST
-                else -> action == com.mangareader.keys.KeyAction.TOGGLE_MENU ||
-                    action == com.mangareader.keys.KeyAction.TOGGLE_READER_SETTINGS
-            }
-            if (!relevant) return false
-            when {
-                showSettings -> showSettings = false
-                showToc -> showToc = false
-                action == com.mangareader.keys.KeyAction.TOGGLE_MENU -> ui = false
-                else -> { ui = false; showSettings = true } // 菜单开着按"阅读设置"键：关菜单直开设置
-            }
-            hwConsumedCode = keyCode
-            return true
-        }
-        if (event.repeatCount > 0) {
-            // 长按连发：只有滚动类动作；其余吞掉重复事件但不动作
-            when (action) {
-                com.mangareader.keys.KeyAction.SCROLL_FORWARD -> { scrollHw(1, event.repeatCount); return true }
-                com.mangareader.keys.KeyAction.SCROLL_BACKWARD -> { scrollHw(-1, event.repeatCount); return true }
-                else -> return true
-            }
-        }
-        when (action) {
-            com.mangareader.keys.KeyAction.NONE -> return false
-            com.mangareader.keys.KeyAction.NEXT_PAGE -> go(1)
-            com.mangareader.keys.KeyAction.PREV_PAGE -> go(-1)
-            com.mangareader.keys.KeyAction.SCROLL_FORWARD -> scrollHw(1, 0)
-            com.mangareader.keys.KeyAction.SCROLL_BACKWARD -> scrollHw(-1, 0)
-            com.mangareader.keys.KeyAction.TOGGLE_MENU -> ui = !ui
-            com.mangareader.keys.KeyAction.TOGGLE_READER_SETTINGS -> showSettings = !showSettings
-            com.mangareader.keys.KeyAction.ADD_BOOKMARK -> toggleBookmark()
-            com.mangareader.keys.KeyAction.BOOKMARK_LIST -> { showSettings = false; showToc = true }
-            com.mangareader.keys.KeyAction.NEXT_CHAPTER -> switchToNext()
-            com.mangareader.keys.KeyAction.PREV_CHAPTER -> switchToPrevious()
-            com.mangareader.keys.KeyAction.BRIGHTNESS_UP -> hwBrightness(10)
-            com.mangareader.keys.KeyAction.BRIGHTNESS_DOWN -> hwBrightness(-10)
-            com.mangareader.keys.KeyAction.TOGGLE_DIRECTION -> when (mode) {
-                Mode.RTL -> applyModeChange(Mode.FLIP)
-                Mode.FLIP -> applyModeChange(Mode.RTL)
-                else -> {}
-            }
-            com.mangareader.keys.KeyAction.MODE_CYCLE -> {
-                val next = when (mode) {
-                    Mode.FLIP -> Mode.RTL
-                    Mode.RTL -> Mode.VERT
-                    else -> Mode.FLIP // VERT / VERT_PAGER / WEBTOON_GAP 都归到 FLIP 位
-                }
-                applyModeChange(next)
-            }
-            com.mangareader.keys.KeyAction.TOGGLE_PAGE_LAYOUT -> {
-                val next = if (config.pageLayout == com.mangareader.data.ReaderConfig.PageLayout.SINGLE)
-                    com.mangareader.data.ReaderConfig.PageLayout.DOUBLE
-                else com.mangareader.data.ReaderConfig.PageLayout.SINGLE
-                val nc = config.copy(pageLayout = next)
-                config = nc
-                // 豁免字段：任何状态（含总开关关）都写本书覆盖——"按了就记住"
-                com.mangareader.data.ReaderScope.write(ctx, bookId, "pageLayout", next.name)
-                configVersion++
-            }
-            com.mangareader.keys.KeyAction.TOGGLE_AUTO_FLIP -> {
-                val curInterval = config.autoFlipInterval
-                val next = if (curInterval > 0) {
-                    prefs.edit().putInt("auto_flip_last_nonzero", curInterval).apply()
-                    0
-                } else {
-                    prefs.getInt("auto_flip_last_nonzero", 0).takeIf { it > 0 } ?: 8000
-                }
-                val nc = config.copy(autoFlipInterval = next)
-                config = nc
-                // 全局语义字段（恒全局项）：写全局键，Toast 带作用域披露
-                com.mangareader.data.ReaderScope.write(ctx, bookId, "autoFlipInterval", next)
-                configVersion++
+        val mapping = com.mangareader.keys.KeyMapStore.mappings(ctx).firstOrNull { it.keyCode == keyCode }
+        if (mapping == null) {
+            // 未映射键不消费（音量键等原样让给系统/旧链路）；非音量键给一次性绑定提示
+            if (event.action == android.view.KeyEvent.ACTION_DOWN &&
+                keyCode != android.view.KeyEvent.KEYCODE_BACK &&
+                keyCode != android.view.KeyEvent.KEYCODE_VOLUME_UP &&
+                keyCode != android.view.KeyEvent.KEYCODE_VOLUME_DOWN &&
+                hwUnmappedHinted.add(keyCode)
+            ) {
                 android.widget.Toast.makeText(
                     ctx,
-                    (if (next > 0) "自动翻页：开（${"%.1f".format(next / 1000.0f)} 秒/页）" else "自动翻页：关") + " · 已对所有书生效",
+                    "按键 ${com.mangareader.keys.KeyMapStore.keyCodeName(keyCode)}($keyCode) 未绑定功能，可到 设置→按键自定义 添加",
                     android.widget.Toast.LENGTH_SHORT,
                 ).show()
             }
+            return false
         }
-        hwConsumedCode = keyCode
-        return true
+        val action = mapping.actionEnum()
+        val scrollRepeat = action == com.mangareader.keys.KeyAction.SCROLL_FORWARD ||
+            action == com.mangareader.keys.KeyAction.SCROLL_BACKWARD
+        when (event.action) {
+            android.view.KeyEvent.ACTION_DOWN -> {
+                // 浮层打开：relevant 键只标记（动作延迟 UP），其余放行系统
+                if (showSettings || showToc || ui) {
+                    if (event.repeatCount > 0) return false
+                    val relevant = when {
+                        showSettings -> action == com.mangareader.keys.KeyAction.TOGGLE_MENU ||
+                            action == com.mangareader.keys.KeyAction.TOGGLE_READER_SETTINGS
+                        showToc -> action == com.mangareader.keys.KeyAction.TOGGLE_MENU ||
+                            action == com.mangareader.keys.KeyAction.BOOKMARK_LIST
+                        else -> action == com.mangareader.keys.KeyAction.TOGGLE_MENU ||
+                            action == com.mangareader.keys.KeyAction.TOGGLE_READER_SETTINGS
+                    }
+                    if (!relevant) return false
+                    hwConsumedCodes.add(keyCode)
+                    return true
+                }
+                if (event.repeatCount > 0) {
+                    // 长按连发：只有滚动类动作；其余吞掉重复事件但不动作
+                    when (action) {
+                        com.mangareader.keys.KeyAction.SCROLL_FORWARD -> { scrollHw(1, event.repeatCount); return true }
+                        com.mangareader.keys.KeyAction.SCROLL_BACKWARD -> { scrollHw(-1, event.repeatCount); return true }
+                        else -> return true
+                    }
+                }
+                if (scrollRepeat) scrollHw(if (action == com.mangareader.keys.KeyAction.SCROLL_FORWARD) 1 else -1, 0)
+                hwConsumedCodes.add(keyCode)
+                return true
+            }
+            android.view.KeyEvent.ACTION_UP -> {
+                val was = hwConsumedCodes.remove(keyCode)
+                if (!was) return false // 无配对 DOWN（DOWN 曾漏出）→ 放行，防吞系统行为
+                if (scrollRepeat) return true // 滚动类已在 DOWN 首按执行，UP 无事
+                when (action) {
+                    com.mangareader.keys.KeyAction.NONE -> {}
+                    com.mangareader.keys.KeyAction.TOGGLE_MENU -> if (showSettings || showToc || ui) {
+                        when {
+                            showSettings -> showSettings = false
+                            showToc -> showToc = false
+                            else -> ui = false
+                        }
+                    } else ui = !ui
+                    com.mangareader.keys.KeyAction.TOGGLE_READER_SETTINGS -> if (ui) { ui = false; showSettings = true } else showSettings = !showSettings
+                    com.mangareader.keys.KeyAction.BOOKMARK_LIST -> { showSettings = false; showToc = true }
+                    com.mangareader.keys.KeyAction.NEXT_PAGE -> go(1)
+                    com.mangareader.keys.KeyAction.PREV_PAGE -> go(-1)
+                    com.mangareader.keys.KeyAction.SCROLL_FORWARD -> {}
+                    com.mangareader.keys.KeyAction.SCROLL_BACKWARD -> {}
+                    com.mangareader.keys.KeyAction.ADD_BOOKMARK -> toggleBookmark()
+                    com.mangareader.keys.KeyAction.NEXT_CHAPTER -> switchToNext()
+                    com.mangareader.keys.KeyAction.PREV_CHAPTER -> switchToPrevious()
+                    com.mangareader.keys.KeyAction.BRIGHTNESS_UP -> hwBrightness(10)
+                    com.mangareader.keys.KeyAction.BRIGHTNESS_DOWN -> hwBrightness(-10)
+                    com.mangareader.keys.KeyAction.TOGGLE_DIRECTION -> when (mode) {
+                        Mode.RTL -> applyModeChange(Mode.FLIP)
+                        Mode.FLIP -> applyModeChange(Mode.RTL)
+                        else -> {}
+                    }
+                    com.mangareader.keys.KeyAction.MODE_CYCLE -> {
+                        val next = when (mode) {
+                            Mode.FLIP -> Mode.RTL
+                            Mode.RTL -> Mode.VERT
+                            else -> Mode.FLIP // VERT / VERT_PAGER / WEBTOON_GAP 都归到 FLIP 位
+                        }
+                        applyModeChange(next)
+                    }
+                    com.mangareader.keys.KeyAction.TOGGLE_PAGE_LAYOUT -> {
+                        val next = if (config.pageLayout == com.mangareader.data.ReaderConfig.PageLayout.SINGLE)
+                            com.mangareader.data.ReaderConfig.PageLayout.DOUBLE
+                        else com.mangareader.data.ReaderConfig.PageLayout.SINGLE
+                        val nc = config.copy(pageLayout = next)
+                        config = nc
+                        // 豁免字段：任何状态（含总开关关）都写本书覆盖——"按了就记住"
+                        com.mangareader.data.ReaderScope.write(ctx, bookId, "pageLayout", next.name)
+                        configVersion++
+                    }
+                    com.mangareader.keys.KeyAction.TOGGLE_AUTO_FLIP -> {
+                        val curInterval = config.autoFlipInterval
+                        val next = if (curInterval > 0) {
+                            prefs.edit().putInt("auto_flip_last_nonzero", curInterval).apply()
+                            0
+                        } else {
+                            prefs.getInt("auto_flip_last_nonzero", 0).takeIf { it > 0 } ?: 8000
+                        }
+                        val nc = config.copy(autoFlipInterval = next)
+                        config = nc
+                        // 全局语义字段（恒全局项）：写全局键，Toast 带作用域披露
+                        com.mangareader.data.ReaderScope.write(ctx, bookId, "autoFlipInterval", next)
+                        configVersion++
+                        android.widget.Toast.makeText(
+                            ctx,
+                            (if (next > 0) "自动翻页：开（${"%.1f".format(next / 1000.0f)} 秒/页）" else "自动翻页：关") + " · 已对所有书生效",
+                            android.widget.Toast.LENGTH_SHORT,
+                        ).show()
+                    }
+                }
+                return true
+            }
+            else -> return false
+        }
     }
 
     // 键 viewing + pageList：pageList 变化（章节切换/长图展开/宽图二分）时重挂载，

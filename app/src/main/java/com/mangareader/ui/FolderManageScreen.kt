@@ -44,6 +44,7 @@ import com.mangareader.smbbridge.unwrapActivity
 import com.hippo.ehviewer.Settings
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -72,6 +73,12 @@ fun FolderManageScreen(onBack: () -> Unit) {
     var showRenameFolder by remember { mutableStateOf<Folder?>(null) }
     var showNomediaDialog by remember { mutableStateOf<android.net.Uri?>(null) }
     var folderHiddenMap by remember { mutableStateOf<Map<Long, Boolean>>(emptyMap()) }
+    // ★ 文件夹整批归架/打标签（2026-10-04 用户定稿）："已导入"里每个文件夹整体归入书架/加标签
+    var shelfPickerBooks by remember { mutableStateOf<Set<Long>>(emptySet()) }
+    var showFolderShelfPicker by remember { mutableStateOf(false) }
+    var tagPickerFolderBooks by remember { mutableStateOf<Set<Long>>(emptySet()) }
+    var showFolderTagPicker by remember { mutableStateOf(false) }
+    var folderTagsWithCounts by remember { mutableStateOf(listOf<com.mangareader.data.TagWithCount>()) }
     var verifyZipContent by remember { mutableStateOf(prefs.getBoolean("scan_verify_zip_content", false)) }
     var autoRefresh by remember { mutableStateOf(prefs.getBoolean("auto_refresh", false)) }
 
@@ -90,6 +97,15 @@ fun FolderManageScreen(onBack: () -> Unit) {
         }
     }
     LaunchedEffect(Unit) { dao.getAllFolders().collect { folders = it } }
+
+    // 文件夹 → 该文件夹下全部可见书 ids（与隐藏开关同一套 SAF 前缀参数口径）
+    suspend fun collectFolderBookIds(f: Folder): Set<Long> = withContext(Dispatchers.IO) {
+        val treeUri = android.net.Uri.parse(f.treeUri)
+        val auth = treeUri.authority ?: ""
+        val treeDocId = android.net.Uri.decode(treeUri.lastPathSegment ?: "").removePrefix("tree:")
+        dao.getBooksByFolderParams("a:$auth|$treeDocId|%", "d:$auth|$treeDocId|%", "z:a:$auth|$treeDocId|%")
+            .filter { !it.isHidden }.map { it.id }.toSet()
+    }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
         if (r.resultCode == Activity.RESULT_OK) r.data?.data?.let { uri ->
@@ -185,7 +201,27 @@ fun FolderManageScreen(onBack: () -> Unit) {
                                 }
                             })
                         }
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+                        androidx.compose.foundation.layout.FlowRow(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.End,
+                        ) {
+                            TextButton(onClick = {
+                                scope.launch {
+                                    val ids = collectFolderBookIds(f)
+                                    if (ids.isEmpty()) Toast.makeText(ctx, "该文件夹下没有漫画", Toast.LENGTH_SHORT).show()
+                                    else { shelfPickerBooks = ids; showFolderShelfPicker = true }
+                                }
+                            }) { Text("书架") }
+                            TextButton(onClick = {
+                                scope.launch {
+                                    val ids = collectFolderBookIds(f)
+                                    if (ids.isEmpty()) { Toast.makeText(ctx, "该文件夹下没有漫画", Toast.LENGTH_SHORT).show(); return@launch }
+                                    tagPickerFolderBooks = ids
+                                    folderTagsWithCounts = dao.getAllTagsWithCounts().first()
+                                    showFolderTagPicker = true
+                                }
+                            }) { Text("标签") }
                             TextButton(onClick = {
                                 scope.launch {
                                     scanning = true; scanTarget = "正在扫描「${f.displayName}」…"; scanCount = 0
@@ -211,6 +247,45 @@ fun FolderManageScreen(onBack: () -> Unit) {
         }
     }
 
+
+    // ★ 文件夹整批归架：复用书架选择器（自带差量写库——勾选归入、取消勾选移出）
+    if (showFolderShelfPicker) {
+        ShelfPickerDialog(
+            onDismiss = { showFolderShelfPicker = false },
+            dao = dao,
+            scope = scope,
+            bookIds = shelfPickerBooks,
+            onConfirm = {
+                showFolderShelfPicker = false
+                Toast.makeText(ctx, "已按勾选更新 ${shelfPickerBooks.size} 本的书架归属", Toast.LENGTH_SHORT).show()
+            },
+        )
+    }
+    // ★ 文件夹整批打标签：复用批量打标签面板（setBookTags 幂等追加，不动已有标签）
+    if (showFolderTagPicker) {
+        TagPickerSheet(
+            visible = true,
+            allTags = folderTagsWithCounts,
+            selectedIds = emptySet(),
+            andLogic = true,
+            addMode = true,
+            onToggle = {},
+            onLogicChange = {},
+            onClear = {},
+            onApply = { ids ->
+                val names = ids.mapNotNull { id -> folderTagsWithCounts.find { it.tag.id == id }?.tag?.name }
+                if (names.isNotEmpty()) {
+                    val targets = tagPickerFolderBooks
+                    scope.launch {
+                        withContext(Dispatchers.IO) { targets.forEach { bid -> dao.setBookTags(bid, names, 1) } }
+                        Toast.makeText(ctx, "已为 ${targets.size} 本添加 ${names.size} 个标签", Toast.LENGTH_SHORT).show()
+                    }
+                }
+                showFolderTagPicker = false
+            },
+            onDismiss = { showFolderTagPicker = false },
+        )
+    }
 
     if (showDeleteFolder != null) {
         val f = showDeleteFolder!!
