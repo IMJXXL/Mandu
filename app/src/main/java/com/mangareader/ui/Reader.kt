@@ -3014,7 +3014,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                 }
                 if (changedLayers.any { it.second == com.mangareader.data.ReaderScope.Layer.GLOBAL } && !globalWriteToastShown) {
                     globalWriteToastShown = true
-                    android.widget.Toast.makeText(ctx, "已对所有书生效", android.widget.Toast.LENGTH_SHORT).show()
+                    android.widget.Toast.makeText(ctx, "已生效：没单独调过的书都跟随这个值", android.widget.Toast.LENGTH_SHORT).show()
                 }
                 // 单本类项改动 → 每本书首次带书名提示（总开关关=仅本次提示）
                 val bookChanged = changedLayers.any { it.second != com.mangareader.data.ReaderScope.Layer.GLOBAL }

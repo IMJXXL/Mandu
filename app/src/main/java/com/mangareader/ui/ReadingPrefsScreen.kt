@@ -236,7 +236,7 @@ fun ReadingPrefsScreen(onBack: () -> Unit) {
         version++
         if (!writeToastShown) {
             writeToastShown = true
-            notify("已保存，对所有书生效（单独设置过的书不受影响）")
+            notify("已保存为默认值（书里单独调过的书不受影响）")
         }
     }
 
@@ -280,8 +280,8 @@ fun ReadingPrefsScreen(onBack: () -> Unit) {
         notify(
             when {
                 target == ReaderScope.SCOPE_BOOK -> "已切为「本书」：这页参数锁定，进书里调，只记那本书"
-                covered > 0 -> "已切为「全局」：可在这页设默认值；有 $covered 本书单独调过仍用自己的值，点「单独·N本」可清除"
-                else -> "已切为「全局」：可在这页设默认值，书里调＝所有书变"
+                covered > 0 -> "已切为「全局」：书里调它＝默认值变了；有 $covered 本书单独调过仍用自己的值，点「单独·N本」可清除"
+                else -> "已切为「全局」：在书里调它，没单独调过的书都跟着变"
             }
         )
     }
@@ -307,7 +307,7 @@ fun ReadingPrefsScreen(onBack: () -> Unit) {
                     Text("这一页怎么用", fontSize = 14.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Medium)
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        "· 行尾徽章「全局」的项：在这页设默认值，书里调它＝所有书一起变",
+                        "· 徽章「全局」的项：在书里调它＝所有没单独调过的书都跟着变；这页只是预设默认值",
                         fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
