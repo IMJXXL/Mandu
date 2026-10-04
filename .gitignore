@@ -57,3 +57,5 @@ hs_err_pid*.log
 replay_pid*.log
 tools/preview/
 tools/__pycache__/
+tools/cugan_app.py
+tools/_patch_*.py

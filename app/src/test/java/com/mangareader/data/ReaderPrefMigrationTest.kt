@@ -43,13 +43,14 @@ class ReaderPrefMigrationTest {
             .putString("book_9_pageLayout", "DOUBLE")
             .apply()
         ReaderPrefMigration.runIfNeeded(prefs, snapshotDir)
-        // 转正=零删除：僵尸键保留为本书覆盖，恰好恢复 pre-852 按书语义
+        // 转正=零删除：僵尸键保留为本书覆盖。pageLayout 现为预设全局（用户拍板），
+        // 覆盖休眠读默认；用户把该项切回"本书单独"后老选择即刻恢复
         assertEquals("DOUBLE_SHIFTED", prefs.getString("book_5_pageLayout", null))
         assertFalse(prefs.contains("pageLayout"))
+        assertEquals(ReaderConfig.PageLayout.SINGLE, ReaderConfig.load(prefs, 5L).pageLayout)
+        ReaderScope.setScope(prefs, "pageLayout", ReaderScope.SCOPE_BOOK)
         assertEquals(ReaderConfig.PageLayout.DOUBLE_SHIFTED, ReaderConfig.load(prefs, 5L).pageLayout)
         assertEquals(ReaderConfig.PageLayout.DOUBLE, ReaderConfig.load(prefs, 9L).pageLayout)
-        // 没有僵尸键的书读出厂默认
-        assertEquals(ReaderConfig.PageLayout.SINGLE, ReaderConfig.load(prefs, 7L).pageLayout)
     }
 
     @Test

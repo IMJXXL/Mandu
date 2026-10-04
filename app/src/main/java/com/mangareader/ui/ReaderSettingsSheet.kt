@@ -562,10 +562,10 @@ private fun AmbienceSection(config: ReaderConfig, onConfigChange: (ReaderConfig)
     }
 }
 
-private fun listImportedAmbience(ctx: android.content.Context): List<String> =
+internal fun listImportedAmbience(ctx: android.content.Context): List<String> =
     java.io.File(ctx.filesDir, "ambience").listFiles()?.map { it.name }?.sorted() ?: emptyList()
 
-private fun importAmbienceFile(ctx: android.content.Context, uri: android.net.Uri): String? = runCatching {
+internal fun importAmbienceFile(ctx: android.content.Context, uri: android.net.Uri): String? = runCatching {
     val displayName = ctx.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
         ?.use { c -> if (c.moveToFirst()) c.getString(0) else null } ?: "import"
     var name = displayName.replace(Regex("[\\\\/:*?\"<>|\r\n]"), "_").take(80).ifEmpty { "import" }

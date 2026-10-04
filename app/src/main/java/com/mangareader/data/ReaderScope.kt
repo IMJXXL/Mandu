@@ -5,15 +5,16 @@ import android.content.SharedPreferences
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * 阅读偏好三层模型（2026-10-03 九方评审定稿，终版 9.1 分）：
+ * 阅读偏好三层模型（2026-10-04 用户定稿重构）：
  *
  *   生效顺序：临时值(会话) > 本书覆盖 > 全局值 > 出厂默认
  *
- * - 【全局值】每个设置项一份，阅读设置页/偏好页改；
- * - 【本书覆盖】在书内改动且总开关开（或字段豁免）时写入 book_<id>_<key>，只对本书生效；
+ * - 【作用域】每项可在 全局生效 / 本书单独 之间切换（偏好页）。
+ *   预设作用域 = 本功能引入前的真实行为：只在 设置→阅读设置 改的项（与 ReaderConfig.save
+ *   无前缀写全集一致）预设全局；书内面板能改的项预设本书。显式指定一律压过预设。
+ * - 【全局值】该项对所有书生效的默认值，偏好页/阅读设置页直接改；
+ * - 【本书覆盖】作用域为本书时，书内改动写 book_<id>_<key>，只对本书生效；
  * - 【临时值】总开关关时书内改动只进内存会话层，退出阅读（reader 路由弹出返回栈）全清；
- * - 【豁免字段】pageLayout：覆盖恒参与解析（总开关关也生效），写入时同步清该字段临时桶
- *   （T+Oe 态不可达，QA 终审裁定）；
  * - 【条件锁定】翻页闪烁组：全局开关开着=整组接管（读写全局），关了=单本自决——沿用既有语义。
  *
  * 写入必须走 [write]/[writeGlobal]/[clearBook] 单键路由，禁止整包 save 写书内键
@@ -24,37 +25,43 @@ object ReaderScope {
     /** 总开关「本书改动单独记」：开=书内改动写本书覆盖；关=仅会话层，退出阅读丢弃 */
     const val MASTER_KEY = "pref_center_book_override_enabled"
 
-    private const val PAGE_LAYOUT_KEY = "pageLayout"
+    /** 阅读模式（单页/条漫族）：特殊双键项——书层 read_mode_<id>，全局层 default_read_mode */
+    const val READ_MODE_KEY = "readMode"
+    const val READ_MODE_GLOBAL_KEY = "default_read_mode"
+    fun readModeBookKey(bookId: Long) = "read_mode_$bookId"
 
-    /** 恒全局项：书内改动直接写全局键（UI 层配"已对所有书生效"Toast 披露） */
-    val GLOBAL_ONLY_KEYS: Set<String> = setOf(
+    /**
+     * 预设全局项（= 本功能引入前 ReaderConfig.save 无前缀写的全集 + 用户拍板项）：
+     * 这些项书内改动直接写全局键，对所有书生效；偏好页可把单项改成"本书单独"。
+     */
+    val PRESET_GLOBAL_KEYS: Set<String> = setOf(
+        "pageLayout", "autoDoubleLandscape", // 用户拍板：单双页布局/横屏自动双页全局语义
+        "orientation", "readBackground",
         "isFlipAnimation", "isPageCurlAnimation", "isCurlContentAreaOnly",
         "curlBackContentAlpha", "curlShadowAlpha", "spineShadowAlpha",
-        "isShowPageNum", "isKeepScreenOn", "readBackground",
+        "fitScreen", "landscapeZoom", "useSSIV",
+        "isShowPageNum", "isKeepScreenOn", "isImmersiveMode",
+        "autoWebtoon", "chapterTransition", "seamlessNextVolume", "autoFlipInterval",
         "isEinkMode", "isEinkDither", "einkDitherAlgorithm", "einkDitherLevels",
         "einkEndpointPassthrough", "einkDecodeSize", "einkUiHideDelay",
-        "pdfQuality", "isImmersiveMode", "orientation", "autoFlipInterval",
-        "landscapeZoom", "fitScreen", "autoWebtoon", "chapterTransition",
-        "seamlessNextVolume", "autoDoubleLandscape", "forceFullDecode",
-        "tileModeEnabled", "downsampleTier", "tallSplitEnabled",
+        "pdfQuality", "forceFullDecode", "tileModeEnabled", "downsampleTier", "tallSplitEnabled",
     )
 
-    /** 本书可覆盖项（书键 = book_<id>_<key>；总开关关时休眠→读全局，豁免项除外） */
+    /** 预设"本书单独"项（= 引入前 save 带前缀写的全集）：书内改动只记本书 */
     val BOOK_KEYS: Set<String> = setOf(
-        "scrollMode", "clickFlipType", "clickFlipInvertH",
+        "scrollMode", "clickFlipType", "clickFlipInvertH", "panNavigation",
         "isTrimWhiteBorder", "trimFactor", "trimThreshold", "trimWhiteRatio", "imageMarginH",
         "isGrayscale", "isInvertColors",
         "isFlipFlashEnabled", "flipFlashDuration", "flipFlashInterval", "flipFlashColor",
-        "useSSIV", "panNavigation", "doublePageShift", "doublePageSplit", "doublePageReverse",
-        "centerGapType",
+        "doublePageShift", "doublePageSplit", "doublePageReverse", "centerGapType",
         "brightness", "screenBrightness", "contrast", "gamma",
         "brightnessEnabled", "screenBrightnessEnabled", "contrastEnabled", "gammaEnabled",
         "textureEnabled", "texturePresetId", "textureAlpha", "textureConcentration", "textureScope",
         "ambienceSound", "ambienceVolume",
     )
 
-    /** 总开关豁免项：覆盖恒参与解析（总开关关也生效）——遥控/菜单切单双页"按了就记住" */
-    val MASTER_EXEMPT_KEYS: Set<String> = setOf(PAGE_LAYOUT_KEY)
+    /** 全部纳管键（清除/统计用） */
+    val ALL_KEYS: Set<String> = PRESET_GLOBAL_KEYS + BOOK_KEYS + READ_MODE_KEY
 
     /** 条件锁定组（全局开=接管读写全局，关=单本自决）：翻页闪烁组，沿用既有语义 */
     val CONDITIONAL_LOCK_KEYS: Set<String> = setOf(
@@ -80,22 +87,24 @@ object ReaderScope {
         return out
     }
 
-    /** 单项作用域：显式指定 > 预设。BOOK_KEYS 预设单本，GLOBAL_ONLY_KEYS 预设全局。 */
+    /** 项的预设作用域 */
+    fun presetScope(key: String): String = if (key in PRESET_GLOBAL_KEYS) SCOPE_GLOBAL else SCOPE_BOOK
+
+    /** 单项作用域：显式指定 > 预设。显式指定是用户在偏好页亲选的，永远生效。 */
     fun userScope(prefs: SharedPreferences, key: String): String {
         val reg = parseScopeReg(prefs)
         reg[key]?.let { return it }
-        return if (key in GLOBAL_ONLY_KEYS) SCOPE_GLOBAL else SCOPE_BOOK
+        return presetScope(key)
     }
 
     fun setScope(prefs: SharedPreferences, key: String, scope: String) {
         val reg = parseScopeReg(prefs).toMutableMap()
-        val preset = if (key in GLOBAL_ONLY_KEYS) SCOPE_GLOBAL else SCOPE_BOOK
-        if (scope == preset) reg.remove(key) else reg[key] = scope
+        if (scope == presetScope(key)) reg.remove(key) else reg[key] = scope
         val raw = reg.entries.joinToString(";") { "${it.key}=${it.value}" }
         prefs.edit().putString(SCOPE_REG_KEY, raw).apply()
     }
 
-    /** 偏好页用：某项当前被用户指为"单本生效"吗（预设单本或显式指 book） */
+    /** 偏好页用：某项当前被指为"本书单独"吗 */
     fun isBookScope(prefs: SharedPreferences, key: String): Boolean =
         userScope(prefs, key) == SCOPE_BOOK
 
@@ -107,15 +116,13 @@ object ReaderScope {
     enum class Layer { GLOBAL, BOOK, SESSION }
 
     fun resolveLayer(prefs: SharedPreferences, bookId: Long, key: String): Layer {
-        // 显式指定的作用域才豁免总开关；未指定的键跟随预设/总开关
         val explicit = parseScopeReg(prefs)[key]
         return when {
             explicit == SCOPE_GLOBAL -> Layer.GLOBAL
-            key in GLOBAL_ONLY_KEYS -> Layer.GLOBAL // 预设恒全局
             key in CONDITIONAL_LOCK_KEYS && conditionalLockActive(prefs) -> Layer.GLOBAL
             bookId <= 0 -> Layer.GLOBAL
-            explicit == SCOPE_BOOK -> Layer.BOOK // 显式指单本：豁免总开关
-            key in MASTER_EXEMPT_KEYS -> Layer.BOOK // 豁免字段（pageLayout）：任何状态都写本书
+            explicit == SCOPE_BOOK -> Layer.BOOK // 用户显式指单本：压过预设全局，豁免总开关
+            key in PRESET_GLOBAL_KEYS -> Layer.GLOBAL // 预设全局（书内改动对所有书生效）
             masterOn(prefs) -> Layer.BOOK
             else -> Layer.SESSION
         }
@@ -127,23 +134,46 @@ object ReaderScope {
         write(context.getSharedPreferences("manga_reader", Context.MODE_PRIVATE), bookId, key, value)
 
     fun write(prefs: SharedPreferences, bookId: Long, key: String, value: Any) {
-        when (resolveLayer(prefs, bookId, key)) {
-            Layer.GLOBAL -> putRaw(prefs.edit(), key, value)
+        val layer = resolveLayer(prefs, bookId, key)
+        when (layer) {
+            Layer.GLOBAL -> {
+                if (key == READ_MODE_KEY) {
+                    // 阅读模式全局化：写全局默认并清本书残留，全局即刻接管这本书
+                    prefs.edit().putInt(READ_MODE_GLOBAL_KEY, value as Int)
+                        .remove(readModeBookKey(bookId)).apply()
+                } else putRaw(prefs.edit(), key, value)
+            }
             Layer.BOOK -> {
-                putRaw(prefs.edit(), "book_${bookId}_$key", value)
-                // E2 定案：豁免字段写入时同步清该字段临时桶（T+Oe 不可达）
-                if (key in MASTER_EXEMPT_KEYS) ReaderSessionStore.remove(bookId, key)
+                if (key == READ_MODE_KEY) putRaw(prefs.edit(), readModeBookKey(bookId), value)
+                else putRaw(prefs.edit(), "book_${bookId}_$key", value)
             }
             Layer.SESSION -> ReaderSessionStore.put(bookId, key, value)
         }
+        // 落键层的写入清该字段临时桶，防旧临时值遮蔽新落盘值
+        if (layer != Layer.SESSION) ReaderSessionStore.remove(bookId, key)
     }
 
     fun writeGlobal(context: Context, key: String, value: Any) =
         writeGlobal(context.getSharedPreferences("manga_reader", Context.MODE_PRIVATE), key, value)
 
     fun writeGlobal(prefs: SharedPreferences, key: String, value: Any) {
-        putRaw(prefs.edit(), key, value)
+        if (key == READ_MODE_KEY) {
+            prefs.edit().putInt(READ_MODE_GLOBAL_KEY, value as Int).apply()
+        } else putRaw(prefs.edit(), key, value)
     }
+
+    /** 阅读模式解析（Reader 初始化用）：会话 > 本书 > 全局默认(-1=未设置) */
+    fun readModeOrdinal(prefs: SharedPreferences, bookId: Long): Int {
+        (ReaderSessionStore.get(bookId)?.get(READ_MODE_KEY) as? Int)?.let { return it }
+        val book = prefs.safeGetInt(readModeBookKey(bookId), -1)
+        if (book in 0..99) return book
+        return prefs.safeGetInt(READ_MODE_GLOBAL_KEY, -1)
+    }
+
+    /** 这本书有"用户亲手切过模式"的记录吗（autoWebtoon 智能覆盖守卫用） */
+    fun hasBookModeChoice(prefs: SharedPreferences, bookId: Long): Boolean =
+        ReaderSessionStore.get(bookId)?.containsKey(READ_MODE_KEY) == true ||
+            prefs.contains(readModeBookKey(bookId))
 
     /** 清除本书单项覆盖（连临时桶同清——清除本书覆盖跨层语义，迁移测试用例） */
     fun clearBook(context: Context, bookId: Long, key: String) =
@@ -151,23 +181,28 @@ object ReaderScope {
 
     fun clearBook(prefs: SharedPreferences, bookId: Long, key: String) {
         prefs.edit().remove("book_${bookId}_$key").apply()
+        if (key == READ_MODE_KEY) prefs.edit().remove(readModeBookKey(bookId)).apply()
         ReaderSessionStore.remove(bookId, key)
     }
 
-    /** 清除本书全部覆盖（"恢复跟随全局"）——含条件锁定组以外的所有书键 */
+    /** 清除本书全部覆盖（"恢复跟随全局"） */
     fun clearAllBook(context: Context, bookId: Long) =
-        clearAllBook(context.getSharedPreferences("manga_reader", Context.MODE_PRIVATE), bookId, )
+        clearAllBook(context.getSharedPreferences("manga_reader", Context.MODE_PRIVATE), bookId)
 
     fun clearAllBook(prefs: SharedPreferences, bookId: Long) {
         val ed = prefs.edit()
-        (BOOK_KEYS + MASTER_EXEMPT_KEYS).forEach { ed.remove("book_${bookId}_$it") }
+        ALL_KEYS.forEach { ed.remove("book_${bookId}_$it") }
+        ed.remove(readModeBookKey(bookId))
         ed.apply()
         ReaderSessionStore.clearBucket(bookId)
     }
 
     /** 本书覆盖了哪些项（偏好页/书内明细用） */
-    fun overriddenKeys(prefs: SharedPreferences, bookId: Long): Set<String> =
-        (BOOK_KEYS + MASTER_EXEMPT_KEYS).filter { prefs.contains("book_${bookId}_$it") }.toSet()
+    fun overriddenKeys(prefs: SharedPreferences, bookId: Long): Set<String> {
+        val out = ALL_KEYS.filter { prefs.contains("book_${bookId}_$it") }.toMutableSet()
+        if (prefs.contains(readModeBookKey(bookId))) out.add(READ_MODE_KEY)
+        return out
+    }
 
     private fun putRaw(ed: SharedPreferences.Editor, key: String, value: Any) {
         when (value) {
@@ -182,6 +217,9 @@ object ReaderScope {
 
     private fun SharedPreferences.safeGetBoolean(key: String, def: Boolean): Boolean =
         try { getBoolean(key, def) } catch (_: ClassCastException) { def }
+
+    private fun SharedPreferences.safeGetInt(key: String, def: Int): Int =
+        try { getInt(key, def) } catch (_: ClassCastException) { def }
 }
 
 /**

@@ -146,8 +146,8 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?, Int) -> Unit
                     Icon(Icons.Default.Bookmarks, null, modifier = Modifier.size(24.dp))
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
-                        Text("书架管理", fontSize = 16.sp)
-                        Text("新建、重命名、拖动排序书架", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("书架与标签", fontSize = 16.sp)
+                        Text("新建、重命名、拖动排序书架；标签的增删与配色", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Icon(Icons.Default.ChevronRight, null)
                 }
@@ -458,7 +458,6 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?, Int) -> Unit
     if (showReadingPrefs) {
         ReadingPrefsScreen(
             onBack = { showReadingPrefs = false; showReadingSettings = true },
-            onOpenReadingSettings = { showReadingPrefs = false; showReadingSettings = true },
         )
     }
     if (showKeyMap) {

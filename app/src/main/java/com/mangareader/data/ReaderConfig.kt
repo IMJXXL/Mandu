@@ -221,14 +221,15 @@ data class ReaderConfig(
             val clickPrefix = pfx
             val clickInvertPrefix = pfx
             // ★ 分层读取：本书覆盖存在→读之；否则全局打底；否则默认。
-            //   生效前缀按 key 现算：作用域注册表显式指定 > 豁免字段（pageLayout 恒书键）
-            //   > 条件锁定（翻页闪烁全局开=接管） > 总开关（关=休眠读全局）。
+            //   生效前缀按 key 现算：显式作用域（用户亲选，压过预设） > 条件锁定（翻页闪烁
+            //   全局开=接管） > 预设作用域（=852 时代 save 无前缀全集，仅设置页可改的项恒全局）
+            //   > 总开关（关=预设单本项休眠读全局）。
             val scopeReg = ReaderScope.parseScopeReg(prefs)
             fun effPrefixFor(key: String): String = when {
                 scopeReg[key] == ReaderScope.SCOPE_GLOBAL -> ""
                 key in ReaderScope.CONDITIONAL_LOCK_KEYS && globalFlash -> ""
-                key in ReaderScope.MASTER_EXEMPT_KEYS -> prefix
                 scopeReg[key] == ReaderScope.SCOPE_BOOK -> prefix
+                key in ReaderScope.PRESET_GLOBAL_KEYS -> ""
                 masterOn -> prefix
                 else -> ""
             }
@@ -260,31 +261,31 @@ data class ReaderConfig(
             var cfg = ReaderConfig(
                 scrollMode = try { ScrollMode.valueOf(rString("scrollMode", "HORIZONTAL_LEFT")) } catch (_: Exception) { ScrollMode.HORIZONTAL_LEFT },
                 clickFlipType = try { ClickFlipType.valueOf(rString("clickFlipType", "LEFT_RIGHT")) } catch (_: Exception) { ClickFlipType.LEFT_RIGHT },
-                isFlipAnimation = prefs.safeGetBoolean("isFlipAnimation", true),
-                isPageCurlAnimation = prefs.safeGetBoolean("isPageCurlAnimation", false),
-                isCurlContentAreaOnly = prefs.safeGetBoolean("isCurlContentAreaOnly", false),
-                curlBackContentAlpha = prefs.safeGetFloat("curlBackContentAlpha", 0.1f),
-                curlShadowAlpha = prefs.safeGetFloat("curlShadowAlpha", 0.2f),
-                spineShadowAlpha = prefs.safeGetFloat("spineShadowAlpha", 0.09f),
-                isShowPageNum = prefs.safeGetBoolean("isShowPageNum", true),
-                isKeepScreenOn = prefs.safeGetBoolean("isKeepScreenOn", true),
+                isFlipAnimation = rBoolean("isFlipAnimation", true),
+                isPageCurlAnimation = rBoolean("isPageCurlAnimation", false),
+                isCurlContentAreaOnly = rBoolean("isCurlContentAreaOnly", false),
+                curlBackContentAlpha = rFloat("curlBackContentAlpha", 0.1f),
+                curlShadowAlpha = rFloat("curlShadowAlpha", 0.2f),
+                spineShadowAlpha = rFloat("spineShadowAlpha", 0.09f),
+                isShowPageNum = rBoolean("isShowPageNum", true),
+                isKeepScreenOn = rBoolean("isKeepScreenOn", true),
                 isTrimWhiteBorder = rBoolean("isTrimWhiteBorder", false),
                 trimFactor = rFloat("trimFactor", 0.02f),
                 trimThreshold = rInt("trimThreshold", 220),
                 trimWhiteRatio = rFloat("trimWhiteRatio", 0.90f),
                 imageMarginH = rInt("imageMarginH", 0),
-                readBackground = try { ReadBackground.valueOf(prefs.getString("readBackground", "WHITE")!!) } catch (_: Exception) { ReadBackground.WHITE },
-                isEinkMode = prefs.safeGetBoolean("isEinkMode", false),
-                isEinkDither = prefs.safeGetBoolean("isEinkDither", false),
-                einkDitherAlgorithm = prefs.safeGetInt("einkDitherAlgorithm", 0),
-                einkDitherLevels = prefs.safeGetInt("einkDitherLevels", 16),
-                einkEndpointPassthrough = prefs.safeGetInt("einkEndpointPassthrough", 0).coerceIn(0, 8),
-                einkDecodeSize = prefs.safeGetInt("einkDecodeSize", 1920),
-                einkUiHideDelay = prefs.safeGetLong("einkUiHideDelay", 6000L),
-                pdfQuality = prefs.safeGetFloat("pdfQuality", 3.0f),
-                isImmersiveMode = prefs.safeGetBoolean("isImmersiveMode", true),
-                orientation = prefs.safeGetInt("orientation", -1),
-                autoFlipInterval = prefs.safeGetInt("autoFlipInterval", 0),
+                readBackground = try { ReadBackground.valueOf(rString("readBackground", "WHITE")) } catch (_: Exception) { ReadBackground.WHITE },
+                isEinkMode = rBoolean("isEinkMode", false),
+                isEinkDither = rBoolean("isEinkDither", false),
+                einkDitherAlgorithm = rInt("einkDitherAlgorithm", 0),
+                einkDitherLevels = rInt("einkDitherLevels", 16),
+                einkEndpointPassthrough = rInt("einkEndpointPassthrough", 0).coerceIn(0, 8),
+                einkDecodeSize = rInt("einkDecodeSize", 1920),
+                einkUiHideDelay = rLong("einkUiHideDelay", 6000L),
+                pdfQuality = rFloat("pdfQuality", 3.0f),
+                isImmersiveMode = rBoolean("isImmersiveMode", true),
+                orientation = rInt("orientation", -1),
+                autoFlipInterval = rInt("autoFlipInterval", 0),
                 isGrayscale = rBoolean("isGrayscale", false),
                 isInvertColors = rBoolean("isInvertColors", false),
                 isFlipFlashEnabled = rBoolean("isFlipFlashEnabled", false),
@@ -295,38 +296,31 @@ data class ReaderConfig(
                 // ★ 豁免字段（总开关关也生效）：本书覆盖优先，其次全局键（852 语义默认层）。
                 pageLayout = try { PageLayout.valueOf(rString("pageLayout", "SINGLE")) } catch (_: Exception) { PageLayout.SINGLE },
                 useSSIV = rBoolean("useSSIV", true),
-                landscapeZoom = prefs.safeGetBoolean("landscapeZoom", false),
-                fitScreen = prefs.safeGetBoolean("fitScreen", false),
+                landscapeZoom = rBoolean("landscapeZoom", false),
+                fitScreen = rBoolean("fitScreen", false),
                 panNavigation = rBoolean("panNavigation", true),
                 doublePageShift = rInt("doublePageShift", 0),
                 doublePageSplit = rBoolean("doublePageSplit", false),
                 doublePageReverse = rBoolean("doublePageReverse", false),
 
-                autoWebtoon = prefs.safeGetBoolean("autoWebtoon", true),
-                chapterTransition = prefs.safeGetBoolean("chapterTransition", true),
+                autoWebtoon = rBoolean("autoWebtoon", true),
+                chapterTransition = rBoolean("chapterTransition", true),
                 centerGapType = rInt("centerGapType", 0),
-                autoDoubleLandscape = prefs.safeGetBoolean("autoDoubleLandscape", false),
+                autoDoubleLandscape = rBoolean("autoDoubleLandscape", false),
                 clickFlipInvertH = rBoolean("clickFlipInvertH", false),
-                seamlessNextVolume = prefs.safeGetBoolean("seamlessNextVolume", true),
-                forceFullDecode = prefs.safeGetBoolean("forceFullDecode", false),
-                tileModeEnabled = prefs.safeGetBoolean("tileModeEnabled", false),
-                tallSplitEnabled = prefs.safeGetBoolean("tallSplitEnabled", true),
+                seamlessNextVolume = rBoolean("seamlessNextVolume", true),
+                forceFullDecode = rBoolean("forceFullDecode", false),
+                tileModeEnabled = rBoolean("tileModeEnabled", false),
+                tallSplitEnabled = rBoolean("tallSplitEnabled", true),
                 brightness = rInt("brightness", 0).coerceIn(-100, 100),
                 screenBrightness = rInt("screenBrightness", 0).coerceIn(-100, 100),
                 contrast = rInt("contrast", 100).coerceIn(0, 200),
                 gamma = rInt("gamma", 100).coerceIn(50, 150),
-                brightnessEnabled = if (masterOn && prefs.contains("${prefix}brightnessEnabled")) prefs.safeGetBoolean("${prefix}brightnessEnabled", false)
-                    else if (prefs.contains("brightnessEnabled")) prefs.safeGetBoolean("brightnessEnabled", false)
-                    else rInt("brightness", 0) != 0,
-                screenBrightnessEnabled = if (masterOn && prefs.contains("${prefix}screenBrightnessEnabled")) prefs.safeGetBoolean("${prefix}screenBrightnessEnabled", false)
-                    else if (prefs.contains("screenBrightnessEnabled")) prefs.safeGetBoolean("screenBrightnessEnabled", false)
-                    else rInt("screenBrightness", 0) != 0,
-                contrastEnabled = if (masterOn && prefs.contains("${prefix}contrastEnabled")) prefs.safeGetBoolean("${prefix}contrastEnabled", false)
-                    else if (prefs.contains("contrastEnabled")) prefs.safeGetBoolean("contrastEnabled", false)
-                    else rInt("contrast", 100) != 100,
-                gammaEnabled = if (masterOn && prefs.contains("${prefix}gammaEnabled")) prefs.safeGetBoolean("${prefix}gammaEnabled", false)
-                    else if (prefs.contains("gammaEnabled")) prefs.safeGetBoolean("gammaEnabled", false)
-                    else rInt("gamma", 100) != 100,
+                // 滤镜启用标志：分层读，未落键时从对应值派生（值已设=启用，兼容旧数据）
+                brightnessEnabled = rBoolean("brightnessEnabled", rInt("brightness", 0) != 0),
+                screenBrightnessEnabled = rBoolean("screenBrightnessEnabled", rInt("screenBrightness", 0) != 0),
+                contrastEnabled = rBoolean("contrastEnabled", rInt("contrast", 100) != 100),
+                gammaEnabled = rBoolean("gammaEnabled", rInt("gamma", 100) != 100),
                 textureEnabled = rBoolean("textureEnabled", false),
                 texturePresetId = rInt("texturePresetId", 0),
                 textureAlpha = rInt("textureAlpha", 15).coerceIn(0, 40),
@@ -335,16 +329,31 @@ data class ReaderConfig(
                 // ambienceSound v1 曾以 Int 持久化（0关/1雨/2篝火/3咖啡），v2 为 String——
                 // 裸 getString 读旧 Int 会 ClassCastException（任何加载配置的入口都崩）。
                 // 读原始值做类型归一：1→"rain"，其余旧值→""（对应音色已删）
-                ambienceSound = when (val raw = if (masterOn && prefs.contains("${prefix}ambienceSound")) prefs.all["${prefix}ambienceSound"] else prefs.all["ambienceSound"]) {
+                ambienceSound = when (val raw = run {
+                    val ep = effPrefixFor("ambienceSound")
+                    when {
+                        ep.isNotEmpty() && prefs.contains("${ep}ambienceSound") -> prefs.all["${ep}ambienceSound"]
+                        else -> prefs.all["ambienceSound"]
+                    }
+                }) {
                     is String -> raw
                     is Int -> if (raw == 1) "rain" else ""
                     is Long -> if (raw == 1L) "rain" else ""
                     else -> ""
                 },
                 ambienceVolume = rInt("ambienceVolume", 60).coerceIn(0, 100),
-                downsampleTier = if (prefs.contains("downsampleTier")) {
-                    try { DownsampleTier.valueOf(prefs.getString("downsampleTier", "STANDARD")!!) } catch (_: Exception) { DownsampleTier.STANDARD }
-                } else if (prefs.safeGetBoolean("forceFullDecode", false)) DownsampleTier.ORIGINAL else DownsampleTier.STANDARD
+                downsampleTier = run {
+                    val ep = effPrefixFor("downsampleTier")
+                    val raw = when {
+                        ep.isNotEmpty() && prefs.contains("${ep}downsampleTier") -> prefs.all["${ep}downsampleTier"]
+                        else -> prefs.all["downsampleTier"]
+                    }
+                    when {
+                        raw is String -> try { DownsampleTier.valueOf(raw) } catch (_: Exception) { DownsampleTier.STANDARD }
+                        // 旧语义兜底：从未写过档位但开了强制完整解码 → 原图档
+                        else -> if (rBoolean("forceFullDecode", false)) DownsampleTier.ORIGINAL else DownsampleTier.STANDARD
+                    }
+                }
             )
             // ★ 会话临时层覆盖（最高优先）：总开关关时的书内改动只存内存，退出阅读清空
             if (bookId > 0) {

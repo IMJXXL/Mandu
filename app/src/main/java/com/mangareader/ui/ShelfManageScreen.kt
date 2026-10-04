@@ -112,16 +112,16 @@ fun ShelfManageScreen(onBack: () -> Unit) {
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
             ) else TopAppBar(
-                title = { Text("书架管理") },
+                title = { Text("书架与标签") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") } },
                 actions = {
                     IconButton(onClick = {
                         manageLayout = 1 - manageLayout
                         prefs.edit().putInt("manage_layout", manageLayout).apply()
                     }) { Icon(if (manageLayout == 1) Icons.Default.ViewList else Icons.Default.GridView, if (manageLayout == 1) "列表" else "网格") }
+                    IconButton(onClick = { showSettings = true }) { Icon(Icons.Default.Settings, "设置") }
                     if (manageTab == 0) {
                         IconButton(onClick = { isMultiSelect = true }) { Icon(Icons.Default.Edit, "多选") }
-                        IconButton(onClick = { showSettings = true }) { Icon(Icons.Default.Settings, "设置") }
                         IconButton(onClick = { showCreateShelf = true }) { Icon(Icons.Default.Add, "新建书架") }
                     } else {
                         IconButton(onClick = { tagMultiSelect = true }) { Icon(Icons.Default.Edit, "多选") }

@@ -176,10 +176,8 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     //   autoWebtoon 不在此列：enterReader 判定块自带 userSetMode<0 守卫——
     //   开启时新书首开仍按宽高比智能覆盖②（切 VERT），关闭时严格用②，正好满足"全局最低"语义。
     fun resolveInitialMode(targetBookId: Long): Mode {
-        val savedMode = prefs.getInt("read_mode_$targetBookId", -1)
+        val savedMode = com.mangareader.data.ReaderScope.readModeOrdinal(prefs, targetBookId)
         if (savedMode in Mode.entries.indices) return Mode.entries[savedMode]
-        val globalDefault = prefs.getInt("default_read_mode", -1)
-        if (globalDefault in Mode.entries.indices) return Mode.entries[globalDefault]
         return when (config.scrollMode) {
             com.mangareader.data.ReaderConfig.ScrollMode.VERTICAL -> Mode.VERT
             com.mangareader.data.ReaderConfig.ScrollMode.HORIZONTAL_LEFT -> Mode.FLIP
@@ -983,7 +981,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             return emptyList()
         }
         if (config.autoWebtoon && pages.size >= 2 && mode != Mode.VERT && mode != Mode.VERT_PAGER && mode != Mode.WEBTOON_GAP) {
-            val userSetMode = prefs.getInt("read_mode_$bookId", -1)
+            val userSetMode = if (com.mangareader.data.ReaderScope.hasBookModeChoice(prefs, bookId)) 0 else -1
             if (userSetMode < 0) {
                 val treeStr = path
                 var totalRatio = 0f
@@ -2873,7 +2871,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                 } else {
                     Column(Modifier.verticalScroll(rememberScrollState())) {
                         overrideKeys.forEach { key ->
-                            val label = com.mangareader.ui.PREF_ROWS.firstOrNull { it.key == key }?.label ?: key
+                            val label = com.mangareader.ui.PREF_ROWS.firstOrNull { key in it.allKeys }?.label ?: key
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Column(Modifier.weight(1f)) {
                                     Text(label, fontSize = 14.sp)
@@ -2983,7 +2981,9 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             preExpandPages = null
         }
         mode = newMode
-        prefs.edit().putInt("read_mode_$bookId", newMode.ordinal).apply()
+        // ★ 模式记忆走作用域路由（2026-10-04）：预设单本（只记这本书），偏好页可改全局
+        //   ——全局层写 default_read_mode 并清本书 read_mode 残留，对所有书生效
+        com.mangareader.data.ReaderScope.write(ctx, bookId, com.mangareader.data.ReaderScope.READ_MODE_KEY, newMode.ordinal)
         configVersion++
         // 切换模式时显示导航区域提示，3秒后自动消失
         showNavOverlay = true
@@ -3008,13 +3008,16 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                     val v = accessor.first { it.first == key }.second(newConfig)
                     com.mangareader.data.ReaderScope.write(ctx, bookId, key, v)
                 }
-                // 全局类项在书内被改动 → 即时披露（每会话首次，防连发）
-                if (changed.any { it in com.mangareader.data.ReaderScope.GLOBAL_ONLY_KEYS || it in com.mangareader.data.ReaderScope.CONDITIONAL_LOCK_KEYS } && !globalWriteToastShown) {
+                // 写入落层披露：按实际落层判断（显式作用域可把预设全局项改单本、反之亦然）
+                val changedLayers = changed.map { key ->
+                    key to com.mangareader.data.ReaderScope.resolveLayer(prefs, bookId, key)
+                }
+                if (changedLayers.any { it.second == com.mangareader.data.ReaderScope.Layer.GLOBAL } && !globalWriteToastShown) {
                     globalWriteToastShown = true
                     android.widget.Toast.makeText(ctx, "已对所有书生效", android.widget.Toast.LENGTH_SHORT).show()
                 }
                 // 单本类项改动 → 每本书首次带书名提示（总开关关=仅本次提示）
-                val bookChanged = changed.any { it in com.mangareader.data.ReaderScope.BOOK_KEYS || it in com.mangareader.data.ReaderScope.MASTER_EXEMPT_KEYS }
+                val bookChanged = changedLayers.any { it.second != com.mangareader.data.ReaderScope.Layer.GLOBAL }
                 if (bookChanged && !bookWriteToastShown) {
                     bookWriteToastShown = true
                     val masterNow = com.mangareader.data.ReaderScope.masterOn(prefs)

@@ -64,7 +64,7 @@ fun ReadingSettingsScreen(onBack: () -> Unit, onOpenKeyMap: (() -> Unit)? = null
                         Column(Modifier.weight(1f)) {
                             Text("阅读偏好", fontSize = 16.sp)
                             Text(
-                                "本书改动单独记 · 每项可切单本或全局生效",
+                                "每项都能直接改全局默认值，也能切成只对一本书生效",
                                 fontSize = 12.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -99,55 +99,8 @@ fun ReadingSettingsScreen(onBack: () -> Unit, onOpenKeyMap: (() -> Unit)? = null
                         }
                     }
 
-                    var defaultReadModeOrdinal by remember(resetTrigger) { mutableStateOf(prefs.getInt("default_read_mode", -1)) }
-                    var showDefaultModeDialog by remember { mutableStateOf(false) }
-                    val defaultModeLabel =
-                        if (defaultReadModeOrdinal in Mode.entries.indices) Mode.entries[defaultReadModeOrdinal].label
-                        else "未设置"
-                    Row(
-                        Modifier.fillMaxWidth()
-                            .padding(vertical = 10.dp)
-                            .clickable { showDefaultModeDialog = true },
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(Modifier.weight(1f)) {
-                            Text("默认阅读模式", fontSize = 16.sp)
-                            Text("新书首次打开的初始阅读方式", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        Text(defaultModeLabel, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.primary, maxLines = 1)
-                        Icon(Icons.Filled.ChevronRight, contentDescription = null, modifier = Modifier.padding(start = 4.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    if (showDefaultModeDialog) {
-                        val options: List<Pair<String, Int>> =
-                            listOf("不设置（按书籍自动）" to -1) + Mode.entries.map { it.label to it.ordinal }
-                        AlertDialog(
-                            onDismissRequest = { showDefaultModeDialog = false },
-                            title = { Text("默认阅读模式") },
-                            text = {
-                                Column {
-                                    options.forEach { (label, ord) ->
-                                        Row(
-                                            Modifier.fillMaxWidth()
-                                                .clickable {
-                                                    defaultReadModeOrdinal = ord
-                                                    prefs.edit().putInt("default_read_mode", ord).apply()
-                                                    showDefaultModeDialog = false
-                                                }
-                                                .padding(vertical = 10.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            RadioButton(selected = defaultReadModeOrdinal == ord, onClick = null)
-                                            Spacer(Modifier.width(8.dp))
-                                            Text(label, fontSize = 15.sp)
-                                        }
-                                    }
-                                }
-                            },
-                            confirmButton = {},
-                            dismissButton = { TextButton(onClick = { showDefaultModeDialog = false }) { Text("取消") } }
-                        )
-                    }
+                    // ★ 默认阅读模式已并入 设置 › 阅读设置 › 阅读偏好 ›「阅读模式」（2026-10-04，
+                    //   避免同一设置两个入口；偏好页里还能为它选全局/单本作用域）
 
                     // ★ 继续阅读显隐开关（2026-09-19）：首页全局继续阅读 + 书内多层继续阅读
                     var homeContinue by remember(resetTrigger) { mutableStateOf(prefs.getBoolean("home_continue_read", true)) }

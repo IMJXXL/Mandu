@@ -87,37 +87,81 @@ class ReaderScopeModelTest {
         assertEquals(30, ReaderConfig.load(prefs, 1L).brightness)
     }
 
-    // ── 豁免字段（pageLayout）：覆盖恒参与解析 ──
+    // ── 预设作用域（2026-10-04 重构）：预设全局项读/写全局键；显式指定压过预设 ──
 
     @Test
-    fun `exempt pageLayout override survives master off`() {
+    fun `preset global pageLayout ignores stale book key and writes global`() {
+        // 852 时代遗留的本书键不再遮蔽全局语义（用户拍板：单双页全局）
         putGlobal("pageLayout", "DOUBLE")
         putGlobal("book_1_pageLayout", "DOUBLE_SHIFTED")
-        prefs.edit().putBoolean(ReaderScope.MASTER_KEY, false).apply()
-        assertEquals(
-            ReaderConfig.PageLayout.DOUBLE_SHIFTED,
-            ReaderConfig.load(prefs, 1L).pageLayout,
-        )
-        // 无覆盖的书读全局（852 语义默认层）
-        assertEquals(
-            ReaderConfig.PageLayout.DOUBLE,
-            ReaderConfig.load(prefs, 2L).pageLayout,
-        )
+        assertEquals(ReaderConfig.PageLayout.DOUBLE, ReaderConfig.load(prefs, 1L).pageLayout)
+        // 书内切换（预设全局）写全局键；遗留书键留存但不再参与解析
+        ReaderScope.write(prefs, 1L, "pageLayout", "DOUBLE_SHIFTED")
+        assertEquals("DOUBLE_SHIFTED", prefs.getString("pageLayout", null))
+        assertEquals(ReaderConfig.PageLayout.DOUBLE_SHIFTED, ReaderConfig.load(prefs, 1L).pageLayout)
     }
 
     @Test
-    fun `exempt field write clears session bucket - T plus Oe unreachable`() {
+    fun `explicit book scope overrides preset global`() {
+        // 用户在偏好页把 PDF 清晰度（预设全局）切成"本书单独"→ 写读都走本书键
+        ReaderScope.setScope(prefs, "pdfQuality", ReaderScope.SCOPE_BOOK)
+        putGlobal("pdfQuality", 3.0f)
+        ReaderScope.write(prefs, 1L, "pdfQuality", 4.5f)
+        assertEquals(4.5f, prefs.getFloat("book_1_pdfQuality", -1f), 0.001f)
+        assertEquals(4.5f, ReaderConfig.load(prefs, 1L).pdfQuality, 0.001f)
+        // 其他书不受影响
+        assertEquals(3.0f, ReaderConfig.load(prefs, 2L).pdfQuality, 0.001f)
+    }
+
+    @Test
+    fun `explicit book scope on preset global survives master off`() {
+        ReaderScope.setScope(prefs, "orientation", ReaderScope.SCOPE_BOOK)
         prefs.edit().putBoolean(ReaderScope.MASTER_KEY, false).apply()
-        // 模拟遗留临时态
-        ReaderSessionStore.put(1L, "pageLayout", "SINGLE")
-        assertTrue(ReaderSessionStore.get(1L)?.containsKey("pageLayout") == true)
-        // 豁免字段写：恒写本书覆盖并清临时桶（T+Oe 不可达，技术宅 E2 定案）
-        ReaderScope.write(prefs, 1L, "pageLayout", "DOUBLE_SHIFTED")
-        assertFalse(ReaderSessionStore.get(1L)?.containsKey("pageLayout") == true)
-        assertEquals(
-            ReaderConfig.PageLayout.DOUBLE_SHIFTED,
-            ReaderConfig.load(prefs, 1L).pageLayout,
-        )
+        ReaderScope.write(prefs, 1L, "orientation", 1)
+        assertEquals(1, prefs.getInt("book_1_orientation", -1))
+        assertEquals(1, ReaderConfig.load(prefs, 1L).orientation)
+    }
+
+    @Test
+    fun `explicit global scope overrides preset book`() {
+        // 用户在偏好页把亮度（预设单本）切成"全局生效"→ 书内改亮度对所有书生效
+        ReaderScope.setScope(prefs, "brightness", ReaderScope.SCOPE_GLOBAL)
+        ReaderScope.write(prefs, 1L, "brightness", 70)
+        assertEquals(70, prefs.getInt("brightness", -1))
+        assertFalse(prefs.contains("book_1_brightness"))
+        assertEquals(70, ReaderConfig.load(prefs, 1L).brightness)
+        assertEquals(70, ReaderConfig.load(prefs, 2L).brightness)
+    }
+
+    // ── 阅读模式（readMode 特殊双键项）──
+
+    @Test
+    fun `readMode writes book key by preset and resolves per book`() {
+        ReaderScope.write(prefs, 1L, ReaderScope.READ_MODE_KEY, 3)
+        assertEquals(3, prefs.getInt("read_mode_1", -1))
+        assertFalse(prefs.contains(ReaderScope.READ_MODE_GLOBAL_KEY))
+        assertEquals(3, ReaderScope.readModeOrdinal(prefs, 1L))
+        assertEquals(-1, ReaderScope.readModeOrdinal(prefs, 2L))
+    }
+
+    @Test
+    fun `readMode explicit global writes default and clears book residue`() {
+        prefs.edit().putInt("read_mode_1", 3).apply()
+        ReaderScope.setScope(prefs, ReaderScope.READ_MODE_KEY, ReaderScope.SCOPE_GLOBAL)
+        ReaderScope.write(prefs, 1L, ReaderScope.READ_MODE_KEY, 4)
+        assertEquals(4, prefs.getInt(ReaderScope.READ_MODE_GLOBAL_KEY, -1))
+        // 本书残留已清：全局即刻接管这本书
+        assertFalse(prefs.contains("read_mode_1"))
+        assertEquals(4, ReaderScope.readModeOrdinal(prefs, 1L))
+        assertTrue(ReaderScope.hasBookModeChoice(prefs, 2L).not())
+    }
+
+    @Test
+    fun `readMode session layer when master off`() {
+        prefs.edit().putBoolean(ReaderScope.MASTER_KEY, false).apply()
+        ReaderScope.write(prefs, 1L, ReaderScope.READ_MODE_KEY, 2)
+        assertEquals(-1, prefs.getInt("read_mode_1", -1))
+        assertEquals(2, ReaderScope.readModeOrdinal(prefs, 1L))
     }
 
     // ── 条件锁定（翻页闪烁组）──
@@ -179,11 +223,11 @@ class ReaderScopeModelTest {
     @Test
     fun `clearAllBook removes overrides and session bucket`() {
         ReaderScope.write(prefs, 1L, "brightness", 42)
-        ReaderScope.write(prefs, 1L, "pageLayout", "DOUBLE")
+        ReaderScope.write(prefs, 1L, ReaderScope.READ_MODE_KEY, 3)
         ReaderSessionStore.put(1L, "contrast", 150)
         ReaderScope.clearAllBook(prefs, 1L)
         assertFalse(prefs.contains("book_1_brightness"))
-        assertFalse(prefs.contains("book_1_pageLayout"))
+        assertFalse(prefs.contains("read_mode_1"))
         assertTrue(ReaderSessionStore.get(1L).isNullOrEmpty())
         assertEquals(0, ReaderConfig.load(prefs, 1L).brightness)
     }

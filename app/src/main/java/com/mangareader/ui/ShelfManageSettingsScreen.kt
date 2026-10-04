@@ -48,7 +48,7 @@ fun ShelfManageSettingsScreen(onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("书架管理设置") },
+                title = { Text("书架与标签设置") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") } }
             )
         }
