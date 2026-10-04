@@ -225,6 +225,7 @@ fun ReadingPrefsScreen(onBack: () -> Unit) {
     val pagerState = rememberPagerState(pageCount = { 3 }) // 三个页签：阅读模式/常规/滤镜
     var clearTarget by remember { mutableStateOf<Pair<PrefRow, Int>?>(null) } // 行内"单独·N本"徽章 → 清除确认
     var masterConfirmStep by remember { mutableIntStateOf(0) } // 关总开关两次确认：1=第一步 2=最终确认
+    var showExample by remember { mutableStateOf(false) } // 「举个例子」弹窗
     var writeToastShown by remember { mutableStateOf(false) }
     var showResetDialog by remember { mutableStateOf(false) }
     var toast by remember { mutableStateOf<String?>(null) }
@@ -304,7 +305,14 @@ fun ReadingPrefsScreen(onBack: () -> Unit) {
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
             ) {
                 Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp)) {
-                    Text("这一页怎么用", fontSize = 14.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Medium)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("这一页怎么用", fontSize = 14.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Medium, modifier = Modifier.weight(1f))
+                        Text(
+                            "看个例子 ›", fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.clickable { showExample = true }.padding(horizontal = 4.dp, vertical = 2.dp),
+                        )
+                    }
                     Spacer(Modifier.height(6.dp))
                     Text(
                         "· 徽章「全局」的项：在书里调它＝所有没单独调过的书都跟着变；这页只是预设默认值",
@@ -405,6 +413,50 @@ fun ReadingPrefsScreen(onBack: () -> Unit) {
                 }
             }
         }
+    }
+
+    // ── 举个例子：用「亮度」把四条规则走一遍 ──
+    if (showExample) {
+        AlertDialog(
+            onDismissRequest = { showExample = false },
+            title = { Text("举个例子：亮度") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    Text(
+                        "假设亮度默认值是 0，徽章是「全局」：",
+                        fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "① 你在看《漫画A》，把亮度调到 70。\n→ 「全局」：70 成为新默认值，所有没单独调过的书打开都是 70。",
+                        fontSize = 13.sp,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "② 徽章切成「本书」后，你在《漫画B》里把亮度调到 30。\n→ 只有《漫画B》是 30，别的书还是 70。",
+                        fontSize = 13.sp,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "③ 《漫画B》行尾出现「单独·1本」。\n→ 书里调过的永远优先：《漫画B》一直用自己的 30。\n　 想让它重新跟默认值走：点「单独·1本」清除。",
+                        fontSize = 13.sp,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "④ 关掉「本书改动单独记」后再在书里调亮度。\n→ 这次调整退出阅读就还原（当次内仍生效）；\n　 已经记住的（《漫画B》的 30）不受影响。",
+                        fontSize = 13.sp,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "偏好页里的参数只是预设初始默认值，平时在书里调最顺手。",
+                        fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showExample = false }) { Text("知道了") }
+            },
+        )
     }
 
     // ── 关闭总开关：两次确认（用户定稿：防误关后书内调整不记忆）──
