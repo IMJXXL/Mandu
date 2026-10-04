@@ -41,31 +41,38 @@ class ReaderScopeModelTest {
     }
 
     @Test
-    fun `priority global beats default`() {
-        putGlobal("brightness", 50)
-        assertEquals(50, ReaderConfig.load(prefs, 1L).brightness)
+    fun `priority global beats default for global scope`() {
+        // fitScreen 预设全局：全局键生效
+        putGlobal("fitScreen", true)
+        assertEquals(true, ReaderConfig.load(prefs, 1L).fitScreen)
     }
 
     @Test
-    fun `priority book override beats global`() {
+    fun `book scope key ignores global key - factory fallback`() {
+        // 用户定稿：本书作用域的项与全局键彻底脱钩，没调过的书用出厂初始值
+        putGlobal("brightness", 50)
+        assertEquals(0, ReaderConfig.load(prefs, 1L).brightness)
+    }
+
+    @Test
+    fun `priority book override beats everything`() {
         putGlobal("brightness", 50)
         putGlobal("book_1_brightness", 30)
         assertEquals(30, ReaderConfig.load(prefs, 1L).brightness)
-        // 别的书不受影响
-        assertEquals(50, ReaderConfig.load(prefs, 2L).brightness)
+        // 别的书没调过 → 出厂值（全局键对本书项无效）
+        assertEquals(0, ReaderConfig.load(prefs, 2L).brightness)
     }
 
     @Test
     fun `priority session beats book override`() {
-        putGlobal("brightness", 50)
         putGlobal("book_1_brightness", 30)
         ReaderSessionStore.put(1L, "brightness", 10)
         assertEquals(10, ReaderConfig.load(prefs, 1L).brightness)
-        // 会话按书隔离：书 2 无覆盖 → 全局打底
-        assertEquals(50, ReaderConfig.load(prefs, 2L).brightness)
+        // 会话按书隔离：书 2 无覆盖 → 出厂值
+        assertEquals(0, ReaderConfig.load(prefs, 2L).brightness)
     }
 
-    // ── 总开关：关 = 本书覆盖休眠（读全局），会话仍生效 ──
+    // ── 总开关：只管写入（新调整记不记），读取侧无开关 ──
 
     @Test
     fun `master off - existing book override still applies (read side has no switch)`() {

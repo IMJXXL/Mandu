@@ -2857,51 +2857,6 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
 
 
 
-    var showBookOverrides by remember { mutableStateOf(false) }
-    var overridesVersion by remember { mutableIntStateOf(0) }
-
-    if (showBookOverrides) {
-        val overrideKeys = com.mangareader.data.ReaderScope.overriddenKeys(prefs, bookId).sorted()
-        androidx.compose.material3.AlertDialog(
-            onDismissRequest = { showBookOverrides = false },
-            title = { Text("本书已单独设置 ${overrideKeys.size} 项") },
-            text = {
-                if (overrideKeys.isEmpty()) {
-                    Text("没有单独设置的项，全部跟随全局默认")
-                } else {
-                    Column(Modifier.verticalScroll(rememberScrollState())) {
-                        overrideKeys.forEach { key ->
-                            val label = com.mangareader.ui.PREF_ROWS.firstOrNull { key in it.allKeys }?.label ?: key
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Column(Modifier.weight(1f)) {
-                                    Text(label, fontSize = 14.sp)
-                                    Text(
-                                        com.mangareader.ui.prefRawValue(prefs, key, bookId) ?: "",
-                                        fontSize = 11.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                                TextButton(onClick = {
-                                    com.mangareader.data.ReaderScope.clearBook(ctx, bookId, key)
-                                    overridesVersion++
-                                }) { Text("清除", fontSize = 13.sp) }
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    com.mangareader.data.ReaderScope.clearAllBook(ctx, bookId)
-                    overridesVersion++
-                    showBookOverrides = false
-                    android.widget.Toast.makeText(ctx, "已清除全部本书设置，恢复全局默认", android.widget.Toast.LENGTH_SHORT).show()
-                }) { Text("全部恢复", color = MaterialTheme.colorScheme.error) }
-            },
-            dismissButton = { TextButton(onClick = { showBookOverrides = false }) { Text("取消") } },
-        )
-    }
-
     if (showSrPanel) {
         BackHandler { showSrPanel = false }
         com.mangareader.ui.SrPanel(
@@ -2997,9 +2952,6 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             mode = mode,
             bookId = bookId,
 
-            masterOn = com.mangareader.data.ReaderScope.masterOn(prefs),
-            bookOverrideCount = com.mangareader.data.ReaderScope.overriddenKeys(prefs, bookId).size,
-            onShowBookOverrides = { showBookOverrides = true },
             onConfigChange = { newConfig ->
                 val changed = com.mangareader.data.ReaderConfig.changedFields(config, newConfig)
                 config = newConfig

@@ -205,45 +205,23 @@ data class ReaderConfig(
 
         fun load(prefs: SharedPreferences, bookId: Long = -1): ReaderConfig {
             val prefix = if (bookId >= 0) "book_${bookId}_" else ""
-            // ★ 读取侧无开关（2026-10-04 用户定稿）：书里调过的值永远最高优先，
-            //   总开关只决定"之后的新调整记不记"，绝不影响已存在的本书覆盖。
-            val pfx = prefix
-            // ★ 点击翻页区域：稀疏模型下单本键缺失自然回退全局（旧防固化 guard 已废）
-            val clickPrefix = pfx
-            val clickInvertPrefix = pfx
-            // ★ 分层读取：本书覆盖存在→读之；否则全局打底；否则默认。
-            //   生效前缀按 key 现算：作用域（显式>预设）为本书 → 读本书键（恒生效）；
-            //   全局/固定全局 → 只读全局键。会话临时层在末尾统一覆盖。
+            // ★ 读取分屋（2026-10-04 终版）：书里调过的永远最高优先；
+            //   "本书"作用域的项与全局键彻底脱钩——只认这本书自己的覆盖，
+            //   没调过=出厂初始值（全局键的历史改动影响不到它们）；
+            //   "全局"作用域的项 → 全局键；无书上下文(bookId<0) → 全局键（全局项页面用）。
+            //   会话临时层在末尾统一覆盖。
             val scopeReg = ReaderScope.parseScopeReg(prefs)
-            fun effPrefixFor(key: String): String {
-                val scope = scopeReg[key] ?: ReaderScope.presetScope(key)
-                return if (scope == ReaderScope.SCOPE_BOOK) prefix else ""
+            fun rawFor(key: String): Any? = when {
+                key in ReaderScope.GLOBAL_LOCKED_KEYS -> prefs.all[key] // 固定全局：无视残留作用域记录
+                bookId >= 0 && (scopeReg[key] ?: ReaderScope.presetScope(key)) == ReaderScope.SCOPE_BOOK ->
+                    prefs.all["${prefix}$key"]
+                else -> prefs.all[key]
             }
-            fun rBoolean(key: String, def: Boolean): Boolean {
-                val ep = effPrefixFor(key)
-                return if (ep.isNotEmpty() && prefs.contains("$ep$key")) prefs.safeGetBoolean("$ep$key", def)
-                else prefs.safeGetBoolean(key, def)
-            }
-            fun rInt(key: String, def: Int): Int {
-                val ep = effPrefixFor(key)
-                return if (ep.isNotEmpty() && prefs.contains("$ep$key")) prefs.safeGetInt("$ep$key", def)
-                else prefs.safeGetInt(key, def)
-            }
-            fun rFloat(key: String, def: Float): Float {
-                val ep = effPrefixFor(key)
-                return if (ep.isNotEmpty() && prefs.contains("$ep$key")) prefs.safeGetFloat("$ep$key", def)
-                else prefs.safeGetFloat(key, def)
-            }
-            fun rLong(key: String, def: Long): Long {
-                val ep = effPrefixFor(key)
-                return if (ep.isNotEmpty() && prefs.contains("$ep$key")) prefs.safeGetLong("$ep$key", def)
-                else prefs.safeGetLong(key, def)
-            }
-            fun rString(key: String, def: String): String {
-                val ep = effPrefixFor(key)
-                return if (ep.isNotEmpty() && prefs.contains("$ep$key")) prefs.getString("$ep$key", def) ?: def
-                else prefs.getString(key, def) ?: def
-            }
+            fun rBoolean(key: String, def: Boolean): Boolean = (rawFor(key) as? Boolean) ?: def
+            fun rInt(key: String, def: Int): Int = (rawFor(key) as? Int) ?: def
+            fun rFloat(key: String, def: Float): Float = (rawFor(key) as? Float) ?: def
+            fun rLong(key: String, def: Long): Long = (rawFor(key) as? Long) ?: def
+            fun rString(key: String, def: String): String = (rawFor(key) as? String) ?: def
             var cfg = ReaderConfig(
                 scrollMode = try { ScrollMode.valueOf(rString("scrollMode", "HORIZONTAL_LEFT")) } catch (_: Exception) { ScrollMode.HORIZONTAL_LEFT },
                 clickFlipType = try { ClickFlipType.valueOf(rString("clickFlipType", "LEFT_RIGHT")) } catch (_: Exception) { ClickFlipType.LEFT_RIGHT },
@@ -314,13 +292,7 @@ data class ReaderConfig(
                 // ambienceSound v1 曾以 Int 持久化（0关/1雨/2篝火/3咖啡），v2 为 String——
                 // 裸 getString 读旧 Int 会 ClassCastException（任何加载配置的入口都崩）。
                 // 读原始值做类型归一：1→"rain"，其余旧值→""（对应音色已删）
-                ambienceSound = when (val raw = run {
-                    val ep = effPrefixFor("ambienceSound")
-                    when {
-                        ep.isNotEmpty() && prefs.contains("${ep}ambienceSound") -> prefs.all["${ep}ambienceSound"]
-                        else -> prefs.all["ambienceSound"]
-                    }
-                }) {
+                ambienceSound = when (val raw = rawFor("ambienceSound")) {
                     is String -> raw
                     is Int -> if (raw == 1) "rain" else ""
                     is Long -> if (raw == 1L) "rain" else ""
@@ -328,13 +300,8 @@ data class ReaderConfig(
                 },
                 ambienceVolume = rInt("ambienceVolume", 60).coerceIn(0, 100),
                 downsampleTier = run {
-                    val ep = effPrefixFor("downsampleTier")
-                    val raw = when {
-                        ep.isNotEmpty() && prefs.contains("${ep}downsampleTier") -> prefs.all["${ep}downsampleTier"]
-                        else -> prefs.all["downsampleTier"]
-                    }
-                    when {
-                        raw is String -> try { DownsampleTier.valueOf(raw) } catch (_: Exception) { DownsampleTier.STANDARD }
+                    when (val raw = rawFor("downsampleTier")) {
+                        is String -> try { DownsampleTier.valueOf(raw) } catch (_: Exception) { DownsampleTier.STANDARD }
                         // 旧语义兜底：从未写过档位但开了强制完整解码 → 原图档
                         else -> if (rBoolean("forceFullDecode", false)) DownsampleTier.ORIGINAL else DownsampleTier.STANDARD
                     }

@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.RestartAlt
@@ -152,7 +153,6 @@ internal val PREF_ROWS: List<PrefRow> = listOf(
             "横屏" to ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE,
             "锁定竖屏" to ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT,
             "锁定横屏" to ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE))),
-    PrefRow("panNavigation", "画面拖动导航", 0, PrefEditor.Toggle(), section = "点击与手势"),
     // ── Tab 1 常规（顺序=书内面板第二页）──
     PrefRow("isShowPageNum", "显示页码", 1, PrefEditor.Toggle()),
     PrefRow("isImmersiveMode", "沉浸模式", 1, PrefEditor.Toggle(info = "重进阅读后生效")),
@@ -225,7 +225,7 @@ fun ReadingPrefsScreen(onBack: () -> Unit) {
     val pagerState = rememberPagerState(pageCount = { 3 }) // 三个页签：阅读模式/常规/滤镜
     var clearTarget by remember { mutableStateOf<Pair<PrefRow, Int>?>(null) } // 行内"单独·N本"徽章 → 清除确认
     var masterConfirmStep by remember { mutableIntStateOf(0) } // 关总开关两次确认：1=第一步 2=最终确认
-    var showExample by remember { mutableStateOf(false) } // 「举个例子」弹窗
+    var showHelp by remember { mutableStateOf(false) } // 「这一页怎么用」弹窗（规则+例子）
     var writeToastShown by remember { mutableStateOf(false) }
     var showResetDialog by remember { mutableStateOf(false) }
     var toast by remember { mutableStateOf<String?>(null) }
@@ -293,46 +293,13 @@ fun ReadingPrefsScreen(onBack: () -> Unit) {
                 title = { Text("阅读偏好") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") } },
                 actions = {
+                    IconButton(onClick = { showHelp = true }) { Icon(Icons.AutoMirrored.Filled.HelpOutline, "这一页怎么用") }
                     IconButton(onClick = { showResetDialog = true }) { Icon(Icons.Default.RestartAlt, "恢复默认") }
                 },
             )
         },
     ) { pad ->
         Column(Modifier.padding(pad).fillMaxSize()) {
-            // ── 逻辑说明卡（置顶，用户定稿：先讲清楚这一页是什么）──
-            Card(
-                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-            ) {
-                Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("这一页怎么用", fontSize = 14.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Medium, modifier = Modifier.weight(1f))
-                        Text(
-                            "看个例子 ›", fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.clickable { showExample = true }.padding(horizontal = 4.dp, vertical = 2.dp),
-                        )
-                    }
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        "· 行尾状态是「全局」的项：在书里调它＝所有没单独调过的书都跟着变；这页只是预设默认值",
-                        fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text(
-                        "· 行尾状态是「本书」的项：这页参数锁定（灰着），进书里调成啥算啥，只记那一本书",
-                        fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text(
-                        "· 书里调过的项永远优先（行尾显示「单独·N本」），和下面的开关无关；没调过的书都读全局默认",
-                        fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text(
-                        "· 下面的开关只决定「书里的新调整要不要记住」：关闭后已记住的仍然生效，只对之后生效",
-                        fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-
             // ── 总开关 + 计数卡 ──
             Card(
                 Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
@@ -415,15 +382,29 @@ fun ReadingPrefsScreen(onBack: () -> Unit) {
         }
     }
 
-    // ── 举个例子：用「亮度」把四条规则走一遍 ──
-    if (showExample) {
+    // ── 「这一页怎么用」弹窗：四条规则 + 亮度例子 ──
+    if (showHelp) {
         AlertDialog(
-            onDismissRequest = { showExample = false },
-            title = { Text("举个例子：亮度") },
+            onDismissRequest = { showHelp = false },
+            title = { Text("这一页怎么用") },
             text = {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
+                    Text("四条规则", fontSize = 14.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Medium)
+                    Spacer(Modifier.height(6.dp))
+                    Text("· 行尾状态「全局」的项：在书里调它＝所有没单独调过的书都跟着变；这页只是预设默认值", fontSize = 13.sp)
+                    Spacer(Modifier.height(4.dp))
+                    Text("· 行尾状态「本书」的项：这页不可设；没单独调过的书用出厂初始值，进书里调成啥算啥", fontSize = 13.sp)
+                    Spacer(Modifier.height(4.dp))
+                    Text("· 书里调过的项永远优先（行尾挂「单独·N本」），默认值和开关都动不了它", fontSize = 13.sp)
+                    Spacer(Modifier.height(4.dp))
+                    Text("· 顶部开关只管「书里的新调整记不记」，关闭要确认两次", fontSize = 13.sp)
+                    Spacer(Modifier.height(12.dp))
+                    HorizontalDivider()
+                    Spacer(Modifier.height(12.dp))
+                    Text("举个例子：亮度", fontSize = 14.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Medium)
+                    Spacer(Modifier.height(8.dp))
                     Text(
-                        "假设亮度默认值是 0，亮度这行的状态是「全局」：",
+                        "亮度出厂默认 0，状态「全局」：",
                         fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(Modifier.height(8.dp))
@@ -433,7 +414,7 @@ fun ReadingPrefsScreen(onBack: () -> Unit) {
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        "② 先把亮度的状态切成「本书」，再在《漫画B》里把亮度调到 30。\n→ 只有《漫画B》是 30，别的书还是 70。",
+                        "② 把亮度的状态切成「本书」，再在《漫画B》里调到 30。\n→ 只有《漫画B》是 30；其他没单独调过的书回到出厂的 0（「本书」状态不看全局默认值）。",
                         fontSize = 13.sp,
                     )
                     Spacer(Modifier.height(8.dp))
@@ -454,7 +435,7 @@ fun ReadingPrefsScreen(onBack: () -> Unit) {
                 }
             },
             confirmButton = {
-                TextButton(onClick = { showExample = false }) { Text("知道了") }
+                TextButton(onClick = { showHelp = false }) { Text("知道了") }
             },
         )
     }
@@ -582,13 +563,27 @@ private fun PrefRowBlock(
     onScopeSwitch: (PrefRow) -> Unit,
     onClear: (PrefRow, Int) -> Unit,
 ) {
+    // ★ 本书状态：不渲染任何控件（用户定稿 2026-10-04）——本书项没有"这页的默认值"，
+    //   没调过的书用出厂初始值，调过的书用自己的值；灰勾选会让人误以为"默认带着勾"
+    if (isBook) {
+        Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(row.label, fontSize = 15.sp)
+                Text(
+                    "参数在书里调，改成啥算啥；没调过的书用出厂初始值",
+                    fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            ScopeBadges(row, isBook, covered, onScopeSwitch, onClear)
+        }
+        return
+    }
     when (val ed = row.editor) {
         is PrefEditor.Group -> {
             val primary = ed.parts.first()
             val on = valueOf(values, primary.key) as? Boolean ?: false
-            // ★ 本书状态：参数锁定（用户定稿——本书的值在书里调，这页调没有意义）
             Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(checked = on, onCheckedChange = { onWrite(primary.key, it) }, enabled = !isBook)
+                Checkbox(checked = on, onCheckedChange = { onWrite(primary.key, it) })
                 Text(primary.label, fontSize = 15.sp, modifier = Modifier.weight(1f))
                 ScopeBadges(row, isBook, covered, onScopeSwitch, onClear)
             }
