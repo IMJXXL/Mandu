@@ -68,21 +68,23 @@ class ReaderScopeModelTest {
     // ── 总开关：关 = 本书覆盖休眠（读全局），会话仍生效 ──
 
     @Test
-    fun `master off makes book override dormant`() {
+    fun `master off - existing book override still applies (read side has no switch)`() {
         putGlobal("brightness", 50)
         putGlobal("book_1_brightness", 30)
         prefs.edit().putBoolean(ReaderScope.MASTER_KEY, false).apply()
-        assertEquals(50, ReaderConfig.load(prefs, 1L).brightness)
-        // 会话不受总开关影响
+        // 用户定稿：书里调过的永远最高优先，总开关只管"之后的新调整记不记"
+        assertEquals(30, ReaderConfig.load(prefs, 1L).brightness)
+        // 会话层仍在本书覆盖之上
         ReaderSessionStore.put(1L, "brightness", 10)
         assertEquals(10, ReaderConfig.load(prefs, 1L).brightness)
     }
 
     @Test
-    fun `master on restores book override`() {
+    fun `master toggle never changes reads`() {
         putGlobal("book_1_brightness", 30)
+        assertEquals(30, ReaderConfig.load(prefs, 1L).brightness)
         prefs.edit().putBoolean(ReaderScope.MASTER_KEY, false).apply()
-        assertEquals(0, ReaderConfig.load(prefs, 1L).brightness)
+        assertEquals(30, ReaderConfig.load(prefs, 1L).brightness)
         prefs.edit().putBoolean(ReaderScope.MASTER_KEY, true).apply()
         assertEquals(30, ReaderConfig.load(prefs, 1L).brightness)
     }
@@ -114,11 +116,13 @@ class ReaderScopeModelTest {
     }
 
     @Test
-    fun `explicit book scope on preset global survives master off`() {
+    fun `explicit book scope with master off goes session (no exemption anymore)`() {
+        // 终版语义：总开关是一级总闸，关闭后所有"本书"作用域的新调整都不记忆
         ReaderScope.setScope(prefs, "orientation", ReaderScope.SCOPE_BOOK)
         prefs.edit().putBoolean(ReaderScope.MASTER_KEY, false).apply()
         ReaderScope.write(prefs, 1L, "orientation", 1)
-        assertEquals(1, prefs.getInt("book_1_orientation", -1))
+        assertEquals(-1, prefs.getInt("book_1_orientation", -1))
+        assertEquals(1, ReaderSessionStore.get(1L)?.get("orientation"))
         assertEquals(1, ReaderConfig.load(prefs, 1L).orientation)
     }
 

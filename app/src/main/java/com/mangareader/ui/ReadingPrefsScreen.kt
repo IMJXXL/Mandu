@@ -224,6 +224,7 @@ fun ReadingPrefsScreen(onBack: () -> Unit) {
     var version by remember { mutableIntStateOf(0) } // 作用域/覆盖/全局值变更时刷新
     val pagerState = rememberPagerState(pageCount = { 3 }) // 三个页签：阅读模式/常规/滤镜
     var clearTarget by remember { mutableStateOf<Pair<PrefRow, Int>?>(null) } // 行内"单独·N本"徽章 → 清除确认
+    var masterConfirmStep by remember { mutableIntStateOf(0) } // 关总开关两次确认：1=第一步 2=最终确认
     var writeToastShown by remember { mutableStateOf(false) }
     var showResetDialog by remember { mutableStateOf(false) }
     var toast by remember { mutableStateOf<String?>(null) }
@@ -237,13 +238,6 @@ fun ReadingPrefsScreen(onBack: () -> Unit) {
             writeToastShown = true
             notify("已保存，对所有书生效（单独设置过的书不受影响）")
         }
-    }
-    // 行尾"全局/本书"小徽章：点一下切换作用域（固定全局项不渲染此徽章）
-    val onScopeSwitch: (PrefRow) -> Unit = { row ->
-        val target = if (ReaderScope.isBookScope(prefs, row.key)) ReaderScope.SCOPE_GLOBAL else ReaderScope.SCOPE_BOOK
-        row.allKeys.forEach { ReaderScope.setScope(prefs, it, target) }
-        version++
-        notify(if (target == ReaderScope.SCOPE_BOOK) "在书里调这项，只记在那一本书上" else "在书里调这项会对所有书生效")
     }
 
     LaunchedEffect(toast) {
@@ -276,6 +270,22 @@ fun ReadingPrefsScreen(onBack: () -> Unit) {
     val globalValues = remember(version) { prefs.all.toMap() }
     val scopeReg = remember(version) { ReaderScope.parseScopeReg(prefs) }
 
+    // 行尾"全局/本书"小徽章：点一下切换作用域。
+    // 本书=这页参数锁定，进书里调成啥算啥；全局=可在这页设默认值（已单独调过的书仍优先于全局）
+    val onScopeSwitch: (PrefRow) -> Unit = { row ->
+        val target = if (ReaderScope.isBookScope(prefs, row.key)) ReaderScope.SCOPE_GLOBAL else ReaderScope.SCOPE_BOOK
+        row.allKeys.forEach { ReaderScope.setScope(prefs, it, target) }
+        version++
+        val covered = coveredOf(row)
+        notify(
+            when {
+                target == ReaderScope.SCOPE_BOOK -> "已切为「本书」：这页参数锁定，进书里调，只记那本书"
+                covered > 0 -> "已切为「全局」：可在这页设默认值；有 $covered 本书单独调过仍用自己的值，点「单独·N本」可清除"
+                else -> "已切为「全局」：可在这页设默认值，书里调＝所有书变"
+            }
+        )
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -294,18 +304,22 @@ fun ReadingPrefsScreen(onBack: () -> Unit) {
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
             ) {
                 Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp)) {
-                    Text("这一页改的是「所有书的默认值」", fontSize = 14.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Medium)
+                    Text("这一页怎么用", fontSize = 14.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Medium)
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        "· 某本书里单独调过的项不受影响，继续用它自己的值（行尾会显示「单独·N本」）",
+                        "· 行尾徽章「全局」的项：在这页设默认值，书里调它＝所有书一起变",
                         fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
-                        "· 行尾「全局 / 本书」徽章管的是：在书里调这项时记到哪 —— 全局＝书里调，所有书一起变；本书＝书里调，只记那一本书",
+                        "· 行尾徽章「本书」的项：这页参数锁定（灰着），进书里调成啥算啥，只记那一本书",
                         fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
-                        "· 想单独调某本书：进那本书里改，徽章是「本书」就会只记在它身上",
+                        "· 书里调过的项永远优先（行尾显示「单独·N本」），和下面的开关无关；没调过的书都读全局默认",
+                        fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        "· 下面的开关只决定「书里的新调整要不要记住」：关闭后已记住的仍然生效，只对之后生效",
                         fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -321,19 +335,20 @@ fun ReadingPrefsScreen(onBack: () -> Unit) {
                         Column(Modifier.weight(1f)) {
                             Text("本书改动单独记", fontSize = 16.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Medium)
                             Text(
-                                "关闭后，在书里调「本书」徽章的项退出阅读不保留（「全局」徽章的项仍立即对所有书生效）",
+                                "开启后，在书里调「本书」项会记住；关闭后不再记住新的调整（已记住的仍生效）",
                                 fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                         Switch(
                             checked = masterOn,
                             onCheckedChange = { on ->
-                                masterOn = on
-                                prefs.edit().putBoolean(ReaderScope.MASTER_KEY, on).apply()
-                                notify(
-                                    if (on) "已恢复：书里的调整会记住（共 $bookCount 本书有单独设置）"
-                                    else "已暂停：书里的调整退出阅读不保留",
-                                )
+                                if (on) {
+                                    masterOn = true
+                                    prefs.edit().putBoolean(ReaderScope.MASTER_KEY, true).apply()
+                                    notify("已开启：在书里调「本书」项会记住")
+                                } else {
+                                    masterConfirmStep = 1 // 关闭需两次确认（防误关后不记忆）
+                                }
                             },
                         )
                     }
@@ -392,6 +407,40 @@ fun ReadingPrefsScreen(onBack: () -> Unit) {
         }
     }
 
+    // ── 关闭总开关：两次确认（用户定稿：防误关后书内调整不记忆）──
+    if (masterConfirmStep == 1) {
+        AlertDialog(
+            onDismissRequest = { masterConfirmStep = 0 },
+            title = { Text("关闭「本书改动单独记」？") },
+            text = {
+                Text(
+                    "关闭后，在书里调「本书」项的设置不再记住，退出阅读就还原。\n" +
+                        "已经记住的书本设置仍然生效，关闭只对之后生效，不会清除任何东西。",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { masterConfirmStep = 2 }) { Text("下一步") }
+            },
+            dismissButton = { TextButton(onClick = { masterConfirmStep = 0 }) { Text("再想想") } },
+        )
+    }
+    if (masterConfirmStep == 2) {
+        AlertDialog(
+            onDismissRequest = { masterConfirmStep = 0 },
+            title = { Text("再次确认") },
+            text = { Text("确定关闭吗？\n这不会清除已记住的书本设置，只是之后在书里的调整不再被记住。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    masterOn = false
+                    prefs.edit().putBoolean(ReaderScope.MASTER_KEY, false).apply()
+                    masterConfirmStep = 0
+                    notify("已关闭：书里的调整不再记住，已记住的仍生效")
+                }) { Text("确定关闭", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { masterConfirmStep = 0 }) { Text("取消") } },
+        )
+    }
+
     // ── 清除单项覆盖（点行内"单独·N本"徽章触发）──
     clearTarget?.let { (row, covered) ->
         AlertDialog(
@@ -429,7 +478,7 @@ fun ReadingPrefsScreen(onBack: () -> Unit) {
             title = { Text("恢复默认") },
             text = {
                 Text(
-                    "将把本页的设置恢复到出厂预设，并清除所有书里单独调过的设置（共 $bookCount 本书）。\n" +
+                    "将回到没有「阅读偏好」这个功能时的状态：本页参数恢复出厂预设、清除所有书里单独调过的设置（共 $bookCount 本书）、作用域回默认、总开关重新打开。\n" +
                         "设置 › 阅读设置 里的全局项（墨水屏、性能与解码等）不受影响。\n" +
                         "改错了可以找回：会保留最近 3 次重置前的设置。\n" +
                         "阅读进度、书签、缓存不受影响。",
@@ -442,15 +491,16 @@ fun ReadingPrefsScreen(onBack: () -> Unit) {
                             com.mangareader.data.ReaderPrefMigration.snapshotNow(ctx)
                             prefs.all.keys.filter { it.startsWith("book_") || it.startsWith("read_mode_") }
                                 .forEach { prefs.edit().remove(it).apply() }
-                            // 本页各项恢复出厂预设：删全局键（缺失即出厂值）+ 作用域选择回预设
+                            // 恢复到"功能上线前"：删本页全局键 + 作用域回预设 + 总开关回开出厂态
                             val ed = prefs.edit()
                             PREF_ROWS.flatMap { it.allKeys }.plus(ReaderScope.READ_MODE_GLOBAL_KEY)
                                 .forEach { ed.remove(it) }
-                            ed.remove("pref_center_scope_reg").apply()
+                            ed.remove("pref_center_scope_reg").remove(ReaderScope.MASTER_KEY).apply()
                         }
                         version++
+                        masterOn = true
                         showResetDialog = false
-                        notify("已清除所有书的单独设置")
+                        notify("已恢复到功能上线前的默认状态")
                     }
                 }) { Text("清空并重置", color = MaterialTheme.colorScheme.error) }
             },
@@ -484,22 +534,23 @@ private fun PrefRowBlock(
         is PrefEditor.Group -> {
             val primary = ed.parts.first()
             val on = valueOf(values, primary.key) as? Boolean ?: false
+            // ★ 本书状态：参数锁定（用户定稿——本书的值在书里调，这页调没有意义）
             Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(checked = on, onCheckedChange = { onWrite(primary.key, it) })
+                Checkbox(checked = on, onCheckedChange = { onWrite(primary.key, it) }, enabled = !isBook)
                 Text(primary.label, fontSize = 15.sp, modifier = Modifier.weight(1f))
                 ScopeBadges(row, isBook, covered, onScopeSwitch, onClear)
             }
             // 勾选后子设置就地展开（与阅读界面设置一致）
             if (on) {
                 Column(Modifier.padding(start = 16.dp)) {
-                    ed.parts.drop(1).forEach { InlinePart(it, values, onWrite) }
+                    ed.parts.drop(1).forEach { InlinePart(it, values, !isBook, onWrite) }
                 }
             }
         }
         is PrefEditor.Toggle -> {
             val on = valueOf(values, row.key) as? Boolean ?: false
             Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(checked = on, onCheckedChange = { onWrite(row.key, it) })
+                Checkbox(checked = on, onCheckedChange = { onWrite(row.key, it) }, enabled = !isBook)
                 Column(Modifier.weight(1f)) {
                     Text(row.label, fontSize = 15.sp)
                     ed.info?.let { Text(it, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
@@ -507,7 +558,7 @@ private fun PrefRowBlock(
                 ScopeBadges(row, isBook, covered, onScopeSwitch, onClear)
             }
         }
-        is PrefEditor.Slider -> SliderBlock(row.label, row.key, ed, values, onWrite) {
+        is PrefEditor.Slider -> SliderBlock(row.label, row.key, ed, values, !isBook, onWrite) {
             ScopeBadges(row, isBook, covered, onScopeSwitch, onClear)
         }
         is PrefEditor.Chips -> {
@@ -516,7 +567,7 @@ private fun PrefRowBlock(
                     Text(row.label, fontSize = 15.sp, modifier = Modifier.weight(1f))
                     ScopeBadges(row, isBook, covered, onScopeSwitch, onClear)
                 }
-                InlineChips(null, valueOf(values, row.key), row.key, ed.options, onWrite)
+                InlineChips(null, valueOf(values, row.key), row.key, ed.options, !isBook, onWrite)
             }
         }
         is PrefEditor.ReadMode -> {
@@ -530,7 +581,7 @@ private fun PrefRowBlock(
                 }
                 InlineChips(
                     null, (values[ReaderScope.READ_MODE_GLOBAL_KEY] as? Int) ?: -1, ReaderScope.READ_MODE_KEY,
-                    listOf("按书籍自动" to -1) + Mode.entries.map { it.label to it.ordinal }, onWrite,
+                    listOf("按书籍自动" to -1) + Mode.entries.map { it.label to it.ordinal }, !isBook, onWrite,
                 )
             }
         }
@@ -540,7 +591,7 @@ private fun PrefRowBlock(
                     Text("氛围音", fontSize = 15.sp, modifier = Modifier.weight(1f))
                     ScopeBadges(row, isBook, covered, onScopeSwitch, onClear)
                 }
-                AmbienceChips(values, onWrite)
+                AmbienceChips(values, !isBook, onWrite)
             }
         }
     }
@@ -576,20 +627,20 @@ private fun ScopeBadges(
 }
 
 @Composable
-private fun InlinePart(part: PrefEditor.Part, values: Map<String, Any?>, onWrite: (String, Any) -> Unit) {
+private fun InlinePart(part: PrefEditor.Part, values: Map<String, Any?>, enabled: Boolean, onWrite: (String, Any) -> Unit) {
     when (val ed = part.editor) {
         is PrefEditor.Toggle -> {
             val on = valueOf(values, part.key) as? Boolean ?: false
             Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(checked = on, onCheckedChange = { onWrite(part.key, it) })
+                Checkbox(checked = on, onCheckedChange = { onWrite(part.key, it) }, enabled = enabled)
                 Column(Modifier.weight(1f)) {
                     Text(part.label, fontSize = 14.sp)
                     ed.info?.let { Text(it, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 }
             }
         }
-        is PrefEditor.Slider -> SliderBlock(part.label, part.key, ed, values, onWrite)
-        is PrefEditor.Chips -> InlineChips(part.label, valueOf(values, part.key), part.key, ed.options, onWrite)
+        is PrefEditor.Slider -> SliderBlock(part.label, part.key, ed, values, enabled, onWrite)
+        is PrefEditor.Chips -> InlineChips(part.label, valueOf(values, part.key), part.key, ed.options, enabled, onWrite)
         else -> {}
     }
 }
@@ -597,7 +648,7 @@ private fun InlinePart(part: PrefEditor.Part, values: Map<String, Any?>, onWrite
 @Composable
 private fun SliderBlock(
     label: String, key: String, ed: PrefEditor.Slider,
-    values: Map<String, Any?>, onWrite: (String, Any) -> Unit,
+    values: Map<String, Any?>, enabled: Boolean, onWrite: (String, Any) -> Unit,
     trailing: @Composable () -> Unit = {},
 ) {
     var v by remember(key) { mutableStateOf((valueOf(values, key) as? Number)?.toFloat() ?: ed.min) }
@@ -616,7 +667,7 @@ private fun SliderBlock(
             value = v,
             onValueChange = { v = it },
             onValueChangeFinished = { onWrite(key, if (ed.isFloat) v else Math.round(v)) },
-            valueRange = ed.min..ed.max, steps = ed.steps, modifier = Modifier.fillMaxWidth(),
+            valueRange = ed.min..ed.max, steps = ed.steps, modifier = Modifier.fillMaxWidth(), enabled = enabled,
         )
     }
 }
@@ -625,7 +676,7 @@ private fun SliderBlock(
 @Composable
 private fun InlineChips(
     label: String?, current: Any?, key: String,
-    options: List<Pair<String, Any>>, onWrite: (String, Any) -> Unit,
+    options: List<Pair<String, Any>>, enabled: Boolean, onWrite: (String, Any) -> Unit,
 ) {
     Column(Modifier.padding(vertical = 4.dp)) {
         label?.let { Text(it, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
@@ -634,6 +685,7 @@ private fun InlineChips(
                 FilterChip(
                     selected = current == value,
                     onClick = { onWrite(key, value) },
+                    enabled = enabled,
                     label = { Text(optLabel, fontSize = 13.sp) },
                 )
             }
@@ -643,7 +695,7 @@ private fun InlineChips(
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun AmbienceChips(values: Map<String, Any?>, onWrite: (String, Any) -> Unit) {
+private fun AmbienceChips(values: Map<String, Any?>, enabled: Boolean, onWrite: (String, Any) -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var imported by remember { mutableStateOf(listImportedAmbience(ctx)) }
@@ -664,6 +716,7 @@ private fun AmbienceChips(values: Map<String, Any?>, onWrite: (String, Any) -> U
             FilterChip(
                 selected = current == value,
                 onClick = { onWrite("ambienceSound", value) },
+                enabled = enabled,
                 label = { Text(label, fontSize = 13.sp) },
             )
         }
@@ -671,12 +724,14 @@ private fun AmbienceChips(values: Map<String, Any?>, onWrite: (String, Any) -> U
             FilterChip(
                 selected = current == name,
                 onClick = { onWrite("ambienceSound", name) },
+                enabled = enabled,
                 label = { Text(name.substringBeforeLast('.').take(10), fontSize = 13.sp) },
             )
         }
         FilterChip(
             selected = false,
             onClick = { importLauncher.launch(arrayOf("audio/*")) },
+            enabled = enabled,
             label = { Text("+ 导入", fontSize = 13.sp) },
         )
     }

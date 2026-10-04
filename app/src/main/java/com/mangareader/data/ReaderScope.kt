@@ -5,18 +5,17 @@ import android.content.SharedPreferences
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * 阅读偏好三层模型（2026-10-04 用户定稿重构）：
+ * 阅读偏好三层模型（2026-10-04 用户定稿终版）：
  *
  *   生效顺序：临时值(会话) > 本书覆盖 > 全局值 > 出厂默认
  *
- * - 【作用域】每项可在 全局生效 / 本书单独 之间切换（偏好页）。
- *   预设作用域 = 本功能引入前的真实行为：只在 设置→阅读设置 改的项（与 ReaderConfig.save
- *   无前缀写全集一致）预设全局；书内面板能改的项预设本书。显式指定一律压过预设。
- * - 【全局值】该项对所有书生效的默认值，偏好页/阅读设置页直接改；
- * - 【本书覆盖】作用域为本书时，书内改动写 book_<id>_<key>，只对本书生效；
- * - 【临时值】总开关关时书内改动只进内存会话层，退出阅读（reader 路由弹出返回栈）全清；
- * - 【固定全局】大设置 › 阅读设置 纳管的项（自动翻页/性能解码/墨水屏/翻页闪烁/点击翻页
- *   区域/阅读背景）恒全局：写读恒走全局键，显式作用域与总开关都改变不了。
+ * - 【全局值】所有书的默认值：偏好页里「全局」徽章的项直接改；
+ * - 【本书覆盖】书里调过的值，**永远最高优先**——总开关只管"之后的新调整记不记"，
+ *   绝不影响已记住的覆盖（读取侧无开关）；
+ * - 【临时值】总开关关闭时书内的新调整只进内存会话层，退出阅读丢弃；
+ * - 【固定全局】大设置 › 阅读设置 纳管的项恒全局（不进偏好页）。
+ * - 总开关语义（用户定稿）：开=书内新调整按作用域记忆；关=不再记住新调整（只对之后生效），
+ *   已记住的书本设置继续生效。
  *
  * 写入必须走 [write]/[writeGlobal]/[clearBook] 单键路由，禁止整包 save 写书内键
  * （全量种子化是 852 时代"改一个滑条写 66 键"的根源，QA 红线）。
@@ -123,13 +122,12 @@ object ReaderScope {
     enum class Layer { GLOBAL, BOOK, SESSION }
 
     fun resolveLayer(prefs: SharedPreferences, bookId: Long, key: String): Layer {
-        val explicit = parseScopeReg(prefs)[key]
+        // 写入落层：全局作用域→全局键；本书作用域→总开关开=记到书，关=仅会话（退出丢弃）。
+        // 注意：总开关只影响"新调整"的写入，已存在的本书覆盖在读取侧永远生效。
         return when {
             key in GLOBAL_LOCKED_KEYS -> Layer.GLOBAL // 阅读设置纳管的项：恒全局
             bookId <= 0 -> Layer.GLOBAL
-            explicit == SCOPE_GLOBAL -> Layer.GLOBAL
-            explicit == SCOPE_BOOK -> Layer.BOOK // 用户显式指单本：压过预设全局，豁免总开关
-            key in PRESET_GLOBAL_KEYS -> Layer.GLOBAL // 预设全局（书内改动对所有书生效）
+            userScope(prefs, key) == SCOPE_GLOBAL -> Layer.GLOBAL
             masterOn(prefs) -> Layer.BOOK
             else -> Layer.SESSION
         }

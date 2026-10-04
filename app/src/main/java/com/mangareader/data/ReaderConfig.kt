@@ -205,26 +205,19 @@ data class ReaderConfig(
 
         fun load(prefs: SharedPreferences, bookId: Long = -1): ReaderConfig {
             val prefix = if (bookId >= 0) "book_${bookId}_" else ""
-            // ★ 三层模型（2026-10-03 评审定稿）：总开关关 = 本书覆盖休眠（读全局），
-            //   豁免字段（pageLayout）除外——它的覆盖恒参与解析。
-            val masterOn = ReaderScope.masterOn(prefs)
-            val pfx = if (bookId >= 0 && masterOn) prefix else ""
-            // ★ 翻页闪烁组为固定全局项（2026-10-04）：读恒走全局键（rBoolean 走 effPrefixFor）
+            // ★ 读取侧无开关（2026-10-04 用户定稿）：书里调过的值永远最高优先，
+            //   总开关只决定"之后的新调整记不记"，绝不影响已存在的本书覆盖。
+            val pfx = prefix
             // ★ 点击翻页区域：稀疏模型下单本键缺失自然回退全局（旧防固化 guard 已废）
             val clickPrefix = pfx
             val clickInvertPrefix = pfx
             // ★ 分层读取：本书覆盖存在→读之；否则全局打底；否则默认。
-            //   生效前缀按 key 现算：固定全局（阅读设置纳管的项恒全局） > 显式作用域
-            //   （用户亲选，压过预设） > 预设作用域（=852 时代 save 无前缀全集）
-            //   > 总开关（关=预设单本项休眠读全局）。
+            //   生效前缀按 key 现算：作用域（显式>预设）为本书 → 读本书键（恒生效）；
+            //   全局/固定全局 → 只读全局键。会话临时层在末尾统一覆盖。
             val scopeReg = ReaderScope.parseScopeReg(prefs)
-            fun effPrefixFor(key: String): String = when {
-                key in ReaderScope.GLOBAL_LOCKED_KEYS -> ""
-                scopeReg[key] == ReaderScope.SCOPE_GLOBAL -> ""
-                scopeReg[key] == ReaderScope.SCOPE_BOOK -> prefix
-                key in ReaderScope.PRESET_GLOBAL_KEYS -> ""
-                masterOn -> prefix
-                else -> ""
+            fun effPrefixFor(key: String): String {
+                val scope = scopeReg[key] ?: ReaderScope.presetScope(key)
+                return if (scope == ReaderScope.SCOPE_BOOK) prefix else ""
             }
             fun rBoolean(key: String, def: Boolean): Boolean {
                 val ep = effPrefixFor(key)
@@ -394,6 +387,20 @@ data class ReaderConfig(
                 "ambienceSound" -> cfg.copy(ambienceSound = v as String)
                 "ambienceVolume" -> cfg.copy(ambienceVolume = v as Int)
                 "pageLayout" -> cfg.copy(pageLayout = enumOr(v, PageLayout.SINGLE))
+                // 以下为"预设全局但可切单本"的键：总开关关闭+作用域本书时会进会话层（2026-10-04）
+                "orientation" -> cfg.copy(orientation = v as Int)
+                "isFlipAnimation" -> cfg.copy(isFlipAnimation = v as Boolean)
+                "isPageCurlAnimation" -> cfg.copy(isPageCurlAnimation = v as Boolean)
+                "isCurlContentAreaOnly" -> cfg.copy(isCurlContentAreaOnly = v as Boolean)
+                "curlBackContentAlpha" -> cfg.copy(curlBackContentAlpha = v as Float)
+                "curlShadowAlpha" -> cfg.copy(curlShadowAlpha = v as Float)
+                "spineShadowAlpha" -> cfg.copy(spineShadowAlpha = v as Float)
+                "fitScreen" -> cfg.copy(fitScreen = v as Boolean)
+                "landscapeZoom" -> cfg.copy(landscapeZoom = v as Boolean)
+                "autoWebtoon" -> cfg.copy(autoWebtoon = v as Boolean)
+                "chapterTransition" -> cfg.copy(chapterTransition = v as Boolean)
+                "seamlessNextVolume" -> cfg.copy(seamlessNextVolume = v as Boolean)
+                "autoDoubleLandscape" -> cfg.copy(autoDoubleLandscape = v as Boolean)
                 else -> cfg
             }
         }
