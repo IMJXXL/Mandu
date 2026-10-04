@@ -57,6 +57,9 @@ fun CurlDoublePageContent(
     reloadTrigger: MutableIntState,
     tapForwardTrigger: MutableIntState,
     tapBackwardTrigger: MutableIntState,
+    /** ★ 翻页动画开始（背面层首次求值）即回调目标跨页：视图借此以非预载优先级
+     *  立即拉起目标页解码——保证"第 2 页翻动时第 4 页已就位在底下" */
+    onFlipTargetNeeded: (Int) -> Unit = {},
     onSpreadChanged: (Int) -> Unit,
 ) {
     val state = rememberPageCurlState(
@@ -202,11 +205,9 @@ fun CurlDoublePageContent(
                 val cw = constraints.maxWidth.toFloat()
                 val ch = constraints.maxHeight.toFloat()
                 if (iw > 0f && ih > 0f && cw > 0f && ch > 0f) {
-                    val scale = when {
-                        fitScreen -> minOf(cw / iw, ch / ih)
-                        landscapeZoom && iw > ih -> ch / ih
-                        else -> cw / iw
-                    }
+                    // ★ 不再插手 landscapeZoom（2026-10-04）：合并跨页天然是宽图，FillHeight
+                    //   会水平裁切且无法平移找回——用户要求"4 比 2 宽也不能漏 4"
+                    val scale = if (fitScreen) minOf(cw / iw, ch / ih) else cw / iw
                     val dispW = (iw * scale).coerceAtMost(cw)
                     val dispH = (ih * scale).coerceAtMost(ch)
                     if (dispW < cw || dispH < ch) {
@@ -244,6 +245,9 @@ fun CurlDoublePageContent(
                 reloadTrigger.intValue
 
                 val targetSpread = if (forward) current + 1 else current - 1
+                // ★ 翻页即提权（幂等，loadPageAsync 缓存/去重兜底）：背面层显示的就是目标跨页，
+                //   预载若还没轮到它，此刻以非预载(绕过信号量)立即解码
+                if (targetSpread in 0 until totalSpreads) onFlipTargetNeeded(targetSpread)
                 val tLeft = if (targetSpread in 0 until totalSpreads) cache.get(SpreadMapping.leftPage(targetSpread, totalPages, shift)) else null
                 val tRight = if (targetSpread in 0 until totalSpreads) {
                     val r = SpreadMapping.rightPage(targetSpread, totalPages, shift)
@@ -303,11 +307,9 @@ private fun spineBounds(
     val iw = (left.width + (right?.width ?: 0)).toFloat()
     val ih = maxOf(left.height, right?.height ?: left.height).toFloat()
     if (iw <= 0f || ih <= 0f) return null
-    val scale = when {
-        fitScreen -> minOf(boxW / iw, boxH / ih)
-        landscapeZoom && iw > ih -> boxH / ih
-        else -> boxW / iw
-    }
+    // ★ 与 SpreadImage 同步去掉 landscapeZoom FillHeight（裁边不可找回，见上）
+    @Suppress("UNUSED_EXPRESSION") landscapeZoom
+    val scale = if (fitScreen) minOf(boxW / iw, boxH / ih) else boxW / iw
     val dw = (iw * scale).coerceAtMost(boxW)
     val dh = (ih * scale).coerceAtMost(boxH)
     return Rect((boxW - dw) / 2f, (boxH - dh) / 2f, (boxW + dw) / 2f, (boxH + dh) / 2f)
@@ -387,15 +389,11 @@ private fun SpreadImage(
         if (merged != null && !merged.isRecycled) merged.asImageBitmap() else null
     }
 
-    // 缩放语义对齐 pager applyScale：fitScreen（漫画完整显示）=contain；否则贴满宽度；
-    // landscapeZoom（自动放大横向图片，仅 fitScreen 关闭时插手）宽图再放大到贴满高度。
-    // FillWidth/FillHeight 会溢出边界，必须 clipToBounds（ImageView 自带裁剪，Compose 没有）
-    val wide = merged != null && !merged.isRecycled && merged.width > merged.height
-    val contentScale = when {
-        fitScreen -> ContentScale.Fit
-        landscapeZoom && wide -> ContentScale.FillHeight
-        else -> ContentScale.FillWidth
-    }
+    // 缩放语义对齐 pager applyScale：fitScreen（漫画完整显示）=contain；否则贴满宽度。
+    // ★ landscapeZoom FillHeight 分支删除（2026-10-04）：合并跨页天然宽图，贴高必水平裁切
+    //   且无平移可找回——用户要求"4 比 2 宽也不能漏 4"。FillWidth/FillHeight 会溢出边界，
+    //   必须 clipToBounds（ImageView 自带裁剪，Compose 没有）
+    val contentScale = if (fitScreen) ContentScale.Fit else ContentScale.FillWidth
 
     val mirror = if (isRtl) Modifier.graphicsLayer { scaleX = -1f } else Modifier
 

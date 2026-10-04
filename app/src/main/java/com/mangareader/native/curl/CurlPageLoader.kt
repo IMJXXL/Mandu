@@ -41,7 +41,9 @@ class CurlPageLoader(
 
     private val inflightLoads = ConcurrentHashMap<Int, Long>()
     private val loadJobs = ConcurrentHashMap<Int, Job>()
-    private val preloadSemaphore = Semaphore(1)
+    // ★ 2 许可（2026-10-04 双页 curl 翻快了下一屏没就位）：原 1=全部预载严格串行，
+    //   下一跨页要排在上一跨页后面逐页等，快翻时目标页永远赶不上翻页动画
+    private val preloadSemaphore = Semaphore(2)
     /** idx → 已烘焙的源位图 identity：源没换不重烘（清缓存换纹理时由 clearBakeTracking 复位） */
     private val bakedFrom = HashMap<Int, Int>()
 

@@ -274,6 +274,13 @@ class CurlDoublePageView(context: Context) : FrameLayout(context), ReaderViewDel
                 reloadTrigger = reloadTrigger,
                 tapForwardTrigger = tapForwardTrigger,
                 tapBackwardTrigger = tapBackwardTrigger,
+                onFlipTargetNeeded = { targetSpread ->
+                    // ★ 翻页动画开始的提权通道：目标跨页两页以非预载(绕过信号量)立即解码，
+                    //   已在缓存则 loadPageAsync 幂等空转。快翻连续触发也安全（5s 去重）
+                    loader.loadPageAsync(SpreadMapping.leftPage(targetSpread, pageList.size, doublePageShift), isPreload = false) { reloadTrigger.intValue++ }
+                    val r = SpreadMapping.rightPage(targetSpread, pageList.size, doublePageShift)
+                    if (r >= 0) loader.loadPageAsync(r, isPreload = false) { reloadTrigger.intValue++ }
+                },
                 onSpreadChanged = { newSpread ->
                     val newPage = SpreadMapping.leftPage(newSpread, pageList.size, doublePageShift)
                     playFlipSound()
