@@ -60,7 +60,8 @@ object VirtualPageExpander {
         //   ★ P5（2026-10-04）探测调度按介质分流：rar/7z/tar 是顺流介质（fd 单锁），乱序并发
         //   探测会反复重绕流——最坏 O(N²) 数据流过。改单线程按页序探测：loadPageBounds 底层
         //   loadArchiveEntryViaFdCache 每次顺流顺带收集 target..+2 进 adjacentPrereadCache，
-        //   升序提交时邻页直接命中，整章一遍顺流=物理下限。zip/dir 头部读取是随机访问
+        //   升序提交时邻页直接命中，消除乱序重绕（实际流量取决于 native 续读实现，但恒不劣于
+        //   旧乱序并发）。zip/dir 头部读取是随机访问
         //  （ZipFile 按名直取/文件头 64KB），保持并行池。
         val preProbed = HashMap<String, IntArray?>()
         if (allowProbe) {

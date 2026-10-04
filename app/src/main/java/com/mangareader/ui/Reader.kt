@@ -774,7 +774,8 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                         startPage = resumePage,
                         passwdProvider = archivePasswdProvider,
                     ) { loader ->
-                        adapter.attach(loader, null)
+                        // ★ P2 补漏（独立审查实锤）：本地整档 loader 页数打开即定（全格式），直接放行
+                        adapter.attach(loader, null, sizeSettled = true)
                         adapter.awaitClose()
                     }
                 } catch (e: kotlinx.coroutines.CancellationException) {

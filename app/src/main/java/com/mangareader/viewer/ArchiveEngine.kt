@@ -2479,7 +2479,8 @@ class ArchiveEngine(private val ctx: Context) {
         try {
             val futures = items.mapIndexed { i, item -> pool.submit { counts[i] = countOneSubArchive(tree, item) } }
             futures.forEach { it.get() }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Log.d(TAG, "countSubArchivesParallel: ${e.message}")
         } finally { pool.shutdown() }
         return counts
     }

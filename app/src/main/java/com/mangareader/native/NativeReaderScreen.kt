@@ -178,6 +178,9 @@ fun NativeReaderScreen(
     val ctx = LocalContext.current
     var savedPage by remember { mutableIntStateOf(startPage) }
     var firstComposition by remember { mutableStateOf(true) }
+    // ★ B4②：半页位注入一次性标记——effect 会因无关 key（翻转动画/反转双页/布局等）重跑，
+    //   不做一次性保护会把运行中的半页状态拉回进书时的初始值
+    var initialHalfRightConsumed by remember { mutableStateOf(false) }
     var containerRef by remember { mutableStateOf<FrameLayout?>(null) }
     var brightnessOverlayAlpha by remember { mutableStateOf(0f) }
     var brightnessOverlayRef by remember { mutableStateOf<View?>(null) }
@@ -275,8 +278,6 @@ fun NativeReaderScreen(
         // ★ 纸张纹理：全局烘焙设置必须在 setup 前同步——setup 内 preloadAround 立刻开始解码，
         //   晚了首页就会以无纹理位图入缓存（appliedTexture SideEffect 只管运行时变化）
         com.mangareader.filter.PaperPageTexture.sync(ctx, textureEnabled, texturePresetId, textureConcentration, textureScope != 0)
-        // ★ B4②：续读半页位必须在 setup 前注入——setup 内消费一次作初始交替位
-        if (delegate is PagerReaderView) delegate.setInitialSplitHalfRight(initialHalfRight)
         // ★ §34.3：verticalPager 传给 pagerView.setup（webtoon 走默认 false 无影响）
         // ★ 点击翻页区域接线（此前硬编码 0=关闭，区域设置从未生效——2026-09-29 修复）
         delegate.setup(engine, treePath, pages, savedPage, isVertical, clickFlip, isRtl, verticalPager)
@@ -327,6 +328,14 @@ fun NativeReaderScreen(
             delegate.setDoublePageModeAndShift(pageLayout == 1 || pageLayout == 2, pageLayout == 2)
             delegate.setDoublePageReverse(doublePageReverse)
             delegate.onChapterEnd = onChapterEnd
+        }
+        // ★ B4②：续读半页位注入——必须在全部会 resetSplitHalf 的配置注入（PagerReaderView 的
+        //   setDoublePageSplit / CurlDoublePageView 的 setDoublePageModeAndShift）之后，否则刚置的
+        //   半页位立即被清零（独立审查实锤：注入放 setup 前会被同一次 effect 内的
+        //   setDoublePageSplit reset 掉，双页布局续读半页完全失效）。consume-once 见上。
+        if (delegate is PagerReaderView && !initialHalfRightConsumed) {
+            delegate.setInitialSplitHalfRight(initialHalfRight)
+            initialHalfRightConsumed = true
         }
         // ★ P0-2：切换交接——本次 setup 后立即从总线接管旧实例移交的位图（跨实例），首帧绑定直接命中缓存
         android.util.Log.w("NES", "setup delegate=${System.identityHashCode(delegate)} v=$isVertical vp=$verticalPager tree=$treePath")

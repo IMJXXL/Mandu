@@ -72,6 +72,12 @@ object KomgaBookRouter {
                 pages = p
                 isPdf = book.media.mediaType == "application/pdf"
                 title = book.metadata.title.ifEmpty { book.name }
+                // ★ 独立审查中#2：缓存有界——超限先清扫过期条目，仍超限整体清空（防无界累积）
+                if (pagesCache.size > 64) {
+                    val now = System.currentTimeMillis()
+                    pagesCache.entries.removeIf { now - it.value.fetchedAt > PAGES_TTL_MS }
+                    if (pagesCache.size > 256) pagesCache.clear()
+                }
                 pagesCache[cacheKey] = CachedPages(System.currentTimeMillis(), pages, isPdf, title)
                 if (existing != null && existing.coverPath != coverPath) dao.updateBookCoverPath(existing.id, coverPath)
             }

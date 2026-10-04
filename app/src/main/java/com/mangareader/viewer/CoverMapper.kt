@@ -173,7 +173,8 @@ class CoverFetcher(
                     val thumbUrl = api.bookThumbnailUrl(bookId)
                     android.util.Log.d("CoverFetch", "komga thumb url: $thumbUrl")
                     val bytes = api.downloadBytes(thumbUrl)
-                    client.close()
+                    // ★ P7 补漏（独立审查实锤）：client 已进程内共享，此处 close 会杀掉共享连接池，
+                    //   之后同变体的全部 Komga 请求失败到进程重启——禁止 close
                     val hex = bytes.takeIf { it.isNotEmpty() }?.let { "%02X%02X".format(it[0], it[1]) } ?: "empty"
                     android.util.Log.d("CoverFetch", "komga cover OK size=${bytes.size} hex=$hex path=$coverPath")
                     Pair(bytes, "image/jpeg")

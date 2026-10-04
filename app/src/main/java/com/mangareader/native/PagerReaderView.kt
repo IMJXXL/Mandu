@@ -126,11 +126,17 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     private val loadJobs = java.util.concurrent.ConcurrentHashMap<Int, kotlinx.coroutines.Job>()
     private val decodeSemaphore = Semaphore(2)
 
-    // ★ B4②（2026-10-04）：续读半页位初始值——Reader 恢复块经 NES setup 前注入，setup 消费一次。
-    //   语义="阅读序第二半"（与 halfRight 列一致）。仅双页布局未展开表有实际效果；
-    //   展开表（宽图二分）下视图交替休眠，置了也无影响；非拆分页首次翻页即被清。
-    @Volatile private var pendingInitialHalfRight = false
-    fun setInitialSplitHalfRight(v: Boolean) { pendingInitialHalfRight = v }
+    // ★ B4②（2026-10-04）：续读半页位——NES 在全部 reset 型配置注入（setDoublePageSplit/
+    //   setDoublePageModeAndShift 会 resetSplitHalf）之后调用本方法直接生效；旧版"setup 消费"
+    //   会被同一次 effect 内更晚的 setDoublePageSplit 清零（独立审查实锤，功能失效）。
+    //   仅双页布局未展开表有实际效果；展开表（宽图二分）下视图交替休眠无影响。
+    fun setInitialSplitHalfRight(v: Boolean) {
+        if (!v) return
+        splitHalfRight = true
+        // 防御：若首个绑定先于本调用发生，重绑一次让右半生效（同一主线程帧内通常尚未绑定，空操作）
+        val pos = positionOf(currentPage)
+        if (pos >= 0) pagerAdapter?.notifyItemChanged(pos)
+    }
 
     // ★ §24 二代（翻页化）：动图状态——只在翻页模式下处理动图播放。条漫不再处理（条漫看到动图按静图渲染首帧）
     private data class AnimFlag(val pageIdx: Int, val kind: AnimKind)
@@ -697,12 +703,6 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         val rtlChanged = this.isRtl != rtl
         val engineChanged = this.engine != engine
         this.engine = engine; this.treePath = treePath; this.pageList = pages; this.isRtl = rtl
-        // ★ B4②：消费续读半页位（只在有待恢复值时置 true——setup 可能因配置变化重入，
-        //   无条件赋 false 会把运行中的右半状态清掉，画面/状态背离）
-        if (pendingInitialHalfRight) {
-            splitHalfRight = true
-            pendingInitialHalfRight = false
-        }
         // ★ 上报本视图真实页数：expandedPageCount 只被条漫视图回调更新，pager/curl 章
         //   setup 不上报会让上一章条漫的展开页数残留 → 进度条越界、goToPage 吞页、done 误标读完
         onPageCountChanged?.invoke(pageList.size)
@@ -1044,7 +1044,10 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             //   画面（右半）与状态保持一致；旧版边界失败即清，此时退出会把右半记成左半
             val target = when {
                 shiftDoublePage && currentPage == 0 -> 1
-                currentPage < pageList.size - 1 -> currentPage + 2
+                // ★ B5 闭合（独立审查实锤）：旧条件 currentPage < size-1 在偶数页数末跨页
+                //  （currentPage==size-2）会算出越界 target=size，goToPage 静默 no-op 但状态已清。
+                //   改为目标索引有效才动状态
+                currentPage + 2 < pageList.size -> currentPage + 2
                 else -> -1
             }
             if (target >= 0) {
