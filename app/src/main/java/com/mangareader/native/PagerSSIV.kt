@@ -33,6 +33,15 @@ class PagerSSIV @JvmOverloads constructor(
      *  会把初始态误判成"用户已放大"而吞掉翻页手势（拆分后滑动翻页失效的根因之一）。
      *  0 = 未设（回落 minScale，完整显示模式行为不变）。 */
     var viewportBaseScale = 0f
+        set(value) {
+            field = value
+            // ★ 2026-10-05 工单"应该能缩放到更小"：SSIV 默认 min=contain 贴边，铺满/贴宽基准下
+            //   pinch-out 到贴边就停。基准已知时把下限放到 0.5×基准——能看全貌，双击/手势仍回基准。
+            //   0 = 未设（完整显示模式行为不变，min 仍为 contain）。
+            if (value > 0f) {
+                runCatching { setMinScale(value * 0.5f) }
+            }
+        }
 
     /** ★ 手势分流主轴：true=横向滑动放行翻页（横向 pager）、纵向拖动看图（铺满屏幕划着看）；
      *  false=反向（竖向翻页 pager）。由 PagerReaderView 按 verticalPager 接线。 */
