@@ -936,7 +936,15 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     fun setZoomStart(start: Int) { applyLivePrefs(zoomStart = start) }
 
     fun setTileModeEnabled(enabled: Boolean) {
+        if (this.tileModeEnabled == enabled) return
         this.tileModeEnabled = enabled
+        // ★ 即时生效（2026-10-05 对齐"调整即时刷新"）：瓦片开关只影响加载路径，已解码位图
+        //   留在缓存里会让当前窗口继续走旧路径——照 setTrimWhiteBorder 的无白屏窗口重载
+        clearTileFileCache()
+        val cur = currentPage
+        (cur - 2..cur + 5).forEach {
+            if (it in pageList.indices) { bitmapCache.remove(it); inflightLoads.remove(it); loadPageAsync(it) }
+        }
     }
 
 
@@ -1900,6 +1908,9 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
          *   不用 bindingAdapterPosition（holder 复用后 dp 会变，错删别的页）。 */
         internal var heldIdx: Int = -1
         internal var loadingBar: android.widget.ProgressBar? = null
+        /** ★ base/scale 代守卫（2026-10-05）：每次 applyPlanScale 递增；迟到的 post 重试/延时
+         *  landscapeZoom 凭 gen 比对判定自己是否还属于当前这次 bind，重绑即作废 */
+        private var scaleGen = 0
 
         private fun createSsiv(): PagerSSIV {
             return PagerSSIV(itemView.context).apply {
@@ -2059,27 +2070,35 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
          * 等 layout 完成后再设 scale（避免 fitToLower 在 layout 时覆盖）。
          */
         private fun applyPlanScale(ssiv: PagerSSIV, iw: Float, ih: Float, landscapeZoom: Boolean, forward: Boolean) {
-            ssiv.viewTreeObserver.addOnGlobalLayoutListener(object : android.view.ViewTreeObserver.OnGlobalLayoutListener {
-                override fun onGlobalLayout() {
-                    ssiv.viewTreeObserver.removeOnGlobalLayoutListener(this)
-                    val w = ssiv.width.toFloat()
-                    val h = ssiv.height.toFloat()
-                    if (w > 0 && iw > 0) {
-                        val isTablet = ssiv.resources.configuration.smallestScreenWidthDp >= 600
-                        val scale = ScalePlan.baseScale(scaleMode, w, h, iw, ih, isTablet)
-                        // ★ 视口基准：基线比例就是"未放大"态（手势分流判定用）
-                        ssiv.viewportBaseScale = scale
-                        val cx = ScalePlan.centerX(zoomStart, isRtl, w, iw, scale)
-                        val cy = ScalePlan.centerY(zoomStart, h, ih, scale)
-                        ssiv.setScaleAndCenter(scale, android.graphics.PointF(cx, cy))
-                    }
-                }
-            })
+            // ★ 2026-10-05"双页能翻/单页死"根因（220654 日志 scale=0.81 base=0.53 类错配实锤）：
+            //   base/scale 原本拖到 OnGlobalLayout 才设——复用 holder 重绑命中已解码页时没有布局
+            //   路过（等值 padding no-op、loadingBar 不变化），监听器永不触发 → viewportBaseScale
+            //   停留上一页旧值。单页各页页型不同、base 随页漂移，旧 base≠新 scale → 未放大被误判
+            //   放大：根检测器 isCurrentPageZoomed 门闩关闭 + SSIV 分流全落 hold-zoomedPan →
+            //   滑动翻页死；双页合并图页型恒定、旧 base≈新 base 恰好无恙（工单完全解释）。
+            //   applyScale 的 post 重试闸门保证走全量路径时 width>0 且 isReady——同步直设；
+            //   scaleGen 代守卫：迟到的重试/延时 landscapeZoom 不得打到重绑后的新图上。
+            scaleGen++
+            val gen = scaleGen
+            if (ssiv.width <= 0 || ssiv.height <= 0 || iw <= 0f || ih <= 0f) {
+                ssiv.post { if (gen == scaleGen) applyPlanScale(ssiv, iw, ih, landscapeZoom, forward) }
+                return
+            }
+            val w = ssiv.width.toFloat()
+            val h = ssiv.height.toFloat()
+            val isTablet = ssiv.resources.configuration.smallestScreenWidthDp >= 600
+            val scale = ScalePlan.baseScale(scaleMode, w, h, iw, ih, isTablet)
+            // ★ 视口基准：基线比例就是"未放大"态（手势分流判定用）
+            ssiv.viewportBaseScale = scale
+            val cx = ScalePlan.centerX(zoomStart, isRtl, w, iw, scale)
+            val cy = ScalePlan.centerY(zoomStart, h, ih, scale)
+            ssiv.setScaleAndCenter(scale, android.graphics.PointF(cx, cy))
             // landscapeZoom：宽图自动放大适配高度（mihon 同款仅 contain 档插手；对齐 zoomStart，
             // 前进落阅读起始缘、回退落结束缘；延时 500ms+500ms 动画对齐 mihon landscapeZoom）
             if (landscapeZoom && ScalePlan.landscapeZoomable(scaleMode) && iw > ih) {
                 ssiv.handler?.postDelayed({
-                    if (ssiv.isReady) {
+                    // ★ gen 守卫 + isShown（mihon isVisibleOnScreen 同款）：500ms 内重绑/离屏不再放大
+                    if (gen == scaleGen && ssiv.isReady && ssiv.isShown) {
                         val targetScale = ssiv.height.toFloat() / ih
                         val cx = ScalePlan.landscapeZoomCenterX(zoomStart, isRtl, forward, ssiv.width.toFloat(), iw, targetScale)
                         val cy = if (ScalePlan.alignY(zoomStart) == 0)
@@ -2093,6 +2112,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         }
         fun clear() {
             isSplitPage = false
+            scaleGen++ // ★ 作废在途的 applyPlanScale 重试与延时 landscapeZoom
             disposeAnimDrawable()
             heldBitmap = null
             iv?.setImageBitmap(null)
