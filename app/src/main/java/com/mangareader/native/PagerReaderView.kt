@@ -501,16 +501,23 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         override fun onDown(e: MotionEvent): Boolean { rootFired = false; return super.onDown(e) }
         override fun onScroll(e1: MotionEvent?, e2: MotionEvent, dx: Float, dy: Float): Boolean {
             if (rootFired) return false
-            val total = if (!verticalPager) (e2.x - (e1?.x ?: e2.x)) else (e2.y - (e1?.y ?: e2.y))
+            val dAlong = if (!verticalPager) (e2.x - (e1?.x ?: e2.x)) else (e2.y - (e1?.y ?: e2.y))
+            val dOrtho = if (!verticalPager) (e2.y - (e1?.y ?: e2.y)) else (e2.x - (e1?.x ?: e2.x))
             val extent = if (!verticalPager) width else height
-            if (extent > 0 && kotlin.math.abs(total) > extent * 0.08f) {
-                if (tryRootFlip(if (total < 0) 1 else -1)) rootFired = true
+            // ★ 沿轴净位移需占优：适应宽度竖拖画面时轨迹稍斜不应误翻（mihon 同款平移优先）
+            if (extent > 0 && kotlin.math.abs(dAlong) > extent * 0.08f && kotlin.math.abs(dAlong) >= kotlin.math.abs(dOrtho)) {
+                if (tryRootFlip(if (dAlong < 0) 1 else -1)) rootFired = true
             }
             return false
         }
         override fun onFling(e1: MotionEvent?, e2: MotionEvent, vx: Float, vy: Float): Boolean {
+            val dxTotal = e2.x - (e1?.x ?: e2.x)
+            val dyTotal = e2.y - (e1?.y ?: e2.y)
+            // ★ 速度沿轴 + 整段位移沿轴双条件：竖拖画面松手(纵向速度大)永不误翻
             val alongAxis = if (!verticalPager)
-                kotlin.math.abs(vx) >= kotlin.math.abs(vy) else kotlin.math.abs(vy) >= kotlin.math.abs(vx)
+                kotlin.math.abs(vx) >= kotlin.math.abs(vy) && kotlin.math.abs(dxTotal) >= kotlin.math.abs(dyTotal)
+            else
+                kotlin.math.abs(vy) >= kotlin.math.abs(vx) && kotlin.math.abs(dyTotal) >= kotlin.math.abs(dxTotal)
             if (alongAxis && !rootFired) {
                 val v = if (!verticalPager) vx else vy
                 if (tryRootFlip(if (v < 0) 1 else -1)) rootFired = true

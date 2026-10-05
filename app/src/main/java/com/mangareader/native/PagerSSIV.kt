@@ -219,6 +219,18 @@ class PagerSSIV @JvmOverloads constructor(
                         consumedDown = true
                         return super.onTouchEvent(event)
                     }
+                    // ★ mihon 适应宽度同款（2026-10-05 工单）：沿轴（适应宽度横向）贴边但正交轴
+                    //   （纵向）有内容可看且本次手势纵向占优→按平移处理，不翻页。此前竖拖/斜竖拖
+                    //   全落进翻页判定，一拖就翻，无法像 mihon 那样上下拖画面
+                    val orthoRoom = if (axisPassthroughHorizontal) hasVerticalPanRoom() else hasHorizontalPanRoom()
+                    val dAlong = if (axisPassthroughHorizontal) kotlin.math.abs(event.x - downX) else kotlin.math.abs(event.y - downY)
+                    val dOrtho = if (axisPassthroughHorizontal) kotlin.math.abs(event.y - downY) else kotlin.math.abs(event.x - downX)
+                    if (orthoRoom && dOrtho > dAlong) {
+                        markSwipe(context, "hold-pan")
+                        parent?.requestDisallowInterceptTouchEvent(true)
+                        consumedDown = true
+                        return super.onTouchEvent(event)
+                    }
                     // ★ 2026-10-05 深度定位（1005-205951 日志实锤）：126 次放行翻页 0 次
                     //   pagerScroll=DRAGGED、0 次 fling-fb/up-fb——放行后事件流在转发层丢失，
                     //   本视图每手势只收到首条 MOVE（旧 return false 假设"父会持续看到流并
