@@ -568,6 +568,8 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             // 初始不设置 PageTransformer，等 setup 完成后再应用
             registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
                 override fun onPageSelected(position: Int) {
+                    // ★ setup 锚定窗口：只记方向参照，不写 curPage/不报章末（见 setupAnchoring 注释）
+                    if (setupAnchoring) { lastSelectedPosition = position; return }
                     // ★ T8：position → spread 序号（RTL 唯一镜像点）→ 跨页表取该位阅读序首页
                     //   （2026-10-05 重做：奇偶/首张单页/智能跳位全在表内，这里只做 RTL 镜像）
                     val itemCount = pagerAdapter?.itemCount ?: spreadTable.slotCount
@@ -723,6 +725,11 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         }
     }
 
+    // ★ 2026-10-05 setup 锚定窗口：adapter 挂上到 setCurrentItem 落位期间抑制 onPageSelected
+    //   副作用——ViewPager2 挂 adapter 必先回调 onPageSelected(0)，RTL 下旧写法把 curPage
+    //   写成镜像末页（实锤：切方向瞬间 2 页跳 198 页，"乱跳页"根源之一）
+    private var setupAnchoring = false
+
     override fun setup(engine: ArchiveEngine, treePath: String, pages: List<ArchiveEngine.PageMeta>, startPage: Int, vertical: Boolean, clickFlip: Int, rtl: Boolean, verticalPager: Boolean) {
         val pagerOrientChanged = this.verticalPager != verticalPager
         this.verticalPager = verticalPager
@@ -796,8 +803,10 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             synchronized(animRawCache) { animRawCache.clear() }
             viewPager.setPageTransformer(NoOpTransformer())
             pagerAdapter = PagerAdapter()
+            setupAnchoring = true
             viewPager.adapter = pagerAdapter
             viewPager.setCurrentItem(positionOf(startPage).coerceIn(0, pagerAdapter?.itemCount?.minus(1) ?: 0), false)
+            viewPager.post { setupAnchoring = false }
             if (flipAnimationEnabled && !verticalPager) {
                 viewPager.postDelayed({ viewPager.setPageTransformer(FlipPageTransformer()) }, 300)
             }

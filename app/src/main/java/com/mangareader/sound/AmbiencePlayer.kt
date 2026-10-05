@@ -102,7 +102,11 @@ object AmbiencePlayer {
                     Log.d(TAG, "playing selection=$selection vol=$volume")
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "play selection=$selection failed", e)
+                // 日志中性化：用户导入文件名不外泄，只报预置名或 <custom>
+                Log.e(TAG, "play failed sel=${if (presetAsset(selection) != null) selection else "<custom>"}: ${e.message}")
+                // ★ 2026-10-05 回退：预置资产缺失（旧包升级后选了新音色）或导入文件被系统清理
+                //   → 原先静默无声（工单实锤 ENOENT），现兜底回退内置 rain；rain 自身缺失不再递归
+                if (selection != "rain") play(context, "rain")
             }
         }.start()
     }

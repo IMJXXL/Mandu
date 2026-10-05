@@ -3099,7 +3099,19 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                 }
                 configVersion++
             },
-            onModeChange = { newMode -> applyModeChange(newMode) },
+            onModeChange = { newMode ->
+                // ★ 2026-10-05 工单：设置面板选"单页式（从左/右到左）"却仍显示双页——阅读方式与
+                //   页面布局是两个维度，菜单选单页式应把布局同步回单页（日志实锤 double=true 常驻）。
+                //   硬件键 TOGGLE_DIRECTION / MODE_CYCLE 不经此 lambda，双页用户切方向不受影响。
+                if (newMode != Mode.VERT && newMode != Mode.WEBTOON_GAP &&
+                    config.pageLayout != com.mangareader.data.ReaderConfig.PageLayout.SINGLE
+                ) {
+                    config = config.copy(pageLayout = com.mangareader.data.ReaderConfig.PageLayout.SINGLE)
+                    com.mangareader.data.ReaderScope.write(ctx, bookId, "pageLayout", com.mangareader.data.ReaderConfig.PageLayout.SINGLE.name)
+                    configVersion++
+                }
+                applyModeChange(newMode)
+            },
             fixedCrop = fixedCrop,
             onCropChange = { c ->
                 fixedCrop = c

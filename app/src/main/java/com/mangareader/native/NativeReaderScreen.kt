@@ -502,6 +502,35 @@ fun NativeReaderScreen(
         }
     }
 
+    // ★ 2026-10-05 画面参数运行时同步：scaleMode/zoomStart/doubleTapZoom 不在主 effect 的
+    //   key 集（外层 key() 也不含），变更原先只在新视图 setup 时被读到——设置改了没反应
+    //   （日志工单实锤："画面缩放不生效/双击放大关不了/缩放起始位置不行"）。幂等 setter 即时生效。
+    LaunchedEffect(scaleMode, zoomStart, doubleTapZoom, landscapeZoom, centerGapType, panNavigation) {
+        when (val d = activeDelegate(isVertical)) {
+            is PagerReaderView -> {
+                d.setScaleMode(scaleMode)
+                d.setZoomStart(zoomStart)
+                d.setDoubleTapZoom(doubleTapZoom)
+                d.setLandscapeZoom(landscapeZoom)
+                d.setCenterGapType(centerGapType)
+                d.setPanNavigation(panNavigation)
+            }
+            is com.mangareader.native.curl.CurlReaderView -> {
+                d.scaleMode = scaleMode
+                d.zoomStart = zoomStart
+                d.doubleTapZoom = doubleTapZoom
+                d.landscapeZoom = landscapeZoom
+                d.setPanNavigation(panNavigation)
+            }
+            is com.mangareader.native.curl.CurlDoublePageView -> {
+                d.scaleMode = scaleMode
+                d.zoomStart = zoomStart
+                d.setPanNavigation(panNavigation)
+            }
+            is WebtoonReaderView -> d.doubleTapZoom = doubleTapZoom
+        }
+    }
+
     // Apply grayscale/invert/brightness/contrast/gamma via hardware layer paint
     LaunchedEffect(grayscale, invertColors, brightness, contrast, gamma) {
         containerRef?.let { container ->
