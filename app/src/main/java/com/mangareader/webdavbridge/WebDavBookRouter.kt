@@ -17,6 +17,7 @@ import com.hippo.ehviewer.library.RemoteArchiveOpen
 import com.hippo.ehviewer.library.RemoteRangeNotSupportedException
 import com.hippo.ehviewer.library.isDocumentFileName
 import com.hippo.ehviewer.library.isEpubFileName
+import com.hippo.ehviewer.library.isMobiFileName
 import com.hippo.ehviewer.library.isPdfFileName
 import com.hippo.ehviewer.library.isZipArchiveFileName
 import com.hippo.ehviewer.library.isImageFileName
@@ -241,7 +242,13 @@ object WebDavBookRouter {
                     remoteSize = runCatching { byteSource.size }.getOrDefault(0L),
                 ) { loader -> block(loader, byteSource) }
             } else {
-                val documentFormat = if (isPdfFileName(remote)) "pdf" else if (isEpubFileName(remote)) "epub" else "pdf"
+                // ★ 2026-10-05 M2：mobi 系走记录级流式文档管线（不再整档下载回退）
+                val documentFormat = when {
+                    isPdfFileName(remote) -> "pdf"
+                    isEpubFileName(remote) -> "epub"
+                    isMobiFileName(remote) -> "mobi"
+                    else -> "pdf"
+                }
                 useDocumentExtractPageLoader(
                     source = byteSource,
                     cacheKey = cacheKey,
@@ -341,5 +348,5 @@ object WebDavBookRouter {
     private const val OPEN_TIMEOUT_MS = 15_000L
     private const val TAG = "WebDavBookRouter"
     /** ★ P2（2026-10-04）：开包即定页数的扩展名——attach 跳过 500ms 页数稳定采样 */
-    private val SETTLED_COUNT_EXTS = setOf("zip", "cbz", "epub", "pdf")
+    private val SETTLED_COUNT_EXTS = setOf("zip", "cbz", "epub", "pdf", "mobi", "azw", "azw3")
 }

@@ -916,6 +916,9 @@ object ArchiveCoverCache {
                 com.hippo.ehviewer.library.document.EpubEngine.open(source, size, coverOnly = true)
             isPdfFileName(base) || cacheKey.endsWith(".pdf", ignoreCase = true) ->
                 com.hippo.ehviewer.library.document.PdfImageEngine.open(source, size, coverOnly = true)
+            isMobiFileName(base) ->
+                // ★ 2026-10-05 M2：mobi 系封面走记录级引擎（首个图片记录，头几 KB + 一条区间读）
+                com.hippo.ehviewer.library.document.MobiEngine.open(source, size, coverOnly = true)
             else ->
                 com.hippo.ehviewer.library.document.EpubEngine.open(source, size, coverOnly = true)
                     ?: com.hippo.ehviewer.library.document.PdfImageEngine.open(source, size, coverOnly = true)

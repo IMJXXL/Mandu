@@ -46,10 +46,12 @@ val ARCHIVE_EXTENSIONS = setOf(
 )
 
 /**
- * PDF / EPUB — comic-style image extract, not text reflow.
+ * PDF / EPUB / MOBI 系 — comic-style image extract, not text reflow.
  * Listed like archives; reader uses [DocumentExtractCache], not libarchive solid/stream.
+ * 2026-10-05 加 mobi/azw/azw3：MobiEngine 记录级流式（远程不再整档下载）。
+ * pdb/prc 仍仅本地（scanMobi）支持，不入此表。
  */
-val DOCUMENT_EXTENSIONS = setOf("epub", "pdf")
+val DOCUMENT_EXTENSIONS = setOf("epub", "pdf", "mobi", "azw", "azw3")
 
 /**
  * Solid / poor-seek archives: no ZIP-style range stream.
@@ -99,6 +101,12 @@ fun isEpubFileName(name: String): Boolean {
 fun isPdfFileName(name: String): Boolean {
     if (name.startsWith('.')) return false
     return FileUtils.getExtensionFromFilename(name)?.lowercase() == "pdf"
+}
+
+fun isMobiFileName(name: String): Boolean {
+    if (name.startsWith('.')) return false
+    val ext = FileUtils.getExtensionFromFilename(name)?.lowercase() ?: return false
+    return ext == "mobi" || ext == "azw" || ext == "azw3"
 }
 
 /**

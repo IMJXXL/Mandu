@@ -25,6 +25,14 @@ class MobiFile private constructor(
     /** 第 [imageIndex] 张图（0 基）的扩展名，如 "jpg"/"png"。 */
     fun imageExt(imageIndex: Int): String? = imageExts.getOrNull(imageIndex)
 
+    /** 第 [imageIndex] 张图所在记录的字节长度（由记录表推得，零 IO）。 */
+    fun imageSize(imageIndex: Int): Long? {
+        if (imageIndex !in imageRecords.indices) return null
+        val rec = imageRecords[imageIndex]
+        val end = if (rec + 1 < recordOffsets.size) recordOffsets[rec + 1] else fileSize
+        return (end - recordOffsets[rec]).coerceAtLeast(0L)
+    }
+
     /**
      * 读第 [imageIndex] 张图的原始字节。返回整条记录不做 FFD9/IEND 截尾——与 libmobi
      * 路径行为一致，解码器容忍记录尾部少量填充。越界/超长/读不满返回 null（调用方回退）。

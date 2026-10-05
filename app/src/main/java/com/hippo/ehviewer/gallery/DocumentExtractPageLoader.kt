@@ -14,9 +14,11 @@ import com.hippo.ehviewer.library.LocalLibrary
 import com.hippo.ehviewer.library.PfdArchiveByteSource
 import com.hippo.ehviewer.library.document.DocumentImageEngine
 import com.hippo.ehviewer.library.document.EpubEngine
+import com.hippo.ehviewer.library.document.MobiEngine
 import com.hippo.ehviewer.library.document.PdfImageEngine
 import com.hippo.ehviewer.library.document.ProgressiveDocumentImageEngine
 import com.hippo.ehviewer.library.isEpubFileName
+import com.hippo.ehviewer.library.isMobiFileName
 import com.hippo.ehviewer.library.isPdfFileName
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
@@ -553,6 +555,10 @@ internal fun openDocumentEngine(
     cachedIndex: DocumentExtractCache.Index? = null,
     progressivePdf: Boolean = false,
 ): DocumentImageEngine {
+    val isMobi = formatHint == "mobi" ||
+        isMobiFileName(titleHint) ||
+        isMobiFileName(cacheKey) ||
+        cachedIndex?.format == "mobi"
     val isEpub = formatHint == "epub" ||
         isEpubFileName(titleHint) ||
         isEpubFileName(cacheKey) ||
@@ -566,6 +572,16 @@ internal fun openDocumentEngine(
         titleHint.endsWith(".pdf", ignoreCase = true) ||
         cachedIndex?.format == "pdf"
     return when {
+        isMobi -> {
+            // 记录级流式：开书=头几 KB + 每记录 8B 探测；结构对不上缓存索引则弃缓存真开
+            val engine = if (cachedIndex != null) {
+                MobiEngine.openFromIndex(source, cachedIndex, remoteSize = sizeHint)
+                    ?: MobiEngine.open(source, remoteSize = sizeHint, coverOnly = false)
+            } else {
+                MobiEngine.open(source, remoteSize = sizeHint, coverOnly = false)
+            }
+            engine ?: error("Not a readable MOBI (encrypted or unsupported)")
+        }
         isEpub -> {
             // Bind elvis to the whole if (not only the last branch).
             val engine = if (cachedIndex != null) {
