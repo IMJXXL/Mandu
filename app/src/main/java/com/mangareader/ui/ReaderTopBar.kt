@@ -1,5 +1,6 @@
 package com.mangareader.ui
 
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -41,7 +42,16 @@ fun ReaderTopBar(
     TopAppBar(
         title = {
             Column {
-                Text(title, fontSize = 16.sp, fontWeight = FontWeight.Medium, maxLines = 1, color = textColor)
+                // ★ 2026-10-05 工单：长书名横屏挤占宽度——最多两行，仍溢出走跑马灯滚动
+                Text(
+                    title,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 2,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    color = textColor,
+                    modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE),
+                )
                 if (subtitle.isNotEmpty()) {
                     Text(subtitle, fontSize = 11.sp, color = textColorAlpha, maxLines = 1)
                 }

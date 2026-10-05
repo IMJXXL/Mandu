@@ -496,6 +496,10 @@ private fun GeneralTab(config: ReaderConfig, onConfigChange: (ReaderConfig) -> U
     CheckboxItem("自动进入条漫模式", config.autoWebtoon) { onConfigChange(config.copy(autoWebtoon = it)) }
     // ★ 横屏自动双页：始终显示（隐藏条件曾让双页布局用户找不到开关）；全局语义
     CheckboxItem("横屏时自动使用双页（仅页面布局为单页时生效）", config.autoDoubleLandscape) { onConfigChange(config.copy(autoDoubleLandscape = it)) }
+    // ★ 2026-10-05 横屏自动条漫：与横屏自动双页互斥的另一半（工单：横屏铺满该有整本连续滚动）
+    if (!config.autoDoubleLandscape) {
+        CheckboxItem("横屏时自动使用条漫（翻页模式连续滚动）", config.landscapeAutoWebtoon) { onConfigChange(config.copy(landscapeAutoWebtoon = it)) }
+    }
     // ★ 双页智能配对（2026-10-05 重做）：双页布局或横屏自动双页时展示；全局语义
     CheckboxItem(
         "双页智能配对（宽图/长图单独显示）",

@@ -2377,7 +2377,12 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                     if (safeCur != cur) cur = safeCur
                     // ★ §34.3：isVertical 仅条漫（VERT/WEBTOON_GAP）走 webtoonView；
                     //   VERT_PAGER 不属于 isVertical，走 pagerView（传 verticalPager=true）。
-                    val vertical = mode == Mode.VERT || mode == Mode.WEBTOON_GAP
+                    // ★ 2026-10-05 横屏自动条漫：翻页族模式 + 开关 + 横屏 → 按条漫连续滚动进入
+                    //   （仅视图层生效；与横屏自动双页互斥——设置页互藏开关，运行时双页优先）
+                    val landscapeAutoWebtoonNow = config.landscapeAutoWebtoon && !config.autoDoubleLandscape &&
+                        (mode == Mode.FLIP || mode == Mode.RTL || mode == Mode.VERT_PAGER) &&
+                        LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+                    val vertical = isVerticalMode || landscapeAutoWebtoonNow
                     val verticalPagerEffective = isVerticalPagerMode
                     Box(Modifier.fillMaxSize()) {
                         // ★ v1.13 C-3（mihon 同构）：模式五元组作 key——变化时 NativeReaderScreen 连同

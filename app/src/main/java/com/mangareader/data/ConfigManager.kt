@@ -55,6 +55,7 @@ class ConfigManager(private val context: Context) {
             put("chapterTransition", config.chapterTransition)
             put("centerGapType", config.centerGapType)
                 put("autoDoubleLandscape", config.autoDoubleLandscape)
+                put("landscapeAutoWebtoon", config.landscapeAutoWebtoon)
                 put("doubleMergeSmart", config.doubleMergeSmart)
                 put("clickFlipInvertH", config.clickFlipInvertH)
                 put("isPageCurlAnimation", config.isPageCurlAnimation)
@@ -134,6 +135,7 @@ class ConfigManager(private val context: Context) {
                 chapterTransition = json.optBoolean("chapterTransition", true),
                 centerGapType = json.optInt("centerGapType", 0),
                 autoDoubleLandscape = json.optBoolean("autoDoubleLandscape", false),
+                landscapeAutoWebtoon = json.optBoolean("landscapeAutoWebtoon", false),
                 doubleMergeSmart = json.optBoolean("doubleMergeSmart", true),
                 clickFlipInvertH = json.optBoolean("clickFlipInvertH", false),
                 isPageCurlAnimation = json.optBoolean("isPageCurlAnimation", false),

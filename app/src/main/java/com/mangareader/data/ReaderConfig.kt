@@ -81,6 +81,7 @@ data class ReaderConfig(
 
     /** ★ 横屏时自动使用双页（仅页面布局=单页时生效；全局语义，用户拍板放常规页） */
     val autoDoubleLandscape: Boolean = false,
+    val landscapeAutoWebtoon: Boolean = false,
 
     /** ★ 双页智能配对（2026-10-05 重做，全局语义）：横宽跨页图（宽>高）与超长条图（宽/高<0.5）
      *  不参与两两合并、单独占一位；两页宽高比差>1.3 也不配。页面尺寸由后台扫描（复用
@@ -196,6 +197,7 @@ data class ReaderConfig(
             putInt("${prefix}centerGapType", centerGapType)
             // ★ 横屏自动双页为全局语义（用户拍板），恒写全局键
             putBoolean("autoDoubleLandscape", autoDoubleLandscape)
+            putBoolean("landscapeAutoWebtoon", landscapeAutoWebtoon)
             // ★ 双页智能配对同全局语义
             putBoolean("doubleMergeSmart", doubleMergeSmart)
             putBoolean("forceFullDecode", forceFullDecode)
@@ -295,6 +297,7 @@ data class ReaderConfig(
                 chapterTransition = rBoolean("chapterTransition", true),
                 centerGapType = rInt("centerGapType", 0),
                 autoDoubleLandscape = rBoolean("autoDoubleLandscape", false),
+                landscapeAutoWebtoon = rBoolean("landscapeAutoWebtoon", false),
                 doubleMergeSmart = rBoolean("doubleMergeSmart", true),
                 clickFlipInvertH = rBoolean("clickFlipInvertH", false),
                 seamlessNextVolume = rBoolean("seamlessNextVolume", true),
@@ -396,6 +399,7 @@ data class ReaderConfig(
                 "chapterTransition" -> cfg.copy(chapterTransition = v as Boolean)
                 "seamlessNextVolume" -> cfg.copy(seamlessNextVolume = v as Boolean)
                 "autoDoubleLandscape" -> cfg.copy(autoDoubleLandscape = v as Boolean)
+                "landscapeAutoWebtoon" -> cfg.copy(landscapeAutoWebtoon = v as Boolean)
                 "doubleMergeSmart" -> cfg.copy(doubleMergeSmart = v as Boolean)
                 else -> cfg
             }
@@ -468,6 +472,7 @@ data class ReaderConfig(
             "autoWebtoon" to { it.autoWebtoon },
             "chapterTransition" to { it.chapterTransition },
             "autoDoubleLandscape" to { it.autoDoubleLandscape },
+            "landscapeAutoWebtoon" to { it.landscapeAutoWebtoon },
             "doubleMergeSmart" to { it.doubleMergeSmart },
             "seamlessNextVolume" to { it.seamlessNextVolume },
             "forceFullDecode" to { it.forceFullDecode },
