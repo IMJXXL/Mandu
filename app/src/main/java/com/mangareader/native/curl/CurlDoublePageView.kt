@@ -66,7 +66,11 @@ class CurlDoublePageView(context: Context) : FrameLayout(context), ReaderViewDel
         get() = zoomStartState.intValue
         set(value) { zoomStartState.intValue = value }
     // ★ 双击缩放（同单页，作用于整个跨页显示矩形）
-    var doubleTapZoom = true
+    // state 承载（同缩放参数）：书内面板运行时改开关也要重组生效
+    private val doubleTapZoomState = mutableStateOf(true)
+    var doubleTapZoom: Boolean
+        get() = doubleTapZoomState.value
+        set(value) { doubleTapZoomState.value = value }
     val curlZoomState = CurlZoomState()
     // 「仅画面区域」用 Compose 状态承载：NES 里 delegate.setup()（内部 renderCompose 组合）
     // 先执行、本字段赋值在后，普通 var 赋值不触发重组 → 勾选设置后当前页不变，翻页时

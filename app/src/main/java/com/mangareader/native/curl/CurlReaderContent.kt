@@ -80,18 +80,22 @@ fun CurlPageContent(
     val wide = iw > ih
     val effMode = ScalePlan.staticMode(scaleMode)
     val landscapeFill = landscapeZoom && ScalePlan.landscapeZoomable(effMode) && wide
-    // 对齐：alignX 输出即屏空间语义（RTL 自动=对齐右缘）；本层在"外层镜像+内层反镜像"里，
-    // 内层定位要按镜像再翻一次（双层镜像抵消后 artwork 正立、起始缘落在屏侧读边）
-    val biasInnerX = ScalePlan.alignX(zoomStart, isRtl).let { if (isRtl) -it else it }
-    val align = biasToAlignment(biasInnerX, ScalePlan.alignY(zoomStart))
+    // 对齐：alignX 输出即屏空间语义（RTL 自动=对齐右缘）。★ 内层偏置直接用屏语义——
+    // 外层 PageCurl 镜像与本层反镜像作用在同一全宽区域上，对"布局位置"完全抵消
+    // （净效果=恒等，只有 artwork 朝向被修正），所以定位不需要再翻一次；
+    // 定位→镜像→还原 的往返推导见 2026-10-05 自查修正（此前误加 XOR 翻转，
+    // RTL 下对齐边/缩放中心落到镜像错的一侧；LTR 无镜像不受影响）
+    val biasX = ScalePlan.alignX(zoomStart, isRtl)
+    val align = biasToAlignment(biasX, ScalePlan.alignY(zoomStart))
 
-    // ★ 双击缩放层：套在镜像之后（clip→mirror→zoom→内容，溢出仍被外层 clip 裁住）；
-    //   transformOrigin 的 x 在镜像空间要翻一次（1-fx）才能对准屏空间点按位置
+    // ★ 双击缩放层：套在镜像之后（clip→mirror→zoom→内容，溢出仍被外层 clip 裁住）。
+    //   镜像+外层镜像=恒等（位置抵消），transformOrigin 直接用屏空间点按位置即可
+    //   （已知近似：「仅画面区域」有 inset 时按整视口归一化，原点略有偏移，仅视觉影响）
     val zoomMod = if (zoom != null) Modifier.graphicsLayer {
         val zs = zoom.scale.floatValue
         scaleX = zs; scaleY = zs
         transformOrigin = androidx.compose.ui.graphics.TransformOrigin(
-            if (isRtl) 1f - zoom.originX.floatValue else zoom.originX.floatValue,
+            zoom.originX.floatValue,
             zoom.originY.floatValue,
         )
     } else Modifier

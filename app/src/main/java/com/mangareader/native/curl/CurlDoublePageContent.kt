@@ -328,8 +328,8 @@ private fun spineBounds(
     val scale = ScalePlan.baseScale(ScalePlan.spreadMode(scaleMode), boxW, boxH, iw, ih, isTablet)
     val dw = (iw * scale).coerceAtMost(boxW)
     val dh = (ih * scale).coerceAtMost(boxH)
-    // 内层偏置（同 SpreadImage）：alignX 输出为屏空间语义，镜像层内取反
-    val biasX = ScalePlan.alignX(zoomStart, isRtl).let { if (isRtl) -it else it }
+    // 屏空间偏置（同 SpreadImage）：双层镜像对位置抵消，直接用 alignX 屏语义（自查修正）
+    val biasX = ScalePlan.alignX(zoomStart, isRtl)
     val gx = ScalePlan.edgeGaps(biasX, boxW, dw)
     val gy = ScalePlan.edgeGaps(ScalePlan.alignY(zoomStart), boxH, dh)
     return Rect(gx.first, gy.first, boxW - gx.second, boxH - gy.second)
@@ -425,20 +425,19 @@ private fun SpreadImage(
     } else Modifier.background(Color(pageBgColor))
 
     val isTablet = androidx.compose.ui.platform.LocalConfiguration.current.smallestScreenWidthDp >= 600
-    // 对齐：alignX 输出为屏空间语义（RTL 自动=右缘）；本层内层反镜像，定位偏置按镜像取反
-    val biasInnerX = ScalePlan.alignX(zoomStart, isRtl).let { if (isRtl) -it else it }
-    // ★ 双击缩放层（同单页）：clip→…→mirror→zoom→内容；origin 在镜像空间 x 取反
+    // 对齐：alignX 输出为屏空间语义（RTL 自动=右缘）；双层镜像对位置抵消，直接用（自查修正）
+    // ★ 双击缩放层（同单页）：clip→…→mirror→zoom→内容；origin 用屏空间点按位置
     val zoomMod = if (zoom != null) Modifier.graphicsLayer {
         val zs = zoom.scale.floatValue
         scaleX = zs; scaleY = zs
         transformOrigin = androidx.compose.ui.graphics.TransformOrigin(
-            if (isRtl) 1f - zoom.originX.floatValue else zoom.originX.floatValue,
+            zoom.originX.floatValue,
             zoom.originY.floatValue,
         )
     } else Modifier
     BoxWithConstraints(
         modifier = Modifier.fillMaxSize().clipToBounds().then(bgMod).then(mirror).then(zoomMod),
-        contentAlignment = biasToAlignment(biasInnerX, ScalePlan.alignY(zoomStart)),
+        contentAlignment = biasToAlignment(ScalePlan.alignX(zoomStart, isRtl), ScalePlan.alignY(zoomStart)),
     ) {
         val img = imgBmp
         if (img != null && img.width > 0) {

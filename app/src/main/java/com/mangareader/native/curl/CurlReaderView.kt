@@ -72,7 +72,11 @@ class CurlReaderView(context: Context) : FrameLayout(context), ReaderViewDelegat
     // ★ 双击缩放状态（阶段二）：双击在点按处 1x↔2x；isDoubleTapZoom=false 时完全关闭。
     //   翻页走 onSingleTapConfirmed（双击被 GestureDetector 吞掉不误翻）；放大是纯视觉层
     //   （graphicsLayer），不平移——再双击回 1x，翻页自动复位
-    var doubleTapZoom = true
+    // state 承载（同缩放参数）：书内面板运行时改开关也要重组生效
+    private val doubleTapZoomState = mutableStateOf(true)
+    var doubleTapZoom: Boolean
+        get() = doubleTapZoomState.value
+        set(value) { doubleTapZoomState.value = value }
     val curlZoomState = CurlZoomState()
     private val curlContentAreaOnlyState = mutableStateOf(false)
     var curlContentAreaOnly: Boolean
