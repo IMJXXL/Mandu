@@ -295,6 +295,13 @@ private fun ReadingModeTab(config: ReaderConfig, mode: Mode, bookId: Long, onCon
             }
         }
         Text("切换双页模式时可能会短暂卡顿，滑动一下即可恢复", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f), fontSize = 11.sp, modifier = Modifier.padding(start = 4.dp, bottom = 4.dp))
+        if (config.pageLayout != ReaderConfig.PageLayout.SINGLE) {
+            // ★ 智能配对提示（2026-10-05）：双页布局下宽图/长图不再硬拼，开关在常规页
+            Text(
+                "已启用智能配对：横宽跨页图与超长条图单独显示不参与合并（常规页可关）",
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f), fontSize = 11.sp, modifier = Modifier.padding(start = 4.dp, bottom = 4.dp),
+            )
+        }
         CheckboxItem("裁剪白边", config.isTrimWhiteBorder) { onConfigChange(config.copy(isTrimWhiteBorder = it)) }
         if (config.isTrimWhiteBorder) {
             // 检测阈值：像素平均亮度超过此值视为"白色"，越小越激进
@@ -480,6 +487,12 @@ private fun GeneralTab(config: ReaderConfig, onConfigChange: (ReaderConfig) -> U
     CheckboxItem("自动进入条漫模式", config.autoWebtoon) { onConfigChange(config.copy(autoWebtoon = it)) }
     // ★ 横屏自动双页：始终显示（隐藏条件曾让双页布局用户找不到开关）；全局语义
     CheckboxItem("横屏时自动使用双页（仅页面布局为单页时生效）", config.autoDoubleLandscape) { onConfigChange(config.copy(autoDoubleLandscape = it)) }
+    // ★ 双页智能配对（2026-10-05 重做）：双页布局或横屏自动双页时展示；全局语义
+    CheckboxItem(
+        "双页智能配对（宽图/长图单独显示）",
+        config.doubleMergeSmart,
+        info = "横宽跨页图（宽>高）与超长条图不参与两两合并、单独占一屏；两页宽高比差过大也不配。页面尺寸自动扫描，远程书（尺寸未知）回退为全部合并",
+    ) { onConfigChange(config.copy(doubleMergeSmart = it)) }
     AmbienceSection(config, onConfigChange)
 }
 

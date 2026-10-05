@@ -15,6 +15,7 @@ import androidx.compose.ui.platform.ComposeView
 import com.mangareader.viewer.ArchiveEngine
 import com.mangareader.native.ReaderViewDelegate
 import com.mangareader.native.RemotePageSupply
+import com.mangareader.native.SpreadTable
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -49,6 +50,46 @@ class CurlDoublePageView(context: Context) : FrameLayout(context), ReaderViewDel
     private var isRtl = false
     private var doublePageShift = false
     private var doublePageReverse = false
+    // ★ 双页显式跨页表（2026-10-05 重做，对齐 PagerReaderView）：SpreadMapping 序号算术退役，
+    //   智能配对（宽图/长图 solo）判定在 SpreadTable，尺寸由 Reader.kt 扫描经 setPageDims 回填
+    private var spreadTable: SpreadTable = SpreadTable.build(0)
+    private var pageDims: IntArray? = null
+    private var smartMergeEnabled = true
+    // ★ 跨页表版本号（Compose state）：renderCompose 根作用域读它——表重排后根作用域重组
+    //   才会把新表实例作为参数传进 CurlDoublePageContent（普通字段变化不可观察，只 bump
+    //   reloadTrigger 时 content 收到的还是 setup 时的旧表，参数一次性 capture 陷阱）
+    private val tableVersion = mutableIntStateOf(0)
+
+    /** 表重算唯一构建点（本视图恒双页布局：shift/智能按配置启用） */
+    private fun rebuildSpreadTable() {
+        spreadTable = SpreadTable.build(
+            pageList.size,
+            double = true,
+            shift = doublePageShift && pageList.size > 1,
+            smart = smartMergeEnabled,
+            dims = pageDims?.takeIf { it.size >= pageList.size * 2 },
+        )
+    }
+
+    /** ★ 尺寸表回填：重排后触发根作用域重组（新表实例传进 content，
+     *  content 的 LaunchedEffect(currentSpread)→snapTo 自动锚定新表位） */
+    fun setPageDims(dims: IntArray?) {
+        val valid = dims?.takeIf { pageList.isEmpty() || it.size >= pageList.size * 2 }
+        if (pageDims != null && valid != null && pageDims.contentEquals(valid)) return
+        pageDims = valid
+        val old = spreadTable
+        rebuildSpreadTable()
+        if (!spreadTable.sameMapping(old)) tableVersion.intValue++
+    }
+
+    /** ★ 智能配对开关（config.doubleMergeSmart） */
+    fun setSmartMerge(enabled: Boolean) {
+        if (smartMergeEnabled == enabled) return
+        smartMergeEnabled = enabled
+        val old = spreadTable
+        rebuildSpreadTable()
+        if (!spreadTable.sameMapping(old)) tableVersion.intValue++
+    }
 
     var pageBgColor: Int = android.graphics.Color.parseColor("#FFFFFF")
     // ★ 缩放参数用 Compose state 承载（同 CurlReaderView）：普通 var 改了不重组
@@ -233,7 +274,10 @@ class CurlDoublePageView(context: Context) : FrameLayout(context), ReaderViewDel
     }
 
     fun setDoublePageModeAndShift(doubleMode: Boolean, shiftMode: Boolean) {
+        if (this.doublePageShift == shiftMode) return
         this.doublePageShift = shiftMode
+        rebuildSpreadTable()
+        tableVersion.intValue++
     }
 
     fun setDoublePageReverse(reverse: Boolean) {
@@ -255,6 +299,8 @@ class CurlDoublePageView(context: Context) : FrameLayout(context), ReaderViewDel
         this.pageList = pages
         this.currentPage = startPage
         this.isRtl = rtl
+        // ★ 跨页表随页表重建（pageDims 长度不匹配时自动回退朴素配对）
+        rebuildSpreadTable()
         // ★ 点击翻页区域接线（同 CurlReaderView）
         if (clickFlipType != clickFlip) {
             clickFlipType = clickFlip
@@ -269,19 +315,26 @@ class CurlDoublePageView(context: Context) : FrameLayout(context), ReaderViewDel
     }
 
     private fun currentSpread(): Int =
-        SpreadMapping.pageToSpread(currentPage, pageList.size, doublePageShift)
+        spreadTable.pageToSpread(currentPage)
 
     private fun totalSpreads(): Int =
-        SpreadMapping.spreadCount(pageList.size, doublePageShift)
+        spreadTable.slotCount
 
     private fun preloadSpread(page: Int) {
-        val spread = SpreadMapping.pageToSpread(page, pageList.size, doublePageShift)
-        val pages = SpreadMapping.protectSpreadPages(spread, pageList.size, doublePageShift)
+        val spread = spreadTable.pageToSpread(page)
+        val pages = buildSet {
+            for (s in (spread - 1)..(spread + 1)) {
+                if (s < 0 || s >= spreadTable.slotCount) continue
+                add(spreadTable.firstPage(s))
+                val r = spreadTable.secondPage(s)
+                if (r >= 0) add(r)
+            }
+        }
         // 接入缓存保护（对齐单页 preloadAround 的 protectThreeLayers）：protectedSet 恒空时
         // trimMemory→trimNonProtected 会清光全部位图包括正在显示的 spread，白屏到下次翻页
         cache.protectPages(pages)
-        val currentLeft = SpreadMapping.leftPage(spread, pageList.size, doublePageShift)
-        val currentRight = SpreadMapping.rightPage(spread, pageList.size, doublePageShift)
+        val currentLeft = spreadTable.firstPage(spread)
+        val currentRight = spreadTable.secondPage(spread)
         for (p in pages) {
             loader.loadPageAsync(p, isPreload = (p != currentLeft && p != currentRight)) { reloadTrigger.intValue++ }
         }
@@ -289,11 +342,14 @@ class CurlDoublePageView(context: Context) : FrameLayout(context), ReaderViewDel
 
     private fun renderCompose() {
         composeView.setContent {
+            // ★ 根作用域订阅表版本：跨页表重排（尺寸回填/智能开关/shift 切换）后
+            //   重组重读 spreadTable 字段，新表实例才会传进 CurlDoublePageContent
+            tableVersion.intValue
             CurlDoublePageContent(
                 totalSpreads = totalSpreads(),
                 currentSpread = currentSpread(),
                 totalPages = pageList.size,
-                shift = doublePageShift,
+                table = spreadTable,
                 isRtl = isRtl,
                 doublePageReverse = doublePageReverse,
                 pageBgColor = pageBgColor,
@@ -315,12 +371,13 @@ class CurlDoublePageView(context: Context) : FrameLayout(context), ReaderViewDel
                 onFlipTargetNeeded = { targetSpread ->
                     // ★ 翻页动画开始的提权通道：目标跨页两页以非预载(绕过信号量)立即解码，
                     //   已在缓存则 loadPageAsync 幂等空转。快翻连续触发也安全（5s 去重）
-                    loader.loadPageAsync(SpreadMapping.leftPage(targetSpread, pageList.size, doublePageShift), isPreload = false) { reloadTrigger.intValue++ }
-                    val r = SpreadMapping.rightPage(targetSpread, pageList.size, doublePageShift)
+                    //   （读视图级 spreadTable 字段——尺寸回填后闭包自动用新表，无闭包过期）
+                    loader.loadPageAsync(spreadTable.firstPage(targetSpread), isPreload = false) { reloadTrigger.intValue++ }
+                    val r = spreadTable.secondPage(targetSpread)
                     if (r >= 0) loader.loadPageAsync(r, isPreload = false) { reloadTrigger.intValue++ }
                 },
                 onSpreadChanged = { newSpread ->
-                    val newPage = SpreadMapping.leftPage(newSpread, pageList.size, doublePageShift)
+                    val newPage = spreadTable.firstPage(newSpread)
                     playFlipSound()
                     currentPage = newPage
                     loader.setCurrentPage(newPage)
@@ -356,12 +413,12 @@ class CurlDoublePageView(context: Context) : FrameLayout(context), ReaderViewDel
 
     override fun isCurrentPageReady(): Boolean {
         val spread = currentSpread()
-        val leftIdx = SpreadMapping.leftPage(spread, pageList.size, doublePageShift)
+        val leftIdx = spreadTable.firstPage(spread)
         val leftBmp = cache.get(leftIdx)
         if (leftBmp == null || leftBmp.isRecycled) return false
         // 右页存在时也需就绪：该方法是"当前页已渲染出内容"的就绪信号，右页缺位时
         // 返回 true 会让调用方提前撤遮罩露出半边白
-        val rightIdx = SpreadMapping.rightPage(spread, pageList.size, doublePageShift)
+        val rightIdx = spreadTable.secondPage(spread)
         if (rightIdx < 0) return true
         val rightBmp = cache.get(rightIdx)
         return rightBmp != null && !rightBmp.isRecycled

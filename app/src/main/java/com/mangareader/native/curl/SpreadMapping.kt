@@ -3,33 +3,11 @@ package com.mangareader.native.curl
 import android.graphics.Bitmap
 import android.graphics.Canvas
 
+/**
+ * curl 双页的位图拼合工具。跨页序号→物理页映射已于 2026-10-05 移交 [com.mangareader.native.SpreadTable]
+ * （显式跨页表，智能配对：宽图/长图单独显示），本类只保留拼合与缓存。
+ */
 object SpreadMapping {
-    fun spreadCount(totalPages: Int, shift: Boolean): Int =
-        if (shift && totalPages > 1) 1 + totalPages / 2 else (totalPages + 1) / 2
-
-    fun leftPage(spread: Int, totalPages: Int, shift: Boolean): Int =
-        if (shift && totalPages > 1) {
-            if (spread == 0) 0 else 2 * spread - 1
-        } else {
-            2 * spread
-        }
-
-    fun rightPage(spread: Int, totalPages: Int, shift: Boolean): Int {
-        val r = if (shift && totalPages > 1) {
-            if (spread == 0) -1 else 2 * spread
-        } else {
-            2 * spread + 1
-        }
-        return if (r >= totalPages) -1 else r
-    }
-
-    fun pageToSpread(page: Int, totalPages: Int, shift: Boolean): Int =
-        if (shift && totalPages > 1) {
-            if (page == 0) 0 else 1 + (page - 1) / 2
-        } else {
-            page / 2
-        }
-
     // ★ curl 双页合并产物缓存（对齐 pager mergedCache，64MB 字节预算）：
     //   PageCurl 的 key(updatedCurrent) 每次落地整树重建，remember(leftBmp,rightBmp) 随之重跑
     //   → 主线程每次落地 2-3 张 ~19.5MB createBitmap 分配突发掉帧。键=源位图 identity
@@ -54,17 +32,5 @@ object SpreadMapping {
         canvas.drawBitmap(rightSw, (leftSw.width + gapPx).toFloat(), (h - rightSw.height) / 2f, null)
         mergedCache.put(key, merged)
         return merged
-    }
-
-    fun protectSpreadPages(spread: Int, totalPages: Int, shift: Boolean): Set<Int> {
-        val pages = mutableSetOf<Int>()
-        for (s in (spread - 1)..(spread + 1)) {
-            if (s >= 0 && s < spreadCount(totalPages, shift)) {
-                pages.add(leftPage(s, totalPages, shift))
-                val r = rightPage(s, totalPages, shift)
-                if (r >= 0) pages.add(r)
-            }
-        }
-        return pages
     }
 }

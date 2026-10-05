@@ -55,6 +55,7 @@ class ConfigManager(private val context: Context) {
             put("chapterTransition", config.chapterTransition)
             put("centerGapType", config.centerGapType)
                 put("autoDoubleLandscape", config.autoDoubleLandscape)
+                put("doubleMergeSmart", config.doubleMergeSmart)
                 put("clickFlipInvertH", config.clickFlipInvertH)
                 put("isPageCurlAnimation", config.isPageCurlAnimation)
             put("forceFullDecode", config.forceFullDecode)
@@ -133,6 +134,7 @@ class ConfigManager(private val context: Context) {
                 chapterTransition = json.optBoolean("chapterTransition", true),
                 centerGapType = json.optInt("centerGapType", 0),
                 autoDoubleLandscape = json.optBoolean("autoDoubleLandscape", false),
+                doubleMergeSmart = json.optBoolean("doubleMergeSmart", true),
                 clickFlipInvertH = json.optBoolean("clickFlipInvertH", false),
                 isPageCurlAnimation = json.optBoolean("isPageCurlAnimation", false),
                 forceFullDecode = json.optBoolean("forceFullDecode", false),

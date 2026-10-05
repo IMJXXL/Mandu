@@ -104,7 +104,7 @@ internal val PREF_DEFAULTS: Map<String, Any> = mapOf(
     "pageLayout" to "SINGLE", "useSSIV" to true, "landscapeZoom" to false, "isDoubleTapZoom" to true,
     "panNavigation" to true, "doublePageShift" to 0, "doublePageSplit" to false, "doublePageReverse" to false,
     "autoWebtoon" to true, "chapterTransition" to true, "centerGapType" to 0,
-    "autoDoubleLandscape" to false, "clickFlipInvertH" to false, "forceFullDecode" to false,
+    "autoDoubleLandscape" to false, "doubleMergeSmart" to true, "clickFlipInvertH" to false, "forceFullDecode" to false,
     "brightness" to 0, "screenBrightness" to 0, "contrast" to 100, "gamma" to 100,
     "brightnessEnabled" to false, "screenBrightnessEnabled" to false, "contrastEnabled" to false, "gammaEnabled" to false,
     "textureEnabled" to false, "texturePresetId" to 0, "textureAlpha" to 15, "textureConcentration" to 100, "textureScope" to 0,
@@ -167,6 +167,7 @@ internal val PREF_ROWS: List<PrefRow> = listOf(
     PrefRow("seamlessNextVolume", "无缝续读下一卷", 1, PrefEditor.Toggle(info = "读到卷末自动进入同书下一卷，无过渡页")),
     PrefRow("autoWebtoon", "自动进入条漫模式", 1, PrefEditor.Toggle(info = "新书首开按图片宽高比智能判定")),
     PrefRow("autoDoubleLandscape", "横屏自动双页", 1, PrefEditor.Toggle(info = "仅页面布局为单页时生效")),
+    PrefRow("doubleMergeSmart", "双页智能配对", 1, PrefEditor.Toggle(info = "横宽跨页图（宽>高）与超长条图不参与两两合并、单独占一屏；两页宽高比差过大也不配。远程书尺寸未知时回退全部合并")),
     PrefRow("ambienceSound", "氛围音", 1, PrefEditor.AmbienceSound),
     PrefRow("ambienceVolume", "氛围音音量", 1, PrefEditor.Slider(0f, 100f, 19, { "${it.toInt()}%" })),
     // ── Tab 2 滤镜（顺序=书内面板第三页）──

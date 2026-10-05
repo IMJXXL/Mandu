@@ -66,6 +66,12 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     @Volatile private var isScrolling = false
     private var doublePageMode = false
     private var shiftDoublePage = false
+    // ★ 双页显式跨页表（2026-10-05 重做）：adapter 位次/页号映射/点击翻页/章末判定全从表取值，
+    //   取代散落 6 处的 2s/2s+1 序号算术。智能配对（宽图/长图 solo）判定在 SpreadTable，
+    //   尺寸由 Reader.kt 后台扫描经 setPageDims 回填
+    private var spreadTable: SpreadTable = SpreadTable.build(0)
+    private var pageDims: IntArray? = null
+    private var smartMergeEnabled = true
     private var useSSIV = true
     private var landscapeZoomEnabled = true
     // ★ 双击放大开关（config.isDoubleTapZoom）：false=SSIV 双击不缩放，连点=两次点击翻页
@@ -562,15 +568,14 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             // 初始不设置 PageTransformer，等 setup 完成后再应用
             registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
                 override fun onPageSelected(position: Int) {
-                    // ★ T8：position → spread 序号（RTL 唯一镜像点）→ 该 spread 阅读序首页
-                    //   （LTR/单页下与旧公式完全一致；RTL 双页旧公式错把 spread 序号当页号再镜像一次）
-                    val itemCount = pagerAdapter?.itemCount ?: pageList.size
+                    // ★ T8：position → spread 序号（RTL 唯一镜像点）→ 跨页表取该位阅读序首页
+                    //   （2026-10-05 重做：奇偶/首张单页/智能跳位全在表内，这里只做 RTL 镜像）
+                    val itemCount = pagerAdapter?.itemCount ?: spreadTable.slotCount
                     val s = if (isRtl) itemCount - 1 - position else position
-                    val pageIdx = when {
-                        !doublePageMode -> s
-                        shiftDoublePage && pageList.size > 1 -> if (s == 0) 0 else 2 * s - 1
-                        else -> 2 * s
-                    }
+                    // 模式切换/表重排的瞬态窗口里 position 可能超出新表（旧算术产生越界页号被
+                    // indices 守卫自然过滤；表取值 clamp 会误跳第 0 页）——越界直接不处理
+                    if (s < 0 || s >= spreadTable.slotCount) return
+                    val pageIdx = spreadTable.firstPage(s)
                     val realPos = pageIdx
                     lastSelectedPosition = position
                     com.mangareader.viewer.ArchiveEngine.d("PagerView", "onPageSelected pos=$position pageIdx=$pageIdx realPos=$realPos rtl=$isRtl double=$doublePageMode total=${pageList.size} curPage=$currentPage")
@@ -584,10 +589,10 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
 
                         // ★ 2026-09-09 跳页调度：翻页选中即取消远端 inflight，不等 IDLE
                         prioritizeLoad(realPos)
-                        // ★ N1：双页模式最后跨页 realPos 可能是 N-2（奇偶错位），末页判据放宽到倒数第二页；
+                        // ★ N1：双页模式末跨页判据走跨页表（奇偶错位/智能 solo 尾位全消化）；
                         //   模式切换窗口内（layoutSwitchPending）抑制章末回调，防并发闪退
                         if (!layoutSwitchPending) {
-                            if (currentPage >= pageList.size - (if (doublePageMode) 2 else 1)) onChapterEnd?.invoke(true)
+                            if (spreadTable.pageToSpread(currentPage) >= spreadTable.slotCount - 1) onChapterEnd?.invoke(true)
                             if (currentPage == 0) onChapterEnd?.invoke(false)
                         }
                     }
@@ -730,6 +735,8 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         val rtlChanged = this.isRtl != rtl
         val engineChanged = this.engine != engine
         this.engine = engine; this.treePath = treePath; this.pageList = pages; this.isRtl = rtl
+        // ★ 跨页表随页表重建（页长变了旧表失效；pageDims 长度不匹配时自动回退朴素配对）
+        rebuildSpreadTable()
         // ★ 上报本视图真实页数：expandedPageCount 只被条漫视图回调更新，pager/curl 章
         //   setup 不上报会让上一章条漫的展开页数残留 → 进度条越界、goToPage 吞页、done 误标读完
         onPageCountChanged?.invoke(pageList.size)
@@ -741,6 +748,8 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                     ArchiveEngine.PageMeta(it, "", "", name = "")
                 }
                 pageList = grown
+                // 远程页表增长：同步扩跨页表（新页尺寸未知=朴素配对，与旧行为一致）
+                rebuildSpreadTable()
                 post { pagerAdapter?.notifyItemRangeInserted(oldSize, newCount - oldSize) }
             }
         }
@@ -908,12 +917,59 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         if (shiftDoublePage == enabled) return
         shiftDoublePage = enabled
         // ★ 同 setDoublePageMode：保留位图缓存，切换零重解码
+        rebuildSpreadTable()
         resetSplitHalf()
         splitActivePositions.clear()
         pagerAdapter?.notifyDataSetChanged()
         val newPos = positionOf(currentPage)
         val finalPos = newPos.coerceIn(0, pagerAdapter?.itemCount?.minus(1) ?: 0)
         viewPager.post { viewPager.setCurrentItem(finalPos, false) }
+    }
+
+    /** ★ 跨页表重算（唯一构建点）：单页=单位表每页一位；双页才启用 shift/智能配对 */
+    private fun rebuildSpreadTable() {
+        spreadTable = SpreadTable.build(
+            pageList.size,
+            double = doublePageMode,
+            shift = doublePageMode && shiftDoublePage && pageList.size > 1,
+            smart = doublePageMode && smartMergeEnabled,
+            dims = pageDims?.takeIf { it.size >= pageList.size * 2 },
+        )
+    }
+
+    /** 表变化后的统一落地：重绑 + 立即 post 锚定当前页（notify 后 VP2 会把旧位置弹回，
+     *  与 setDoublePageModeAndShift 同款校正；layoutSwitchPending 抑制脏章末回调） */
+    private fun rebindForNewTable() {
+        layoutSwitchPending = true
+        pagerAdapter?.notifyDataSetChanged()
+        val finalPos = positionOf(currentPage).coerceIn(0, (pagerAdapter?.itemCount ?: 1) - 1)
+        viewPager.post {
+            viewPager.setCurrentItem(finalPos, false)
+            viewPager.post { layoutSwitchPending = false }
+        }
+    }
+
+    /** ★ 尺寸表回填（2026-10-05 智能配对）：Reader.kt 后台扫描页尺寸后推送。
+     *  映射未变（常见：全竖版书扫描确认既有朴素配对）零扰动；变了才重绑重定位。
+     *  长度与当前页表不符（切章窗口）直接不采纳，等下一次扫描。 */
+    fun setPageDims(dims: IntArray?) {
+        val valid = dims?.takeIf { pageList.isEmpty() || it.size >= pageList.size * 2 }
+        if (pageDims != null && valid != null && pageDims.contentEquals(valid)) return
+        pageDims = valid
+        if (!doublePageMode) return
+        val old = spreadTable
+        rebuildSpreadTable()
+        if (!spreadTable.sameMapping(old)) rebindForNewTable()
+    }
+
+    /** ★ 智能配对开关（config.doubleMergeSmart）：即时重排跨页表 */
+    fun setSmartMerge(enabled: Boolean) {
+        if (smartMergeEnabled == enabled) return
+        smartMergeEnabled = enabled
+        if (!doublePageMode) return
+        val old = spreadTable
+        rebuildSpreadTable()
+        if (!spreadTable.sameMapping(old)) rebindForNewTable()
     }
 
     /** ★ P0-2 模式切换位图交接：把活着的位图从缓存里"取走"（移除后 release() 不再回收它们），
@@ -971,6 +1027,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         doublePageMode = enabled
         // ★ 2026-09-30：不清缓存——单页位图仍是有效解码结果，合并路径直接复用
         //   （原 evictAll 把整本已解码页扔光，切双页要重解两页 ≈0.5s「要加载一下」）
+        rebuildSpreadTable()
         resetSplitHalf()
         splitActivePositions.clear()
         pagerAdapter?.notifyDataSetChanged()
@@ -990,6 +1047,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         doublePageMode = doubleEnabled
         shiftDoublePage = shiftEnabled
         // ★ 同 setDoublePageMode：保留位图缓存，切换零重解码
+        rebuildSpreadTable()
         resetSplitHalf()
         splitActivePositions.clear()
         pagerAdapter?.notifyDataSetChanged()
@@ -1030,21 +1088,11 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         preloadAround(page)
     }
 
-    /** ★ T8：物理页 → spread 序号（双页/双页shift/单页三态，按阅读顺序排） */
-    private fun spreadOf(page: Int): Int = when {
-        !doublePageMode -> page
-        shiftDoublePage && pageList.size > 1 -> if (page == 0) 0 else 1 + (page - 1) / 2
-        else -> page / 2
-    }
-
     /** ★ T8：物理页 → adapter 位置。RTL 唯一镜像点：全工程位置镜像只在这里发生一次；
      *  LTR/单页下退化为原公式（itemCount-1-s 在非 RTL 时就是 s）。 */
     private fun positionOf(page: Int): Int {
-        val s = spreadOf(page)
-        val itemCount = if (doublePageMode) {
-            if (shiftDoublePage && pageList.size > 1) 1 + pageList.size / 2 else (pageList.size + 1) / 2
-        } else pageList.size
-        return if (isRtl) (itemCount - 1 - s) else s
+        val s = spreadTable.pageToSpread(page)
+        return if (isRtl) (spreadTable.slotCount - 1 - s) else s
     }
 
     /** ★ 进度条拖动预解码：把目标页及其前后 spread 预热进缓存（不改变当前位置） */
@@ -1091,14 +1139,9 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         if (doublePageMode) {
             // ★ B5（2026-10-04）：状态清移入可翻分支——到末跨页翻不动时不再清 splitHalfRight，
             //   画面（右半）与状态保持一致；旧版边界失败即清，此时退出会把右半记成左半
-            val target = when {
-                shiftDoublePage && currentPage == 0 -> 1
-                // ★ B5 闭合（独立审查实锤）：旧条件 currentPage < size-1 在偶数页数末跨页
-                //  （currentPage==size-2）会算出越界 target=size，goToPage 静默 no-op 但状态已清。
-                //   改为目标索引有效才动状态
-                currentPage + 2 < pageList.size -> currentPage + 2
-                else -> -1
-            }
+            // ★ 2026-10-05 跨页表：目标=下一跨页阅读序首页（首张单页位移/智能 solo 跳位全在表内）
+            val next = spreadTable.pageToSpread(currentPage) + 1
+            val target = if (next < spreadTable.slotCount) spreadTable.firstPage(next) else -1
             if (target >= 0) {
                 splitHalfRight = false
                 pendingLandingSplitHalfRight = false  // 前进落地恒左半
@@ -1126,11 +1169,9 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             return
         }
         if (doublePageMode) {
-            val target = when {
-                shiftDoublePage && currentPage <= 1 -> 0
-                currentPage > 0 -> currentPage - 2
-                else -> -1
-            }
+            // ★ 2026-10-05 跨页表：目标=上一跨页阅读序首页（在首跨页则不可翻）
+            val curSlot = spreadTable.pageToSpread(currentPage)
+            val target = if (curSlot > 0) spreadTable.firstPage(curSlot - 1) else -1
             if (target >= 0) {
                 if (splitActiveNow()) pendingLandingSplitHalfRight = true
                 goToPage(target, smooth = true)
@@ -1456,16 +1497,21 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         // 超分联动：报当前页；只有"整本"作用域下才前后预载
         try { com.mangareader.sr.SrPipeline.onPageChanged(centerIdx, pageList.size) } catch (_: Exception) {}
         if (doublePageMode) {
-            val leftIdx = centerIdx - (centerIdx % 2)
-            loadPageAsync(leftIdx)
-            if (leftIdx + 1 < pageList.size) loadPageAsync(leftIdx + 1)
-            // 相邻跨页（±1）
-            if (leftIdx - 2 >= 0) { loadPageAsync(leftIdx - 2, isPreload = true); loadPageAsync(leftIdx - 1, isPreload = true) }
-            if (leftIdx + 2 < pageList.size) { loadPageAsync(leftIdx + 2, isPreload = true); if (leftIdx + 3 < pageList.size) loadPageAsync(leftIdx + 3, isPreload = true) }
-            // ★ 次相邻跨页（±2）：双页一次前进 2 页，±1 跨页缓冲只够翻一次；
+            // ★ 2026-10-05 跨页表：预载按表取页（旧 leftIdx±2/±3 假设两页对齐，
+            //   首张单页位移与智能 solo 位全不成立）
+            val curSlot = spreadTable.pageToSpread(centerIdx)
+            loadPageAsync(spreadTable.firstPage(curSlot))
+            val curSecond = spreadTable.secondPage(curSlot)
+            if (curSecond >= 0) loadPageAsync(curSecond)
+            // 相邻跨页（±1）+ 次相邻跨页（±2）：双页一次前进一跨页，±1 缓冲只够翻一次；
             //   拉到 ±2 跨页让快翻也不打空（prioritizeLoad 窗口 ±8 容得下）
-            if (leftIdx - 4 >= 0) { loadPageAsync(leftIdx - 4, isPreload = true); loadPageAsync(leftIdx - 3, isPreload = true) }
-            if (leftIdx + 4 < pageList.size) { loadPageAsync(leftIdx + 4, isPreload = true); if (leftIdx + 5 < pageList.size) loadPageAsync(leftIdx + 5, isPreload = true) }
+            for (delta in intArrayOf(-2, -1, 1, 2)) {
+                val s = curSlot + delta
+                if (s < 0 || s >= spreadTable.slotCount) continue
+                loadPageAsync(spreadTable.firstPage(s), isPreload = true)
+                val sec = spreadTable.secondPage(s)
+                if (sec >= 0) loadPageAsync(sec, isPreload = true)
+            }
         } else {
             loadPageAsync(centerIdx)
             if (centerIdx + 1 < pageList.size) loadPageAsync(centerIdx + 1, isPreload = true)
@@ -1549,9 +1595,8 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     }
 
     inner class PagerAdapter : androidx.recyclerview.widget.RecyclerView.Adapter<PagerViewHolder>() {
-        override fun getItemCount() = if (doublePageMode) {
-            if (shiftDoublePage && pageList.size > 1) 1 + (pageList.size / 2) else (pageList.size + 1) / 2
-        } else pageList.size
+        // ★ 2026-10-05：跨页表唯一出处（单页=单位表 slotCount==pageList.size，双页含 shift/智能 solo）
+        override fun getItemCount() = spreadTable.slotCount
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): PagerViewHolder {
             val container = android.widget.FrameLayout(parent.context).apply {
                 layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
@@ -1618,47 +1663,14 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             debugLabel?.visibility = View.GONE
 
             if (doublePageMode) {
-                val shiftActive = shiftDoublePage && pageList.size > 1
-                val shiftCount = if (shiftActive) 1 + pageList.size / 2 else 0
-                val shiftSpread = if (shiftActive) (if (isRtl) shiftCount - 1 - position else position) else 0
-
-                val leftIdx = if (shiftActive) {
-                    if (shiftSpread == 0) 0 else {
-                        val lo = 2 * shiftSpread - 1
-                        val hi = 2 * shiftSpread
-                        if (isRtl && hi < pageList.size) hi else lo
-                    }
-                } else {
-                    val nsCount = (pageList.size + 1) / 2
-                    val nsSpread = if (isRtl) nsCount - 1 - position else position
-                    val lo = 2 * nsSpread
-                    val hi = 2 * nsSpread + 1
-                    if (isRtl) (if (hi < pageList.size) hi else lo) else lo
-                }
-
-                if (shiftActive && shiftSpread == 0) {
-                    val bmp = bitmapCache[leftIdx]
-                    if (bmp != null && !bmp.isRecycled) {
-                        holder.setImage(bmp, useSSIV, landscapeZoomEnabled, forward = bindForwardFor(position))
-                    } else {
-                        bitmapCache.remove(leftIdx)
-                        holder.clear()
-                        if (!isScrolling) loadPageAsync(leftIdx)
-                    }
-                    return
-                }
-
-                val rightIdx = if (shiftActive) {
-                    val lo = 2 * shiftSpread - 1
-                    val hi = 2 * shiftSpread
-                    if (isRtl && hi < pageList.size) lo else hi
-                } else {
-                    val nsCount = (pageList.size + 1) / 2
-                    val nsSpread = if (isRtl) nsCount - 1 - position else position
-                    val lo = 2 * nsSpread
-                    val hi = 2 * nsSpread + 1
-                    if (isRtl) (if (hi < pageList.size) lo else -1) else hi
-                }
+                // ★ 跨页表取位（2026-10-05 重做）：奇偶/首张单页/智能 solo（宽图/长图）全在表内，
+                //   RTL 物理排布在此唯一翻转（左位=阅读序次页）。solo 位（secondIdx<0）走
+                //   合并路径自然退化=单图，旧 shift 首页特例分支删除
+                val slotPos = if (isRtl) spreadTable.slotCount - 1 - position else position
+                val firstIdx = spreadTable.firstPage(slotPos)
+                val secondIdx = spreadTable.secondPage(slotPos)
+                val leftIdx = if (isRtl) (if (secondIdx >= 0) secondIdx else firstIdx) else firstIdx
+                val rightIdx = if (isRtl) (if (secondIdx >= 0) firstIdx else -1) else secondIdx
                 // ★ 双页中缝分档实宽（1=窄 8dp / 2=中 16dp / 3=宽 28dp），0=贴合
                 val gapPx = when (centerGapType) {
                     1 -> (8 * holder.itemView.context.resources.displayMetrics.density).toInt()
@@ -1706,20 +1718,20 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                             if (fresh !== leftBmp && fresh !== rightBmp) mergedCache.put(cacheKey, fresh)
                             fresh
                         }
-                        holder.setImage(merged, useSSIV, landscapeZoomEnabled)
+                        holder.setImage(merged, useSSIV, landscapeZoomEnabled, forward = bindForwardFor(position))
                     } catch (_: OutOfMemoryError) {
-                        holder.setImage(leftBmp, useSSIV, landscapeZoomEnabled)
+                        holder.setImage(leftBmp, useSSIV, landscapeZoomEnabled, forward = bindForwardFor(position))
                     }
                     return
                 }
                 // Not loaded yet: load both
                 bitmapCache.remove(leftIdx)
-                bitmapCache.remove(rightIdx)
+                if (rightIdx >= 0) bitmapCache.remove(rightIdx)
                 holder.clear()
                 if (!isScrolling) {
                     holder.loadingBar?.visibility = View.VISIBLE
                     loadPageAsync(leftIdx)
-                    if (rightIdx < pageList.size) loadPageAsync(rightIdx)
+                    if (rightIdx in 0 until pageList.size) loadPageAsync(rightIdx)
                 }
             } else {
                 val realIdx = if (isRtl) pageList.size - 1 - position else position

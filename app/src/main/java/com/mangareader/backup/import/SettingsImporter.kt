@@ -8,7 +8,7 @@ object SettingsImporter {
         "isFlipAnimation", "isShowPageNum", "isKeepScreenOn", "isTrimWhiteBorder",
         "isEinkMode", "isImmersiveMode", "isGrayscale", "isInvertColors",
         "isFlipFlashEnabled", "useSSIV", "landscapeZoom", "imageScaleMode", "zoomStart", "isEinkDither",
-        "panNavigation", "doublePageSplit", "doublePageReverse", "autoWebtoon",
+        "panNavigation", "doublePageSplit", "doublePageReverse", "autoWebtoon", "doubleMergeSmart",
         "chapterTransition", "seamlessNextVolume", "forceFullDecode",
         "reader_volume_keys", "reader_volume_keys_inverted", "long_press_save",
         "reader_hw_keys_enabled",

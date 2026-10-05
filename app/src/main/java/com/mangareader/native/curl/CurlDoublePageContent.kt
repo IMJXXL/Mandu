@@ -1,6 +1,7 @@
 package com.mangareader.native.curl
 
 import android.graphics.Bitmap
+import com.mangareader.native.SpreadTable
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -41,7 +42,9 @@ fun CurlDoublePageContent(
     totalSpreads: Int,
     currentSpread: Int,
     totalPages: Int,
-    shift: Boolean,
+    /** ★ 跨页表（2026-10-05 重做）：跨页序号→物理页映射唯一出处，取代 shift 布尔+序号算术；
+     *  智能配对（宽图/长图 solo）重排后视图传新实例即全链路生效 */
+    table: SpreadTable,
     isRtl: Boolean,
     doublePageReverse: Boolean,
     pageBgColor: Int,
@@ -200,8 +203,8 @@ fun CurlDoublePageContent(
         var insetR = 0.dp
         var insetB = 0.dp
         if (curlContentAreaOnly) {
-            val curLeft = SpreadMapping.leftPage(state.current, totalPages, shift)
-            val curRight = SpreadMapping.rightPage(state.current, totalPages, shift)
+            val curLeft = table.firstPage(state.current)
+            val curRight = table.secondPage(state.current)
             val curL = cache.get(curLeft)
             val curR = if (curRight >= 0) cache.get(curRight) else null
             if (curL != null && !curL.isRecycled) {
@@ -262,9 +265,9 @@ fun CurlDoublePageContent(
                 // ★ 翻页即提权（幂等，loadPageAsync 缓存/去重兜底）：背面层显示的就是目标跨页，
                 //   预载若还没轮到它，此刻以非预载(绕过信号量)立即解码
                 if (targetSpread in 0 until totalSpreads) onFlipTargetNeeded(targetSpread)
-                val tLeft = if (targetSpread in 0 until totalSpreads) cache.get(SpreadMapping.leftPage(targetSpread, totalPages, shift)) else null
+                val tLeft = if (targetSpread in 0 until totalSpreads) cache.get(table.firstPage(targetSpread)) else null
                 val tRight = if (targetSpread in 0 until totalSpreads) {
-                    val r = SpreadMapping.rightPage(targetSpread, totalPages, shift)
+                    val r = table.secondPage(targetSpread)
                     if (r >= 0) cache.get(r) else null
                 } else null
                 Box {
@@ -281,8 +284,8 @@ fun CurlDoublePageContent(
             @Suppress("UNUSED_EXPRESSION")
             reloadTrigger.intValue
 
-            val leftIdx = SpreadMapping.leftPage(spreadIdx, totalPages, shift)
-            val rightIdx = SpreadMapping.rightPage(spreadIdx, totalPages, shift)
+            val leftIdx = table.firstPage(spreadIdx)
+            val rightIdx = table.secondPage(spreadIdx)
             val leftBmp = cache.get(leftIdx)
             val rightBmp = if (rightIdx >= 0) cache.get(rightIdx) else null
             Box {

@@ -11,7 +11,7 @@ object SettingsExporter {
         "isFlipFlashEnabled", "flipFlashDuration", "flipFlashInterval", "flipFlashColor",
         "isEinkDither", "einkDitherAlgorithm", "einkDitherLevels", "einkEndpointPassthrough",
         "pageLayout", "useSSIV", "panNavigation", "doublePageShift", "doublePageSplit",
-        "doublePageReverse", "centerGapType", "forceFullDecode",
+        "doublePageReverse", "centerGapType", "forceFullDecode", "doubleMergeSmart",
         "isFlipAnimation", "isShowPageNum", "isKeepScreenOn", "isImmersiveMode",
         "orientation", "landscapeZoom", "imageScaleMode", "zoomStart", "autoWebtoon", "chapterTransition",
         "seamlessNextVolume",

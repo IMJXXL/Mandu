@@ -73,6 +73,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 
 /** ★ §24 P9 调节点：动图数量阈值 —— 默认 3 张动图才弹"切条漫"对话框 */
 object ReaderParams {
@@ -171,6 +173,9 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     var pageList by remember { mutableStateOf(listOf<ArchiveEngine.PageMeta>()) }
     var cur by remember { mutableIntStateOf(0) }
     var expandedPageCount by remember { mutableIntStateOf(0) }
+    // ★ 双页智能配对的页尺寸表（2026-10-05）：2*页数，[2i]=宽 [2i+1]=高，0=未知。
+    //   后台扫描（scanPageDimsForDoubleMerge）渐进推送 → NES → 视图 setPageDims 重排跨页表
+    var pageDimsState by remember { mutableStateOf(IntArray(0)) }
     // ★ B4②（2026-10-04）：双页布局拆分书的续读半页位——enterReader 恢复块写入，
     //   NativeReaderScreen setup 前注入 PagerReaderView 作初始交替位（仅未展开表有语义）
     var initialHalfRightRestore by remember { mutableStateOf(false) }
@@ -2189,6 +2194,25 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         activeWebtoonRef?.pageBgColor = bgColor.toArgb()
     }
 
+    // ★ 双页智能配对尺寸扫描（2026-10-05）：双页布局（或横屏自动双页）+ 本地书时后台扫全本
+    //   页尺寸喂跨页表（SpreadTable）。键挂 pageList——切章/模式切换页表变身份即重扫
+    //   （PageSizeCacheStore 命中近零成本）；扫描前置空防同长度页表换书时的旧尺寸错配
+    LaunchedEffect(pageList, config.doubleMergeSmart, config.pageLayout, config.autoDoubleLandscape) {
+        pageDimsState = IntArray(0)
+        val tree = navStack.lastOrNull() ?: book?.filePath ?: ""
+        if (pageList.isEmpty() || tree.isEmpty()) return@LaunchedEffect
+        // 远程书不探测（ArchiveEngine 探测入口 requireNotRemote 拒收）——视图收到空表回退朴素配对
+        if (tree.startsWith("smb:") || tree.startsWith("webdav:") ||
+            tree.startsWith("cv:smb:") || tree.startsWith("cv:webdav:")
+        ) return@LaunchedEffect
+        if (!config.doubleMergeSmart) return@LaunchedEffect
+        if (config.pageLayout == com.mangareader.data.ReaderConfig.PageLayout.SINGLE && !config.autoDoubleLandscape) return@LaunchedEffect
+        try {
+            scanPageDimsForDoubleMerge(engine, pageList, tree) { pageDimsState = it }
+        } catch (_: Exception) {
+        }
+    }
+
     LaunchedEffect(config.autoFlipInterval, viewing, isVerticalMode, activePagerRef, activeWebtoonRef) {
         val interval = config.autoFlipInterval
         if (interval > 0 && viewing) {
@@ -2470,6 +2494,8 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                             pageBgColor = bgColor.toArgb(),
                             doublePageReverse = config.doublePageReverse,
                             doublePageSplit = config.doublePageSplit,
+                            doubleMergeSmart = config.doubleMergeSmart,
+                            pageDims = pageDimsState,
                             tileModeEnabled = config.tileModeEnabled,
                             verticalPager = verticalPagerEffective,
                             flipAnimationEnabled = config.isFlipAnimation,
@@ -3530,6 +3556,58 @@ private fun continueDisplayName(p: String): String = when {
         }
     }
     else -> p.trimEnd('/', '\\').substringAfterLast('/').substringAfterLast('\\')
+}
+
+/**
+ * ★ 双页智能配对的页尺寸扫描（2026-10-05）：复用 PageSizeCacheStore 尺寸表（与 autoWebtoon
+ * 探测 / 长图分割 expand 同一张表同一个 stamp），命中零 IO；未命中逐页顺序头部探测
+ * （zip/dir 64KB 快路径、pdf 走 pdfGetPageSize——VirtualPageExpander 同款结论：并发探测会
+ * 反复重绕流最坏 O(N²) 数据过流，顺序+缓存才是对的）。拆分半页的显示宽是源图一半
+ * （applySplitSide 裁切），配对判定按显示形态折算。onProgress 每 24 页推送一次，
+ * 视图先按已知页重排跨页表，长书冷缓存也不用等全本扫完。
+ */
+private suspend fun scanPageDimsForDoubleMerge(
+    engine: com.mangareader.viewer.ArchiveEngine,
+    pages: List<com.mangareader.viewer.ArchiveEngine.PageMeta>,
+    treeStr: String,
+    onProgress: (IntArray) -> Unit,
+) {
+    val stamp = com.mangareader.engine.pdf.VirtualPageExpander.sizeStamp(pages)
+    val store = withContext(Dispatchers.IO) { engine.loadPageSizeCache(treeStr, stamp) } ?: emptyMap()
+    val dims = IntArray(pages.size * 2)
+    val fresh = HashMap<String, IntArray>()
+    var dirty = false
+    for ((i, meta) in pages.withIndex()) {
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+        val key = com.mangareader.engine.pdf.VirtualPageExpander.pageSizeKey(meta)
+        var sz = store[key]
+        if (sz == null) {
+            sz = withContext(Dispatchers.IO) {
+                try {
+                    if (meta.source == "pdf") engine.loadPageSize(meta, treeStr)
+                    else engine.loadPageBounds(meta, treeStr)?.let { intArrayOf(it.width, it.height) }
+                } catch (_: Exception) {
+                    null
+                }
+            }
+            if (sz != null) {
+                fresh[key] = sz
+                dirty = true
+            }
+        }
+        if (sz != null && sz.size >= 2 && sz[0] > 0 && sz[1] > 0) {
+            var w = sz[0]
+            val h = sz[1]
+            if (meta.splitSide != 0 && w > h * 1.2f) w /= 2
+            dims[2 * i] = w
+            dims[2 * i + 1] = h
+        }
+        if (i % 24 == 23) onProgress(dims.copyOf())
+    }
+    if (dirty) runCatching {
+        withContext(Dispatchers.IO) { engine.savePageSizeCache(treeStr, stamp, store + fresh) }
+    }
+    onProgress(dims)
 }
 
 private fun computeInBookContinueTarget(currentPath: String?, rows: List<com.mangareader.data.ReadingProgress>): com.mangareader.data.ReadingProgress? {

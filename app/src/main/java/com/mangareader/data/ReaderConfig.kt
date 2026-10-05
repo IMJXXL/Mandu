@@ -82,6 +82,12 @@ data class ReaderConfig(
     /** ★ 横屏时自动使用双页（仅页面布局=单页时生效；全局语义，用户拍板放常规页） */
     val autoDoubleLandscape: Boolean = false,
 
+    /** ★ 双页智能配对（2026-10-05 重做，全局语义）：横宽跨页图（宽>高）与超长条图（宽/高<0.5）
+     *  不参与两两合并、单独占一位；两页宽高比差>1.3 也不配。页面尺寸由后台扫描（复用
+     *  PageSizeCacheStore 尺寸表），未知尺寸（远程书/头部解析失败）回退旧行为=全部合并。
+     *  判定唯一出处=SpreadTable */
+    val doubleMergeSmart: Boolean = true,
+
     /** 点击翻页水平对调（左手模式）：区域矩形镜像，点右侧=上一页 */
     val clickFlipInvertH: Boolean = false,
     // ★ N1：卷末无缝续读（默认开；仅同一本书的分卷之间生效，跨书永不自动跳）
@@ -190,6 +196,8 @@ data class ReaderConfig(
             putInt("${prefix}centerGapType", centerGapType)
             // ★ 横屏自动双页为全局语义（用户拍板），恒写全局键
             putBoolean("autoDoubleLandscape", autoDoubleLandscape)
+            // ★ 双页智能配对同全局语义
+            putBoolean("doubleMergeSmart", doubleMergeSmart)
             putBoolean("forceFullDecode", forceFullDecode)
             putBoolean("tileModeEnabled", tileModeEnabled)
             putString("downsampleTier", downsampleTier.name)
@@ -287,6 +295,7 @@ data class ReaderConfig(
                 chapterTransition = rBoolean("chapterTransition", true),
                 centerGapType = rInt("centerGapType", 0),
                 autoDoubleLandscape = rBoolean("autoDoubleLandscape", false),
+                doubleMergeSmart = rBoolean("doubleMergeSmart", true),
                 clickFlipInvertH = rBoolean("clickFlipInvertH", false),
                 seamlessNextVolume = rBoolean("seamlessNextVolume", true),
                 forceFullDecode = rBoolean("forceFullDecode", false),
@@ -387,6 +396,7 @@ data class ReaderConfig(
                 "chapterTransition" -> cfg.copy(chapterTransition = v as Boolean)
                 "seamlessNextVolume" -> cfg.copy(seamlessNextVolume = v as Boolean)
                 "autoDoubleLandscape" -> cfg.copy(autoDoubleLandscape = v as Boolean)
+                "doubleMergeSmart" -> cfg.copy(doubleMergeSmart = v as Boolean)
                 else -> cfg
             }
         }
@@ -458,6 +468,7 @@ data class ReaderConfig(
             "autoWebtoon" to { it.autoWebtoon },
             "chapterTransition" to { it.chapterTransition },
             "autoDoubleLandscape" to { it.autoDoubleLandscape },
+            "doubleMergeSmart" to { it.doubleMergeSmart },
             "seamlessNextVolume" to { it.seamlessNextVolume },
             "forceFullDecode" to { it.forceFullDecode },
             "tileModeEnabled" to { it.tileModeEnabled },

@@ -35,7 +35,7 @@ object ReaderScope {
      * 这些项书内改动直接写全局键，对所有书生效；偏好页可把单项改成"本书单独"。
      */
     val PRESET_GLOBAL_KEYS: Set<String> = setOf(
-        "pageLayout", "autoDoubleLandscape", // 用户拍板：单双页布局/横屏自动双页全局语义
+        "pageLayout", "autoDoubleLandscape", "doubleMergeSmart", // 用户拍板：单双页布局/横屏自动双页全局语义（智能配对随布局全局语义）
         "orientation", "readBackground",
         "isFlipAnimation", "isPageCurlAnimation", "isCurlContentAreaOnly",
         "curlBackContentAlpha", "curlShadowAlpha", "spineShadowAlpha",

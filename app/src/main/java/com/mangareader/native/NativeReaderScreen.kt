@@ -134,6 +134,11 @@ fun NativeReaderScreen(
     pageBgColor: Int = android.graphics.Color.parseColor("#FFFFFF"),
     doublePageReverse: Boolean = false,
     doublePageSplit: Boolean = false,
+    // ★ 双页智能配对（2026-10-05 重做）：横宽跨页图/超长条图不参与两两合并（SpreadTable 判定）；
+    //   页尺寸由 Reader 后台扫描（复用 PageSizeCacheStore）经 pageDims 异步回填，
+    //   空/全 0=未知尺寸回退旧行为（全部合并），远程书恒走该回退
+    doubleMergeSmart: Boolean = true,
+    pageDims: IntArray = IntArray(0),
     tileModeEnabled: Boolean = false,
     /** ★ §34.3：VERT_PAGER 模式——竖向翻页走 PagerReaderView（不是 webtoon 连续滚动） */
     verticalPager: Boolean = false,
@@ -394,6 +399,17 @@ fun NativeReaderScreen(
         webtoonView.setFixedCropLR(fixedCropL, fixedCropR)
         curlReaderView.setFixedCrop(fixedCropL, fixedCropT, fixedCropR, fixedCropB)
         curlDoublePageView.setFixedCrop(fixedCropL, fixedCropT, fixedCropR, fixedCropB)
+    }
+
+    // ★ 双页智能配对推送（2026-10-05）：setup 后异步喂开关与页尺寸——独立于上方
+    //   DisposableEffect 的 key（尺寸回填/开关切换不该重建视图），两处双页视图统一喂；
+    //   setter 幂等（尺寸相等/映射未变时零扰动），setup 内初次构建的朴素表由此升级为智能表
+    LaunchedEffect(pageDims, doubleMergeSmart) {
+        if (isVertical) return@LaunchedEffect
+        pagerView.setSmartMerge(doubleMergeSmart)
+        pagerView.setPageDims(pageDims)
+        curlDoublePageView.setSmartMerge(doubleMergeSmart)
+        curlDoublePageView.setPageDims(pageDims)
     }
 
     // ★ 背面透出程度/阴影浓度走轻量同步：故意不进上面 DisposableEffect 的 key——滑块拖动
