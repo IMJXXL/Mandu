@@ -2167,8 +2167,9 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         activePagerRef?.applyLivePrefs(
             marginDp = config.imageMarginH,
             gapType = config.centerGapType,
-            fit = config.fitScreen,
+            mode = config.imageScaleMode,
             zoom = config.landscapeZoom,
+            zoomStart = config.zoomStart,
         )
         activePagerRef?.setTrimWhiteBorder(config.isTrimWhiteBorder, config.trimThreshold, config.trimWhiteRatio)
         activePagerRef?.setTileModeEnabled(config.tileModeEnabled)
@@ -2439,7 +2440,8 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                             centerGapType = config.centerGapType,
                             landscapeZoom = config.landscapeZoom,
                             doubleTapZoom = config.isDoubleTapZoom,
-                            fitScreen = config.fitScreen,
+                            scaleMode = config.imageScaleMode,
+                            zoomStart = config.zoomStart,
                             trimWhiteBorder = config.isTrimWhiteBorder,
                             trimThreshold = config.trimThreshold,
                             trimWhiteRatio = config.trimWhiteRatio,

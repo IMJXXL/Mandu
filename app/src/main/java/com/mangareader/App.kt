@@ -116,9 +116,13 @@ class App : Application(), SingletonImageLoader.Factory {
         //   必须先于任何 ReaderConfig.load（load 零写盘硬不变量，迁移全部收口在此）
         appScope.launch(Dispatchers.IO) { ReaderPrefMigration.runIfNeeded(this@App) }
         // ★ 条漫分割默认值迁移（tallsplit_off_v1）：老安装残留 true 一次性置回默认关
+        // ★ 画面缩放档位迁移（scale_mode_v1）：fitScreen 布尔→imageScaleMode（完整显示→0）
         appScope.launch(Dispatchers.IO) {
             runCatching {
                 ReaderPrefMigration.tallSplitDefaultOffIfNeeded(
+                    getSharedPreferences("manga_reader", MODE_PRIVATE)
+                )
+                ReaderPrefMigration.scaleModeFromLegacyFitScreenIfNeeded(
                     getSharedPreferences("manga_reader", MODE_PRIVATE)
                 )
             }

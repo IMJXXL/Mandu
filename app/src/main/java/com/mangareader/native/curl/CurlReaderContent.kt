@@ -25,11 +25,21 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.DpOffset
+import com.mangareader.native.ScalePlan
 import androidx.compose.ui.unit.dp
 import eu.wewox.pagecurl.ExperimentalPageCurlApi
 import eu.wewox.pagecurl.config.PageCurlConfig
 import eu.wewox.pagecurl.page.PageCurl
 import eu.wewox.pagecurl.page.rememberPageCurlState
+
+/** 仿真双击缩放状态（视图层 GestureDetector 驱动，内容层 graphicsLayer 消费）：
+ *  scale 1↔2，origin=点按点在内容区的归一化坐标（屏空间；内层按镜像翻转后用） */
+class CurlZoomState {
+    val scale = androidx.compose.runtime.mutableFloatStateOf(1f)
+    val originX = androidx.compose.runtime.mutableFloatStateOf(0.5f)
+    val originY = androidx.compose.runtime.mutableFloatStateOf(0.5f)
+    fun reset() { scale.floatValue = 1f }
+}
 
 @OptIn(ExperimentalPageCurlApi::class)
 @Composable
@@ -38,24 +48,18 @@ fun CurlPageContent(
     isRtl: Boolean,
     pageBgColor: Int,
     landscapeZoom: Boolean,
-    fitScreen: Boolean,
+    scaleMode: Int,
+    zoomStart: Int,
     bgTexPaint: android.graphics.Paint? = null,
+    zoom: CurlZoomState? = null,
 ) {
-    // 缩放语义与双页 SpreadImage / pager applyScale 对齐：fitScreen（漫画完整显示）=contain；
-    // 否则贴满宽度；landscapeZoom（自动放大横向图片，仅 fitScreen 关闭时插手）宽图贴满高度。
-    // ★ 平板贴宽封顶（2026-10-05，用户"横屏开仿真画面被放大"）：对齐 pager applyScale 的
-    //   平板防糊——贴宽放大超过位图原生分辨率时封顶 1:1（min(cw/iw,1)）。此前仿真缺该封顶，
-    //   竖版页在横屏被贴宽拉大 1.5~2 倍（普通翻页视图封了顶，一切仿真就"放大"）；
-    //   "自动放大横向图片"关闭时自己放大的观感同源（贴宽语义本身，不是 landscapeZoom）。
+    // ★ 缩放统一走 ScalePlan（2026-10-05 重做，唯一公式出处；仿真不可平移 → staticMode 收敛：
+    //   贴高/智能对宽图会横向裁掉且拖不回来）。比例、平板防糊封顶、zoomStart 对齐全在此派生；
+    //   显示改用显式尺寸 Image（位图尺寸×比例），五种档位一条路径，消灭 ContentScale 分支。
+    // landscapeZoom（自动放大横向图片）：仅 contain/铺满档插手，宽图静态贴高、对齐起始缘。
     // 全部页面统一 Image 常驻：曾对当前页用 SSIV（可双指缩放）其余页用 Image，翻页落地
     // 瞬间 AndroidView↔Image 组件类型切换产生空白帧（b12d1e4/bc54d52 双页同类问题的
-    // 单页残留），统一 Image 消除切换；代价是单页仿真模式放弃双指缩放（与双页取舍一致）。
-    val wide = bmp != null && !bmp.isRecycled && bmp.width > bmp.height
-    val contentScale = when {
-        fitScreen -> ContentScale.Fit
-        landscapeZoom && wide -> ContentScale.FillHeight
-        else -> ContentScale.FillWidth
-    }
+    // 单页残留），统一 Image 消除切换；细节缩放由双击缩放补（isDoubleTapZoom 门控）。
     val mirror = if (isRtl) Modifier.graphicsLayer { scaleX = -1f } else Modifier
     val baseModifier = Modifier.fillMaxSize().clipToBounds().then(mirror)
     // ★ 整屏幕纸纹（textureScope=1）：纸面留边用外层算好的 bgPaint 铺纸纹（同配方同相位），
@@ -71,32 +75,54 @@ fun CurlPageContent(
     }
 
     val isTablet = androidx.compose.ui.platform.LocalConfiguration.current.smallestScreenWidthDp >= 600
-    BoxWithConstraints(modifier = baseModifier.then(bgMod), contentAlignment = Alignment.Center) {
-        // 封顶仅在"贴宽会放大超过原生分辨率"（位图原生宽度 < 屏宽）时改变行为，
-        // 此种情况按 1:1 居中显示；位图比屏宽时 min(cw/iw,1)=cw/iw 与 FillWidth 全等
-        val nativeFill = if (!fitScreen && !(landscapeZoom && wide) && isTablet) {
-            (constraints.maxWidth.toFloat() / bmp.width).coerceAtMost(1f)
-        } else null
-        if (nativeFill != null && bmp.width * nativeFill < constraints.maxWidth) {
-            val density = LocalDensity.current
-            Image(
-                bitmap = bmp.asImageBitmap(),
-                contentDescription = null,
-                modifier = Modifier.size(
-                    with(density) { (bmp.width * nativeFill).toDp() },
-                    with(density) { (bmp.height * nativeFill).toDp() },
-                ),
-                contentScale = ContentScale.Fit,
-            )
-        } else {
-            Image(
-                bitmap = bmp.asImageBitmap(),
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = contentScale,
-            )
-        }
+    val iw = bmp.width.toFloat()
+    val ih = bmp.height.toFloat()
+    val wide = iw > ih
+    val effMode = ScalePlan.staticMode(scaleMode)
+    val landscapeFill = landscapeZoom && ScalePlan.landscapeZoomable(effMode) && wide
+    // 对齐：alignX 输出即屏空间语义（RTL 自动=对齐右缘）；本层在"外层镜像+内层反镜像"里，
+    // 内层定位要按镜像再翻一次（双层镜像抵消后 artwork 正立、起始缘落在屏侧读边）
+    val biasInnerX = ScalePlan.alignX(zoomStart, isRtl).let { if (isRtl) -it else it }
+    val align = biasToAlignment(biasInnerX, ScalePlan.alignY(zoomStart))
+
+    // ★ 双击缩放层：套在镜像之后（clip→mirror→zoom→内容，溢出仍被外层 clip 裁住）；
+    //   transformOrigin 的 x 在镜像空间要翻一次（1-fx）才能对准屏空间点按位置
+    val zoomMod = if (zoom != null) Modifier.graphicsLayer {
+        val zs = zoom.scale.floatValue
+        scaleX = zs; scaleY = zs
+        transformOrigin = androidx.compose.ui.graphics.TransformOrigin(
+            if (isRtl) 1f - zoom.originX.floatValue else zoom.originX.floatValue,
+            zoom.originY.floatValue,
+        )
+    } else Modifier
+    BoxWithConstraints(modifier = baseModifier.then(zoomMod).then(bgMod), contentAlignment = align) {
+        val cw = constraints.maxWidth.toFloat()
+        val ch = constraints.maxHeight.toFloat()
+        val scale = if (landscapeFill) ch / ih
+        else ScalePlan.baseScale(effMode, cw, ch, iw, ih, isTablet)
+        Image(
+            bitmap = bmp.asImageBitmap(),
+            contentDescription = null,
+            modifier = Modifier.size(
+                with(LocalDensity.current) { (iw * scale).toDp() },
+                with(LocalDensity.current) { (ih * scale).toDp() },
+            ),
+            contentScale = ContentScale.Fit,
+        )
     }
+}
+
+/** ScalePlan 对齐偏置 → Compose Alignment（x: -1起始缘/0居中/+1结束缘；y: -1顶/0居中/+1底） */
+internal fun biasToAlignment(biasX: Int, biasY: Int): Alignment = when {
+    biasX < 0 && biasY < 0 -> Alignment.TopStart
+    biasX > 0 && biasY < 0 -> Alignment.TopEnd
+    biasX < 0 && biasY > 0 -> Alignment.BottomStart
+    biasX > 0 && biasY > 0 -> Alignment.BottomEnd
+    biasX < 0 -> Alignment.CenterStart
+    biasX > 0 -> Alignment.CenterEnd
+    biasY < 0 -> Alignment.TopCenter
+    biasY > 0 -> Alignment.BottomCenter
+    else -> Alignment.Center
 }
 
 @OptIn(ExperimentalPageCurlApi::class)
@@ -108,7 +134,9 @@ fun CurlReaderContent(
     pageBgColor: Int,
     cache: CurlBitmapCache,
     landscapeZoom: Boolean,
-    fitScreen: Boolean,
+    scaleMode: Int,
+    zoomStart: Int,
+    zoom: CurlZoomState? = null,
     backContentAlpha: Float,
     shadowAlpha: Float,
     paperBackPresetId: Int = -1,
@@ -256,23 +284,24 @@ fun CurlReaderContent(
                 val cw = constraints.maxWidth.toFloat()
                 val ch = constraints.maxHeight.toFloat()
                 if (iw > 0f && ih > 0f && cw > 0f && ch > 0f) {
-                    // 贴宽分支同样带平板封顶——「仅画面区域」的翻页范围必须跟实际显示矩形一致，
-                    // 否则画面 1:1 居中而翻页区还按贴宽满幅算，留边两侧点按/拖拽落空
+                    // ★ inset 与 CurlPageContent 显示矩形同源（ScalePlan 统一公式+对齐偏置）——
+                    //   「仅画面区域」的翻页范围必须跟实际显示矩形一致，否则画面贴边而翻页区
+                    //   还按居中算，留边两侧点按/拖拽落空。RTL 注意：padding 在外层镜像之前，
+                    //   左右 inset 要按镜像换侧（pre-start 落屏 end）
                     val isTablet = androidx.compose.ui.platform.LocalConfiguration.current.smallestScreenWidthDp >= 600
-                    val scale = when {
-                        fitScreen -> minOf(cw / iw, ch / ih)
-                        landscapeZoom && iw > ih -> ch / ih
-                        isTablet -> minOf(cw / iw, 1f)
-                        else -> cw / iw
-                    }
+                    val effMode = ScalePlan.staticMode(scaleMode)
+                    val scale = if (landscapeZoom && ScalePlan.landscapeZoomable(effMode) && iw > ih) ch / ih
+                    else ScalePlan.baseScale(effMode, cw, ch, iw, ih, isTablet)
                     val dispW = (iw * scale).coerceAtMost(cw)
                     val dispH = (ih * scale).coerceAtMost(ch)
                     if (dispW < cw || dispH < ch) {
+                        val gaps = ScalePlan.edgeGaps(ScalePlan.alignX(zoomStart, isRtl), cw, dispW)
+                        val gy = ScalePlan.edgeGaps(ScalePlan.alignY(zoomStart), ch, dispH)
                         with(LocalDensity.current) {
-                            insetL = ((cw - dispW) / 2f).toDp()
-                            insetR = insetL
-                            insetT = ((ch - dispH) / 2f).toDp()
-                            insetB = insetT
+                            insetL = (if (isRtl) gaps.second else gaps.first).toDp()
+                            insetR = (if (isRtl) gaps.first else gaps.second).toDp()
+                            insetT = gy.first.toDp()
+                            insetB = gy.second.toDp()
                         }
                     }
                 }
@@ -299,7 +328,9 @@ fun CurlReaderContent(
                 isRtl = isRtl,
                 pageBgColor = pageBgColor,
                 landscapeZoom = landscapeZoom,
-                fitScreen = fitScreen,
+                scaleMode = scaleMode,
+                zoomStart = zoomStart,
+                zoom = zoom,
                 bgTexPaint = bgPaint,
             )
         }

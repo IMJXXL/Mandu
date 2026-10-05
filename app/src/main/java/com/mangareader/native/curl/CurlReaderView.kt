@@ -1,5 +1,7 @@
 package com.mangareader.native.curl
 
+import com.mangareader.native.ScalePlan
+
 import android.content.Context
 import android.graphics.Bitmap
 import android.view.GestureDetector
@@ -45,12 +47,33 @@ class CurlReaderView(context: Context) : FrameLayout(context), ReaderViewDelegat
     private val currentPageState = mutableIntStateOf(0)
     private var currentPage: Int
         get() = currentPageState.intValue
-        set(value) { currentPageState.intValue = value }
+        set(value) {
+            currentPageState.intValue = value
+            curlZoomState.reset()   // 翻页复位双击缩放
+        }
     private var isRtl = false
 
     var pageBgColor: Int = android.graphics.Color.parseColor("#FFFFFF")
-    var landscapeZoom: Boolean = false
-    var fitScreen: Boolean = false
+    // ★ 缩放参数用 Compose state 承载（2026-10-05）：renderCompose 只在 setup 调一次，
+    //   普通 var 字段改了不重组——旧版 fitScreen/landscapeZoom 书内面板改了要换模式才生效
+    private val landscapeZoomState = mutableStateOf(false)
+    var landscapeZoom: Boolean
+        get() = landscapeZoomState.value
+        set(value) { landscapeZoomState.value = value }
+    // ★ 画面缩放档位/缩放起始位置（ScalePlan 唯一公式出处；2026-10-05 替代 fitScreen 布尔）
+    private val scaleModeState = mutableIntStateOf(ScalePlan.MODE_FIT_WIDTH)
+    var scaleMode: Int
+        get() = scaleModeState.intValue
+        set(value) { scaleModeState.intValue = value }
+    private val zoomStartState = mutableIntStateOf(ScalePlan.ZOOM_DEFAULT)
+    var zoomStart: Int
+        get() = zoomStartState.intValue
+        set(value) { zoomStartState.intValue = value }
+    // ★ 双击缩放状态（阶段二）：双击在点按处 1x↔2x；isDoubleTapZoom=false 时完全关闭。
+    //   翻页走 onSingleTapConfirmed（双击被 GestureDetector 吞掉不误翻）；放大是纯视觉层
+    //   （graphicsLayer），不平移——再双击回 1x，翻页自动复位
+    var doubleTapZoom = true
+    val curlZoomState = CurlZoomState()
     private val curlContentAreaOnlyState = mutableStateOf(false)
     var curlContentAreaOnly: Boolean
         get() = curlContentAreaOnlyState.value
@@ -116,6 +139,18 @@ class CurlReaderView(context: Context) : FrameLayout(context), ReaderViewDelegat
     }
 
     private val gestureDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
+        override fun onDoubleTap(e: MotionEvent): Boolean {
+            // ★ 仿真双击缩放：首次进入的 hit 判定走内容层，这里只做 1x↔2x 开关
+            if (!doubleTapZoom || width == 0 || height == 0) return false
+            if (curlZoomState.scale.floatValue > 1.5f) {
+                curlZoomState.reset()
+            } else {
+                curlZoomState.originX.floatValue = (e.x / width).coerceIn(0f, 1f)
+                curlZoomState.originY.floatValue = (e.y / height).coerceIn(0f, 1f)
+                curlZoomState.scale.floatValue = 2f
+            }
+            return true
+        }
         override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
             if (width == 0 || height == 0) return false
             val fx = e.x / width
@@ -228,7 +263,9 @@ class CurlReaderView(context: Context) : FrameLayout(context), ReaderViewDelegat
                 pageBgColor = pageBgColor,
                 cache = cache,
                 landscapeZoom = landscapeZoom,
-                fitScreen = fitScreen,
+                scaleMode = scaleMode,
+                zoomStart = zoomStart,
+                zoom = if (doubleTapZoom) curlZoomState else null,
                 backContentAlpha = curlBackContentAlpha,
                 shadowAlpha = curlShadowAlpha,
                 paperBackPresetId = paperBackPresetId,

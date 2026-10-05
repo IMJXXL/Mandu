@@ -29,6 +29,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
+import com.mangareader.native.ScalePlan
 import eu.wewox.pagecurl.ExperimentalPageCurlApi
 import eu.wewox.pagecurl.config.PageCurlConfig
 import eu.wewox.pagecurl.page.PageCurl
@@ -46,7 +47,9 @@ fun CurlDoublePageContent(
     pageBgColor: Int,
     cache: CurlBitmapCache,
     landscapeZoom: Boolean,
-    fitScreen: Boolean,
+    scaleMode: Int,
+    zoomStart: Int,
+    zoom: com.mangareader.native.curl.CurlZoomState? = null,
     curlContentAreaOnly: Boolean,
     backContentAlpha: Float,
     shadowAlpha: Float,
@@ -209,21 +212,23 @@ fun CurlDoublePageContent(
                 if (iw > 0f && ih > 0f && cw > 0f && ch > 0f) {
                     // ★ 不再插手 landscapeZoom（2026-10-04）：合并跨页天然是宽图，FillHeight
                     //   会水平裁切且无法平移找回——用户要求"4 比 2 宽也不能漏 4"
-                    // 贴宽分支带平板封顶（同 SpreadImage）——「仅画面区域」范围必须跟显示矩形一致
+                    // ★ inset 与 SpreadImage 显示矩形同源（ScalePlan 统一公式+对齐偏置）；
+                    //   跨页档位收敛走 spreadMode（只留 完整显示/铺满）；RTL 左右 inset 换侧
+                    //   （padding 在外层镜像之前，pre-start 落屏 end）
                     val isTablet = androidx.compose.ui.platform.LocalConfiguration.current.smallestScreenWidthDp >= 600
-                    val scale = when {
-                        fitScreen -> minOf(cw / iw, ch / ih)
-                        isTablet -> minOf(cw / iw, 1f)
-                        else -> cw / iw
-                    }
+                    val scale = ScalePlan.baseScale(
+                        ScalePlan.spreadMode(scaleMode), cw, ch, iw, ih, isTablet,
+                    )
                     val dispW = (iw * scale).coerceAtMost(cw)
                     val dispH = (ih * scale).coerceAtMost(ch)
                     if (dispW < cw || dispH < ch) {
+                        val gaps = ScalePlan.edgeGaps(ScalePlan.alignX(zoomStart, isRtl), cw, dispW)
+                        val gy = ScalePlan.edgeGaps(ScalePlan.alignY(zoomStart), ch, dispH)
                         with(LocalDensity.current) {
-                            insetL = ((cw - dispW) / 2f).toDp()
-                            insetR = insetL
-                            insetT = ((ch - dispH) / 2f).toDp()
-                            insetB = insetT
+                            insetL = (if (isRtl) gaps.second else gaps.first).toDp()
+                            insetR = (if (isRtl) gaps.first else gaps.second).toDp()
+                            insetT = gy.first.toDp()
+                            insetB = gy.second.toDp()
                         }
                     }
                 }
@@ -263,12 +268,12 @@ fun CurlDoublePageContent(
                     if (r >= 0) cache.get(r) else null
                 } else null
                 Box {
-                    SpreadImage(tLeft, tRight, doublePageReverse, pageBgColor, isRtl, landscapeZoom, fitScreen, bgTexPaint = bgPaint)
+                    SpreadImage(tLeft, tRight, doublePageReverse, pageBgColor, isRtl, scaleMode, zoomStart, zoom = zoom, bgTexPaint = bgPaint)
                     // 沟阴影画进页面内容层：随纸翻动，不会悬在翻起的纸上方
                 SpineGutterShadow(
                     spineShadowAlpha,
                     if (curlContentAreaOnly) null
-                    else spineBounds(tLeft, tRight, fitScreen, landscapeZoom, maxW, maxH, isTablet),
+                    else spineBounds(tLeft, tRight, scaleMode, zoomStart, isRtl, maxW, maxH, isTablet),
                 )
                 }
             },
@@ -287,28 +292,31 @@ fun CurlDoublePageContent(
                     doublePageReverse,
                     pageBgColor,
                     isRtl,
-                    landscapeZoom,
-                    fitScreen,
+                    scaleMode,
+                    zoomStart,
+                    zoom = zoom,
                     bgTexPaint = bgPaint,
                 )
                 SpineGutterShadow(
                     spineShadowAlpha,
                     if (curlContentAreaOnly) null
-                    else spineBounds(leftBmp, rightBmp, fitScreen, landscapeZoom, maxW, maxH, isTablet),
+                    else spineBounds(leftBmp, rightBmp, scaleMode, zoomStart, isRtl, maxW, maxH, isTablet),
                 )
             }
         }
     }
 }
 
-/** 画面显示矩形（与 SpreadImage/curlContentAreaOnly 同款缩放语义：fitScreen=contain、
- *  landscapeZoom 且宽图=贴满高、其余贴满宽，超界按可视范围收）：书脊阴影夹在画面内用。
+/** 画面显示矩形（与 SpreadImage/curlContentAreaOnly 同源：ScalePlan 统一公式，跨页档位
+ *  收敛 spreadMode，对齐偏置随 zoomStart）：书脊阴影夹在画面内用。矩形在本层（内层反镜像）
+ *  坐标系——SpreadImage 的内层定位偏置与其一致（biasInner=alignX×镜像翻转）。
  *  左页未就绪（翻页背面目标页尚未解码等）返回 null=回退整宽（同旧行为）。 */
 private fun spineBounds(
     left: Bitmap?,
     right: Bitmap?,
-    fitScreen: Boolean,
-    landscapeZoom: Boolean,
+    scaleMode: Int,
+    zoomStart: Int,
+    isRtl: Boolean,
     boxW: Float,
     boxH: Float,
     isTablet: Boolean = false,
@@ -317,17 +325,14 @@ private fun spineBounds(
     val iw = (left.width + (right?.width ?: 0)).toFloat()
     val ih = maxOf(left.height, right?.height ?: left.height).toFloat()
     if (iw <= 0f || ih <= 0f) return null
-    // ★ 与 SpreadImage 同步去掉 landscapeZoom FillHeight（裁边不可找回，见上）
-    @Suppress("UNUSED_EXPRESSION") landscapeZoom
-    // 平板贴宽封顶与 SpreadImage 同步（阴影矩形必须贴着实际画面）
-    val scale = when {
-        fitScreen -> minOf(boxW / iw, boxH / ih)
-        isTablet -> minOf(boxW / iw, 1f)
-        else -> boxW / iw
-    }
+    val scale = ScalePlan.baseScale(ScalePlan.spreadMode(scaleMode), boxW, boxH, iw, ih, isTablet)
     val dw = (iw * scale).coerceAtMost(boxW)
     val dh = (ih * scale).coerceAtMost(boxH)
-    return Rect((boxW - dw) / 2f, (boxH - dh) / 2f, (boxW + dw) / 2f, (boxH + dh) / 2f)
+    // 内层偏置（同 SpreadImage）：alignX 输出为屏空间语义，镜像层内取反
+    val biasX = ScalePlan.alignX(zoomStart, isRtl).let { if (isRtl) -it else it }
+    val gx = ScalePlan.edgeGaps(biasX, boxW, dw)
+    val gy = ScalePlan.edgeGaps(ScalePlan.alignY(zoomStart), boxH, dh)
+    return Rect(gx.first, gy.first, boxW - gx.second, boxH - gy.second)
 }
 
 /** 书脊沟阴影：中缝暗渐变模拟装订沟（浓度可调，0=关闭）。画在页面内容层（静态一层渐变
@@ -369,8 +374,9 @@ private fun SpreadImage(
     doublePageReverse: Boolean,
     pageBgColor: Int,
     isRtl: Boolean,
-    landscapeZoom: Boolean,
-    fitScreen: Boolean,
+    scaleMode: Int,
+    zoomStart: Int,
+    zoom: com.mangareader.native.curl.CurlZoomState? = null,
     bgTexPaint: android.graphics.Paint? = null,
 ) {
     val emptyBmp = remember { Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888).asImageBitmap() }
@@ -404,13 +410,10 @@ private fun SpreadImage(
         if (merged != null && !merged.isRecycled) merged.asImageBitmap() else null
     }
 
-    // 缩放语义对齐 pager applyScale：fitScreen（漫画完整显示）=contain；否则贴满宽度。
-    // ★ 平板贴宽封顶（2026-10-05，同 CurlPageContent）：贴宽放大超过位图原生分辨率封顶 1:1，
-    //   与 PagerReaderView.applyScale 的平板防糊对齐——横屏开仿真不再比普通翻页"放大"。
-    // ★ landscapeZoom FillHeight 分支删除（2026-10-04）：合并跨页天然宽图，贴高必水平裁切
-    //   且无平移可找回——用户要求"4 比 2 宽也不能漏 4"。FillWidth/FillHeight 会溢出边界，
-    //   必须 clipToBounds（ImageView 自带裁剪，Compose 没有）
-    val contentScale = if (fitScreen) ContentScale.Fit else ContentScale.FillWidth
+    // ★ 缩放统一走 ScalePlan（2026-10-05 重做）：跨页档位收敛 spreadMode（只留完整显示/铺满），
+    //   平板贴宽封顶、zoomStart 对齐全部同源——跨页天然宽图，landscapeZoom 不插手（同前），
+    //   贴高/智能/原尺寸收敛为铺满（不可平移防不可找回裁切）。显示改显式尺寸 Image 一条路径。
+    val effMode = ScalePlan.spreadMode(scaleMode)
 
     val mirror = if (isRtl) Modifier.graphicsLayer { scaleX = -1f } else Modifier
 
@@ -422,32 +425,47 @@ private fun SpreadImage(
     } else Modifier.background(Color(pageBgColor))
 
     val isTablet = androidx.compose.ui.platform.LocalConfiguration.current.smallestScreenWidthDp >= 600
+    // 对齐：alignX 输出为屏空间语义（RTL 自动=右缘）；本层内层反镜像，定位偏置按镜像取反
+    val biasInnerX = ScalePlan.alignX(zoomStart, isRtl).let { if (isRtl) -it else it }
+    // ★ 双击缩放层（同单页）：clip→…→mirror→zoom→内容；origin 在镜像空间 x 取反
+    val zoomMod = if (zoom != null) Modifier.graphicsLayer {
+        val zs = zoom.scale.floatValue
+        scaleX = zs; scaleY = zs
+        transformOrigin = androidx.compose.ui.graphics.TransformOrigin(
+            if (isRtl) 1f - zoom.originX.floatValue else zoom.originX.floatValue,
+            zoom.originY.floatValue,
+        )
+    } else Modifier
     BoxWithConstraints(
-        modifier = Modifier.fillMaxSize().clipToBounds().then(bgMod).then(mirror),
-        contentAlignment = Alignment.Center,
+        modifier = Modifier.fillMaxSize().clipToBounds().then(bgMod).then(mirror).then(zoomMod),
+        contentAlignment = biasToAlignment(biasInnerX, ScalePlan.alignY(zoomStart)),
     ) {
         val img = imgBmp
-        val nativeFill = if (!fitScreen && isTablet && img != null && img.width > 0) {
-            (constraints.maxWidth.toFloat() / img.width).coerceAtMost(1f)
-        } else null
-        if (img != null && nativeFill != null && img.width * nativeFill < constraints.maxWidth) {
-            // 封顶生效：合并跨页原生宽度铺不满屏宽 → 按 1:1 居中（外层 clipToBounds 裁溢出）
-            val density = LocalDensity.current
+        if (img != null && img.width > 0) {
+            val scale = ScalePlan.baseScale(
+                effMode,
+                constraints.maxWidth.toFloat(),
+                constraints.maxHeight.toFloat(),
+                img.width.toFloat(),
+                img.height.toFloat(),
+                isTablet,
+            )
             Image(
                 bitmap = img,
                 contentDescription = null,
                 modifier = Modifier.size(
-                    with(density) { (img.width * nativeFill).toDp() },
-                    with(density) { (img.height * nativeFill).toDp() },
+                    with(LocalDensity.current) { (img.width * scale).toDp() },
+                    with(LocalDensity.current) { (img.height * scale).toDp() },
                 ),
                 contentScale = ContentScale.Fit,
             )
         } else {
+            // 跨页未就绪：空位图 1:1 缩进角落不可见，仅露背景纸色（同旧 fillMaxSize 空图观感）
             Image(
-                bitmap = img ?: emptyBmp,
+                bitmap = emptyBmp,
                 contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = contentScale,
+                modifier = Modifier.size(with(LocalDensity.current) { 1.dp }, with(LocalDensity.current) { 1.dp }),
+                contentScale = ContentScale.Fit,
             )
         }
     }

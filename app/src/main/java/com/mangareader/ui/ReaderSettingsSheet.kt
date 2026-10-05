@@ -338,7 +338,7 @@ private fun ReadingModeTab(config: ReaderConfig, mode: Mode, bookId: Long, onCon
             }
         }
 
-        CheckboxItem("自动放大横向图片（平板上建议关闭，关闭时宽图完整显示）", config.landscapeZoom) { onConfigChange(config.copy(landscapeZoom = it)) }
+        CheckboxItem("自动放大横向图片（宽图自动贴满高度；仅完整显示/铺满档生效）", config.landscapeZoom) { onConfigChange(config.copy(landscapeZoom = it)) }
         CheckboxItem("双击放大（关闭后快速连点=两次点击翻页）", config.isDoubleTapZoom) { onConfigChange(config.copy(isDoubleTapZoom = it)) }
         GroupTitle("翻页")
         CheckboxItem("翻页动画（点击翻页过渡）", config.isFlipAnimation) { onConfigChange(config.copy(isFlipAnimation = it)) }
@@ -368,22 +368,41 @@ private fun ReadingModeTab(config: ReaderConfig, mode: Mode, bookId: Long, onCon
             }
         }
         GroupTitle("画面")
-        // ★ 画面缩放二选一（2026-10-02，替代"漫画完整显示"反义开关）：把效果说直白——
-        //   fitScreen=true 完整显示（contain），false 铺满屏幕（贴宽，超出上下划着看）
+        // ★ 画面缩放五档（2026-10-05 重做，替代二选一）：ScalePlan 唯一公式出处；
+        //   条漫恒贴宽；仿真/无平移视图运行时收敛（贴高/智能→铺满防不可找回裁切、双页→铺满）
         SettingsChipRow("画面缩放") {
-            listOf("完整显示" to true, "铺满屏幕" to false).forEach { (label, value) ->
+            listOf("完整显示" to 0, "铺满屏幕" to 1, "贴满高度" to 2, "原始尺寸" to 3, "智能适应" to 4).forEach { (label, value) ->
                 FilterChip(
-                    selected = value == config.fitScreen,
-                    onClick = { onConfigChange(config.copy(fitScreen = value)) },
+                    selected = value == config.imageScaleMode,
+                    onClick = { onConfigChange(config.copy(imageScaleMode = value)) },
                     label = { Text(label, fontSize = 13.sp) },
                 )
             }
         }
         Text(
-            if (config.fitScreen) "整页缩在屏幕里，四边不裁切，可能有黑边"
-            else "放大到没有黑边，上下没看全的地方划着看",
+            when (config.imageScaleMode) {
+                0 -> "整页缩在屏幕里，四边不裁切，可能有黑边"
+                2 -> "高度贴满，宽图左右超出（翻页模式可拖动看；仿真/条漫不适用）"
+                3 -> "1:1 像素显示，大图超出部分靠拖动（仿真不可拖）"
+                4 -> "竖版页贴宽、横版页贴高，两个方向都尽量占满"
+                else -> "放大到没有黑边，上下没看全的地方划着看（条漫模式恒为贴宽）"
+            },
             fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(start = 4.dp),
+        )
+        SettingsChipRow("缩放起始位置") {
+            listOf("自动" to 0, "左" to 1, "中" to 2, "右" to 3).forEach { (label, value) ->
+                FilterChip(
+                    selected = value == config.zoomStart,
+                    onClick = { onConfigChange(config.copy(zoomStart = value)) },
+                    label = { Text(label, fontSize = 13.sp) },
+                )
+            }
+        }
+        Text(
+            "横向有留白/宽图放大后对齐哪一侧；“自动”跟随阅读方向（日漫右开→右缘）",
+            fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 4.dp, bottom = 4.dp),
         )
         CheckboxItem("拆分双页（跨页图拆成左右两页，翻页/条漫均生效）", config.doublePageSplit) { onConfigChange(config.copy(doublePageSplit = it)) }
         if (config.doublePageSplit) {

@@ -62,9 +62,14 @@ data class ReaderConfig(
     val useSSIV: Boolean = true,
     val landscapeZoom: Boolean = false,
     // ★ 双击放大开关（2026-10-05，用户"快速点击翻页和双击放大冲突"）：关=双击不再触发缩放，
-    //   快速连点全部按两次点击翻页计；条漫/翻页视图共用，仿真单页无缩放不受影响
+    //   快速连点全部按两次点击翻页计；条漫/翻页视图共用；仿真双击缩放同受此开关管
     val isDoubleTapZoom: Boolean = true,
-    val fitScreen: Boolean = false,
+    // ★ 画面缩放档位（2026-10-05 重做，替代 fitScreen 布尔，ScalePlan 是唯一公式出处）：
+    //   0=完整显示(contain) 1=铺满屏幕(贴宽,平板防糊封顶) 2=贴满高度 3=原始尺寸 4=智能适应(竖版贴宽/横版贴高)
+    //   条漫模式恒贴宽不参与；双页仿真收敛为 完整显示/铺满 两档（ScalePlan.spreadMode）
+    val imageScaleMode: Int = 1,
+    /** 缩放起始位置（mihon zoomStart）：0=自动(跟随阅读方向,RTL→右缘) 1=左 2=中 3=右；横向留白/宽图放大后对齐此缘 */
+    val zoomStart: Int = 0,
     val panNavigation: Boolean = true,
     val doublePageShift: Int = 0,
     val doublePageSplit: Boolean = false,
@@ -172,7 +177,8 @@ data class ReaderConfig(
             putBoolean("${prefix}useSSIV", useSSIV)
             putBoolean("landscapeZoom", landscapeZoom)
             putBoolean("isDoubleTapZoom", isDoubleTapZoom)
-            putBoolean("fitScreen", fitScreen)
+            putInt("imageScaleMode", imageScaleMode)
+            putInt("zoomStart", zoomStart)
             putBoolean("${prefix}panNavigation", panNavigation)
             putInt("${prefix}doublePageShift", doublePageShift)
             putBoolean("${prefix}doublePageSplit", doublePageSplit)
@@ -270,7 +276,8 @@ data class ReaderConfig(
                 useSSIV = rBoolean("useSSIV", true),
                 landscapeZoom = rBoolean("landscapeZoom", false),
                 isDoubleTapZoom = rBoolean("isDoubleTapZoom", true),
-                fitScreen = rBoolean("fitScreen", false),
+                imageScaleMode = rInt("imageScaleMode", 1).let { if (it in 0..4) it else 1 },   // 0..4 与 ScalePlan 档位一致
+                zoomStart = rInt("zoomStart", 0).let { if (it in 0..3) it else 0 },             // 0..3 与 ScalePlan zoomStart 一致
                 panNavigation = rBoolean("panNavigation", true),
                 doublePageShift = rInt("doublePageShift", 0),
                 doublePageSplit = rBoolean("doublePageSplit", false),
@@ -373,7 +380,8 @@ data class ReaderConfig(
                 "curlBackContentAlpha" -> cfg.copy(curlBackContentAlpha = v as Float)
                 "curlShadowAlpha" -> cfg.copy(curlShadowAlpha = v as Float)
                 "spineShadowAlpha" -> cfg.copy(spineShadowAlpha = v as Float)
-                "fitScreen" -> cfg.copy(fitScreen = v as Boolean)
+                "imageScaleMode" -> cfg.copy(imageScaleMode = v as Int)
+                "zoomStart" -> cfg.copy(zoomStart = v as Int)
                 "landscapeZoom" -> cfg.copy(landscapeZoom = v as Boolean)
                 "autoWebtoon" -> cfg.copy(autoWebtoon = v as Boolean)
                 "chapterTransition" -> cfg.copy(chapterTransition = v as Boolean)
@@ -445,7 +453,8 @@ data class ReaderConfig(
             "orientation" to { it.orientation },
             "autoFlipInterval" to { it.autoFlipInterval },
             "landscapeZoom" to { it.landscapeZoom },
-            "fitScreen" to { it.fitScreen },
+            "imageScaleMode" to { it.imageScaleMode },
+            "zoomStart" to { it.zoomStart },
             "autoWebtoon" to { it.autoWebtoon },
             "chapterTransition" to { it.chapterTransition },
             "autoDoubleLandscape" to { it.autoDoubleLandscape },

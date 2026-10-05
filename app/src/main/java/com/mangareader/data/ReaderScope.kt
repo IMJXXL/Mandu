@@ -39,7 +39,7 @@ object ReaderScope {
         "orientation", "readBackground",
         "isFlipAnimation", "isPageCurlAnimation", "isCurlContentAreaOnly",
         "curlBackContentAlpha", "curlShadowAlpha", "spineShadowAlpha",
-        "fitScreen", "landscapeZoom", "useSSIV", "isDoubleTapZoom",
+        "imageScaleMode", "zoomStart", "landscapeZoom", "useSSIV", "isDoubleTapZoom",
         "isShowPageNum", "isKeepScreenOn", "isImmersiveMode",
         "autoWebtoon", "chapterTransition", "seamlessNextVolume", "autoFlipInterval",
         "isEinkMode", "isEinkDither", "einkDitherAlgorithm", "einkDitherLevels",

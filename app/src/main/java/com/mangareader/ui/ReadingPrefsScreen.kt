@@ -46,8 +46,8 @@ import kotlinx.coroutines.withContext
 // ── 编辑器描述 ──────────────────────────────────────────────────────────────
 
 internal sealed interface PrefEditor {
-    /** 选项块（value: String/Int/Long/Boolean，写入类型与默认值一致） */
-    data class Chips(val options: List<Pair<String, Any>>) : PrefEditor
+    /** 选项块（value: String/Int/Long/Boolean，写入类型与默认值一致）；info=选项下的说明小字 */
+    data class Chips(val options: List<Pair<String, Any>>, val info: String? = null) : PrefEditor
     data class Toggle(val info: String? = null) : PrefEditor
     /** 滑条；isFloat=false 时写 Int */
     data class Slider(
@@ -109,7 +109,7 @@ internal val PREF_DEFAULTS: Map<String, Any> = mapOf(
     "brightnessEnabled" to false, "screenBrightnessEnabled" to false, "contrastEnabled" to false, "gammaEnabled" to false,
     "textureEnabled" to false, "texturePresetId" to 0, "textureAlpha" to 15, "textureConcentration" to 100, "textureScope" to 0,
     "ambienceSound" to "", "ambienceVolume" to 60,
-    "fitScreen" to false, "seamlessNextVolume" to true, "tileModeEnabled" to false,
+    "imageScaleMode" to 1, "zoomStart" to 0, "seamlessNextVolume" to true, "tileModeEnabled" to false,
     "tallSplitEnabled" to false, "tallSplitSensitivity" to 0, "downsampleTier" to "STANDARD", "clickFlipType" to "LEFT_RIGHT",
     "scrollMode" to "HORIZONTAL_LEFT",
 )
@@ -128,7 +128,7 @@ internal val PREF_ROWS: List<PrefRow> = listOf(
         PrefEditor.Part("trimThreshold", "检测阈值（默认 220）", PrefEditor.Slider(180f, 250f, 69, { "阈值 ${it.toInt()}" })),
         PrefEditor.Part("trimWhiteRatio", "白色比例（默认90%）", PrefEditor.Slider(0.5f, 0.95f, 45, pct)),
     )), subKeys = listOf("trimThreshold", "trimWhiteRatio", "trimFactor")),
-    PrefRow("landscapeZoom", "自动放大横向图片", 0, PrefEditor.Toggle(info = "平板上建议关闭，关闭时宽图完整显示")),
+    PrefRow("landscapeZoom", "自动放大横向图片", 0, PrefEditor.Toggle(info = "宽图自动贴满高度；仅“完整显示/铺满屏幕”档生效；条漫模式不适用")),
     PrefRow("isDoubleTapZoom", "双击放大", 0, PrefEditor.Toggle(info = "关闭后双击不再缩放，快速连点按两次点击翻页计")),
     PrefRow("isFlipAnimation", "翻页动画", 0, PrefEditor.Group(listOf(
         PrefEditor.Part("isFlipAnimation", "翻页动画（点击翻页过渡）", PrefEditor.Toggle()),
@@ -139,8 +139,14 @@ internal val PREF_ROWS: List<PrefRow> = listOf(
         PrefEditor.Part("spineShadowAlpha", "书脊阴影浓度（双页书脊沟，默认9%）", PrefEditor.Slider(0f, 0.3f, 29, pct)),
     )), section = "翻页",
         subKeys = listOf("isPageCurlAnimation", "isCurlContentAreaOnly", "curlBackContentAlpha", "curlShadowAlpha", "spineShadowAlpha")),
-    PrefRow("fitScreen", "画面缩放", 0, PrefEditor.Chips(
-        listOf("完整显示" to true, "铺满屏幕" to false)), section = "画面"),
+    PrefRow("imageScaleMode", "画面缩放", 0, PrefEditor.Chips(
+        listOf("完整显示" to 0, "铺满屏幕" to 1, "贴满高度" to 2, "原始尺寸" to 3, "智能适应" to 4),
+        info = "条漫模式恒贴宽；仿真/无平移视图自动收敛：贴满高度→铺满（防宽图裁切找不回）、智能→铺满、双页→铺满"
+    ), section = "画面"),
+    PrefRow("zoomStart", "缩放起始位置", 0, PrefEditor.Chips(
+        listOf("自动" to 0, "左" to 1, "中" to 2, "右" to 3),
+        info = "横向有留白/宽图放大后对齐哪一侧；“自动”跟随阅读方向（日漫右开→右缘）"
+    ), section = "画面"),
     PrefRow("useSSIV", "高清缩放", 0, PrefEditor.Toggle(), section = "画面"),
     PrefRow("doublePageSplit", "拆分双页", 0, PrefEditor.Group(listOf(
         PrefEditor.Part("doublePageSplit", "拆分双页（跨页图拆成左右两页）", PrefEditor.Toggle()),
@@ -616,7 +622,10 @@ private fun PrefRowBlock(
         is PrefEditor.Chips -> {
             Column(Modifier.padding(vertical = 6.dp)) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text(row.label, fontSize = 15.sp, modifier = Modifier.weight(1f))
+                    Column(Modifier.weight(1f)) {
+                        Text(row.label, fontSize = 15.sp)
+                        ed.info?.let { Text(it, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                    }
                     ScopeBadges(row, isBook, covered, onScopeSwitch, onClear)
                 }
                 InlineChips(null, valueOf(values, row.key), row.key, ed.options, !isBook, onWrite)

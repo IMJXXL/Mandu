@@ -13,7 +13,7 @@ object SettingsExporter {
         "pageLayout", "useSSIV", "panNavigation", "doublePageShift", "doublePageSplit",
         "doublePageReverse", "centerGapType", "forceFullDecode",
         "isFlipAnimation", "isShowPageNum", "isKeepScreenOn", "isImmersiveMode",
-        "orientation", "landscapeZoom", "fitScreen", "autoWebtoon", "chapterTransition",
+        "orientation", "landscapeZoom", "imageScaleMode", "zoomStart", "autoWebtoon", "chapterTransition",
         "seamlessNextVolume",
         "reader_volume_keys", "reader_volume_keys_inverted", "long_press_save",
         "reader_hw_keys_enabled", "hw_key_mappings",

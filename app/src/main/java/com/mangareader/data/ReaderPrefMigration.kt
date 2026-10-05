@@ -144,6 +144,21 @@ object ReaderPrefMigration {
         }
     }
 
+    /** ★ 画面缩放档位迁移（scale_mode_v1，2026-10-05，画面缩放重做 fitScreen 布尔→imageScaleMode 档位）：
+     *  fitScreen=true（完整显示）→ 档位 0（MODE_CONTAIN）；false/缺省（铺满屏幕=旧默认）→ 不写，
+     *  直接落新默认 1（MODE_FIT_WIDTH），行为与旧默认一致。写过的设备以 contains("imageScaleMode") 幂等跳过。 */
+    fun scaleModeFromLegacyFitScreenIfNeeded(prefs: SharedPreferences) {
+        if (prefs.contains("imageScaleMode")) return
+        if (!prefs.getBoolean("fitScreen", false)) return
+        synchronized(ReaderPrefMigration) {
+            if (prefs.contains("imageScaleMode")) return
+            prefs.edit()
+                .putInt("imageScaleMode", 0)
+                .putBoolean("scale_mode_v1_done", true)
+                .apply()
+        }
+    }
+
     /** 回滚：从最近一份快照恢复 book_* 键（当前不在快照内的 book_ 键删除） */
     fun restoreLatestSnapshot(context: Context): Boolean {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)

@@ -73,7 +73,8 @@ class ConfigManager(private val context: Context) {
             put("textureConcentration", config.textureConcentration)
             put("ambienceSound", config.ambienceSound)
             put("ambienceVolume", config.ambienceVolume)
-            put("fitScreen", config.fitScreen)
+            put("imageScaleMode", config.imageScaleMode)
+            put("zoomStart", config.zoomStart)
             put("seamlessNextVolume", config.seamlessNextVolume)
             put("tileModeEnabled", config.tileModeEnabled)
             put("tallSplitEnabled", config.tallSplitEnabled)
@@ -150,7 +151,8 @@ class ConfigManager(private val context: Context) {
                 textureConcentration = json.optInt("textureConcentration", 100),
                 ambienceSound = json.optString("ambienceSound", ""),
                 ambienceVolume = json.optInt("ambienceVolume", 60),
-                fitScreen = json.optBoolean("fitScreen", false),
+                imageScaleMode = json.optInt("imageScaleMode", 1).let { if (it in 0..4) it else 1 },
+                zoomStart = json.optInt("zoomStart", 0).let { if (it in 0..3) it else 0 },
                 seamlessNextVolume = json.optBoolean("seamlessNextVolume", true),
                 tileModeEnabled = json.optBoolean("tileModeEnabled", false),
                 tallSplitEnabled = json.optBoolean("tallSplitEnabled", false),

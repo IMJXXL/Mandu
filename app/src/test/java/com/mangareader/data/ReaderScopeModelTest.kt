@@ -42,9 +42,9 @@ class ReaderScopeModelTest {
 
     @Test
     fun `priority global beats default for global scope`() {
-        // fitScreen 预设全局：全局键生效
-        putGlobal("fitScreen", true)
-        assertEquals(true, ReaderConfig.load(prefs, 1L).fitScreen)
+        // imageScaleMode 预设全局（2026-10-05 替代 fitScreen 布尔）：全局键生效
+        putGlobal("imageScaleMode", 0)
+        assertEquals(0, ReaderConfig.load(prefs, 1L).imageScaleMode)
     }
 
     @Test
@@ -206,14 +206,14 @@ class ReaderScopeModelTest {
     }
 
     @Test
-    fun `explicit book scope on preset global works - fitScreen`() {
-        // 画面缩放：预设全局、可切单本（不在固定全局集）
-        ReaderScope.setScope(prefs, "fitScreen", ReaderScope.SCOPE_BOOK)
-        ReaderScope.write(prefs, 1L, "fitScreen", true)
-        assertEquals(true, prefs.getBoolean("book_1_fitScreen", false))
-        assertEquals(true, ReaderConfig.load(prefs, 1L).fitScreen)
-        // 其他书不受影响（出厂默认 false）
-        assertEquals(false, ReaderConfig.load(prefs, 2L).fitScreen)
+    fun `explicit book scope on preset global works - imageScaleMode`() {
+        // 画面缩放档位（2026-10-05 替代 fitScreen 布尔）：预设全局、可切单本（不在固定全局集）
+        ReaderScope.setScope(prefs, "imageScaleMode", ReaderScope.SCOPE_BOOK)
+        ReaderScope.write(prefs, 1L, "imageScaleMode", 0)
+        assertEquals(0, prefs.getInt("book_1_imageScaleMode", -1))
+        assertEquals(0, ReaderConfig.load(prefs, 1L).imageScaleMode)
+        // 其他书不受影响（出厂默认 1=铺满屏幕）
+        assertEquals(1, ReaderConfig.load(prefs, 2L).imageScaleMode)
     }
 
     // ── 写路由 ──

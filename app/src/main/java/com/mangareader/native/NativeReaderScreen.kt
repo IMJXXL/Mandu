@@ -115,7 +115,9 @@ fun NativeReaderScreen(
     landscapeZoom: Boolean = true,
     // ★ 双击放大开关（2026-10-05）：关=SSIV/条漫双击不缩放，快速连点按两次点击翻页计
     doubleTapZoom: Boolean = true,
-    fitScreen: Boolean = false,
+    // ★ 画面缩放档位（ScalePlan 唯一公式出处；2026-10-05 替代 fitScreen 布尔）+缩放起始位置
+    scaleMode: Int = 1,
+    zoomStart: Int = 0,
     trimWhiteBorder: Boolean = false,
     trimThreshold: Int = 220,
     trimWhiteRatio: Float = 0.90f,
@@ -293,7 +295,8 @@ fun NativeReaderScreen(
             delegate.setCenterGapType(centerGapType)
             delegate.setLandscapeZoom(landscapeZoom)
             delegate.setDoubleTapZoom(doubleTapZoom)
-            delegate.setFitScreen(fitScreen)
+            delegate.setScaleMode(scaleMode)
+            delegate.setZoomStart(zoomStart)
             delegate.setTrimWhiteBorder(trimWhiteBorder, trimThreshold, trimWhiteRatio)
             delegate.setFixedCrop(fixedCropL, fixedCropT, fixedCropR, fixedCropB)
             delegate.setPanNavigation(panNavigation)
@@ -315,7 +318,10 @@ fun NativeReaderScreen(
         if (delegate is com.mangareader.native.curl.CurlReaderView) {
             delegate.pageBgColor = pageBgColor
             delegate.landscapeZoom = landscapeZoom
-            delegate.fitScreen = fitScreen
+            delegate.scaleMode = scaleMode
+            delegate.zoomStart = zoomStart
+            delegate.doubleTapZoom = doubleTapZoom
+            delegate.doubleTapZoom = doubleTapZoom
             delegate.curlContentAreaOnly = curlContentAreaOnly
             delegate.setTrimWhiteBorder(trimWhiteBorder, trimThreshold, trimWhiteRatio)
             delegate.setFixedCrop(fixedCropL, fixedCropT, fixedCropR, fixedCropB)
@@ -326,7 +332,8 @@ fun NativeReaderScreen(
         if (delegate is com.mangareader.native.curl.CurlDoublePageView) {
             delegate.pageBgColor = pageBgColor
             delegate.landscapeZoom = landscapeZoom
-            delegate.fitScreen = fitScreen
+            delegate.scaleMode = scaleMode
+            delegate.zoomStart = zoomStart
             delegate.curlContentAreaOnly = curlContentAreaOnly
             delegate.setTrimWhiteBorder(trimWhiteBorder, trimThreshold, trimWhiteRatio)
             delegate.setFixedCrop(fixedCropL, fixedCropT, fixedCropR, fixedCropB)

@@ -71,7 +71,11 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     // ★ 双击放大开关（config.isDoubleTapZoom）：false=SSIV 双击不缩放，连点=两次点击翻页
     var doubleTapZoom = true
         private set
-    private var fitScreenEnabled = true
+    // ★ 画面缩放档位（ScalePlan 唯一公式出处；2026-10-05 替代 fitScreen 布尔）
+    var scaleMode = ScalePlan.MODE_FIT_WIDTH
+        private set
+    var zoomStart = ScalePlan.ZOOM_DEFAULT
+        private set
     private var tileModeEnabled = false
     private val tileFileCache = java.util.concurrent.ConcurrentHashMap<Int, java.io.File>()
     private val tileTempFiles = java.util.Collections.synchronizedSet(HashSet<java.io.File>())
@@ -87,6 +91,11 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     private val fixedCropActive: Boolean
         get() = cropL > 0.001f || cropT > 0.001f || cropR > 0.001f || cropB > 0.001f
     private var panNavigation = false
+    /** 最近一次 onPageSelected 的 position——bind 时算翻页方向（landscapeZoom 对齐用，mihon 同款语义） */
+    @Volatile private var lastSelectedPosition = -1
+
+    /** bind 时翻页方向：position≥上次选中位=前进（首次打开恒前进）；landscapeZoom 落点用 */
+    fun bindForwardFor(position: Int): Boolean = position >= lastSelectedPosition
     /** ★ 墨水屏灰阶抖动参数（解码管线参数，非 UI 状态；变更经 applyEinkDitherNow 即时生效） */
     private var einkDither = false
     private var einkDitherAlgorithm = 0
@@ -563,6 +572,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                         else -> 2 * s
                     }
                     val realPos = pageIdx
+                    lastSelectedPosition = position
                     com.mangareader.viewer.ArchiveEngine.d("PagerView", "onPageSelected pos=$position pageIdx=$pageIdx realPos=$realPos rtl=$isRtl double=$doublePageMode total=${pageList.size} curPage=$currentPage")
                     if (realPos in pageList.indices && realPos != currentPage) {
                         // ★ 跨页落地半页位（2026-10-04）：按 pending 恢复——前进/跳页=左半，
@@ -812,12 +822,13 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
      *   独立 setter 在进书 Live-sync 连发时会触发 2-3 次全量重绑（每次可见 spread 全部
      *   重新 mergeBitmaps 全屏分配，实测 30-180MB 瞬时垃圾）。单次重绑消除峰值。
      */
-    fun applyLivePrefs(marginDp: Int? = null, gapType: Int? = null, fit: Boolean? = null, zoom: Boolean? = null) {
+    fun applyLivePrefs(marginDp: Int? = null, gapType: Int? = null, mode: Int? = null, zoom: Boolean? = null, zoomStart: Int? = null) {
         var changed = false
         if (marginDp != null && imageMarginH != marginDp) { imageMarginH = marginDp; changed = true }
         if (gapType != null && centerGapType != gapType) { centerGapType = gapType; changed = true }
-        if (fit != null && fitScreenEnabled != fit) { fitScreenEnabled = fit; changed = true }
+        if (mode != null && scaleMode != mode) { scaleMode = mode; changed = true }
         if (zoom != null && landscapeZoomEnabled != zoom) { landscapeZoomEnabled = zoom; changed = true }
+        if (zoomStart != null && this.zoomStart != zoomStart) { this.zoomStart = zoomStart; changed = true }
         if (changed) pagerAdapter?.notifyDataSetChanged()
     }
 
@@ -838,7 +849,9 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         } catch (_: Exception) {}
     }
 
-    fun setFitScreen(enabled: Boolean) { applyLivePrefs(fit = enabled) }
+    fun setScaleMode(mode: Int) { applyLivePrefs(mode = mode) }
+
+    fun setZoomStart(start: Int) { applyLivePrefs(zoomStart = start) }
 
     fun setTileModeEnabled(enabled: Boolean) {
         this.tileModeEnabled = enabled
@@ -1626,8 +1639,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 if (shiftActive && shiftSpread == 0) {
                     val bmp = bitmapCache[leftIdx]
                     if (bmp != null && !bmp.isRecycled) {
-                        val needFitWidth = bmp.width > holder.itemView.width
-                        holder.setImage(bmp, useSSIV, landscapeZoomEnabled, fitWidth = needFitWidth)
+                        holder.setImage(bmp, useSSIV, landscapeZoomEnabled, forward = bindForwardFor(position))
                     } else {
                         bitmapCache.remove(leftIdx)
                         holder.clear()
@@ -1694,9 +1706,9 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                             if (fresh !== leftBmp && fresh !== rightBmp) mergedCache.put(cacheKey, fresh)
                             fresh
                         }
-                        holder.setImage(merged, useSSIV, landscapeZoomEnabled, fitWidth = true)
+                        holder.setImage(merged, useSSIV, landscapeZoomEnabled)
                     } catch (_: OutOfMemoryError) {
-                        holder.setImage(leftBmp, useSSIV, landscapeZoomEnabled, fitWidth = true)
+                        holder.setImage(leftBmp, useSSIV, landscapeZoomEnabled)
                     }
                     return
                 }
@@ -1733,8 +1745,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                             (splitHalfRight && realIdx == currentPage)
                         holder.setImageSplit(bmp, showRight, pageUseSsiv, landscapeZoomEnabled)
                     } else {
-                        val needFitWidth = bmp.width > holder.itemView.width
-                        holder.setImage(bmp, pageUseSsiv, landscapeZoomEnabled, fitWidth = needFitWidth)
+                        holder.setImage(bmp, pageUseSsiv, landscapeZoomEnabled, forward = bindForwardFor(position))
                     }
                     return
                 }
@@ -1803,7 +1814,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             }
         }
 
-        fun setImage(bmp: Bitmap, useSsiv: Boolean, landscapeZoom: Boolean = true, fitWidth: Boolean = false) {
+        fun setImage(bmp: Bitmap, useSsiv: Boolean, landscapeZoom: Boolean = true, forward: Boolean = true) {
             isSplitPage = false
             if (bmp.isRecycled) return
             heldBitmap = bmp
@@ -1819,7 +1830,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 ssv.setOnImageEventListener(object : com.davemorrissey.labs.subscaleview.SubsamplingScaleImageView.DefaultOnImageEventListener() {
                     override fun onReady() {
                         ssv.setOnImageEventListener(null)
-                        applyScale(ssv, bmp, fitWidth, landscapeZoom)
+                        applyScale(ssv, bmp, landscapeZoom, forward)
                     }
                     override fun onImageLoadError(e: Exception) {
                         ssv.setOnImageEventListener(null)
@@ -1827,12 +1838,45 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 })
                 ssv.setImage(com.davemorrissey.labs.subscaleview.ImageSource.cachedBitmap(bmp))
             } else {
-                // 不使用 SSIV：用 ImageView FIT_CENTER（同步设 bitmap，无需 loadingBar）
+                // 不使用 SSIV：静态 ImageView 按档位生效（2026-10-05 重做前恒 FIT_CENTER，
+                // "铺满屏幕"在此路径从未生效）。不可平移 → staticMode 收敛（贴高/智能→铺满防
+                // 不可找回裁切），原尺寸=CENTER 1:1，铺满=MATRIX（顶/起始缘对齐）
                 loadingBar?.visibility = View.GONE
                 ssiv?.visibility = View.GONE
                 iv?.visibility = View.VISIBLE
-                iv?.scaleType = ImageView.ScaleType.FIT_CENTER
+                applyStaticMode(iv, bmp)
                 try { iv?.setImageBitmap(bmp) } catch (_: Exception) {}
+            }
+        }
+
+        /** 非 SSIV 静态图的档位映射（ZoomStart 对齐/平板防糊与 SSIV 路径同源 ScalePlan） */
+        private fun applyStaticMode(iv: ImageView?, bmp: Bitmap) {
+            iv ?: return
+            val effMode = ScalePlan.staticMode(scaleMode)
+            when (effMode) {
+                ScalePlan.MODE_ORIGINAL -> {
+                    iv.scaleType = ImageView.ScaleType.CENTER
+                    iv.imageMatrix = android.graphics.Matrix()
+                }
+                ScalePlan.MODE_CONTAIN -> {
+                    iv.scaleType = ImageView.ScaleType.FIT_CENTER
+                    iv.imageMatrix = android.graphics.Matrix()
+                }
+                else -> {
+                    iv.scaleType = ImageView.ScaleType.MATRIX
+                    iv.post {
+                        val vw = iv.width.toFloat(); val vh = iv.height.toFloat()
+                        if (vw <= 0f || vh <= 0f || bmp.isRecycled) return@post
+                        val isTablet = resources.configuration.smallestScreenWidthDp >= 600
+                        val scale = ScalePlan.baseScale(effMode, vw, vh, bmp.width.toFloat(), bmp.height.toFloat(), isTablet)
+                        val m = android.graphics.Matrix()
+                        m.setScale(scale, scale)
+                        val gx = ScalePlan.edgeGaps(ScalePlan.alignX(zoomStart, isRtl), vw, bmp.width * scale)
+                        val gy = ScalePlan.edgeGaps(ScalePlan.alignY(zoomStart), vh, bmp.height * scale)
+                        m.postTranslate(gx.first, gy.first)
+                        iv.imageMatrix = m
+                    }
+                }
             }
         }
 
@@ -1878,16 +1922,12 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 ssiv.post { applySplitScale(ssiv, bmp, showRight) }
                 return
             }
-            val scaleByWidth = ssiv.width.toFloat() / (bmp.width / 2f)
-            // ★ 画面缩放跟随：完整显示=contain（竖屏贴宽/横屏按高缩小完整可见）；
-            //   铺满屏幕=恒贴宽（横屏半页放大铺满，上下超出在 SSIV 内拖动看——修"横屏拆分失效"）
-            val targetScale = if (!fitScreenEnabled) scaleByWidth
-            else if (ssiv.height > 0) {
-                val scaleByHeight = ssiv.height.toFloat() / bmp.height.toFloat()
-                minOf(scaleByWidth, scaleByHeight)
-            } else {
-                scaleByWidth
-            }
+            // ★ 拆分视口显示半页：以半页宽为"位图宽"走 ScalePlan 统一公式（完整显示=contain、
+            //   铺满=贴宽带平板防糊封顶、贴高/原尺寸/智能照档位语义）；
+            //   视口定位钉在半页（showRight），zoomStart 对齐不参与——视口本身就是"页"
+            val halfW = (bmp.width / 2f).coerceAtLeast(1f)
+            val isTablet = ssiv.resources.configuration.smallestScreenWidthDp >= 600
+            val targetScale = ScalePlan.baseScale(scaleMode, ssiv.width.toFloat(), ssiv.height.toFloat(), halfW, bmp.height.toFloat(), isTablet)
             val centerX = if (showRight) bmp.width * 3f / 4f else bmp.width / 4f
             val centerY = bmp.height / 2f
             // ★ 视口基准：拆分视口的定位比例就是"未放大"态——横滑放行翻页（修滑动翻页失效）、
@@ -1897,38 +1937,47 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         }
 
 
-        private fun applyScale(ssiv: PagerSSIV, bmp: Bitmap, fitWidth: Boolean, landscapeZoom: Boolean) {
+        private fun applyScale(ssiv: PagerSSIV, bmp: Bitmap, landscapeZoom: Boolean, forward: Boolean) {
             if (!ssiv.isReady || ssiv.width <= 0) {
-                ssiv.post { applyScale(ssiv, bmp, fitWidth, landscapeZoom) }
+                ssiv.post { applyScale(ssiv, bmp, landscapeZoom, forward) }
                 return
             }
-            // 等 layout 完成后再设 scale（避免 fitToLower 在 layout 时覆盖）
+            applyPlanScale(ssiv, bmp.width.toFloat(), bmp.height.toFloat(), landscapeZoom, forward)
+        }
+
+        /**
+         * ★ 画面缩放唯一入口（2026-10-05 重做）：比例/对齐/landscapeZoom 全部从 ScalePlan 派生，
+         * 消灭 bitmap/瓦片/拆分三处内联公式（曾产生"仿真缺平板封顶"式分裂 bug）。
+         * 等 layout 完成后再设 scale（避免 fitToLower 在 layout 时覆盖）。
+         */
+        private fun applyPlanScale(ssiv: PagerSSIV, iw: Float, ih: Float, landscapeZoom: Boolean, forward: Boolean) {
             ssiv.viewTreeObserver.addOnGlobalLayoutListener(object : android.view.ViewTreeObserver.OnGlobalLayoutListener {
                 override fun onGlobalLayout() {
                     ssiv.viewTreeObserver.removeOnGlobalLayoutListener(this)
                     val w = ssiv.width.toFloat()
                     val h = ssiv.height.toFloat()
-                    if (w > 0 && bmp.width > 0) {
-                        // fitScreen=true（默认）：等比 contain（哪边先到屏幕边界就停），完整不裁切
-                        // fitScreen=false：fit-width（贴满宽度，竖图可能上下裁切）
-                        // ★ 平板防糊：贴宽模式放大超过位图原生分辨率（scale>1）时封顶到 1，
-                        //   避免小页在大屏被拉糊；手机路径不变（scale 通常<1 无影响）
-                        val scale = if (fitScreenEnabled && h > 0) minOf(w / bmp.width, h / bmp.height)
-                            else if (resources.configuration.smallestScreenWidthDp >= 600) minOf(w / bmp.width, 1f)
-                            else w / bmp.width
-                        // ★ 视口基准：铺满屏幕的贴宽比例就是"未放大"态（手势分流判定用）
+                    if (w > 0 && iw > 0) {
+                        val isTablet = ssiv.resources.configuration.smallestScreenWidthDp >= 600
+                        val scale = ScalePlan.baseScale(scaleMode, w, h, iw, ih, isTablet)
+                        // ★ 视口基准：基线比例就是"未放大"态（手势分流判定用）
                         ssiv.viewportBaseScale = scale
-                        ssiv.setScaleAndCenter(scale, android.graphics.PointF(bmp.width / 2f, bmp.height / 2f))
+                        val cx = ScalePlan.centerX(zoomStart, isRtl, w, iw, scale)
+                        val cy = ScalePlan.centerY(zoomStart, h, ih, scale)
+                        ssiv.setScaleAndCenter(scale, android.graphics.PointF(cx, cy))
                     }
                 }
             })
-            // landscapeZoom：宽图自动放大适配高度（fitScreen 开时不插手，保持 contain）
-            if (landscapeZoom && !fitScreenEnabled && bmp.width > bmp.height) {
+            // landscapeZoom：宽图自动放大适配高度（仅 contain/贴宽档插手；对齐 zoomStart，
+            // 前进落阅读起始缘、回退落结束缘——mihon 同款）
+            if (landscapeZoom && ScalePlan.landscapeZoomable(scaleMode) && iw > ih) {
                 ssiv.handler?.postDelayed({
                     if (ssiv.isReady) {
-                        val targetScale = ssiv.height.toFloat() / bmp.height.toFloat()
-                        val center = ssiv.center ?: android.graphics.PointF(bmp.width / 2f, bmp.height / 2f)
-                        ssiv.animateScaleAndCenter(targetScale, center)
+                        val targetScale = ssiv.height.toFloat() / ih
+                        val cx = ScalePlan.landscapeZoomCenterX(zoomStart, isRtl, forward, ssiv.width.toFloat(), iw, targetScale)
+                        val cy = if (ScalePlan.alignY(zoomStart) == 0)
+                            (ssiv.center?.y ?: ih / 2f)
+                        else ssiv.height.toFloat() / targetScale / 2f
+                        ssiv.animateScaleAndCenter(targetScale, android.graphics.PointF(cx, cy))
                             ?.withDuration(500)?.withInterruptible(true)?.start()
                     }
                 }, 1000)
@@ -2007,30 +2056,9 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                     loadingBar?.visibility = View.GONE
                     val sw = ssv.sWidth; val sh = ssv.sHeight
                     if (sw <= 0 || sh <= 0) return
-                    ssv.viewTreeObserver.addOnGlobalLayoutListener(object : android.view.ViewTreeObserver.OnGlobalLayoutListener {
-                        override fun onGlobalLayout() {
-                            ssv.viewTreeObserver.removeOnGlobalLayoutListener(this)
-                            val w = ssv.width.toFloat(); val h = ssv.height.toFloat()
-                            if (w > 0 && sw > 0) {
-                                val isTablet = ssv.resources.configuration.smallestScreenWidthDp >= 600
-                                val scale = if (fitScreenEnabled && h > 0) minOf(w / sw, h / sh)
-                                    else if (h > 0 && sw > sh && !landscapeZoom && isTablet) minOf(w / sw, h / sh)
-                                    else if (isTablet) minOf(w / sw, 1f)
-                                    else w / sw
-                                ssv.viewportBaseScale = scale
-                                ssv.setScaleAndCenter(scale, android.graphics.PointF(sw / 2f, sh / 2f))
-                            }
-                        }
-                    })
-                    if (landscapeZoom && sw > sh) {
-                        ssv.handler?.postDelayed({
-                            if (ssv.isReady) {
-                                val targetScale = ssv.height.toFloat() / sh.toFloat()
-                                val center = ssv.center ?: android.graphics.PointF(sw / 2f, sh / 2f)
-                                ssv.animateScaleAndCenter(targetScale, center)?.withDuration(500)?.withInterruptible(true)?.start()
-                            }
-                        }, 1000)
-                    }
+                    // ★ 瓦片路径并入 applyPlanScale 统一公式（原内联版还有一处
+                    //   "平板宽图+landscapeZoom关=contain"的分裂特例，一并消灭）
+                    applyPlanScale(ssv, sw.toFloat(), sh.toFloat(), landscapeZoom, forward = true)
                 }
                 override fun onImageLoadError(e: Exception) { ssv.setOnImageEventListener(null); loadingBar?.visibility = View.GONE }
             })

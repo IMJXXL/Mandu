@@ -1,5 +1,7 @@
 package com.mangareader.native.curl
 
+import com.mangareader.native.ScalePlan
+
 import android.content.Context
 import android.graphics.Bitmap
 import android.view.GestureDetector
@@ -40,14 +42,32 @@ class CurlDoublePageView(context: Context) : FrameLayout(context), ReaderViewDel
     private val currentPageState = mutableIntStateOf(0)
     private var currentPage: Int
         get() = currentPageState.intValue
-        set(value) { currentPageState.intValue = value }
+        set(value) {
+            currentPageState.intValue = value
+            curlZoomState.reset()   // 翻跨页复位双击缩放
+        }
     private var isRtl = false
     private var doublePageShift = false
     private var doublePageReverse = false
 
     var pageBgColor: Int = android.graphics.Color.parseColor("#FFFFFF")
-    var landscapeZoom: Boolean = false
-    var fitScreen: Boolean = false
+    // ★ 缩放参数用 Compose state 承载（同 CurlReaderView）：普通 var 改了不重组
+    private val landscapeZoomState = mutableStateOf(false)
+    var landscapeZoom: Boolean
+        get() = landscapeZoomState.value
+        set(value) { landscapeZoomState.value = value }
+    // ★ 画面缩放档位/缩放起始位置（ScalePlan 唯一公式出处；2026-10-05 替代 fitScreen 布尔）
+    private val scaleModeState = mutableIntStateOf(ScalePlan.MODE_FIT_WIDTH)
+    var scaleMode: Int
+        get() = scaleModeState.intValue
+        set(value) { scaleModeState.intValue = value }
+    private val zoomStartState = mutableIntStateOf(ScalePlan.ZOOM_DEFAULT)
+    var zoomStart: Int
+        get() = zoomStartState.intValue
+        set(value) { zoomStartState.intValue = value }
+    // ★ 双击缩放（同单页，作用于整个跨页显示矩形）
+    var doubleTapZoom = true
+    val curlZoomState = CurlZoomState()
     // 「仅画面区域」用 Compose 状态承载：NES 里 delegate.setup()（内部 renderCompose 组合）
     // 先执行、本字段赋值在后，普通 var 赋值不触发重组 → 勾选设置后当前页不变，翻页时
     // 其他状态变化引起重组才读到新值。改 state 后赋值即重组，当前页立即应用留边。
@@ -117,6 +137,18 @@ class CurlDoublePageView(context: Context) : FrameLayout(context), ReaderViewDel
     }
 
     private val gestureDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
+        override fun onDoubleTap(e: MotionEvent): Boolean {
+            // ★ 仿真双击缩放（作用于整个跨页）：1x↔2x；isDoubleTapZoom=false 完全关闭
+            if (!doubleTapZoom || width == 0 || height == 0) return false
+            if (curlZoomState.scale.floatValue > 1.5f) {
+                curlZoomState.reset()
+            } else {
+                curlZoomState.originX.floatValue = (e.x / width).coerceIn(0f, 1f)
+                curlZoomState.originY.floatValue = (e.y / height).coerceIn(0f, 1f)
+                curlZoomState.scale.floatValue = 2f
+            }
+            return true
+        }
         override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
             if (width == 0 || height == 0) return false
             val fx = e.x / width
@@ -263,7 +295,9 @@ class CurlDoublePageView(context: Context) : FrameLayout(context), ReaderViewDel
                 pageBgColor = pageBgColor,
                 cache = cache,
                 landscapeZoom = landscapeZoom,
-                fitScreen = fitScreen,
+                scaleMode = scaleMode,
+                zoomStart = zoomStart,
+                zoom = if (doubleTapZoom) curlZoomState else null,
                 curlContentAreaOnly = curlContentAreaOnly,
                 backContentAlpha = curlBackContentAlpha,
                 shadowAlpha = curlShadowAlpha,
