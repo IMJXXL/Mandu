@@ -73,11 +73,19 @@ class WebDavArchiveByteSource(
                 knownSize,
             )
             if (readahead) {
-                ReadAheadArchiveByteSource(
+                val readAhead = ReadAheadArchiveByteSource(
                     inner = raw,
                     sequentialWindow = sequentialWindow,
                     preferSequential = preferSequential,
                     pipeline = pipeline,
+                )
+                // ★ 2026-10-05 归档流热页缓存（同 SmbArchiveByteSource）：ReadAhead 单移动窗口
+                //   回看必重走网络；块缓存只截留需求读（预读不经过本层不冲刷），近期页回看零网络
+                com.hippo.ehviewer.library.BlockCacheArchiveByteSource(
+                    inner = readAhead,
+                    knownSize = knownSize,
+                    blockSize = com.hippo.ehviewer.library.BlockCacheArchiveByteSource.ARCHIVE_STREAM_BLOCK_SIZE,
+                    maxBlocks = com.hippo.ehviewer.library.BlockCacheArchiveByteSource.ARCHIVE_STREAM_MAX_BLOCKS,
                 )
             } else {
                 raw

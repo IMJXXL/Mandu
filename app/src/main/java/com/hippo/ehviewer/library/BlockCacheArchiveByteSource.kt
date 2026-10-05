@@ -125,6 +125,16 @@ class BlockCacheArchiveByteSource(
         const val VIDEO_MAX_BLOCKS = 24
 
         /**
+         * ★ 2026-10-05 远程归档流（zip/cbz 漫画阅读）：2MiB × 32 = 64MiB。
+         *   此前 SMB/WebDAV 归档链路只有 ReadAhead 单移动窗口、零持久缓存——回看任何一页
+         *   都要整页重走网络（工单实锤：11 分钟后重看同一页仍 3000ms）。块缓存在 ReadAhead
+         *   外层只截留需求读（ReadAhead 预读窗口不经过本层，不会冲刷热页），64MiB 约容
+         *   20-30 页漫画，翻回去秒开。
+         */
+        const val ARCHIVE_STREAM_BLOCK_SIZE = 2 * 1024 * 1024
+        const val ARCHIVE_STREAM_MAX_BLOCKS = 32
+
+        /**
          * Cache window for streamdoc [BlockCacheArchiveByteSource]:
          * - PDF / EPUB (and document mime) → sparse PDF defaults
          * - All other types → video-sized blocks (large sequential window)

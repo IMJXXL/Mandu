@@ -87,6 +87,9 @@ class ReadAheadArchiveByteSource(
             }
 
             val fetch = chooseFetch(offset, want, fileSize)
+            // ★ 2026-10-05 需求读优先：窗口/管线都不覆盖才走到这里（跳页或冷区）——
+            //   清掉传输层积压的排队预读，让本 GET 直接上链路，不被 stale 预读挡住
+            runCatching { inner.dropQueuedReads() }
             fillWindowSync(offset, fetch, want, buf, off, fileSize)
         } catch (e: RemoteRangeNotSupportedException) {
             throw e

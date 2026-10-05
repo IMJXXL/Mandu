@@ -128,11 +128,21 @@ class SmbArchiveByteSource(
             )
             raw = smb
             inner = if (readahead) {
-                ReadAheadArchiveByteSource(
+                val readAhead = ReadAheadArchiveByteSource(
                     inner = smb,
                     sequentialWindow = sequentialWindow,
                     preferSequential = preferSequential,
                     pipeline = pipeline,
+                )
+                // ★ 2026-10-05 归档流热页缓存：ReadAhead 只有一个移动窗口，回看必重走网络；
+                //   块缓存（外层，只截留需求读，预读不冲刷）让近期读过的页回看零网络。
+                //   视频播放不套（VideoDirectLink 已自带 2MiB×28 窗口，再叠一层白占内存）。
+                if (videoPlay) readAhead
+                else com.hippo.ehviewer.library.BlockCacheArchiveByteSource(
+                    inner = readAhead,
+                    knownSize = knownSize,
+                    blockSize = com.hippo.ehviewer.library.BlockCacheArchiveByteSource.ARCHIVE_STREAM_BLOCK_SIZE,
+                    maxBlocks = com.hippo.ehviewer.library.BlockCacheArchiveByteSource.ARCHIVE_STREAM_MAX_BLOCKS,
                 )
             } else {
                 smb
