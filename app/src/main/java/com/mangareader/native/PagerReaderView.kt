@@ -492,6 +492,31 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
 
     // Tap + long press detection via GestureDetector (TSY approach)
     private val gestureDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
+        // ★ 根检测器滑动兜底（2026-10-05）：dispatchTouchEvent 在转发链根上恒收全部事件
+        //   （点击链路长期正常证明 DOWN/UP 可达根），下层 SSIV 的手势与兜底在部分设备上
+        //   收不到完整 MOVE 序列（日志实锤：126 次放行 0 次接管 0 次兜底）。沿翻页主轴的
+        //   fling / 大幅位移在"静止 + 当前页未放大"时直接翻一页；RV 已接管（DRAGGED/
+        //   SETTLING）或放大态拖图不受影响。与 SSIV 自带兜底靠 IDLE 守卫天然防重。
+        private var rootFired = false
+        override fun onDown(e: MotionEvent): Boolean { rootFired = false; return super.onDown(e) }
+        override fun onScroll(e1: MotionEvent?, e2: MotionEvent, dx: Float, dy: Float): Boolean {
+            if (rootFired) return false
+            val total = if (!verticalPager) (e2.x - (e1?.x ?: e2.x)) else (e2.y - (e1?.y ?: e2.y))
+            val extent = if (!verticalPager) width else height
+            if (extent > 0 && kotlin.math.abs(total) > extent * 0.08f) {
+                if (tryRootFlip(if (total < 0) 1 else -1)) rootFired = true
+            }
+            return false
+        }
+        override fun onFling(e1: MotionEvent?, e2: MotionEvent, vx: Float, vy: Float): Boolean {
+            val alongAxis = if (!verticalPager)
+                kotlin.math.abs(vx) >= kotlin.math.abs(vy) else kotlin.math.abs(vy) >= kotlin.math.abs(vx)
+            if (alongAxis && !rootFired) {
+                val v = if (!verticalPager) vx else vy
+                if (tryRootFlip(if (v < 0) 1 else -1)) rootFired = true
+            }
+            return false
+        }
         override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
             if (width == 0 || height == 0) return false
             val fx = e.x / width
@@ -554,7 +579,22 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             if (pos == -1 || pos == androidx.recyclerview.widget.RecyclerView.NO_POSITION) return false
             val holder = rv.findViewHolderForAdapterPosition(pos) as? PagerViewHolder ?: return false
             val ssiv = holder.ssiv ?: return false
-            ssiv.visibility == View.VISIBLE && ssiv.scale > 1.01f
+            ssiv.visibility == View.VISIBLE && ssiv.scale > ((ssiv.viewportBaseScale.takeIf { it > 0f } ?: ssiv.minScale) + 0.01f)
+        } catch (_: Exception) { false }
+    }
+
+    /** ★ 根检测器翻页动作：仅静止（IDLE）且当前页未放大时生效——放大态由 SSIV 平移/拖图，
+     *  RV 接管后的滚动（DRAGGED/SETTLING）由 ViewPager2 自己完成，这里一律让位。 */
+    private fun tryRootFlip(dir: Int): Boolean {
+        return try {
+            val count = pagerAdapter?.itemCount ?: 0
+            if (count > 0 && viewPager.scrollState == ViewPager2.SCROLL_STATE_IDLE && !isCurrentPageZoomed()) {
+                val target = (viewPager.currentItem + dir).coerceIn(0, count - 1)
+                if (target != viewPager.currentItem) {
+                    viewPager.setCurrentItem(target, true)
+                    true
+                } else false
+            } else false
         } catch (_: Exception) { false }
     }
 
@@ -854,9 +894,9 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
 
     fun setLandscapeZoom(enabled: Boolean) { applyLivePrefs(zoom = enabled) }
 
-    /** ★ 双击放大开关：新 holder 由 createSsiv 带入，存活 holder 就地同步（免重绑即时生效） */
+    /** ★ 双击放大开关：新 holder 由 createSsiv/创建路径带入，存活 holder 就地同步（免重绑即时生效）；
+     *  2026-10-05 去 early-return：即便字段未变也强制遍历存活 holder（治"改了没反应"类时序残留） */
     fun setDoubleTapZoom(enabled: Boolean) {
-        if (doubleTapZoom == enabled) return
         doubleTapZoom = enabled
         try {
             val rv = viewPager.getChildAt(0) as? androidx.recyclerview.widget.RecyclerView ?: return
@@ -867,6 +907,21 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 }
             }
         } catch (_: Exception) {}
+    }
+
+    /** ★ 滑动兜底统一接线（PagerSSIV.pagerSwipeFallback）：仅在 VP2 拦截未接管的异常
+     *  设备上触发；IDLE 守卫防与原生滚动打架。创建路径与 bind 兜底共用（setDoubleTapZoom
+     *  式就地同步会覆盖 lambda，抽方法保证一致）。 */
+    private fun installSwipeFallback(s: PagerSSIV) {
+        s.pagerSwipeFallback = { dir ->
+            try {
+                val count = pagerAdapter?.itemCount ?: 0
+                if (count > 0 && viewPager.scrollState == ViewPager2.SCROLL_STATE_IDLE) {
+                    val target = (viewPager.currentItem + dir).coerceIn(0, count - 1)
+                    if (target != viewPager.currentItem) viewPager.setCurrentItem(target, true)
+                }
+            } catch (_: Exception) {}
+        }
     }
 
     fun setScaleMode(mode: Int) { applyLivePrefs(mode = mode) }
@@ -1650,6 +1705,14 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             container.addView(loadingBar)
             val vh = PagerViewHolder(container)
             vh.loadingBar = loadingBar
+            // ★ 2026-10-05 对齐 mihon"设置即时刷新"：holder 从创建起就持有 SSIV（此前孤儿视图
+            //   未赋 holder，首绑前 setDoubleTapZoom 遍历落空→"只当前页生效"类时序洞）。
+            //   手势参数的最终一致性由 onBindViewHolder 尾部兜底同步保证。
+            vh.ssiv = ssiv
+            ssiv.isQuickScaleEnabled = doubleTapZoom
+            ssiv.doubleTapZoom = doubleTapZoom
+            ssiv.axisPassthroughHorizontal = !verticalPager
+            installSwipeFallback(ssiv)
             return vh
         }
 
@@ -1672,6 +1735,16 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             val marginPx = (imageMarginH * container.context.resources.displayMetrics.density).toInt()
             container.setPadding(marginPx, 0, marginPx, 0)
             com.mangareader.filter.PaperBgDrawable.apply(container, container.context.applicationContext, pageBgColor, com.mangareader.filter.PaperPageTexture.overlayMode, com.mangareader.filter.PaperPageTexture.presetId, com.mangareader.filter.PaperPageTexture.concentration)
+
+            // ★ 2026-10-05 对齐 mihon"设置即时刷新"bind 级兜底：无论本 bind 走哪个显示分支
+            //   （下方多处提前 return），手势参数每次强制同步为视图字段当前值——根治
+            //   "双击放大只当前页生效"类时序洞（holder 创建早于设置同步、复用残留等）
+            holder.ssiv?.let { s ->
+                s.doubleTapZoom = doubleTapZoom
+                s.isQuickScaleEnabled = doubleTapZoom
+                s.axisPassthroughHorizontal = !verticalPager
+                installSwipeFallback(s)
+            }
 
             val debugLabel = container.findViewById<android.widget.TextView>(0x7F000001)
             debugLabel?.visibility = View.GONE
@@ -1836,17 +1909,8 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 setDoubleTapZoomDuration(300)
                 axisPassthroughHorizontal = !verticalPager
                 doubleTapZoom = this@PagerReaderView.doubleTapZoom
-                // ★ 滑动兜底接线（PagerSSIV.pagerSwipeFallback）：仅在 VP2 拦截未接管的
-                // 异常设备上触发；IDLE 守卫防与原生滚动打架
-                pagerSwipeFallback = { dir ->
-                    try {
-                        val count = pagerAdapter?.itemCount ?: 0
-                        if (count > 0 && viewPager.scrollState == ViewPager2.SCROLL_STATE_IDLE) {
-                            val target = (viewPager.currentItem + dir).coerceIn(0, count - 1)
-                            if (target != viewPager.currentItem) viewPager.setCurrentItem(target, true)
-                        }
-                    } catch (_: Exception) {}
-                }
+                // ★ 滑动兜底接线统一走 installSwipeFallback（与 bind 兜底共用）
+                installSwipeFallback(this)
                 visibility = View.GONE
             }
         }
@@ -2004,8 +2068,8 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                     }
                 }
             })
-            // landscapeZoom：宽图自动放大适配高度（仅 contain/贴宽档插手；对齐 zoomStart，
-            // 前进落阅读起始缘、回退落结束缘——mihon 同款）
+            // landscapeZoom：宽图自动放大适配高度（mihon 同款仅 contain 档插手；对齐 zoomStart，
+            // 前进落阅读起始缘、回退落结束缘；延时 500ms+500ms 动画对齐 mihon landscapeZoom）
             if (landscapeZoom && ScalePlan.landscapeZoomable(scaleMode) && iw > ih) {
                 ssiv.handler?.postDelayed({
                     if (ssiv.isReady) {
@@ -2015,9 +2079,9 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                             (ssiv.center?.y ?: ih / 2f)
                         else ssiv.height.toFloat() / targetScale / 2f
                         ssiv.animateScaleAndCenter(targetScale, android.graphics.PointF(cx, cy))
-                            ?.withDuration(500)?.withInterruptible(true)?.start()
+                            ?.withDuration(500)?.withEasing(com.davemorrissey.labs.subscaleview.SubsamplingScaleImageView.EASE_IN_OUT_QUAD)?.withInterruptible(true)?.start()
                     }
-                }, 1000)
+                }, 500)
             }
         }
         fun clear() {

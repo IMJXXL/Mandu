@@ -373,7 +373,7 @@ private fun ReadingModeTab(config: ReaderConfig, mode: Mode, bookId: Long, onCon
             }
         }
 
-        CheckboxItem("自动放大横向图片（宽图自动贴满高度；仅完整显示/铺满档生效）", config.landscapeZoom) { onConfigChange(config.copy(landscapeZoom = it)) }
+        CheckboxItem("自动放大横向图片（宽图自动贴满高度；仅适应屏幕档生效）", config.landscapeZoom) { onConfigChange(config.copy(landscapeZoom = it)) }
         CheckboxItem("双击放大（关闭后快速连点=两次点击翻页）", config.isDoubleTapZoom) { onConfigChange(config.copy(isDoubleTapZoom = it)) }
         GroupTitle("翻页")
         CheckboxItem("翻页动画（点击翻页过渡）", config.isFlipAnimation) { onConfigChange(config.copy(isFlipAnimation = it)) }
@@ -406,7 +406,7 @@ private fun ReadingModeTab(config: ReaderConfig, mode: Mode, bookId: Long, onCon
         // ★ 画面缩放五档（2026-10-05 重做，替代二选一）：ScalePlan 唯一公式出处；
         //   条漫恒贴宽；仿真/无平移视图运行时收敛（贴高/智能→铺满防不可找回裁切、双页→铺满）
         SettingsChipRow("画面缩放") {
-            listOf("完整显示" to 0, "铺满屏幕" to 1, "贴满高度" to 2, "原始尺寸" to 3, "智能适应" to 4).forEach { (label, value) ->
+            listOf("适应屏幕" to 0, "拉伸" to 5, "适应宽度" to 1, "适应高度" to 2, "原始尺寸" to 3, "智能适应" to 4).forEach { (label, value) ->
                 FilterChip(
                     selected = value == config.imageScaleMode,
                     onClick = { onConfigChange(config.copy(imageScaleMode = value)) },

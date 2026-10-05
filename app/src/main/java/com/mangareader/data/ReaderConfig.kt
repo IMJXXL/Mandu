@@ -286,7 +286,7 @@ data class ReaderConfig(
                 useSSIV = rBoolean("useSSIV", true),
                 landscapeZoom = rBoolean("landscapeZoom", false),
                 isDoubleTapZoom = rBoolean("isDoubleTapZoom", true),
-                imageScaleMode = rInt("imageScaleMode", 1).let { if (it in 0..4) it else 1 },   // 0..4 与 ScalePlan 档位一致
+                imageScaleMode = rInt("imageScaleMode", 1).let { if (it in 0..5) it else 1 },   // 0..5 与 ScalePlan 档位一致（mihon 六档）
                 zoomStart = rInt("zoomStart", 0).let { if (it in 0..3) it else 0 },             // 0..3 与 ScalePlan zoomStart 一致
                 panNavigation = rBoolean("panNavigation", true),
                 doublePageShift = rInt("doublePageShift", 0),

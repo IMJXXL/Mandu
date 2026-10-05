@@ -16,33 +16,32 @@ class ScalePlanTest {
     private val vh = 2000f
 
     @Test
-    fun `五档基线比例公式`() {
+    fun `六档基线比例公式_mihon对齐`() {
         // 竖版页 800x1200: fitW=1000/800=1.25, fitH=2000/1200≈1.667
         val iw = 800f; val ih = 1200f
         assertEquals(1.25f, ScalePlan.baseScale(ScalePlan.MODE_CONTAIN, vw, vh, iw, ih), 1e-4f)
         assertEquals(1.25f, ScalePlan.baseScale(ScalePlan.MODE_FIT_WIDTH, vw, vh, iw, ih), 1e-4f)
         assertEquals(vh / ih, ScalePlan.baseScale(ScalePlan.MODE_FIT_HEIGHT, vw, vh, iw, ih), 1e-4f)
         assertEquals(1f, ScalePlan.baseScale(ScalePlan.MODE_ORIGINAL, vw, vh, iw, ih), 1e-4f)
-        // 竖版页智能=贴宽
-        assertEquals(1.25f, ScalePlan.baseScale(ScalePlan.MODE_SMART, vw, vh, iw, ih), 1e-4f)
-        // 宽图 1200x800: fitW≈0.833, fitH=2.5；智能=贴高
+        // 拉伸=cover（两向 fit 取大，溢出一侧裁切）
+        assertEquals(1.6666f, ScalePlan.baseScale(ScalePlan.MODE_STRETCH, vw, vh, iw, ih), 1e-3f)
+        // 智能适应（mihon Smart fit）=min(contain,1)：竖版页 contain=1.25 放大→封到 1
+        assertEquals(1f, ScalePlan.baseScale(ScalePlan.MODE_SMART, vw, vh, iw, ih), 1e-4f)
+        // 宽图 1200x800: fitW≈0.833, fitH=2.5；智能=contain=0.833（<1 不放大）
         val iw2 = 1200f; val ih2 = 800f
         assertEquals(0.8333f, ScalePlan.baseScale(ScalePlan.MODE_CONTAIN, vw, vh, iw2, ih2), 1e-3f)
-        assertEquals(2.5f, ScalePlan.baseScale(ScalePlan.MODE_SMART, vw, vh, iw2, ih2), 1e-4f)
+        assertEquals(0.8333f, ScalePlan.baseScale(ScalePlan.MODE_SMART, vw, vh, iw2, ih2), 1e-3f)
+        assertEquals(2.5f, ScalePlan.baseScale(ScalePlan.MODE_STRETCH, vw, vh, iw2, ih2), 1e-4f)
+        // 小图 300x200：contain=3.33 放大→智能封到 1（mihon"小图不放大"）
+        assertEquals(1f, ScalePlan.baseScale(ScalePlan.MODE_SMART, vw, vh, 300f, 200f), 1e-4f)
     }
 
     @Test
-    fun `平板防糊封顶仅作用于贴宽分支`() {
-        // 位图原生宽度 600 < 视口 1000：贴宽 fitW=1.667 封顶到 1
+    fun `贴宽无平板封顶_mihon对齐`() {
+        // mihon Fit width 纯 fitW，无防糊封顶（isTablet 形参保留但已不生效）
         val iw = 600f; val ih = 900f
-        assertEquals(1f, ScalePlan.baseScale(ScalePlan.MODE_FIT_WIDTH, vw, vh, iw, ih, isTablet = true), 1e-4f)
+        assertEquals(1.6666f, ScalePlan.baseScale(ScalePlan.MODE_FIT_WIDTH, vw, vh, iw, ih, isTablet = true), 1e-3f)
         assertEquals(1.6666f, ScalePlan.baseScale(ScalePlan.MODE_FIT_WIDTH, vw, vh, iw, ih, isTablet = false), 1e-3f)
-        // 位图比屏宽：封顶无影响（fitW<1）
-        assertEquals(vw / 1200f, ScalePlan.baseScale(ScalePlan.MODE_FIT_WIDTH, vw, vh, 1200f, 900f, isTablet = true), 1e-4f)
-        // 其他档位不受平板影响
-        assertEquals(vh / 900f, ScalePlan.baseScale(ScalePlan.MODE_FIT_HEIGHT, vw, vh, 600f, 900f, isTablet = true), 1e-4f)
-        assertEquals(minOf(vw / 600f, vh / 900f), ScalePlan.baseScale(ScalePlan.MODE_CONTAIN, vw, vh, 600f, 900f, isTablet = true), 1e-4f)
-        assertEquals(1f, ScalePlan.baseScale(ScalePlan.MODE_ORIGINAL, vw, vh, 600f, 900f, isTablet = true), 1e-4f)
     }
 
     @Test
@@ -105,12 +104,13 @@ class ScalePlanTest {
     }
 
     @Test
-    fun `landscapeZoom只在contain和贴宽档插手`() {
+    fun `landscapeZoom只在适应屏幕档插手_mihon对齐`() {
         assertTrue(ScalePlan.landscapeZoomable(ScalePlan.MODE_CONTAIN))
-        assertTrue(ScalePlan.landscapeZoomable(ScalePlan.MODE_FIT_WIDTH))
+        assertFalse(ScalePlan.landscapeZoomable(ScalePlan.MODE_FIT_WIDTH))
         assertFalse(ScalePlan.landscapeZoomable(ScalePlan.MODE_FIT_HEIGHT))
         assertFalse(ScalePlan.landscapeZoomable(ScalePlan.MODE_ORIGINAL))
         assertFalse(ScalePlan.landscapeZoomable(ScalePlan.MODE_SMART))
+        assertFalse(ScalePlan.landscapeZoomable(ScalePlan.MODE_STRETCH))
     }
 
     @Test
@@ -121,12 +121,14 @@ class ScalePlanTest {
         assertEquals(ScalePlan.MODE_FIT_WIDTH, ScalePlan.spreadMode(ScalePlan.MODE_FIT_HEIGHT))
         assertEquals(ScalePlan.MODE_FIT_WIDTH, ScalePlan.spreadMode(ScalePlan.MODE_ORIGINAL))
         assertEquals(ScalePlan.MODE_FIT_WIDTH, ScalePlan.spreadMode(ScalePlan.MODE_SMART))
-        // 单页仿真/非SSIV静态：贴高/智能收敛铺满（防不可找回裁切），原尺寸保留
+        assertEquals(ScalePlan.MODE_FIT_WIDTH, ScalePlan.spreadMode(ScalePlan.MODE_STRETCH))
+        // 单页仿真/非SSIV静态：溢出类收敛适应宽度（防不可找回裁切），原尺寸/完整显示保留
         assertEquals(ScalePlan.MODE_CONTAIN, ScalePlan.staticMode(ScalePlan.MODE_CONTAIN))
         assertEquals(ScalePlan.MODE_ORIGINAL, ScalePlan.staticMode(ScalePlan.MODE_ORIGINAL))
         assertEquals(ScalePlan.MODE_FIT_WIDTH, ScalePlan.staticMode(ScalePlan.MODE_FIT_WIDTH))
         assertEquals(ScalePlan.MODE_FIT_WIDTH, ScalePlan.staticMode(ScalePlan.MODE_FIT_HEIGHT))
         assertEquals(ScalePlan.MODE_FIT_WIDTH, ScalePlan.staticMode(ScalePlan.MODE_SMART))
+        assertEquals(ScalePlan.MODE_FIT_WIDTH, ScalePlan.staticMode(ScalePlan.MODE_STRETCH))
     }
 
     @Test

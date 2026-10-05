@@ -128,7 +128,7 @@ internal val PREF_ROWS: List<PrefRow> = listOf(
         PrefEditor.Part("trimThreshold", "检测阈值（默认 220）", PrefEditor.Slider(180f, 250f, 69, { "阈值 ${it.toInt()}" })),
         PrefEditor.Part("trimWhiteRatio", "白色比例（默认90%）", PrefEditor.Slider(0.5f, 0.95f, 45, pct)),
     )), subKeys = listOf("trimThreshold", "trimWhiteRatio", "trimFactor")),
-    PrefRow("landscapeZoom", "自动放大横向图片", 0, PrefEditor.Toggle(info = "宽图自动贴满高度；仅“完整显示/铺满屏幕”档生效；条漫模式不适用")),
+    PrefRow("landscapeZoom", "自动放大横向图片", 0, PrefEditor.Toggle(info = "宽图自动贴满高度（mihon 同款）；仅“适应屏幕”档生效；条漫模式不适用")),
     PrefRow("isDoubleTapZoom", "双击放大", 0, PrefEditor.Toggle(info = "关闭后双击不再缩放，快速连点按两次点击翻页计")),
     PrefRow("isFlipAnimation", "翻页动画", 0, PrefEditor.Group(listOf(
         PrefEditor.Part("isFlipAnimation", "翻页动画（点击翻页过渡）", PrefEditor.Toggle()),
@@ -140,8 +140,8 @@ internal val PREF_ROWS: List<PrefRow> = listOf(
     )), section = "翻页",
         subKeys = listOf("isPageCurlAnimation", "isCurlContentAreaOnly", "curlBackContentAlpha", "curlShadowAlpha", "spineShadowAlpha")),
     PrefRow("imageScaleMode", "画面缩放", 0, PrefEditor.Chips(
-        listOf("完整显示" to 0, "铺满屏幕" to 1, "贴满高度" to 2, "原始尺寸" to 3, "智能适应" to 4),
-        info = "条漫模式恒贴宽；仿真/无平移视图自动收敛：贴满高度→铺满（防宽图裁切找不回）、智能→铺满、双页→铺满"
+        listOf("适应屏幕" to 0, "拉伸" to 5, "适应宽度" to 1, "适应高度" to 2, "原始尺寸" to 3, "智能适应" to 4),
+        info = "mihon 同款六档：智能适应=小图不放大；拉伸=填满屏幕溢出裁边。条漫恒适应宽度；仿真/静态视图自动收敛：溢出类→适应宽度"
     ), section = "画面"),
     PrefRow("zoomStart", "缩放起始位置", 0, PrefEditor.Chips(
         listOf("自动" to 0, "左" to 1, "中" to 2, "右" to 3),

@@ -15,18 +15,20 @@ import kotlin.math.min
  */
 object ScalePlan {
 
-    /** 完整显示：等比 contain，哪边先到屏幕边界就停，完整不裁切（mihon FIT screen/CENTER_INSIDE） */
+    /** 完整显示：等比 contain，哪边先到屏幕边界就停，完整不裁切（mihon Fit screen/SCALE_TYPE_CENTER_INSIDE） */
     const val MODE_CONTAIN = 0
-    /** 铺满屏幕（贴宽）：宽度贴满，竖版页可能上下超出（平板有防糊封顶，见 baseScale） */
+    /** 拉伸：等比 cover 填满屏幕（mihon Stretch——SSIV fork 同为等比实现，取两向 fit 的大者，溢出一侧裁切） */
+    const val MODE_STRETCH = 5
+    /** 适应宽度：宽度贴满，竖版页可能上下超出（mihon Fit width，无平板封顶） */
     const val MODE_FIT_WIDTH = 1
-    /** 贴满高度：高度贴满，宽图可能左右超出——仅可平移的视图实用（翻页可拖；仿真/条漫慎选） */
+    /** 贴满高度：高度贴满，宽图可能左右超出（mihon Fit height）——仅可平移的视图实用（翻页可拖；仿真/条漫慎选） */
     const val MODE_FIT_HEIGHT = 2
-    /** 原始尺寸：1:1 像素显示（小图不放大，大图超出部分靠平移） */
+    /** 原始尺寸：1:1 像素显示（小图不放大，大图超出部分靠平移；mihon Original size） */
     const val MODE_ORIGINAL = 3
-    /** 智能适应：竖版页贴宽 / 横版页贴高（tachiyomi SSIV fork SCALE_TYPE_SMART_FIT 同款） */
+    /** 智能适应：contain 但小图不放大超过原始尺寸（mihon Smart fit = min(contain, 1f)） */
     const val MODE_SMART = 4
     const val MODE_DEFAULT = MODE_FIT_WIDTH
-    fun isValidMode(m: Int) = m in MODE_CONTAIN..MODE_SMART
+    fun isValidMode(m: Int) = m in MODE_CONTAIN..MODE_STRETCH
 
     /** 缩放起始位置（mihon zoomStart）：自动=跟随阅读方向（RTL→对齐右缘） */
     const val ZOOM_AUTO = 0
@@ -37,26 +39,27 @@ object ScalePlan {
     fun isValidZoomStart(z: Int) = z in ZOOM_AUTO..ZOOM_RIGHT
 
     /**
-     * landscapeZoom（自动放大横向图片）可插手的档位：contain/贴宽基线。
-     * 贴高/智能对宽图本来就是贴高（插手是空操作），原尺寸是用户明确的 1:1 意图不插手。
+     * landscapeZoom（自动放大横向图片）可插手的档位：仅"适应屏幕"基线
+     * （mihon 同款：landscapeZoom 设置仅在 imageScaleType==1 即 Fit screen 档 enabled）。
+     * 适应宽度档本来就是贴宽（插手是空操作），其余档是用户明确意图不插手。
      */
-    fun landscapeZoomable(mode: Int): Boolean = mode == MODE_CONTAIN || mode == MODE_FIT_WIDTH
+    fun landscapeZoomable(mode: Int): Boolean = mode == MODE_CONTAIN
 
     /**
-     * 基线显示比例。
-     * @param isTablet 平板防糊封顶：仅贴宽分支在放大超过位图原生分辨率（fitW>1）时封顶 1:1，
-     *   避免小页在大屏被拉糊（contain/贴高/智能/原尺寸语义本来就允许缩小或由用户明确选择）。
+     * 基线显示比例（mihon SSIV fork getScaleTypeScale 同款公式）。
+     * @param isTablet 已废弃（mihon 对齐后各档无平板防糊封顶）；保留形参兼容既有调用方。
      */
-    fun baseScale(mode: Int, vw: Float, vh: Float, iw: Float, ih: Float, isTablet: Boolean = false): Float {
+    fun baseScale(mode: Int, vw: Float, vh: Float, iw: Float, ih: Float, @Suppress("UNUSED_PARAMETER") isTablet: Boolean = false): Float {
         if (iw <= 0f || ih <= 0f || vw <= 0f || vh <= 0f) return 1f
         val fitW = vw / iw
         val fitH = vh / ih
         return when (if (isValidMode(mode)) mode else MODE_DEFAULT) {
             MODE_CONTAIN -> minOf(fitW, fitH)
-            MODE_FIT_WIDTH -> if (isTablet) minOf(fitW, 1f) else fitW
+            MODE_STRETCH -> maxOf(fitW, fitH)
+            MODE_FIT_WIDTH -> fitW
             MODE_FIT_HEIGHT -> fitH
             MODE_ORIGINAL -> 1f
-            MODE_SMART -> if (ih > iw) fitW else fitH
+            MODE_SMART -> minOf(minOf(fitW, fitH), 1f)
             else -> fitW
         }
     }
@@ -115,13 +118,13 @@ object ScalePlan {
     }
 
     // ---- 不可平移视图的档位收敛 ----
-    // 翻页 SSIV 可拖动平移，五档全部可用；仿真（Compose）与非 SSIV ImageView 静态显示
-    // 没有平移手势，贴高/智能对宽图会横向裁掉且拖不回来（用户要求"4 比 2 宽也不能漏 4"）。
+    // 翻页 SSIV 可拖动平移，六档全部可用；仿真（Compose）与非 SSIV ImageView 静态显示
+    // 没有平移手势，贴高/智能/拉伸对溢出方向会裁掉且拖不回来（用户要求"4 比 2 宽也不能漏 4"）。
 
-    /** 双页仿真（合并跨页）：跨页天然宽图，原尺寸也几乎必然裁切——只留 完整显示/铺满 两档 */
+    /** 双页仿真（合并跨页）：跨页天然宽图，原尺寸也几乎必然裁切——只留 完整显示/适应宽度 两档 */
     fun spreadMode(mode: Int): Int = if (mode == MODE_CONTAIN) MODE_CONTAIN else MODE_FIT_WIDTH
 
-    /** 单页仿真 / 非 SSIV 静态图：贴高/智能收敛到铺满（防不可找回的裁切），原尺寸保留 1:1 意图 */
+    /** 单页仿真 / 非 SSIV 静态图：溢出类档收敛到适应宽度（防不可找回的裁切），原尺寸/完整显示保留 */
     fun staticMode(mode: Int): Int = when (mode) {
         MODE_CONTAIN -> MODE_CONTAIN
         MODE_ORIGINAL -> MODE_ORIGINAL

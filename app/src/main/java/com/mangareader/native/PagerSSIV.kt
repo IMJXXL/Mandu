@@ -38,8 +38,10 @@ class PagerSSIV @JvmOverloads constructor(
             // ★ 2026-10-05 工单"应该能缩放到更小"：SSIV 默认 min=contain 贴边，铺满/贴宽基准下
             //   pinch-out 到贴边就停。基准已知时把下限放到 0.5×基准——能看全貌，双击/手势仍回基准。
             //   0 = 未设（完整显示模式行为不变，min 仍为 contain）。
+            // ★ mihon 对齐：maxScale=初始 scale×5（MAX_ZOOM_SCALE），小图档不至于 5 绝对值≈16×基准
             if (value > 0f) {
                 runCatching { setMinScale(value * 0.5f) }
+                runCatching { setMaxScale(value * 5f) }
             }
         }
 
@@ -198,7 +200,9 @@ class PagerSSIV @JvmOverloads constructor(
                     if (!fallbackFired) {
                         val d = if (axisPassthroughHorizontal) event.x - downX else event.y - downY
                         val extent = if (axisPassthroughHorizontal) width else height
-                        if (extent > 0 && kotlin.math.abs(d) > extent * 0.25f) {
+                        // 阈值 8% 视口（≥touchSlop 数倍防误点）：轻扫/慢拖必达——25% 时快速轻扫
+                        // 够不着造成"有的能翻有的不能"；翻页意图在沿轴无拖图余量时明确
+                        if (extent > 0 && kotlin.math.abs(d) > extent * 0.08f) {
                             fallbackFired = true
                             markSwipe(context, "pass-flip-self")
                             pagerSwipeFallback?.invoke(if (d < 0) 1 else -1)
