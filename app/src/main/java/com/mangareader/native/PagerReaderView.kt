@@ -479,6 +479,9 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             val fx = e.x / width
             val fy = e.y / height
             val action = navigation.getAction(fx, fy)
+            // ★ 点击链路诊断（2026-10-05 触控笔点击排查）：记录输入源/工具类型/落点分区——
+            //   笔点屏若到达本视图，日志直接可见 src/tool/分区；日志里没有 = 事件根本没进窗口
+            try { com.mangareader.DiagTracer.mark(context, "tap src=${e.source} tool=${e.getToolType(0)} fx=${(fx * 100).toInt()} fy=${(fy * 100).toInt()} act=$action") } catch (_: Throwable) {}
             when (action) {
                 // ★ §34.3：竖向翻页时 PREV/NEXT 不受 RTL 影响（上下方向无 RTL 概念）
                 NavigationAction.PREV -> { if (!verticalPager && isRtl) nextPage() else prevPage() }

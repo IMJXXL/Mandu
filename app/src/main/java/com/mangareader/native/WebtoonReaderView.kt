@@ -1553,7 +1553,20 @@ class WebtoonRv(ctx: Context) : RecyclerView(ctx) {
     }
 
     internal inner class GestureListener : GestureDetectorWithLongTap.Listener() {
-        override fun onSingleTapConfirmed(ev: MotionEvent): Boolean { tapListener?.invoke(ev); return false }
+        override fun onSingleTapConfirmed(ev: MotionEvent): Boolean {
+            // ★ 条漫点击翻屏（2026-10-05，用户"触控笔点击不能翻页"）：条漫此前点击=呼出菜单、
+            //   没有点击翻页语义（笔/手指一致）。对齐主流阅读器：左右 30% 点击=逆向/顺向滚动
+            //   一屏（笔与手指同路），中带保持呼出菜单；双击缩放不受影响（Confirmed 已避开双击）。
+            //   菜单开着时点按落在菜单层、到不了本视图，无需另行判断。
+            val fx = ev.x / width.coerceAtLeast(1)
+            try { com.mangareader.DiagTracer.mark(context, "tap src=${ev.source} tool=${ev.getToolType(0)} fx=${(fx * 100).toInt()} kind=webtoon") } catch (_: Throwable) {}
+            when {
+                fx < 0.30f -> scrollViewport(-0.8f)
+                fx > 0.70f -> scrollViewport(0.8f)
+                else -> tapListener?.invoke(ev)
+            }
+            return false
+        }
         override fun onDoubleTap(ev: MotionEvent): Boolean { detector.isDoubleTapping = true; return false }
         fun onDoubleTapConfirmed(ev: MotionEvent) {
             if (!isZooming && doubleTapZoom) {

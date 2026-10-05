@@ -125,6 +125,8 @@ class AnimPagerReaderView(context: Context) : FrameLayout(context), ReaderViewDe
             val fx = e.x / width
             val fy = e.y / height
             val action = navigation.getAction(fx, fy)
+            // ★ 点击链路诊断（同 PagerReaderView 2026-10-05）：本视图是翻页动画开启时的活动视图
+            try { com.mangareader.DiagTracer.mark(context, "tap src=${e.source} tool=${e.getToolType(0)} fx=${(fx * 100).toInt()} fy=${(fy * 100).toInt()} act=$action anim=1") } catch (_: Throwable) {}
             when (action) {
                 NavigationAction.PREV -> { if (!verticalPager && isRtl) nextPage() else prevPage() }
                 NavigationAction.NEXT -> { if (!verticalPager && isRtl) prevPage() else nextPage() }
