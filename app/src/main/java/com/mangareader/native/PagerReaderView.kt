@@ -954,11 +954,15 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         pagerAdapter?.notifyDataSetChanged()
         val newPos = positionOf(savedPage)
         val finalPos = newPos.coerceIn(0, pagerAdapter?.itemCount?.minus(1) ?: 0)
-        viewPager.postDelayed({
+        // ★ 2026-10-05（日志实锤 22:39:36.600）：notify 后 ViewPager2 会把旧位置(506)弹回 0
+        //   ——RTL 双页映射下 pos 0=末页(521)，100ms 等待窗口内用户看见末页闪现、
+        //   onPageSelected(521) 还把进度瞬写成 cur=末页 done=true（若此刻进程死掉书即被误标已读）。
+        //   与 938 行姊妹函数同款立即 post 校正：校正在下一次遍历前入队，闪现与脏写窗口塌缩。
+        viewPager.post {
             viewPager.setCurrentItem(finalPos, false)
             // 目标落位事件处理完再放行章末回调
             viewPager.post { layoutSwitchPending = false }
-        }, 100)
+        }
     }
 
     override fun goToPage(page: Int) {

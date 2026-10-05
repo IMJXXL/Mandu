@@ -2413,7 +2413,15 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                             }
                         }
                         var lastSkipMarkAt by remember { mutableLongStateOf(0L) }
-                        try { com.mangareader.DiagTracer.mark(ctx, "readerView mode=$mode vert=$vertical pages=${displayPages.size} start=$safeCur trim=${config.isTrimWhiteBorder} tile=${config.tileModeEnabled}") } catch (_: Exception) {}
+                        // ★ 2026-10-05 日志治理：此 mark 在重组体内逐次执行——翻页沉降期每帧重组
+                        //   连写 20-30 条同值短码（实锤 581 条/次阅读，diag_stages 是持久存储，
+                        //   白白写盘）。只在五元组变化时落一条。
+                        var lastReaderViewDiag by remember { mutableStateOf("") }
+                        val rvDiag = "readerView mode=$mode vert=$vertical pages=${displayPages.size} start=$safeCur trim=${config.isTrimWhiteBorder} tile=${config.tileModeEnabled}"
+                        if (rvDiag != lastReaderViewDiag) {
+                            lastReaderViewDiag = rvDiag
+                            try { com.mangareader.DiagTracer.mark(ctx, rvDiag) } catch (_: Exception) {}
+                        }
                         com.mangareader.native.NativeReaderScreen(
                             engine = engine,
                             treePath = navStack.lastOrNull() ?: book?.filePath ?: "",
@@ -3084,6 +3092,19 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     // 未映射键提示去重（每键码会话一次）：蓝牙翻页器常见"一次按键发多个键码"，只绑其中一个
     // 时另一码静默漏出，体感=时灵时不灵——提示用户还有码可绑
     val hwUnmappedHinted = remember { java.util.Collections.newSetFromMap(java.util.concurrent.ConcurrentHashMap<Int, Boolean>()) }
+    // ★ 一键多码去重（2026-10-05 用户拍板）：个别翻页器/触控笔一次按键发 2-3 个键码（几十 ms
+    //   内接连到达），默认表命中多个 → 一按翻两页；OK 键和回车键默认都绑呼出菜单 → 菜单开了又关。
+    //   只挡「不同键码在窗口内跟进」的爆发；同一键码的快速连按是真实连击不去重。
+    //   窗口 120ms：多码爆发实际 <60ms，人手连点最快也要 ~150ms+，不会误伤。
+    var hwLastActionKey by remember { mutableStateOf(-1) }
+    var hwLastActionAt by remember { mutableLongStateOf(0L) }
+    fun hwMultiCodeDedup(code: Int): Boolean {
+        val now = android.os.SystemClock.uptimeMillis()
+        val dup = code != hwLastActionKey && now - hwLastActionAt < 120
+        hwLastActionKey = code
+        hwLastActionAt = now
+        return !dup
+    }
 
     fun hwBrightness(delta: Int) {
         val base = if (config.screenBrightnessEnabled) config.screenBrightness else 0
@@ -3166,7 +3187,9 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                         else -> return true
                     }
                 }
-                if (scrollRepeat) scrollHw(if (action == com.mangareader.keys.KeyAction.SCROLL_FORWARD) 1 else -1, 0)
+                if (scrollRepeat && hwMultiCodeDedup(keyCode)) {
+                    scrollHw(if (action == com.mangareader.keys.KeyAction.SCROLL_FORWARD) 1 else -1, 0)
+                }
                 hwConsumedCodes.add(keyCode)
                 return true
             }
@@ -3174,6 +3197,8 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                 val was = hwConsumedCodes.remove(keyCode)
                 if (!was) return false // 无配对 DOWN（DOWN 曾漏出）→ 放行，防吞系统行为
                 if (scrollRepeat) return true // 滚动类已在 DOWN 首按执行，UP 无事
+                // ★ 多码爆发去重：爆发内后续键码照常消费（事件不放行）但不重复动作
+                if (!hwMultiCodeDedup(keyCode)) return true
                 when (action) {
                     com.mangareader.keys.KeyAction.NONE -> {}
                     com.mangareader.keys.KeyAction.TOGGLE_MENU -> if (showSettings || showToc || ui) {
