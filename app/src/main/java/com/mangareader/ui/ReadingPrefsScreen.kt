@@ -101,7 +101,7 @@ internal val PREF_DEFAULTS: Map<String, Any> = mapOf(
     "pdfQuality" to 3.0f, "orientation" to -1, "autoFlipInterval" to 0,
     "isGrayscale" to false, "isInvertColors" to false,
     "isFlipFlashEnabled" to false, "flipFlashDuration" to 100, "flipFlashInterval" to 1, "flipFlashColor" to 0,
-    "pageLayout" to "SINGLE", "useSSIV" to true, "landscapeZoom" to false,
+    "pageLayout" to "SINGLE", "useSSIV" to true, "landscapeZoom" to false, "isDoubleTapZoom" to true,
     "panNavigation" to true, "doublePageShift" to 0, "doublePageSplit" to false, "doublePageReverse" to false,
     "autoWebtoon" to true, "chapterTransition" to true, "centerGapType" to 0,
     "autoDoubleLandscape" to false, "clickFlipInvertH" to false, "forceFullDecode" to false,
@@ -110,7 +110,7 @@ internal val PREF_DEFAULTS: Map<String, Any> = mapOf(
     "textureEnabled" to false, "texturePresetId" to 0, "textureAlpha" to 15, "textureConcentration" to 100, "textureScope" to 0,
     "ambienceSound" to "", "ambienceVolume" to 60,
     "fitScreen" to false, "seamlessNextVolume" to true, "tileModeEnabled" to false,
-    "tallSplitEnabled" to true, "downsampleTier" to "STANDARD", "clickFlipType" to "LEFT_RIGHT",
+    "tallSplitEnabled" to false, "tallSplitSensitivity" to 0, "downsampleTier" to "STANDARD", "clickFlipType" to "LEFT_RIGHT",
     "scrollMode" to "HORIZONTAL_LEFT",
 )
 
@@ -129,6 +129,7 @@ internal val PREF_ROWS: List<PrefRow> = listOf(
         PrefEditor.Part("trimWhiteRatio", "白色比例（默认90%）", PrefEditor.Slider(0.5f, 0.95f, 45, pct)),
     )), subKeys = listOf("trimThreshold", "trimWhiteRatio", "trimFactor")),
     PrefRow("landscapeZoom", "自动放大横向图片", 0, PrefEditor.Toggle(info = "平板上建议关闭，关闭时宽图完整显示")),
+    PrefRow("isDoubleTapZoom", "双击放大", 0, PrefEditor.Toggle(info = "关闭后双击不再缩放，快速连点按两次点击翻页计")),
     PrefRow("isFlipAnimation", "翻页动画", 0, PrefEditor.Group(listOf(
         PrefEditor.Part("isFlipAnimation", "翻页动画（点击翻页过渡）", PrefEditor.Toggle()),
         PrefEditor.Part("isPageCurlAnimation", "仿真翻页Beta（仅静图左右翻页生效）", PrefEditor.Toggle()),

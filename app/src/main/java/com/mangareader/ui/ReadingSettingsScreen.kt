@@ -211,6 +211,25 @@ fun ReadingSettingsScreen(onBack: () -> Unit, onOpenKeyMap: (() -> Unit)? = null
                         Switch(checked = config.tallSplitEnabled, onCheckedChange = { config = config.copy(tallSplitEnabled = it); config.save(ctx) })
                     }
 
+                    // ★ 判定档位（2026-10-05，用户"判定太容易触发"）：按高/宽比例分三档——
+                    //   宽松>3（原行为）、标准>4.5、严格>6.5，逐档要求更长的图才切，普通长页不再误切
+                    val splitDisabled = !config.tallSplitEnabled
+                    Text("分割判定", fontSize = 16.sp)
+                    Text("页高超过页宽多少倍才切割：宽松最易触发，严格只拆真正的超长条漫", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.height(8.dp))
+                    Row(Modifier.fillMaxWidth().alpha(if (splitDisabled) 0.4f else 1f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf("宽松（高>宽3倍）" to 0, "标准（高>宽4.5倍）" to 1, "严格（高>宽6.5倍）" to 2).forEach { (label, v) ->
+                            Surface(
+                                modifier = Modifier.weight(1f).clickable { if (!splitDisabled) { config = config.copy(tallSplitSensitivity = v); config.save(ctx) } },
+                                shape = MaterialTheme.shapes.medium,
+                                color = if (config.tallSplitSensitivity == v) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                tonalElevation = if (config.tallSplitSensitivity == v) 4.dp else 0.dp,
+                            ) {
+                                Text(label, fontSize = 12.sp, modifier = Modifier.padding(10.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center, color = if (config.tallSplitSensitivity == v) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface)
+                            }
+                        }
+                    }
+
                     // ★ 平板条漫页宽滑条：50%~100% 档位（5% 一档），默认 100=铺满原状；仅平板生效
                     var webtoonCapPct by remember { mutableStateOf(ctx.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE).getInt("webtoon_tablet_cap_pct", 100)) }
                     Column(Modifier.fillMaxWidth().padding(vertical = 10.dp)) {

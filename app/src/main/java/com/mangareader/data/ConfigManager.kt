@@ -46,6 +46,7 @@ class ConfigManager(private val context: Context) {
             put("pageLayout", config.pageLayout.name)
             put("useSSIV", config.useSSIV)
             put("landscapeZoom", config.landscapeZoom)
+            put("isDoubleTapZoom", config.isDoubleTapZoom)
             put("panNavigation", config.panNavigation)
             put("doublePageShift", config.doublePageShift)
             put("doublePageSplit", config.doublePageSplit)
@@ -76,6 +77,7 @@ class ConfigManager(private val context: Context) {
             put("seamlessNextVolume", config.seamlessNextVolume)
             put("tileModeEnabled", config.tileModeEnabled)
             put("tallSplitEnabled", config.tallSplitEnabled)
+            put("tallSplitSensitivity", config.tallSplitSensitivity)
             put("downsampleTier", config.downsampleTier.name)
         }
         prefs.edit().putString("config_$name", json.toString()).apply()
@@ -121,6 +123,7 @@ class ConfigManager(private val context: Context) {
                 pageLayout = try { ReaderConfig.PageLayout.valueOf(json.getString("pageLayout")) } catch (_: Exception) { ReaderConfig.PageLayout.SINGLE },
                 useSSIV = json.optBoolean("useSSIV", true),
                 landscapeZoom = json.optBoolean("landscapeZoom", false),
+                isDoubleTapZoom = json.optBoolean("isDoubleTapZoom", true),
                 panNavigation = json.optBoolean("panNavigation", true),
                 doublePageShift = json.optInt("doublePageShift", 0),
                 doublePageSplit = json.optBoolean("doublePageSplit", false),
@@ -150,7 +153,8 @@ class ConfigManager(private val context: Context) {
                 fitScreen = json.optBoolean("fitScreen", false),
                 seamlessNextVolume = json.optBoolean("seamlessNextVolume", true),
                 tileModeEnabled = json.optBoolean("tileModeEnabled", false),
-                tallSplitEnabled = json.optBoolean("tallSplitEnabled", true),
+                tallSplitEnabled = json.optBoolean("tallSplitEnabled", false),
+                tallSplitSensitivity = json.optInt("tallSplitSensitivity", 0).coerceIn(0, 2),
                 downsampleTier = try { ReaderConfig.DownsampleTier.valueOf(json.getString("downsampleTier")) } catch (_: Exception) { ReaderConfig.DownsampleTier.STANDARD }
             )
         } catch (_: Exception) { null }

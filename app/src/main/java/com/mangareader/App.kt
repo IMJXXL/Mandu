@@ -115,6 +115,14 @@ class App : Application(), SingletonImageLoader.Factory {
         // ★ 阅读偏好一次性迁移（scope_mig_v1）：快照+pageLayout 消费闸门+readBackground 补种
         //   必须先于任何 ReaderConfig.load（load 零写盘硬不变量，迁移全部收口在此）
         appScope.launch(Dispatchers.IO) { ReaderPrefMigration.runIfNeeded(this@App) }
+        // ★ 条漫分割默认值迁移（tallsplit_off_v1）：老安装残留 true 一次性置回默认关
+        appScope.launch(Dispatchers.IO) {
+            runCatching {
+                ReaderPrefMigration.tallSplitDefaultOffIfNeeded(
+                    getSharedPreferences("manga_reader", MODE_PRIVATE)
+                )
+            }
+        }
         try { System.loadLibrary("archive_stream") } catch (_: Throwable) {}
         DiagTracer.mark(this, "app.onCreate: phase-1 done")
         // SMB 连接池预热（对齐上游 prewarm）：SmbConfig.builder 走 ServiceLoader 读 APK，

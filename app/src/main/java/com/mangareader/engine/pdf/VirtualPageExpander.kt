@@ -39,6 +39,7 @@ object VirtualPageExpander {
         allowProbe: Boolean = false,
         wideSplitEnabled: Boolean = false,
         splitLeftFirst: Boolean = true,
+        tallRatioThreshold: Float = PdfTallSplitCalculator.TALL_RATIO_THRESHOLD,
     ): List<ArchiveEngine.PageMeta> {
         if ((!tallSplitEnabled || !isWebtoonMode) && !wideSplitEnabled) return pages
         var storeStamp: String? = null
@@ -142,7 +143,7 @@ object VirtualPageExpander {
             }
             val splitH = PdfTallSplitCalculator.splitHeightPdf(screenMax, screenWidth, pw)
             // ★ 竖切仅条漫族（isWebtoonMode）参与：翻页视图不渲染段页，高图在翻页族走透传/宽图分支
-            val tall = isWebtoonMode && PdfTallSplitCalculator.isTallPage(pw, ph, splitH)
+            val tall = isWebtoonMode && PdfTallSplitCalculator.isTallPage(pw, ph, splitH, tallRatioThreshold)
             if (!tall) {
                 // ★ 宽图二分（2026-10-02）：跨页拼合图（宽>高×1.2，与 ArchiveEngine.applySplitSide
                 //   裁半守卫同源——展开的页加载时必被裁半）拆成左右两个半页位（splitSide 1/2），

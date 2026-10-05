@@ -8,12 +8,14 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableIntState
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Rect
@@ -207,7 +209,13 @@ fun CurlDoublePageContent(
                 if (iw > 0f && ih > 0f && cw > 0f && ch > 0f) {
                     // ★ 不再插手 landscapeZoom（2026-10-04）：合并跨页天然是宽图，FillHeight
                     //   会水平裁切且无法平移找回——用户要求"4 比 2 宽也不能漏 4"
-                    val scale = if (fitScreen) minOf(cw / iw, ch / ih) else cw / iw
+                    // 贴宽分支带平板封顶（同 SpreadImage）——「仅画面区域」范围必须跟显示矩形一致
+                    val isTablet = androidx.compose.ui.platform.LocalConfiguration.current.smallestScreenWidthDp >= 600
+                    val scale = when {
+                        fitScreen -> minOf(cw / iw, ch / ih)
+                        isTablet -> minOf(cw / iw, 1f)
+                        else -> cw / iw
+                    }
                     val dispW = (iw * scale).coerceAtMost(cw)
                     val dispH = (ih * scale).coerceAtMost(ch)
                     if (dispW < cw || dispH < ch) {
@@ -225,6 +233,7 @@ fun CurlDoublePageContent(
         // 画面矩形计算用的可用尺寸（constraints 不能在嵌套可组合 lambda 里隐式取，先存局部）
         val maxW = constraints.maxWidth.toFloat()
         val maxH = constraints.maxHeight.toFloat()
+        val isTablet = androidx.compose.ui.platform.LocalConfiguration.current.smallestScreenWidthDp >= 600
 
         val areaModifier = Modifier.fillMaxSize().padding(
             start = insetL, top = insetT, end = insetR, bottom = insetB,
@@ -256,11 +265,11 @@ fun CurlDoublePageContent(
                 Box {
                     SpreadImage(tLeft, tRight, doublePageReverse, pageBgColor, isRtl, landscapeZoom, fitScreen, bgTexPaint = bgPaint)
                     // 沟阴影画进页面内容层：随纸翻动，不会悬在翻起的纸上方
-                    SpineGutterShadow(
-                        spineShadowAlpha,
-                        if (curlContentAreaOnly) null
-                        else spineBounds(tLeft, tRight, fitScreen, landscapeZoom, maxW, maxH),
-                    )
+                SpineGutterShadow(
+                    spineShadowAlpha,
+                    if (curlContentAreaOnly) null
+                    else spineBounds(tLeft, tRight, fitScreen, landscapeZoom, maxW, maxH, isTablet),
+                )
                 }
             },
         ) { spreadIdx ->
@@ -285,7 +294,7 @@ fun CurlDoublePageContent(
                 SpineGutterShadow(
                     spineShadowAlpha,
                     if (curlContentAreaOnly) null
-                    else spineBounds(leftBmp, rightBmp, fitScreen, landscapeZoom, maxW, maxH),
+                    else spineBounds(leftBmp, rightBmp, fitScreen, landscapeZoom, maxW, maxH, isTablet),
                 )
             }
         }
@@ -302,6 +311,7 @@ private fun spineBounds(
     landscapeZoom: Boolean,
     boxW: Float,
     boxH: Float,
+    isTablet: Boolean = false,
 ): Rect? {
     if (left == null || left.isRecycled || boxW <= 0f || boxH <= 0f) return null
     val iw = (left.width + (right?.width ?: 0)).toFloat()
@@ -309,7 +319,12 @@ private fun spineBounds(
     if (iw <= 0f || ih <= 0f) return null
     // ★ 与 SpreadImage 同步去掉 landscapeZoom FillHeight（裁边不可找回，见上）
     @Suppress("UNUSED_EXPRESSION") landscapeZoom
-    val scale = if (fitScreen) minOf(boxW / iw, boxH / ih) else boxW / iw
+    // 平板贴宽封顶与 SpreadImage 同步（阴影矩形必须贴着实际画面）
+    val scale = when {
+        fitScreen -> minOf(boxW / iw, boxH / ih)
+        isTablet -> minOf(boxW / iw, 1f)
+        else -> boxW / iw
+    }
     val dw = (iw * scale).coerceAtMost(boxW)
     val dh = (ih * scale).coerceAtMost(boxH)
     return Rect((boxW - dw) / 2f, (boxH - dh) / 2f, (boxW + dw) / 2f, (boxH + dh) / 2f)
@@ -390,6 +405,8 @@ private fun SpreadImage(
     }
 
     // 缩放语义对齐 pager applyScale：fitScreen（漫画完整显示）=contain；否则贴满宽度。
+    // ★ 平板贴宽封顶（2026-10-05，同 CurlPageContent）：贴宽放大超过位图原生分辨率封顶 1:1，
+    //   与 PagerReaderView.applyScale 的平板防糊对齐——横屏开仿真不再比普通翻页"放大"。
     // ★ landscapeZoom FillHeight 分支删除（2026-10-04）：合并跨页天然宽图，贴高必水平裁切
     //   且无平移可找回——用户要求"4 比 2 宽也不能漏 4"。FillWidth/FillHeight 会溢出边界，
     //   必须 clipToBounds（ImageView 自带裁剪，Compose 没有）
@@ -404,10 +421,34 @@ private fun SpreadImage(
         drawContext.canvas.nativeCanvas.drawRect(0f, 0f, size.width, size.height, bgTexPaint)
     } else Modifier.background(Color(pageBgColor))
 
-    Image(
-        bitmap = imgBmp ?: emptyBmp,
-        contentDescription = null,
+    val isTablet = androidx.compose.ui.platform.LocalConfiguration.current.smallestScreenWidthDp >= 600
+    BoxWithConstraints(
         modifier = Modifier.fillMaxSize().clipToBounds().then(bgMod).then(mirror),
-        contentScale = contentScale,
-    )
+        contentAlignment = Alignment.Center,
+    ) {
+        val img = imgBmp
+        val nativeFill = if (!fitScreen && isTablet && img != null && img.width > 0) {
+            (constraints.maxWidth.toFloat() / img.width).coerceAtMost(1f)
+        } else null
+        if (img != null && nativeFill != null && img.width * nativeFill < constraints.maxWidth) {
+            // 封顶生效：合并跨页原生宽度铺不满屏宽 → 按 1:1 居中（外层 clipToBounds 裁溢出）
+            val density = LocalDensity.current
+            Image(
+                bitmap = img,
+                contentDescription = null,
+                modifier = Modifier.size(
+                    with(density) { (img.width * nativeFill).toDp() },
+                    with(density) { (img.height * nativeFill).toDp() },
+                ),
+                contentScale = ContentScale.Fit,
+            )
+        } else {
+            Image(
+                bitmap = img ?: emptyBmp,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = contentScale,
+            )
+        }
+    }
 }

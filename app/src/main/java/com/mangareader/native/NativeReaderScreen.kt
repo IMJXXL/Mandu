@@ -113,6 +113,8 @@ fun NativeReaderScreen(
     invertColors: Boolean = false,
     centerGapType: Int = 0,
     landscapeZoom: Boolean = true,
+    // ★ 双击放大开关（2026-10-05）：关=SSIV/条漫双击不缩放，快速连点按两次点击翻页计
+    doubleTapZoom: Boolean = true,
     fitScreen: Boolean = false,
     trimWhiteBorder: Boolean = false,
     trimThreshold: Int = 220,
@@ -290,6 +292,7 @@ fun NativeReaderScreen(
         if (delegate is PagerReaderView) {
             delegate.setCenterGapType(centerGapType)
             delegate.setLandscapeZoom(landscapeZoom)
+            delegate.setDoubleTapZoom(doubleTapZoom)
             delegate.setFitScreen(fitScreen)
             delegate.setTrimWhiteBorder(trimWhiteBorder, trimThreshold, trimWhiteRatio)
             delegate.setFixedCrop(fixedCropL, fixedCropT, fixedCropR, fixedCropB)
@@ -302,6 +305,7 @@ fun NativeReaderScreen(
         }
         if (delegate is WebtoonReaderView) {
             delegate.pageBgColor = pageBgColor
+            delegate.doubleTapZoom = doubleTapZoom
             delegate.trimWhiteBorder = trimWhiteBorder
             delegate.trimThreshold = trimThreshold
             delegate.trimWhiteRatio = trimWhiteRatio

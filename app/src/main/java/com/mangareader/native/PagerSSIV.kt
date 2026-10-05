@@ -16,6 +16,17 @@ class PagerSSIV @JvmOverloads constructor(
     private var downX = 0f
     private var downY = 0f
     private var consumedDown = false
+    // ★ 滑动诊断（2026-10-05）：每次手势只在分流判定点落一条短码——翻页滑动失效时
+    //   区分"放行给了 ViewPager2"还是"被 SSIV 留下平移"以及当时缩放态
+    private var swipeDiagMarked = false
+
+    private fun markSwipe(context: Context, tag: String) {
+        if (swipeDiagMarked) return
+        swipeDiagMarked = true
+        try {
+            com.mangareader.DiagTracer.mark(context, "swipe $tag scale=${"%.2f".format(scale)} base=${"%.2f".format(gestureBaseScale())}")
+        } catch (_: Throwable) {}
+    }
 
     /** ★ 视口基准缩放（2026-10-02）：铺满屏幕/拆分视口把"初始显示比例"当未放大态——
      *  minScale 是整图 contain 比例，贴宽/视口定位的初始 scale 恒大于它，若按 minScale 判定
@@ -26,6 +37,10 @@ class PagerSSIV @JvmOverloads constructor(
     /** ★ 手势分流主轴：true=横向滑动放行翻页（横向 pager）、纵向拖动看图（铺满屏幕划着看）；
      *  false=反向（竖向翻页 pager）。由 PagerReaderView 按 verticalPager 接线。 */
     var axisPassthroughHorizontal = true
+
+    /** ★ 双击放大开关（2026-10-05）：false=双击不触发缩放（快速连点翻页与双击冲突的解法），
+     *  双击事件直接放行不消费。由 PagerReaderView 按 config.isDoubleTapZoom 接线。 */
+    var doubleTapZoom = true
 
     private fun gestureBaseScale(): Float = if (viewportBaseScale > 0f) viewportBaseScale else minScale
 
@@ -44,6 +59,8 @@ class PagerSSIV @JvmOverloads constructor(
     // 双击检测器
     private val doubleTapDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
         override fun onDoubleTap(e: MotionEvent): Boolean {
+            // ★ 双击放大关闭：不消费不动作——连点快速翻页不再被双击判定打断
+            if (!doubleTapZoom) return false
             val base = gestureBaseScale()
             if (scale <= base + 0.01f) {
                 // 未放大：双击放大到2倍
@@ -98,6 +115,7 @@ class PagerSSIV @JvmOverloads constructor(
                 downX = event.x
                 downY = event.y
                 consumedDown = false
+                swipeDiagMarked = false
                 if (scale <= base + 0.01f) {
                     // 未放大：消费 DOWN 保留事件流，MOVE 按方向分流（翻页/拖图）
                     return true
@@ -113,6 +131,7 @@ class PagerSSIV @JvmOverloads constructor(
                     return super.onTouchEvent(event)
                 }
                 if (scale > base + 0.01f) {
+                    markSwipe(context, "hold-zoomedPan")
                     parent?.requestDisallowInterceptTouchEvent(true)
                     return super.onTouchEvent(event)
                 }
@@ -122,9 +141,10 @@ class PagerSSIV @JvmOverloads constructor(
                 val dx = kotlin.math.abs(event.x - downX)
                 val dy = kotlin.math.abs(event.y - downY)
                 val alongAxis = if (axisPassthroughHorizontal) dx >= dy else dy >= dx
-                if (alongAxis) return false
+                if (alongAxis) { markSwipe(context, "pass-flip"); return false }
                 val hasRoom = if (axisPassthroughHorizontal) hasVerticalPanRoom() else hasHorizontalPanRoom()
-                if (!hasRoom) return false
+                if (!hasRoom) { markSwipe(context, "v-noPan-pass"); return false }
+                markSwipe(context, "hold-pan")
                 parent?.requestDisallowInterceptTouchEvent(true)
                 consumedDown = true
                 return super.onTouchEvent(event)

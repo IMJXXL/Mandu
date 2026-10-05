@@ -7,12 +7,14 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableIntState
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Rect
@@ -41,6 +43,10 @@ fun CurlPageContent(
 ) {
     // 缩放语义与双页 SpreadImage / pager applyScale 对齐：fitScreen（漫画完整显示）=contain；
     // 否则贴满宽度；landscapeZoom（自动放大横向图片，仅 fitScreen 关闭时插手）宽图贴满高度。
+    // ★ 平板贴宽封顶（2026-10-05，用户"横屏开仿真画面被放大"）：对齐 pager applyScale 的
+    //   平板防糊——贴宽放大超过位图原生分辨率时封顶 1:1（min(cw/iw,1)）。此前仿真缺该封顶，
+    //   竖版页在横屏被贴宽拉大 1.5~2 倍（普通翻页视图封了顶，一切仿真就"放大"）；
+    //   "自动放大横向图片"关闭时自己放大的观感同源（贴宽语义本身，不是 landscapeZoom）。
     // 全部页面统一 Image 常驻：曾对当前页用 SSIV（可双指缩放）其余页用 Image，翻页落地
     // 瞬间 AndroidView↔Image 组件类型切换产生空白帧（b12d1e4/bc54d52 双页同类问题的
     // 单页残留），统一 Image 消除切换；代价是单页仿真模式放弃双指缩放（与双页取舍一致）。
@@ -64,12 +70,33 @@ fun CurlPageContent(
         return
     }
 
-    Image(
-        bitmap = bmp.asImageBitmap(),
-        contentDescription = null,
-        modifier = baseModifier.then(bgMod),
-        contentScale = contentScale,
-    )
+    val isTablet = androidx.compose.ui.platform.LocalConfiguration.current.smallestScreenWidthDp >= 600
+    BoxWithConstraints(modifier = baseModifier.then(bgMod), contentAlignment = Alignment.Center) {
+        // 封顶仅在"贴宽会放大超过原生分辨率"（位图原生宽度 < 屏宽）时改变行为，
+        // 此种情况按 1:1 居中显示；位图比屏宽时 min(cw/iw,1)=cw/iw 与 FillWidth 全等
+        val nativeFill = if (!fitScreen && !(landscapeZoom && wide) && isTablet) {
+            (constraints.maxWidth.toFloat() / bmp.width).coerceAtMost(1f)
+        } else null
+        if (nativeFill != null && bmp.width * nativeFill < constraints.maxWidth) {
+            val density = LocalDensity.current
+            Image(
+                bitmap = bmp.asImageBitmap(),
+                contentDescription = null,
+                modifier = Modifier.size(
+                    with(density) { (bmp.width * nativeFill).toDp() },
+                    with(density) { (bmp.height * nativeFill).toDp() },
+                ),
+                contentScale = ContentScale.Fit,
+            )
+        } else {
+            Image(
+                bitmap = bmp.asImageBitmap(),
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = contentScale,
+            )
+        }
+    }
 }
 
 @OptIn(ExperimentalPageCurlApi::class)
@@ -229,9 +256,13 @@ fun CurlReaderContent(
                 val cw = constraints.maxWidth.toFloat()
                 val ch = constraints.maxHeight.toFloat()
                 if (iw > 0f && ih > 0f && cw > 0f && ch > 0f) {
+                    // 贴宽分支同样带平板封顶——「仅画面区域」的翻页范围必须跟实际显示矩形一致，
+                    // 否则画面 1:1 居中而翻页区还按贴宽满幅算，留边两侧点按/拖拽落空
+                    val isTablet = androidx.compose.ui.platform.LocalConfiguration.current.smallestScreenWidthDp >= 600
                     val scale = when {
                         fitScreen -> minOf(cw / iw, ch / ih)
                         landscapeZoom && iw > ih -> ch / ih
+                        isTablet -> minOf(cw / iw, 1f)
                         else -> cw / iw
                     }
                     val dispW = (iw * scale).coerceAtMost(cw)

@@ -1078,7 +1078,8 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             val leftFirst = !(isRtl != config.doublePageReverse)
             try { withContext(Dispatchers.IO) { com.mangareader.engine.pdf.VirtualPageExpander.expand(
                 pages, config.tallSplitEnabled, isWebtoonFamily, sm, sw, engine, path,
-                allowProbe = true, wideSplitEnabled = wideSplitOn, splitLeftFirst = leftFirst) } }
+                allowProbe = true, wideSplitEnabled = wideSplitOn, splitLeftFirst = leftFirst,
+                tallRatioThreshold = com.mangareader.engine.pdf.PdfTallSplitCalculator.ratioThreshold(config.tallSplitSensitivity)) } }
             catch (_: Exception) { pages }
         } else pages
         pageList = expandedPages
@@ -2437,6 +2438,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                             invertColors = config.isInvertColors,
                             centerGapType = config.centerGapType,
                             landscapeZoom = config.landscapeZoom,
+                            doubleTapZoom = config.isDoubleTapZoom,
                             fitScreen = config.fitScreen,
                             trimWhiteBorder = config.isTrimWhiteBorder,
                             trimThreshold = config.trimThreshold,
@@ -2983,7 +2985,8 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                     com.mangareader.engine.pdf.VirtualPageExpander.expand(
                         pageList, true, true, sm, sw, engine, curTree, allowProbe = false,
                         wideSplitEnabled = config.doublePageSplit,
-                        splitLeftFirst = !(isRtl != config.doublePageReverse)
+                        splitLeftFirst = !(isRtl != config.doublePageReverse),
+                        tallRatioThreshold = com.mangareader.engine.pdf.PdfTallSplitCalculator.ratioThreshold(config.tallSplitSensitivity)
                     )
                 } catch (_: Exception) { null }
                 if (expanded != null && expanded.size > pageList.size) {

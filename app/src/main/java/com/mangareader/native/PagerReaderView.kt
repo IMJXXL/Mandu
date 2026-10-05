@@ -68,6 +68,9 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     private var shiftDoublePage = false
     private var useSSIV = true
     private var landscapeZoomEnabled = true
+    // ★ 双击放大开关（config.isDoubleTapZoom）：false=SSIV 双击不缩放，连点=两次点击翻页
+    var doubleTapZoom = true
+        private set
     private var fitScreenEnabled = true
     private var tileModeEnabled = false
     private val tileFileCache = java.util.concurrent.ConcurrentHashMap<Int, java.io.File>()
@@ -594,6 +597,13 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 }
                 override fun onPageScrollStateChanged(state: Int) {
                     isScrolling = state != ViewPager2.SCROLL_STATE_IDLE
+                    // ★ 滑动诊断（2026-10-05）：DRAGGED=ViewPager2 确实接管了拖动（放行成功）；
+                    //   配合 PagerSSIV 的 swipe 短码定位"滑动不翻页"断在哪一层
+                    if (state != ViewPager2.SCROLL_STATE_IDLE) {
+                        try {
+                            com.mangareader.DiagTracer.mark(context, "pagerScroll=" + if (state == ViewPager2.SCROLL_STATE_DRAGGING) "dragging" else "settling")
+                        } catch (_: Throwable) {}
+                    }
                     if (!isScrolling) {
                         preloadAround(currentPage)
 
@@ -812,6 +822,21 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     }
 
     fun setLandscapeZoom(enabled: Boolean) { applyLivePrefs(zoom = enabled) }
+
+    /** ★ 双击放大开关：新 holder 由 createSsiv 带入，存活 holder 就地同步（免重绑即时生效） */
+    fun setDoubleTapZoom(enabled: Boolean) {
+        if (doubleTapZoom == enabled) return
+        doubleTapZoom = enabled
+        try {
+            val rv = viewPager.getChildAt(0) as? androidx.recyclerview.widget.RecyclerView ?: return
+            for (i in 0 until rv.childCount) {
+                (rv.getChildViewHolder(rv.getChildAt(i)) as? PagerViewHolder)?.ssiv?.let { s ->
+                    s.doubleTapZoom = enabled
+                    s.isQuickScaleEnabled = enabled
+                }
+            }
+        } catch (_: Exception) {}
+    }
 
     fun setFitScreen(enabled: Boolean) { applyLivePrefs(fit = enabled) }
 
@@ -1765,13 +1790,15 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
                 isZoomEnabled = true
                 isPanEnabled = true
-                isQuickScaleEnabled = true
+                // ★ 双击放大关闭时同时禁 SSIV 内部 quick-scale（放大态双击走的内部检测器）
+                isQuickScaleEnabled = this@PagerReaderView.doubleTapZoom
                 setMaxScale(5f)
                 setMaxTileSize(512)
                 setMinimumTileDpi(160)
                 setMinimumScaleType(1) // SCALE_TYPE_FIT_CENTER
                 setDoubleTapZoomDuration(300)
                 axisPassthroughHorizontal = !verticalPager
+                doubleTapZoom = this@PagerReaderView.doubleTapZoom
                 visibility = View.GONE
             }
         }

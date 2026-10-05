@@ -39,6 +39,9 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
     private val webtoonFrame = WebtoonFrame(context).apply {
         addView(recycler, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
     }
+    // ★ 双击放大开关（config.isDoubleTapZoom）：转发给 WebtoonRv 的双击缩放判定
+    var doubleTapZoom = true
+        set(value) { field = value; recycler.doubleTapZoom = value }
     private var engine: ArchiveEngine? = null
     private var treePath = ""
     /** ★ SMB/WebDAV 页面供给抽象（RemotePageSupply）：非 null 时页面加载走远程会话，ArchiveEngine 不参与 */
@@ -395,6 +398,7 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
         recycler.itemAnimator = null
         recycler.adapter = adapter
         recycler.tapListener = { onToggleUi?.invoke() }
+        recycler.tapZoneScroll = { ratio -> scrollViewport(ratio) }
         recycler.addOnScrollListener(object : RecyclerView.OnScrollListener() {
             override fun onScrollStateChanged(rv: RecyclerView, state: Int) {
                 scrolling = state != RecyclerView.SCROLL_STATE_IDLE
@@ -497,7 +501,8 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
         val screenWidth = context.resources.displayMetrics.widthPixels
         val cfg = com.mangareader.data.ReaderConfig.load(context)
         tabletWebtoonWidthPct = context.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE).getInt("webtoon_tablet_cap_pct", 100).coerceIn(50, 100)
-        this.pageList = com.mangareader.engine.pdf.VirtualPageExpander.expand(pages, cfg.tallSplitEnabled, true, screenMax, screenWidth, engine, treePath)
+        this.pageList = com.mangareader.engine.pdf.VirtualPageExpander.expand(pages, cfg.tallSplitEnabled, true, screenMax, screenWidth, engine, treePath,
+            tallRatioThreshold = com.mangareader.engine.pdf.PdfTallSplitCalculator.ratioThreshold(cfg.tallSplitSensitivity))
         this.currentPage = startPage
         onPageCountChanged?.invoke(this.pageList.size)
         remotePageSupply?.onPageCountGrow?.add { newCount ->
@@ -1458,6 +1463,9 @@ private class WebtoonFrame(context: Context) : android.widget.FrameLayout(contex
 class WebtoonRv(ctx: Context) : RecyclerView(ctx) {
     var tapListener: ((MotionEvent) -> Unit)? = null
     var longTapListener: ((MotionEvent) -> Boolean)? = null
+    // ★ 条漫左右点击翻屏回调：由 WebtoonReaderView 接到 scrollViewport（WebtoonRv 是
+    //   独立顶级类拿不到外层阅读器，直接调 scrollViewport 恒 Unresolved——上一轮未编译漏网）
+    var tapZoneScroll: ((Float) -> Unit)? = null
     var doubleTapZoom = true
 
     private var currentScale = DEFAULT_RATE
@@ -1561,8 +1569,8 @@ class WebtoonRv(ctx: Context) : RecyclerView(ctx) {
             val fx = ev.x / width.coerceAtLeast(1)
             try { com.mangareader.DiagTracer.mark(context, "tap src=${ev.source} tool=${ev.getToolType(0)} fx=${(fx * 100).toInt()} kind=webtoon") } catch (_: Throwable) {}
             when {
-                fx < 0.30f -> scrollViewport(-0.8f)
-                fx > 0.70f -> scrollViewport(0.8f)
+                fx < 0.30f -> tapZoneScroll?.invoke(-0.8f)
+                fx > 0.70f -> tapZoneScroll?.invoke(0.8f)
                 else -> tapListener?.invoke(ev)
             }
             return false

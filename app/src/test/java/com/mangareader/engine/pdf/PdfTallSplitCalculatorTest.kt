@@ -96,6 +96,28 @@ class PdfTallSplitCalculatorTest {
     }
 
     @Test
+    fun `判定档位阈值单调且边界正确`() {
+        // 2026-10-05 三档：宽松 3.0（原行为）/ 标准 4.5 / 严格 6.5——同页在高档位不拆、低档位可拆
+        assertEquals(3f, PdfTallSplitCalculator.ratioThreshold(0), 1e-4f)
+        assertEquals(4.5f, PdfTallSplitCalculator.ratioThreshold(1), 1e-4f)
+        assertEquals(6.5f, PdfTallSplitCalculator.ratioThreshold(2), 1e-4f)
+        assertEquals("越界回宽松", 3f, PdfTallSplitCalculator.ratioThreshold(7), 1e-4f)
+        assertEquals("负值回宽松", 3f, PdfTallSplitCalculator.ratioThreshold(-1), 1e-4f)
+
+        val splitH = 4000f
+        // 比例 4.0 的页：仅宽松档拆（标准 4.5 / 严格 6.5 都不拆）
+        assertTrue(PdfTallSplitCalculator.isTallPage(1000f, 4000.1f, splitH, PdfTallSplitCalculator.ratioThreshold(0)))
+        assertFalse(PdfTallSplitCalculator.isTallPage(1000f, 4000.1f, splitH, PdfTallSplitCalculator.ratioThreshold(1)))
+        assertFalse("严格档比例 4 不拆", PdfTallSplitCalculator.isTallPage(1000f, 4000.1f, splitH, PdfTallSplitCalculator.ratioThreshold(2)))
+        // 比例 5.0 的页：宽松/标准拆、严格不拆
+        assertTrue(PdfTallSplitCalculator.isTallPage(1000f, 5000.1f, splitH, PdfTallSplitCalculator.ratioThreshold(0)))
+        assertTrue(PdfTallSplitCalculator.isTallPage(1000f, 5000.1f, splitH, PdfTallSplitCalculator.ratioThreshold(1)))
+        assertFalse(PdfTallSplitCalculator.isTallPage(1000f, 5000.1f, splitH, PdfTallSplitCalculator.ratioThreshold(2)))
+        // 比例恰在阈值上（>为严格不等）：不拆
+        assertFalse(PdfTallSplitCalculator.isTallPage(1000f, 4500f, splitH, PdfTallSplitCalculator.ratioThreshold(1)))
+    }
+
+    @Test
     fun `splitHeightPdf 与屏幕联动`() {
         // ★ 段高=2 屏（2026-09-26 回退）：×2 时一段≈一个原漫画页（01.pdf 实测 35 段=真实页数）；
         //   889a49d 的 ×1 把每页切两半（页数翻倍、预载屏覆盖减半）已撤销

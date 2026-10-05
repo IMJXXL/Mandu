@@ -39,12 +39,12 @@ object ReaderScope {
         "orientation", "readBackground",
         "isFlipAnimation", "isPageCurlAnimation", "isCurlContentAreaOnly",
         "curlBackContentAlpha", "curlShadowAlpha", "spineShadowAlpha",
-        "fitScreen", "landscapeZoom", "useSSIV",
+        "fitScreen", "landscapeZoom", "useSSIV", "isDoubleTapZoom",
         "isShowPageNum", "isKeepScreenOn", "isImmersiveMode",
         "autoWebtoon", "chapterTransition", "seamlessNextVolume", "autoFlipInterval",
         "isEinkMode", "isEinkDither", "einkDitherAlgorithm", "einkDitherLevels",
         "einkEndpointPassthrough", "einkDecodeSize", "einkUiHideDelay",
-        "pdfQuality", "forceFullDecode", "tileModeEnabled", "downsampleTier", "tallSplitEnabled",
+        "pdfQuality", "forceFullDecode", "tileModeEnabled", "downsampleTier", "tallSplitEnabled", "tallSplitSensitivity",
         "isFlipFlashEnabled", "flipFlashDuration", "flipFlashInterval", "flipFlashColor",
         "autoFlipInterval", "clickFlipType", "clickFlipInvertH", "readBackground",
     )
@@ -71,7 +71,7 @@ object ReaderScope {
      */
     val GLOBAL_LOCKED_KEYS: Set<String> = setOf(
         "autoFlipInterval",
-        "pdfQuality", "tileModeEnabled", "tallSplitEnabled", "downsampleTier", "forceFullDecode",
+        "pdfQuality", "tileModeEnabled", "tallSplitEnabled", "tallSplitSensitivity", "downsampleTier", "forceFullDecode",
         "isEinkMode", "isEinkDither", "einkDitherAlgorithm", "einkDitherLevels",
         "einkEndpointPassthrough", "einkDecodeSize", "einkUiHideDelay",
         "isFlipFlashEnabled", "flipFlashDuration", "flipFlashInterval", "flipFlashColor",

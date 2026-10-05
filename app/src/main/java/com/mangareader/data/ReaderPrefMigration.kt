@@ -130,6 +130,20 @@ object ReaderPrefMigration {
         }
     }
 
+    /** ★ 条漫分割默认值迁移（tallsplit_off_v1，2026-10-05，用户"条漫分割需要默认关闭"）：
+     *  旧版默认开且 save 无条件写全局键——已装设备全部残留 tallSplitEnabled=true，仅改出厂
+     *  默认对老用户无效；一次性置回关，之后用户在阅读设置里手动开启照常记住。 */
+    fun tallSplitDefaultOffIfNeeded(prefs: SharedPreferences) {
+        if (prefs.getBoolean("tallsplit_off_v1_done", false)) return
+        synchronized(ReaderPrefMigration) {
+            if (prefs.getBoolean("tallsplit_off_v1_done", false)) return
+            prefs.edit()
+                .putBoolean("tallSplitEnabled", false)
+                .putBoolean("tallsplit_off_v1_done", true)
+                .apply()
+        }
+    }
+
     /** 回滚：从最近一份快照恢复 book_* 键（当前不在快照内的 book_ 键删除） */
     fun restoreLatestSnapshot(context: Context): Boolean {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)

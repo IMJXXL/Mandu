@@ -61,6 +61,9 @@ data class ReaderConfig(
     val pageLayout: PageLayout = PageLayout.SINGLE,
     val useSSIV: Boolean = true,
     val landscapeZoom: Boolean = false,
+    // ★ 双击放大开关（2026-10-05，用户"快速点击翻页和双击放大冲突"）：关=双击不再触发缩放，
+    //   快速连点全部按两次点击翻页计；条漫/翻页视图共用，仿真单页无缩放不受影响
+    val isDoubleTapZoom: Boolean = true,
     val fitScreen: Boolean = false,
     val panNavigation: Boolean = true,
     val doublePageShift: Int = 0,
@@ -81,7 +84,11 @@ data class ReaderConfig(
     val forceFullDecode: Boolean = false,
     val tileModeEnabled: Boolean = false,
     val downsampleTier: DownsampleTier = DownsampleTier.STANDARD,
-    val tallSplitEnabled: Boolean = true,
+    // ★ 条漫分割默认关（2026-10-05 用户裁定：此前默认开会把不需要切的长页也切了；
+    //   需要的用户在阅读设置里开）。tallSplitSensitivity 判定档位：0=宽松(比例>3,原行为)
+    //   1=标准(>4.5) 2=严格(>6.5)——逐档要求更长的图才触发
+    val tallSplitEnabled: Boolean = false,
+    val tallSplitSensitivity: Int = 0,
     val brightness: Int = 0,
     val screenBrightness: Int = 0,
     val contrast: Int = 100,
@@ -164,6 +171,7 @@ data class ReaderConfig(
             putString("pageLayout", pageLayout.name)
             putBoolean("${prefix}useSSIV", useSSIV)
             putBoolean("landscapeZoom", landscapeZoom)
+            putBoolean("isDoubleTapZoom", isDoubleTapZoom)
             putBoolean("fitScreen", fitScreen)
             putBoolean("${prefix}panNavigation", panNavigation)
             putInt("${prefix}doublePageShift", doublePageShift)
@@ -180,6 +188,7 @@ data class ReaderConfig(
             putBoolean("tileModeEnabled", tileModeEnabled)
             putString("downsampleTier", downsampleTier.name)
             putBoolean("tallSplitEnabled", tallSplitEnabled)
+            putInt("tallSplitSensitivity", tallSplitSensitivity)
             putInt("${prefix}brightness", brightness)
             putInt("${prefix}screenBrightness", screenBrightness)
             putInt("${prefix}contrast", contrast)
@@ -260,6 +269,7 @@ data class ReaderConfig(
                 pageLayout = try { PageLayout.valueOf(rString("pageLayout", "SINGLE")) } catch (_: Exception) { PageLayout.SINGLE },
                 useSSIV = rBoolean("useSSIV", true),
                 landscapeZoom = rBoolean("landscapeZoom", false),
+                isDoubleTapZoom = rBoolean("isDoubleTapZoom", true),
                 fitScreen = rBoolean("fitScreen", false),
                 panNavigation = rBoolean("panNavigation", true),
                 doublePageShift = rInt("doublePageShift", 0),
@@ -274,7 +284,8 @@ data class ReaderConfig(
                 seamlessNextVolume = rBoolean("seamlessNextVolume", true),
                 forceFullDecode = rBoolean("forceFullDecode", false),
                 tileModeEnabled = rBoolean("tileModeEnabled", false),
-                tallSplitEnabled = rBoolean("tallSplitEnabled", true),
+                tallSplitEnabled = rBoolean("tallSplitEnabled", false),
+                tallSplitSensitivity = rInt("tallSplitSensitivity", 0).coerceIn(0, 2),
                 brightness = rInt("brightness", 0).coerceIn(-100, 100),
                 screenBrightness = rInt("screenBrightness", 0).coerceIn(-100, 100),
                 contrast = rInt("contrast", 100).coerceIn(0, 200),
@@ -443,6 +454,7 @@ data class ReaderConfig(
             "tileModeEnabled" to { it.tileModeEnabled },
             "downsampleTier" to { it.downsampleTier.name },
             "tallSplitEnabled" to { it.tallSplitEnabled },
+            "tallSplitSensitivity" to { it.tallSplitSensitivity },
         )
 
         /** 书内设置面板 diff：返回真正改动的键名（含全局键——由 ReaderScope 决定写层） */

@@ -13,8 +13,20 @@ import kotlin.math.ceil
  *   本对象取段几何，单一事实来源，永不分叉。
  */
 object PdfTallSplitCalculator {
+    /** 宽松档（历史默认）：比例 > 3 且高于段高才拆 */
     const val TALL_RATIO_THRESHOLD = 3f
+    /** ★ 判定档位（2026-10-05，用户"判定太容易触发"）：标准 4.5、严格 6.5——比例阈值逐档加大，
+     *  严格档只拆真正的超长条漫（更长的图才触发），普通长插图页不再被切 */
+    const val TALL_RATIO_STANDARD = 4.5f
+    const val TALL_RATIO_STRICT = 6.5f
     const val MAX_SEGMENTS = 64
+
+    /** 判定档位 → 比例阈值（0=宽松 3.0 / 1=标准 4.5 / 2=严格 6.5；越界回宽松） */
+    fun ratioThreshold(sensitivity: Int): Float = when (sensitivity) {
+        1 -> TALL_RATIO_STANDARD
+        2 -> TALL_RATIO_STRICT
+        else -> TALL_RATIO_THRESHOLD
+    }
 
     /** 纯 Kotlin 段矩形（页面坐标系），替代 android.graphics.RectF 使几何层可 JVM 测试 */
     data class SplitRect(val left: Float, val top: Float, val right: Float, val bottom: Float) {
@@ -36,9 +48,14 @@ object PdfTallSplitCalculator {
         return optimalSplitHeightPx(screenMax) * pageWidth / screenWidth.toFloat()
     }
 
-    fun isTallPage(pageWidth: Float, pageHeight: Float, splitHeightPdf: Float): Boolean {
+    fun isTallPage(
+        pageWidth: Float,
+        pageHeight: Float,
+        splitHeightPdf: Float,
+        ratioThreshold: Float = TALL_RATIO_THRESHOLD,
+    ): Boolean {
         if (pageWidth <= 0f) return false
-        return pageHeight / pageWidth > TALL_RATIO_THRESHOLD && pageHeight > splitHeightPdf
+        return pageHeight / pageWidth > ratioThreshold && pageHeight > splitHeightPdf
     }
 
     fun segmentCount(pageHeight: Float, splitHeightPdf: Float): Int {
