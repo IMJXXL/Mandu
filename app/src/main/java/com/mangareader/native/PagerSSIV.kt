@@ -42,6 +42,14 @@ class PagerSSIV @JvmOverloads constructor(
      *  双击事件直接放行不消费。由 PagerReaderView 按 config.isDoubleTapZoom 接线。 */
     var doubleTapZoom = true
 
+    /** ★ 滑动兜底（2026-10-05，"zip 单页滑动不翻页"普通模式防线）：未放大态沿主轴的滑动
+     *  靠"放行→ViewPager2 内部 RecyclerView 拦截接管"翻页——个别 ROM/系统版本拦截行为
+     *  异常时滑动就死（点击仍能翻）。两个时机显式兜底：onFling（沿主轴快速滑动）与
+     *  UP（位移超 30% 视口的慢拖），交 pager 翻一页。正常设备 VP2 拦截后本视图收到
+     *  CANCEL，这两处根本不触发（零双重翻页）；短码 fling-fb / up-fb 证明走到了兜底。 */
+    var pagerSwipeFallback: ((dir: Int) -> Unit)? = null
+    private var fallbackFired = false
+
     private fun gestureBaseScale(): Float = if (viewportBaseScale > 0f) viewportBaseScale else minScale
 
     private fun hasVerticalPanRoom(): Boolean = try {
@@ -58,6 +66,17 @@ class PagerSSIV @JvmOverloads constructor(
 
     // 双击检测器
     private val doubleTapDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
+        override fun onFling(e1: MotionEvent?, e2: MotionEvent, vx: Float, vy: Float): Boolean {
+            if (fallbackFired || scale > gestureBaseScale() + 0.01f) return false
+            val alongAxis = if (axisPassthroughHorizontal)
+                kotlin.math.abs(vx) >= kotlin.math.abs(vy) else kotlin.math.abs(vy) >= kotlin.math.abs(vx)
+            if (!alongAxis) return false
+            val v = if (axisPassthroughHorizontal) vx else vy
+            fallbackFired = true
+            markSwipe(context, "fling-fb")
+            pagerSwipeFallback?.invoke(if (v < 0) 1 else -1)
+            return true
+        }
         override fun onDoubleTap(e: MotionEvent): Boolean {
             // ★ 双击放大关闭：不消费不动作——连点快速翻页不再被双击判定打断
             if (!doubleTapZoom) return false
@@ -116,6 +135,7 @@ class PagerSSIV @JvmOverloads constructor(
                 downY = event.y
                 consumedDown = false
                 swipeDiagMarked = false
+                fallbackFired = false
                 if (scale <= base + 0.01f) {
                     // 未放大：消费 DOWN 保留事件流，MOVE 按方向分流（翻页/拖图）
                     return true
@@ -151,6 +171,23 @@ class PagerSSIV @JvmOverloads constructor(
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 parent?.requestDisallowInterceptTouchEvent(false)
+                // ★ UP 兜底（仅 UP；VP2 拦截后会发 CANCEL，正常设备走不到这里）：
+                // 未放大态沿主轴慢拖超 30% 视口且拦截没接管 → 显式翻一页
+                if (event.actionMasked == MotionEvent.ACTION_UP && !consumedDown && !fallbackFired &&
+                    scale <= base + 0.01f && pagerSwipeFallback != null
+                ) {
+                    val dx = event.x - downX
+                    val dy = event.y - downY
+                    val alongAxis = if (axisPassthroughHorizontal)
+                        kotlin.math.abs(dx) >= kotlin.math.abs(dy) else kotlin.math.abs(dy) >= kotlin.math.abs(dx)
+                    val d = if (axisPassthroughHorizontal) dx else dy
+                    val extent = if (axisPassthroughHorizontal) width else height
+                    if (alongAxis && extent > 0 && kotlin.math.abs(d) > extent * 0.3f) {
+                        fallbackFired = true
+                        markSwipe(context, "up-fb")
+                        pagerSwipeFallback?.invoke(if (d < 0) 1 else -1)
+                    }
+                }
                 if (!consumedDown) return false
             }
         }

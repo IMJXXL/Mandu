@@ -1810,6 +1810,17 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 setDoubleTapZoomDuration(300)
                 axisPassthroughHorizontal = !verticalPager
                 doubleTapZoom = this@PagerReaderView.doubleTapZoom
+                // ★ 滑动兜底接线（PagerSSIV.pagerSwipeFallback）：仅在 VP2 拦截未接管的
+                // 异常设备上触发；IDLE 守卫防与原生滚动打架
+                pagerSwipeFallback = { dir ->
+                    try {
+                        val count = pagerAdapter?.itemCount ?: 0
+                        if (count > 0 && viewPager.scrollState == ViewPager2.SCROLL_STATE_IDLE) {
+                            val target = (viewPager.currentItem + dir).coerceIn(0, count - 1)
+                            if (target != viewPager.currentItem) viewPager.setCurrentItem(target, true)
+                        }
+                    } catch (_: Exception) {}
+                }
                 visibility = View.GONE
             }
         }

@@ -1059,6 +1059,11 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                 }
                 if (count > 0 && totalRatio / count < 0.55f) {
                     mode = Mode.VERT
+                    // ★ 用户报告"zip/图片文件夹单页不能滑动翻页"的最可能根因（2026-10-05）：
+                    //   自动条漫检测按前3页平均宽高比<0.55 把整本静默切成条漫——条漫横滑本就
+                    //   不翻页，用户视角=滑动坏了且"偏偏只有 zip/文件夹这样"（长图集中）。
+                    //   切换必须可见：书内模式菜单手动选过模式后 userSetMode>=0 不再自动切
+                    android.widget.Toast.makeText(ctx, "检测到长图，已自动切为条漫模式（可在阅读模式菜单改回翻页）", android.widget.Toast.LENGTH_LONG).show()
                 }
             }
         }
