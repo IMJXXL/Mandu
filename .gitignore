@@ -59,3 +59,4 @@ tools/preview/
 tools/__pycache__/
 tools/cugan_app.py
 tools/_patch_*.py
+.tmp_*.py
