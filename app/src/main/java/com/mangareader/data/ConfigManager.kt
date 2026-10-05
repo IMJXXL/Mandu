@@ -89,7 +89,7 @@ class ConfigManager(private val context: Context) {
                 scrollMode = try { ReaderConfig.ScrollMode.valueOf(json.getString("scrollMode")) } catch (_: Exception) { ReaderConfig.ScrollMode.HORIZONTAL_LEFT },
                 clickFlipType = try { ReaderConfig.ClickFlipType.valueOf(json.getString("clickFlipType")) } catch (_: Exception) { ReaderConfig.ClickFlipType.LEFT_RIGHT },
                 isFlipAnimation = json.optBoolean("isFlipAnimation", true),
-                isCurlContentAreaOnly = json.optBoolean("isCurlContentAreaOnly", false),
+                isCurlContentAreaOnly = json.optBoolean("isCurlContentAreaOnly", true),
                 curlBackContentAlpha = json.optDouble("curlBackContentAlpha", 0.1).toFloat(),
                 curlShadowAlpha = json.optDouble("curlShadowAlpha", 0.2).toFloat(),
                 spineShadowAlpha = json.optDouble("spineShadowAlpha", 0.09).toFloat(),

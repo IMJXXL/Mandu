@@ -91,7 +91,7 @@ internal fun prefGlobalValue(prefs: SharedPreferences, key: String): Any? {
 }
 
 internal val PREF_DEFAULTS: Map<String, Any> = mapOf(
-    "isFlipAnimation" to true, "isPageCurlAnimation" to false, "isCurlContentAreaOnly" to false,
+    "isFlipAnimation" to true, "isPageCurlAnimation" to false, "isCurlContentAreaOnly" to true,
     "curlBackContentAlpha" to 0.1f, "curlShadowAlpha" to 0.2f, "spineShadowAlpha" to 0.09f,
     "isShowPageNum" to true, "isKeepScreenOn" to true, "isImmersiveMode" to true,
     "isTrimWhiteBorder" to false, "trimFactor" to 0.02f, "trimThreshold" to 220, "trimWhiteRatio" to 0.90f,

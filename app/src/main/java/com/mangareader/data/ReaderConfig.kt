@@ -17,8 +17,8 @@ data class ReaderConfig(
     val clickFlipType: ClickFlipType = ClickFlipType.LEFT_RIGHT,
     val isFlipAnimation: Boolean = true,
     val isPageCurlAnimation: Boolean = false,
-    /** 双页仿真翻页「仅画面区域」模式：翻页动画只发生在画面矩形内，留边不参与（默认关=整页翻） */
-    val isCurlContentAreaOnly: Boolean = false,
+    /** 双页仿真翻页「仅画面区域」模式：翻页动画只发生在画面矩形内，留边不参与（2026-10-05 用户拍板默认开=更像翻真书；满屏页无差异，不满屏页不再扫过黑边） */
+    val isCurlContentAreaOnly: Boolean = true,
     /** 双页仿真翻页背面透出程度：翻页动画背面显示下一页内容的强度 0~1（0=纯背景色，1=完全清晰，默认 0.1=纸张背透） */
     val curlBackContentAlpha: Float = 0.1f,
     /** 仿真翻页投影阴影浓度 0~0.5（0=关闭阴影，默认 0.2） */
@@ -227,7 +227,7 @@ data class ReaderConfig(
                 clickFlipType = try { ClickFlipType.valueOf(rString("clickFlipType", "LEFT_RIGHT")) } catch (_: Exception) { ClickFlipType.LEFT_RIGHT },
                 isFlipAnimation = rBoolean("isFlipAnimation", true),
                 isPageCurlAnimation = rBoolean("isPageCurlAnimation", false),
-                isCurlContentAreaOnly = rBoolean("isCurlContentAreaOnly", false),
+                isCurlContentAreaOnly = rBoolean("isCurlContentAreaOnly", true),
                 curlBackContentAlpha = rFloat("curlBackContentAlpha", 0.1f),
                 curlShadowAlpha = rFloat("curlShadowAlpha", 0.2f),
                 spineShadowAlpha = rFloat("spineShadowAlpha", 0.09f),
