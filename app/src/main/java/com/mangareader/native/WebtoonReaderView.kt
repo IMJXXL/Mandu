@@ -42,6 +42,29 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
     // ★ 双击放大开关（config.isDoubleTapZoom）：转发给 WebtoonRv 的双击缩放判定
     var doubleTapZoom = true
         set(value) { field = value; recycler.doubleTapZoom = value }
+    // ★ 点击翻页区域对齐 mihon navigationModeWebtoon（2026-10-05 R4）：
+    //   条漫点击分区不再硬编码——PREV=上滚一屏 / NEXT=下滚一屏 / MENU=呼出菜单，
+    //   与翻页视图共用 buildNavigation（关闭/L型/边沿/Kindlish 全部生效；竖向滚动无 RTL 概念，
+    //   PREV/NEXT 不随方向翻转，与 VerticalPagerNavigation 同思路）
+    private var clickFlipType: Int = 1
+    private var clickFlipInvertH = false
+    private var navigation: ViewerNavigation = DefaultNavigation
+
+    private fun applyNavigation() {
+        navigation = buildNavigation(clickFlipType, clickFlipInvertH, verticalPager = false)
+    }
+
+    override fun setClickFlipTypeLive(type: Int) {
+        if (clickFlipType == type) return
+        clickFlipType = type
+        applyNavigation()
+    }
+
+    override fun setClickFlipInvert(invert: Boolean) {
+        if (clickFlipInvertH == invert) return
+        clickFlipInvertH = invert
+        applyNavigation()
+    }
     private var engine: ArchiveEngine? = null
     private var treePath = ""
     /** ★ SMB/WebDAV 页面供给抽象（RemotePageSupply）：非 null 时页面加载走远程会话，ArchiveEngine 不参与 */
@@ -399,6 +422,16 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
         recycler.adapter = adapter
         recycler.tapListener = { onToggleUi?.invoke() }
         recycler.tapZoneScroll = { ratio -> scrollViewport(ratio) }
+        // ★ R4：点击区按导航模式分发（PREV=上滚/NEXT=下滚/MENU=菜单），随设置即时生效
+        recycler.tapActionRouter = { ev ->
+            val fx = ev.x / recycler.width.coerceAtLeast(1)
+            val fy = ev.y / recycler.height.coerceAtLeast(1)
+            when (navigation.getAction(fx, fy)) {
+                NavigationAction.PREV -> recycler.tapZoneScroll?.invoke(-0.8f)
+                NavigationAction.NEXT -> recycler.tapZoneScroll?.invoke(0.8f)
+                NavigationAction.MENU -> recycler.tapListener?.invoke(ev)
+            }
+        }
         recycler.addOnScrollListener(object : RecyclerView.OnScrollListener() {
             override fun onScrollStateChanged(rv: RecyclerView, state: Int) {
                 scrolling = state != RecyclerView.SCROLL_STATE_IDLE
@@ -497,6 +530,8 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
     override fun setup(engine: ArchiveEngine, treePath: String, pages: List<ArchiveEngine.PageMeta>, startPage: Int, vertical: Boolean, clickFlip: Int, rtl: Boolean, verticalPager: Boolean) {
         val changed = this.pageList.size != pages.size || this.treePath != treePath
         this.engine = engine; this.treePath = treePath
+        // ★ R4：进书时同步点击翻页区域（后续变化走 setClickFlipTypeLive/setClickFlipInvert）
+        if (clickFlipType != clickFlip) { clickFlipType = clickFlip; applyNavigation() }
         val screenMax = maxOf(context.resources.displayMetrics.widthPixels, context.resources.displayMetrics.heightPixels)
         val screenWidth = context.resources.displayMetrics.widthPixels
         val cfg = com.mangareader.data.ReaderConfig.load(context)
@@ -1472,6 +1507,8 @@ class WebtoonRv(ctx: Context) : RecyclerView(ctx) {
     // ★ 条漫左右点击翻屏回调：由 WebtoonReaderView 接到 scrollViewport（WebtoonRv 是
     //   独立顶级类拿不到外层阅读器，直接调 scrollViewport 恒 Unresolved——上一轮未编译漏网）
     var tapZoneScroll: ((Float) -> Unit)? = null
+    /** ★ R4：点击分区路由（外层 WebtoonReaderView 按 ViewerNavigation 分发）；null=旧硬编码三分 */
+    var tapActionRouter: ((MotionEvent) -> Unit)? = null
     var doubleTapZoom = true
 
     private var currentScale = DEFAULT_RATE
@@ -1572,9 +1609,14 @@ class WebtoonRv(ctx: Context) : RecyclerView(ctx) {
             //   没有点击翻页语义（笔/手指一致）。对齐主流阅读器：左右 30% 点击=逆向/顺向滚动
             //   一屏（笔与手指同路），中带保持呼出菜单；双击缩放不受影响（Confirmed 已避开双击）。
             //   菜单开着时点按落在菜单层、到不了本视图，无需另行判断。
+            // ★ R4（2026-10-05 对齐 mihon navigationModeWebtoon）：分区路由交给外层
+            //   WebtoonReaderView 的 ViewerNavigation（点击翻页区域设置全模式生效）；
+            //   未接线时保持原硬编码 30% 三分兜底。
             val fx = ev.x / width.coerceAtLeast(1)
             try { com.mangareader.DiagTracer.mark(context, "tap src=${ev.source} tool=${ev.getToolType(0)} fx=${(fx * 100).toInt()} kind=webtoon") } catch (_: Throwable) {}
-            when {
+            val router = tapActionRouter
+            if (router != null) router(ev)
+            else when {
                 fx < 0.30f -> tapZoneScroll?.invoke(-0.8f)
                 fx > 0.70f -> tapZoneScroll?.invoke(0.8f)
                 else -> tapListener?.invoke(ev)

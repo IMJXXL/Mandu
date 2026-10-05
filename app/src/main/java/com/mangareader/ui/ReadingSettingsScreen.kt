@@ -402,7 +402,7 @@ fun ReadingSettingsScreen(onBack: () -> Unit, onOpenKeyMap: (() -> Unit)? = null
 
             item {
                 com.mangareader.smbbridge.SectionCard("点击翻页区域") {
-                    Text("翻页画面时点哪一块做什么（横向翻页模式；条漫/仿真翻页不适用）", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("翻页画面时点哪一块做什么（翻页/条漫/仿真翻页均适用；条漫中上一页=上滚一屏、下一页=下滚一屏）", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(10.dp))
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         listOf(

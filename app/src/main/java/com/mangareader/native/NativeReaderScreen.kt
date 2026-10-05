@@ -424,6 +424,11 @@ fun NativeReaderScreen(
             delegate.setClickFlipTypeLive(clickFlip)
             delegate.setClickFlipInvert(clickFlipInvert)
         }
+        // ★ R4（2026-10-05 对齐 mihon navigationModeWebtoon）：条漫点击区同步接通实时通道
+        if (delegate is WebtoonReaderView) {
+            delegate.setClickFlipTypeLive(clickFlip)
+            delegate.setClickFlipInvert(clickFlipInvert)
+        }
         // ★ curl 双视图同款接线（此前 setup 收参零使用、实时通道缺失 → 点击区域设置在仿真翻页静默失效）
         if (delegate is com.mangareader.native.curl.CurlReaderView) {
             delegate.setClickFlipTypeLive(clickFlip)
