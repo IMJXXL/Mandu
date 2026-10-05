@@ -48,7 +48,7 @@ import kotlinx.coroutines.withTimeout
  * - pdf/epub → DocumentExtractPageLoader（document extract）
  * - 7z/rar/cbr → SolidExtractPageLoader（失败回退整档下载 + 本地 useArchivePageLoader）
  * - 含图片目录 → SmbFolderPageLoader
- * - mobi/azw3 → Unsupported（占位 + 下载）
+ * - mobi/azw/azw3 → DocumentExtractPageLoader（M2 记录级流式，不再 Unsupported）
  *
  * PageLoader 作用域契约：useXxxPageLoader 的 block 挂起在 [SmbPageAdapter.awaitClose]，
  * [SmbPageAdapter.close] 触发返回，autoCloseScope 随之关闭 source —— "调用方持有到 close"

@@ -13,10 +13,14 @@ import kotlinx.coroutines.withContext
 /**
  * WebDAV 需全量下载格式处理（design.md 2.2.2 WebDavUnsupportedFormatHandler / spec 5.11）。
  * 与 SmbUnsupportedFormatHandler 对称；提示文案由 UI 侧增加"此格式需要完整下载"。
+ *
+ * `mobi/azw/azw3` 已在 mobi 流式 M2（f48a008b）接入 DocumentExtractPageLoader 记录级流式
+ * 管线——此前 dispatch 层流式分支已就绪但本集合未清空，openWebDavBook 的 Unsupported
+ * 前置守卫把 mobi 全部拦死在占位+下载（2026-10-06 工单实锤）。集合清空后全链自动放开。
  */
 object WebDavUnsupportedFormatHandler {
 
-    val UNSUPPORTED_FORMATS: Set<String> = setOf("mobi", "azw3")
+    val UNSUPPORTED_FORMATS: Set<String> = emptySet()
 
     fun isUnsupported(ext: String): Boolean = ext.lowercase() in UNSUPPORTED_FORMATS
 

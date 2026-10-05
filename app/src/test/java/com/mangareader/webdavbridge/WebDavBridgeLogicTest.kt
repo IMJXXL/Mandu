@@ -52,9 +52,11 @@ class WebDavBridgeLogicTest {
     }
 
     @Test
-    fun `unsupported formats are mobi and azw3 only`() {
-        assertTrue(WebDavUnsupportedFormatHandler.isUnsupported("mobi"))
-        assertTrue(WebDavUnsupportedFormatHandler.isUnsupported("azw3"))
+    fun `unsupported formats empty after mobi streaming M2`() {
+        // 2026-10-06：与 SMB 侧对称——mobi/azw/azw3 流式支持后黑名单清空
+        assertFalse(WebDavUnsupportedFormatHandler.isUnsupported("mobi"))
+        assertFalse(WebDavUnsupportedFormatHandler.isUnsupported("azw3"))
+        assertFalse(WebDavUnsupportedFormatHandler.isUnsupported("azw"))
         assertFalse(WebDavUnsupportedFormatHandler.isUnsupported("cbz"))
         assertFalse(WebDavUnsupportedFormatHandler.isUnsupported("pdf"))
     }

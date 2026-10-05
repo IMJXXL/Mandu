@@ -53,6 +53,12 @@ class PagerSSIV @JvmOverloads constructor(
      *  双击事件直接放行不消费。由 PagerReaderView 按 config.isDoubleTapZoom 接线。 */
     var doubleTapZoom = true
 
+    /** ★ 未放大态平移接管标记（2026-10-06 双翻页源对齐）：hold-pan/hold-zoomedPan 期间置位，
+     *  DOWN/UP/CANCEL 复位。根检测器（PagerReaderView.dispatchTouchEvent 层）凭此让路——
+     *  两判定窗（根 dx≥dy 严格 vs 本视图沿轴判定）对斜滑结论不一致，适应宽度页竖拖平移中
+     *  轨迹稍斜会被根检测器抢翻（工单"高度越界不能下滑一点就翻页"实锤）。 */
+    var panActive = false
+
     /** ★ 滑动兜底（2026-10-05，"zip 单页滑动不翻页"普通模式防线）：未放大态沿主轴的滑动
      *  靠"放行→ViewPager2 内部 RecyclerView 拦截接管"翻页——个别 ROM/系统版本拦截行为
      *  异常时滑动就死（点击仍能翻）。两个时机显式兜底：onFling（沿主轴快速滑动）与
@@ -166,6 +172,7 @@ class PagerSSIV @JvmOverloads constructor(
                 swipeDiagMarked = false
                 fallbackFired = false
                 passFlipOwns = false
+                panActive = false
                 if (scale <= base + 0.01f) {
                     // 未放大：消费 DOWN 保留事件流，MOVE 按方向分流（翻页/拖图）
                     return true
@@ -189,6 +196,7 @@ class PagerSSIV @JvmOverloads constructor(
                         return false
                     }
                     markSwipe(context, "hold-zoomedPan")
+                    panActive = true
                     parent?.requestDisallowInterceptTouchEvent(true)
                     return super.onTouchEvent(event)
                 }
@@ -197,11 +205,13 @@ class PagerSSIV @JvmOverloads constructor(
                 //   无可拖空间（完整显示模式纵向贴边）→ 一并放行翻页，与旧行为一致
                 // ★ 2026-10-05 横屏滑动翻页+贴高拖图双修：主轴拖动先看"该轴有无可拖余量"——
                 //   贴高/缩放超出(有余量)→归拖图；铺满贴边(无余量)→放行翻页。
-                //   判拖图还需正交分量明显占优(×1.25)：横屏拇指弧线 dx≈dy 旧判据全归拖图，
-                //   铺满下永不翻页（工单实锤 hold-pan 连发）。
+                // ★ 2026-10-06 判定窗收紧 ×1.25→×1.0（对齐 mihon fork dx>dy 判据）：
+                //   旧窗把 dx∈(0.8dy, dy) 的斜竖滑判成沿轴——适应宽度页横向贴满无余量、
+                //   dOrtho>dAlong 又差一线 → 落 8% 自翻=斜竖滑"一点就翻页"（工单实锤，
+                //   mihon 同轨迹 dx<dy 全归平移）；dx≥dy 的横主导斜滑行为不变。
                 val dx = kotlin.math.abs(event.x - downX)
                 val dy = kotlin.math.abs(event.y - downY)
-                val alongAxis = if (axisPassthroughHorizontal) dy < dx * 1.25f else dx < dy * 1.25f
+                val alongAxis = if (axisPassthroughHorizontal) dy < dx else dx < dy
                 if (alongAxis) {
                     val alongRoom = if (axisPassthroughHorizontal) hasHorizontalPanRoom() else hasVerticalPanRoom()
                     if (alongRoom) {
@@ -215,6 +225,7 @@ class PagerSSIV @JvmOverloads constructor(
                             return false
                         }
                         markSwipe(context, "hold-pan")
+                        panActive = true
                         parent?.requestDisallowInterceptTouchEvent(true)
                         consumedDown = true
                         return super.onTouchEvent(event)
@@ -227,6 +238,7 @@ class PagerSSIV @JvmOverloads constructor(
                     val dOrtho = if (axisPassthroughHorizontal) kotlin.math.abs(event.y - downY) else kotlin.math.abs(event.x - downX)
                     if (orthoRoom && dOrtho > dAlong) {
                         markSwipe(context, "hold-pan")
+                        panActive = true
                         parent?.requestDisallowInterceptTouchEvent(true)
                         consumedDown = true
                         return super.onTouchEvent(event)
@@ -282,12 +294,14 @@ class PagerSSIV @JvmOverloads constructor(
                     return true
                 }
                 markSwipe(context, "hold-pan")
+                panActive = true
                 parent?.requestDisallowInterceptTouchEvent(true)
                 consumedDown = true
                 return super.onTouchEvent(event)
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 parent?.requestDisallowInterceptTouchEvent(false)
+                panActive = false
                 // ★ pass-flip 自接管的手势流在此收尾：翻页判定已在 MOVE 内完成（自翻或
                 //   正常设备 RV 拦截时收 CANCEL），super 从未见过这段流的 DOWN，不透传
                 if (passFlipOwns) {

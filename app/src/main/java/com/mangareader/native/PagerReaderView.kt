@@ -500,7 +500,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         private var rootFired = false
         override fun onDown(e: MotionEvent): Boolean { rootFired = false; return super.onDown(e) }
         override fun onScroll(e1: MotionEvent?, e2: MotionEvent, dx: Float, dy: Float): Boolean {
-            if (rootFired) return false
+            if (rootFired || activePagePanning()) return false
             val dAlong = if (!verticalPager) (e2.x - (e1?.x ?: e2.x)) else (e2.y - (e1?.y ?: e2.y))
             val dOrtho = if (!verticalPager) (e2.y - (e1?.y ?: e2.y)) else (e2.x - (e1?.x ?: e2.x))
             val extent = if (!verticalPager) width else height
@@ -518,7 +518,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 kotlin.math.abs(vx) >= kotlin.math.abs(vy) && kotlin.math.abs(dxTotal) >= kotlin.math.abs(dyTotal)
             else
                 kotlin.math.abs(vy) >= kotlin.math.abs(vx) && kotlin.math.abs(dyTotal) >= kotlin.math.abs(dxTotal)
-            if (alongAxis && !rootFired) {
+            if (alongAxis && !rootFired && !activePagePanning()) {
                 val v = if (!verticalPager) vx else vy
                 if (tryRootFlip(if (v < 0) 1 else -1)) rootFired = true
             }
@@ -590,6 +590,20 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         } catch (_: Exception) { false }
     }
 
+    /** ★ SSIV 未放大态平移接管中（2026-10-06）：根检测器让路用。与 isCurrentPageZoomed
+     *  同款 holder 定位——双翻页源（根检测器/SSIV 分流）判定窗对斜滑不一致，适应宽度页
+     *  竖拖平移中轨迹稍斜，根检测器沿轴占优判定会抢翻打断平移；转发层丢流的设备 SSIV
+     *  收不到 MOVE 不置位，根检测器照常兜底翻页，本机故障路径不受影响。 */
+    private fun activePagePanning(): Boolean {
+        return try {
+            val rv = viewPager.getChildAt(0) as? androidx.recyclerview.widget.RecyclerView ?: return false
+            val lm = rv.layoutManager as? androidx.recyclerview.widget.LinearLayoutManager ?: return false
+            val pos = lm.findFirstVisibleItemPosition()
+            if (pos == -1 || pos == androidx.recyclerview.widget.RecyclerView.NO_POSITION) return false
+            (rv.findViewHolderForAdapterPosition(pos) as? PagerViewHolder)?.ssiv?.panActive == true
+        } catch (_: Exception) { false }
+    }
+
     /** ★ 根检测器翻页动作：仅静止（IDLE）且当前页未放大时生效——放大态由 SSIV 平移/拖图，
      *  RV 接管后的滚动（DRAGGED/SETTLING）由 ViewPager2 自己完成，这里一律让位。 */
     private fun tryRootFlip(dir: Int): Boolean {
@@ -616,7 +630,13 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
                 override fun onPageSelected(position: Int) {
                     // ★ setup 锚定窗口：只记方向参照，不写 curPage/不报章末（见 setupAnchoring 注释）
-                    if (setupAnchoring) { lastSelectedPosition = position; return }
+                    // ★ 表切换窗口（2026-10-06 乱跳页根因）：rebindForNewTable 的 notifyDataSetChanged
+                    //   会让 VP2 以旧 position 数值触发本回调，而 spreadTable 已是新表——旧位置按
+                    //   新表解释出错误页号（1006 日志实锤 start=37→3→0 十五毫秒三连、33↔35 振荡）
+                    //   外报到 Reader.cur，经重组 setup 回灌放大，直到收敛不动点第 0 页。窗口内
+                    //   只记位置不写页；锚定 setCurrentItem(positionOf(currentPage)) 后位置本就对齐，
+                    //   currentPage 无需更新，零丢报
+                    if (setupAnchoring || layoutSwitchPending) { lastSelectedPosition = position; return }
                     // ★ T8：position → spread 序号（RTL 唯一镜像点）→ 跨页表取该位阅读序首页
                     //   （2026-10-05 重做：奇偶/首张单页/智能跳位全在表内，这里只做 RTL 镜像）
                     val itemCount = pagerAdapter?.itemCount ?: spreadTable.slotCount
@@ -1946,6 +1966,19 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                         ssv.setOnImageEventListener(null)
                     }
                 })
+                // ★ base 同步双保险（2026-10-06 日志实锤 scale=0.81 base=0.75 六连误判）：
+                //   缓存命中重绑的 onReady 到达前手势已可开滑，base 残留上一页值 → 未放大被
+                //   误判放大 → hold-zoomedPan 吞滑数秒。onReady 后 applyPlanScale 以同公式设
+                //   同值（幂等），此处只补窗口期的判定基准。
+                if (ssv.width > 0 && ssv.height > 0) {
+                    try {
+                        val isTablet = resources.configuration.smallestScreenWidthDp >= 600
+                        ssv.viewportBaseScale = ScalePlan.baseScale(
+                            scaleMode, ssv.width.toFloat(), ssv.height.toFloat(),
+                            bmp.width.toFloat(), bmp.height.toFloat(), isTablet
+                        )
+                    } catch (_: Exception) {}
+                }
                 ssv.setImage(com.davemorrissey.labs.subscaleview.ImageSource.cachedBitmap(bmp))
             } else {
                 // 不使用 SSIV：静态 ImageView 按档位生效（2026-10-05 重做前恒 FIT_CENTER，
@@ -2014,6 +2047,16 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                         ssv.setOnImageEventListener(null)
                     }
                 })
+                // ★ base 同步双保险（同 setImage 2026-10-06）：onReady 前以半页宽公式预置
+                if (ssv.width > 0 && ssv.height > 0) {
+                    try {
+                        val isTablet = resources.configuration.smallestScreenWidthDp >= 600
+                        ssv.viewportBaseScale = ScalePlan.baseScale(
+                            scaleMode, ssv.width.toFloat(), ssv.height.toFloat(),
+                            (bmp.width / 2f).coerceAtLeast(1f), bmp.height.toFloat(), isTablet
+                        )
+                    } catch (_: Exception) {}
+                }
                 ssv.setImage(com.davemorrissey.labs.subscaleview.ImageSource.cachedBitmap(bmp))
             } else {
                 val halfW = bmp.width / 2
@@ -2169,6 +2212,9 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             iv?.visibility = View.GONE
             // ★ 占位动画：SSIV setImage(uri) 异步 decode+tile 初始化，onReady 之前显示 loadingBar
             loadingBar?.visibility = View.VISIBLE
+            // ★ base 同步双保险（同 setImage 2026-10-06）：瓦片路径 onReady 前拿不到源图尺寸，
+            //   置 0 回落 minScale——setImage 后 SSIV 内部 minScale 即新图 contain，判定不残留旧页值
+            try { ssv.viewportBaseScale = 0f } catch (_: Exception) {}
             ssv.setOnImageEventListener(object : com.davemorrissey.labs.subscaleview.SubsamplingScaleImageView.DefaultOnImageEventListener() {
                 override fun onReady() {
                     ssv.setOnImageEventListener(null)

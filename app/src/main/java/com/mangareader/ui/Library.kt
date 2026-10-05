@@ -1438,9 +1438,13 @@ private fun BookCard(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, isS
         color = Color.Transparent,
     ) {
         Column {
-        // ★ 远程不支持流式格式（mobi/azw3）→ 第一时间显示"需下载"占位符，不触发封面加载
+        // ★ 远程不支持流式格式 → 第一时间显示"需下载"占位符，不触发封面加载
+        //   （2026-10-06：mobi/azw/azw3 M2 流式已通、两个 Handler 集合清空后恒 false；
+        //   原硬编码 setOf("mobi","azw3") 漏 azw 且不跟随流式支持范围，改走 Handler 查询）
         val fileExt = b.fileType.lowercase()
-        val isRemoteUnsupported = (b.source == "smb" || b.source == "webdav") && b.originalPath == null && fileExt in setOf("mobi", "azw3")
+        val isRemoteUnsupported = (b.source == "smb" || b.source == "webdav") && b.originalPath == null &&
+            (if (b.source == "smb") com.mangareader.smbbridge.SmbUnsupportedFormatHandler.isUnsupported(fileExt)
+             else com.mangareader.webdavbridge.WebDavUnsupportedFormatHandler.isUnsupported(fileExt))
 
         val coverRatio = 0.72f
         Box(Modifier.fillMaxWidth().aspectRatio(coverRatio).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {

@@ -85,9 +85,12 @@ class SmbBridgeLogicTest {
     }
 
     @Test
-    fun `unsupported formats are mobi and azw3 only`() {
-        assertTrue(SmbUnsupportedFormatHandler.isUnsupported("mobi"))
-        assertTrue(SmbUnsupportedFormatHandler.isUnsupported("AZW3"))
+    fun `unsupported formats empty after mobi streaming M2`() {
+        // 2026-10-06：mobi/azw/azw3 走 DocumentExtractPageLoader 记录级流式（M2），
+        // Unsupported 前置守卫曾把流式分支拦成死代码——黑名单清空，全链放开
+        assertFalse(SmbUnsupportedFormatHandler.isUnsupported("mobi"))
+        assertFalse(SmbUnsupportedFormatHandler.isUnsupported("AZW3"))
+        assertFalse(SmbUnsupportedFormatHandler.isUnsupported("azw"))
         assertFalse(SmbUnsupportedFormatHandler.isUnsupported("cbz"))
         assertFalse(SmbUnsupportedFormatHandler.isUnsupported("cbr"))
         assertFalse(SmbUnsupportedFormatHandler.isUnsupported("pdf"))
