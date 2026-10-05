@@ -123,6 +123,10 @@ internal val PREF_ROWS: List<PrefRow> = listOf(
     PrefRow(ReaderScope.READ_MODE_KEY, "阅读模式", 0, PrefEditor.ReadMode),
     PrefRow("pageLayout", "页面布局", 0, PrefEditor.Chips(
         listOf("单页" to "SINGLE", "双页" to "DOUBLE", "双页跳过首页" to "DOUBLE_SHIFTED"))),
+    PrefRow("clickFlipType", "点击翻页区域", 0, PrefEditor.Chips(
+        listOf("关闭" to "NO", "左右分区" to "LEFT_RIGHT", "L型" to "L_SHAPE", "边沿" to "EDGE", "Kindlish" to "KINDLISH"),
+        info = "mihon 同款五种：边沿=两侧前进中下后退；Kindlish=左1/3上一页右2/3下一页。条漫中上一页=上滚一屏、下一页=下滚一屏")),
+    PrefRow("clickFlipInvertH", "对调左右（左手模式）", 0, PrefEditor.Toggle(info = "点右侧=上一页、点左侧=下一页；点击翻页区域为关闭时无效")),
     PrefRow("isTrimWhiteBorder", "裁白边", 0, PrefEditor.Group(listOf(
         PrefEditor.Part("isTrimWhiteBorder", "裁白边", PrefEditor.Toggle()),
         PrefEditor.Part("trimThreshold", "检测阈值（默认 220）", PrefEditor.Slider(180f, 250f, 69, { "阈值 ${it.toInt()}" })),
