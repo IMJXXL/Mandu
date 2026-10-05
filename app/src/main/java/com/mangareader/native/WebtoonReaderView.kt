@@ -876,6 +876,12 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
             val tree = android.net.Uri.parse("content://${p.first}/tree/${android.net.Uri.encode(p.second)}")
             val uri = android.provider.DocumentsContract.buildDocumentUriUsingTree(tree, p.third)
             val cacheKey = uri.toString()
+            // ★ 2026-10-05 快路径前置：免 libmobi 整档装载（同 ArchiveEngine 链路，页表同源缓存）
+            e.mobiFastPage(cacheKey, uri, meta.localIdx)?.let { rawData ->
+                val sm = maxOf(width, height).coerceAtLeast(1)
+                return com.mangareader.native.NativeEngine.decodeRaw(rawData, sm, sm)
+                    ?: android.graphics.BitmapFactory.decodeByteArray(rawData, 0, rawData.size)
+            }
             val pfd = context.contentResolver.openFileDescriptor(uri, "r") ?: return null
             val fd = pfd.detachFd()
             try {

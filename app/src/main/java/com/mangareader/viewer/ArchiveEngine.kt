@@ -13,6 +13,9 @@ import android.net.Uri
 import kotlinx.coroutines.launch
 import android.provider.DocumentsContract
 import android.util.Log
+import com.mangareader.mobi.FdSeekable
+import com.mangareader.mobi.MobiFile
+import com.mangareader.mobi.RafSeekable
 import com.mangareader.zip.CommonsZipHelper
 import org.apache.commons.compress.archivers.sevenz.SevenZFile
 import com.github.junrar.Archive as RarArchive
@@ -319,9 +322,22 @@ class ArchiveEngine(private val ctx: Context) {
 
     fun putCachedBitmap(key: String, bmp: Bitmap) { sharedBitmapCache.put(key, bmp) }
 
+    // ★ 2026-10-05 mobi 快路径页表缓存：同 cacheKey 的 scan/load 共用同一 MobiFile，
+    //   防"快路径页表 vs libmobi 页表"中途换表导致索引错位；只存解析结果不持 fd
+    private val mobiFastCache = object : LinkedHashMap<String, MobiFile>(4, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, MobiFile>): Boolean = size > 4
+    }
+
+    internal fun mobiFastCacheGet(cacheKey: String): MobiFile? = synchronized(mobiFastCache) { mobiFastCache[cacheKey] }
+
+    internal fun mobiFastCachePut(cacheKey: String, mf: MobiFile) = synchronized(mobiFastCache) { mobiFastCache[cacheKey] = mf }
+
+    internal fun clearMobiFastCache() = synchronized(mobiFastCache) { mobiFastCache.clear() }
+
     fun clearNativeCache() {
         com.mangareader.native.NativeEngine.clearCache()
         com.mangareader.native.NativeEngine.clearMobiCache()
+        clearMobiFastCache()  // ★ 快路径页表随会话失效
         // ★ B1：换书/清缓存时释放 RAR/7z/TAR 的 fd 缓存与预读 LRU
         clearRarFdCache()
     }
@@ -1004,6 +1020,8 @@ class ArchiveEngine(private val ctx: Context) {
                 val tree = makeTree(p.auth, p.tree)
                 val uri = DocumentsContract.buildDocumentUriUsingTree(tree, p.doc)
                 val cacheKey = uri.toString()
+                // ★ 2026-10-05 快路径前置：尺寸探测/条漫判定只付一条记录的区间读，不触发整档装载
+                mobiFastPage(cacheKey, uri, meta.localIdx)?.let { return it }
                 ctx.contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
                     val fd = pfd.detachFd()
                     try { com.mangareader.native.NativeEngine.openMobiWithFd(cacheKey, fd) } catch (_: Exception) {}
@@ -1381,6 +1399,12 @@ class ArchiveEngine(private val ctx: Context) {
                 val uri = DocumentsContract.buildDocumentUriUsingTree(tree, p.doc)
                 val cacheKey = uri.toString()
                 Log.d(TAG, "MOBI loadPage: idx=${meta.localIdx} cacheKey=${cacheKey.takeLast(30)}")
+                // ★ 2026-10-05 快路径前置：命中则免 libmobi 整档装载（读页 = 一条记录区间读）
+                mobiFastPage(cacheKey, uri, meta.localIdx)?.let { rawData ->
+                    Log.d(TAG, "MOBI loadPage: fast ${rawData.size}B")
+                    val bmp = decodeBitmap(rawData)
+                    if (bmp != null) return bmp
+                }
                 // get fd from URI, pass to libmobi
                 ctx.contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
                     val fd = pfd.detachFd()
@@ -2709,6 +2733,32 @@ class ArchiveEngine(private val ctx: Context) {
         return emptyList()
     }
 
+    /**
+     * ★ 2026-10-05 mobi 快路径（libmobi 前置加速层）：
+     *   MobiFile 纯 Kotlin 解析 PDB 记录表 + 资源区魔数探测，开书 IO 从"整档进内存"
+     *   （mobi_load_file 全记录驻留）降为头几 KB + 每记录 8B；读页 = 一条记录的精确区间读。
+     *   解析失败/0 图/DRM/管道 fd 一律返回 null，调用方原样落回 libmobi → Java 魔法扫描，
+     *   原链路零改动。日志走 mobi-fp 短码（无路径）。
+     */
+    fun mobiFastPage(cacheKey: String, uri: Uri, index: Int): ByteArray? {
+        val mf = mobiFastCacheGet(cacheKey) ?: mobiFastOpen(cacheKey, uri) ?: return null
+        if (index !in 0 until mf.imageCount) return null
+        return try {
+            ctx.contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
+                mf.readImage(FdSeekable(pfd.fileDescriptor), index)
+            }
+        } catch (_: Exception) { null }
+    }
+
+    private fun mobiFastOpen(cacheKey: String, uri: Uri, pfd: android.os.ParcelFileDescriptor? = null): MobiFile? {
+        val mf = try {
+            if (pfd != null) MobiFile.open(FdSeekable(pfd.fileDescriptor))
+            else ctx.contentResolver.openFileDescriptor(uri, "r")?.use { MobiFile.open(FdSeekable(it.fileDescriptor)) }
+        } catch (_: Exception) { null } ?: return null
+        mobiFastCachePut(cacheKey, mf)
+        return mf
+    }
+
     private fun scanMobi(tree: Uri, doc: String): List<PageMeta> {
         val pages = mutableListOf<PageMeta>()
         val uri = DocumentsContract.buildDocumentUriUsingTree(tree, doc)
@@ -2717,6 +2767,13 @@ class ArchiveEngine(private val ctx: Context) {
         try {
             // fd-based opening
             ctx.contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
+                // ★ 2026-10-05 快路径前置：命中则页表来自记录级解析，开书不再整档进内存
+                val fast = runCatching { mobiFastOpen(cacheKey, uri, pfd) }.getOrNull()
+                if (fast != null && fast.imageCount > 0) {
+                    for (i in 0 until fast.imageCount) pages.add(PageMeta(i, "mobi", doc, i))
+                    Log.d(TAG, "mobi-fp scan: pages=${fast.imageCount} in ${android.os.SystemClock.elapsedRealtime() - t0}ms")
+                    return pages
+                }
                 val fd = pfd.detachFd()
                 try {
                     com.mangareader.native.NativeEngine.openMobiWithFd(cacheKey, fd)
@@ -2750,6 +2807,9 @@ class ArchiveEngine(private val ctx: Context) {
     private fun loadMobiPage(uri: Uri, pageIndex: Int): ByteArray? {
         val t0 = android.os.SystemClock.elapsedRealtime()
         Log.d(TAG, "loadMobiPage: start pageIndex=$pageIndex thread=${Thread.currentThread().name}")
+        // ★ 2026-10-05 记录级救援层：libmobi 失败后、魔法字节全扫前的快路径重试
+        //   （瞬态 I/O 或 libmobi 拒收但记录结构完好的书）
+        try { mobiFastPage(uri.toString(), uri, pageIndex)?.let { return it } } catch (_: Exception) {}
         try {
             // Try to get real file path first for direct random access
             val realFile = getRealFile(uri)
@@ -2855,56 +2915,15 @@ class ArchiveEngine(private val ctx: Context) {
         return null
     }
     private fun loadMobiCoverFromHeader(file: File): ByteArray? {
+        // ★ 2026-10-05 重写：原"76 + (recordCount+1)*4 固定 recordSize 偏移推算"对变长记录的
+        //   MOBI 全部落空（PDB 记录表实为 78B 头 + 每记录 8B 变长表），改走 MobiFile 记录级
+        //   解析取第一张图；失败返回 null 原样落回 native readMobiCover
         try {
             java.io.RandomAccessFile(file, "r").use { raf ->
-                if (raf.length() < 80) return null
-                val buf = ByteArray(76)
-                raf.seek(0)
-                raf.readFully(buf)
-                val recordCount = ((buf[4].toInt() and 0xFF) shl 24) or
-                        ((buf[5].toInt() and 0xFF) shl 16) or
-                        ((buf[6].toInt() and 0xFF) shl 8) or
-                        (buf[7].toInt() and 0xFF)
-                val recordSize = ((buf[8].toInt() and 0xFF) shl 24) or
-                        ((buf[9].toInt() and 0xFF) shl 16) or
-                        ((buf[10].toInt() and 0xFF) shl 8) or
-                        (buf[11].toInt() and 0xFF)
-                if (recordCount <= 0 || recordSize <= 0) return null
-                val headerSize = 76 + (recordCount + 1) * 4
-                for (recIdx in 1 until minOf(recordCount, 10)) {
-                    val offset = headerSize + recIdx * recordSize
-                    if (offset + 4 > raf.length()) break
-                    raf.seek(offset.toLong())
-                    val hdr = ByteArray(4)
-                    raf.read(hdr)
-                    val isJpeg = hdr[0] == 0xFF.toByte() && hdr[1] == 0xD8.toByte()
-                    val isPng = hdr[0] == 0x89.toByte() && hdr[1] == 0x50.toByte() && hdr[2] == 0x4E.toByte() && hdr[3] == 0x47.toByte()
-                    if (isJpeg || isPng) {
-                        val imgSize = minOf(recordSize.toLong(), raf.length() - offset, 10 * 1024 * 1024).toInt()
-                        val imgData = ByteArray(imgSize)
-                        raf.seek(offset.toLong())
-                        raf.readFully(imgData)
-                        var end = 4
-                        if (isJpeg) {
-                            while (end < imgData.size - 1) {
-                                if (imgData[end] == 0xFF.toByte() && imgData[end + 1] == 0xD9.toByte()) { end += 2; break }
-                                end++
-                            }
-                        } else {
-                            end = 8
-                            while (end < imgData.size - 8) {
-                                if (imgData[end] == 0x49.toByte() && imgData[end + 1] == 0x45.toByte() &&
-                                    imgData[end + 2] == 0x4E.toByte() && imgData[end + 3] == 0x44.toByte() &&
-                                    imgData[end + 4] == 0x00.toByte() && imgData[end + 5] == 0x00.toByte() &&
-                                    imgData[end + 6] == 0x00.toByte() && imgData[end + 7] == 0x00.toByte()) {
-                                    end += 8; break
-                                }
-                                end++
-                            }
-                        }
-                        return if (end <= imgData.size) imgData.copyOfRange(0, end) else imgData
-                    }
-                }
+                val src = RafSeekable(raf)
+                val mf = MobiFile.open(src) ?: return null
+                if (mf.imageCount <= 0) return null
+                return mf.readImage(src, 0)
             }
         } catch (e: Exception) {
             Log.e(TAG, "loadMobiCoverFromHeader: ${e.message}")
