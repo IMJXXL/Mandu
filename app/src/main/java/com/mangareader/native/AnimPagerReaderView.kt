@@ -96,6 +96,26 @@ class AnimPagerReaderView(context: Context) : FrameLayout(context), ReaderViewDe
 
     private var navigation: ViewerNavigation = DefaultNavigation
     private var centerGapType: Int = 0
+    private var clickFlipType: Int = 1
+    private var clickFlipInvertH = false
+
+    private fun applyNavigation() {
+        // ★ R6（2026-10-05 对齐）：原硬编码 Default 无视点击翻页区域设置——动图卷与其他
+        //   视图点击区不一致（实锤不一致类缺陷）。收敛到 buildNavigation 唯一入口。
+        navigation = buildNavigation(clickFlipType, clickFlipInvertH, verticalPager)
+    }
+
+    override fun setClickFlipTypeLive(type: Int) {
+        if (clickFlipType == type) return
+        clickFlipType = type
+        applyNavigation()
+    }
+
+    override fun setClickFlipInvert(invert: Boolean) {
+        if (clickFlipInvertH == invert) return
+        clickFlipInvertH = invert
+        applyNavigation()
+    }
 
     init {
         viewPager = ViewPager2(context).apply {
@@ -154,7 +174,9 @@ class AnimPagerReaderView(context: Context) : FrameLayout(context), ReaderViewDe
         val rtlChanged = this.isRtl != rtl
         val orientationChanged = this.verticalPager != verticalPager
         this.engine = engine; this.treePath = treePath; this.pageList = pages; this.isRtl = rtl; this.verticalPager = verticalPager
-        this.navigation = if (verticalPager) VerticalPagerNavigation else DefaultNavigation
+        // ★ R6：进书同步点击翻页区域（原硬编码 Default，设置页改了不生效）
+        if (clickFlipType != clickFlip) { clickFlipType = clickFlip }
+        applyNavigation()
         viewPager.orientation = if (verticalPager) ViewPager2.ORIENTATION_VERTICAL else ViewPager2.ORIENTATION_HORIZONTAL
         if (pagesChanged) {
             this.currentPage = startPage

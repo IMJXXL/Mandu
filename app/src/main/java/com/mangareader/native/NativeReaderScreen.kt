@@ -429,6 +429,11 @@ fun NativeReaderScreen(
             delegate.setClickFlipTypeLive(clickFlip)
             delegate.setClickFlipInvert(clickFlipInvert)
         }
+        // ★ R6：动图 pager 点击区同步（原硬编码 Default 不吃设置）
+        if (delegate is AnimPagerReaderView) {
+            delegate.setClickFlipTypeLive(clickFlip)
+            delegate.setClickFlipInvert(clickFlipInvert)
+        }
         // ★ curl 双视图同款接线（此前 setup 收参零使用、实时通道缺失 → 点击区域设置在仿真翻页静默失效）
         if (delegate is com.mangareader.native.curl.CurlReaderView) {
             delegate.setClickFlipTypeLive(clickFlip)
