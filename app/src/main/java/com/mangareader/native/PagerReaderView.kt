@@ -572,12 +572,14 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                     //   （2026-10-05 重做：奇偶/首张单页/智能跳位全在表内，这里只做 RTL 镜像）
                     val itemCount = pagerAdapter?.itemCount ?: spreadTable.slotCount
                     val s = if (isRtl) itemCount - 1 - position else position
+                    // 位置记录先于越界守卫（旧算术无条件记录）：瞬态窗口漏记会让下一次
+                    // bind 的 forward 方向判定用旧值，landscapeZoom 落边错一次
+                    lastSelectedPosition = position
                     // 模式切换/表重排的瞬态窗口里 position 可能超出新表（旧算术产生越界页号被
                     // indices 守卫自然过滤；表取值 clamp 会误跳第 0 页）——越界直接不处理
                     if (s < 0 || s >= spreadTable.slotCount) return
                     val pageIdx = spreadTable.firstPage(s)
                     val realPos = pageIdx
-                    lastSelectedPosition = position
                     com.mangareader.viewer.ArchiveEngine.d("PagerView", "onPageSelected pos=$position pageIdx=$pageIdx realPos=$realPos rtl=$isRtl double=$doublePageMode total=${pageList.size} curPage=$currentPage")
                     if (realPos in pageList.indices && realPos != currentPage) {
                         // ★ 跨页落地半页位（2026-10-04）：按 pending 恢复——前进/跳页=左半，
@@ -942,7 +944,8 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     private fun rebindForNewTable() {
         layoutSwitchPending = true
         pagerAdapter?.notifyDataSetChanged()
-        val finalPos = positionOf(currentPage).coerceIn(0, (pagerAdapter?.itemCount ?: 1) - 1)
+        val count = pagerAdapter?.itemCount ?: 0
+        val finalPos = if (count > 0) positionOf(currentPage).coerceIn(0, count - 1) else 0
         viewPager.post {
             viewPager.setCurrentItem(finalPos, false)
             viewPager.post { layoutSwitchPending = false }

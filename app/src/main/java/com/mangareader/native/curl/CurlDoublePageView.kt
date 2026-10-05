@@ -377,13 +377,16 @@ class CurlDoublePageView(context: Context) : FrameLayout(context), ReaderViewDel
                     if (r >= 0) loader.loadPageAsync(r, isPreload = false) { reloadTrigger.intValue++ }
                 },
                 onSpreadChanged = { newSpread ->
-                    val newPage = spreadTable.firstPage(newSpread)
+                    // ★ 表重排瞬态（尺寸回填/开关切换恰逢翻页拖拽中）PageCurl 落位可能越出新表
+                    //   范围——clamp 防 firstPage 的 getOrElse 兜底把进度拽回首页并误触章末回调
+                    val slot = newSpread.coerceIn(0, (spreadTable.slotCount - 1).coerceAtLeast(0))
+                    val newPage = spreadTable.firstPage(slot)
                     playFlipSound()
                     currentPage = newPage
                     loader.setCurrentPage(newPage)
                     preloadSpread(newPage)
-                    if (newSpread == totalSpreads() - 1) onChapterEnd?.invoke(true)
-                    if (newSpread == 0) onChapterEnd?.invoke(false)
+                    if (slot == totalSpreads() - 1) onChapterEnd?.invoke(true)
+                    if (slot == 0) onChapterEnd?.invoke(false)
                     onPageChanged?.invoke(newPage)
                 },
             )
