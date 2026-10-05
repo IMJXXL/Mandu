@@ -69,6 +69,12 @@ object SrBatchRunner {
                 emptyList()
             }
             val paths = when {
+                // ★ 网络书（2026-10-05，用户实测"已缓存的 WebDAV/SMB 书不能加入离线"）：
+                //   章节集合 = 读过的章 + 书根本身（两模式同构）。远程目录书下的子档暂不
+                //   枚举——与本地单文件书的退化行为一致；章路径必须与阅读 navStack 字符串
+                //   同源，否则批量产物目录与显示链对不上（chapterKey 为准）。
+                book.filePath.startsWith("smb:") || book.filePath.startsWith("webdav:") ->
+                    (progressPaths + book.filePath).distinct()
                 // ★ 整本模式（2026-10-02）：枚举书根下全部章节路径；枚举为空（单文件书/
                 //   无子章）退化为书根本身一卷。与读过的章合并去重（chapterKey 为准）。
                 includeUnread -> {
@@ -93,10 +99,15 @@ object SrBatchRunner {
             val probe = ArchiveEngine(context.applicationContext)
             val built = paths.map { path ->
                 val key = SRQueueItem.chapterKey(bookId, path)
-                val pageCount = try {
-                    probe.listPages(path).size
-                } catch (_: Exception) {
-                    0
+                val pageCount = when {
+                    // ★ 网络书页数探测走临时远程会话（zip/epub/pdf 开包即定；tar/rar/7z
+                    //   最多 8s 采样）——已缓存的档打开是本地盘速，未缓存的只拉中央目录。
+                    path.startsWith("smb:") || path.startsWith("webdav:") -> remoteChapterPageCount(path)
+                    else -> try {
+                        probe.listPages(path).size
+                    } catch (_: Exception) {
+                        0
+                    }
                 }
                 // ★ F4.4：入队打代际戳（重启续跑不改写已有条目的代际——只有显式重新入队才刷新）
                 SRQueueItem(bookId, bookTitle, path, key, pageCount, enqueuedAt = System.currentTimeMillis())
@@ -110,6 +121,9 @@ object SrBatchRunner {
                     book.filePath.startsWith("a:") -> "a"
                     book.filePath.startsWith("d:") -> "d"
                     book.filePath.startsWith("z:") -> "z"
+                    book.filePath.startsWith("smb:") -> "smb"
+                    book.filePath.startsWith("webdav:") -> "webdav"
+                    book.filePath.startsWith("komga:") -> "komga"
                     else -> "?"
                 }
                 com.mangareader.DiagTracer.markStatic(
@@ -193,6 +207,27 @@ object SrBatchRunner {
                 false
             }
         }
+    }
+
+    /**
+     * ★ 网络书页数探测（2026-10-05）：开临时远程会话等页数就绪（attach 内部已做稳定
+     *  采样/免采样），随开随关——与阅读会话完全同构，缓存命中的档是本地盘读。
+     *  打不开（服务器下线/路径失效/认证失败）返回 0，由入队层过滤并给诚实提示。
+     */
+    private suspend fun remoteChapterPageCount(path: String): Int = try {
+        when {
+            path.startsWith("webdav:") -> com.mangareader.webdavbridge.WebDavPaths.parseBookPath(path)?.let { ref ->
+                com.mangareader.webdavbridge.WebDavBookRouter.openTransient(ref) { _, supply -> supply.pageCount }
+            } ?: 0
+            path.startsWith("smb:") -> com.mangareader.smbbridge.SmbPaths.parseBookPath(path)?.let { ref ->
+                com.mangareader.smbbridge.SmbBookRouter.openTransient(ref) { _, supply -> supply.pageCount }
+            } ?: 0
+            else -> 0
+        }
+    } catch (e: Exception) {
+        Log.d(TAG, "remote probe failed: ${e.message}")
+        com.mangareader.DiagTracer.markStatic("sr: enq probe0 ${e.javaClass.simpleName}")
+        0
     }
 
     fun remove(context: Context, chapterKey: String) {

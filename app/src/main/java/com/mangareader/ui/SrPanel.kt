@@ -140,15 +140,19 @@ private suspend fun loadBookOfflineStatus(bookId: Long): BookOfflineStatus? =
  *    （/x/y.zip）——此前只按点号取扩展名，SAF 书全部误判为不支持 → 「加入增强队列」按钮
  *    集体消失（用户实测"基本都不行/没有加入队列"的根因）。
  *  ★ mobi/azw/azw3/pdb/prc 走 ArchiveEngine 的 libmobi 分支（listPages/loadPage 均支持），
- *    epub 即 zip 容器——此前把它们当"不支持"是错杀。 */
+ *    epub 即 zip 容器——此前把它们当"不支持"是错杀。
+ *  ★ 2026-10-05 v3 网络书放开（用户实测"已缓存的 WebDAV/SMB 书不能加入离线"）：smb:/webdav:
+ *    放行——批量处理走阅读同款远程会话取页（loadPageRaw），已缓存的整档/整页直接本地盘读，
+ *    没缓存的页现场下载后增强；komga 每页实时拉取、无磁盘缓存，整本增强等于全量重新下载，
+ *    保持排除并如实提示（此前 komga 漏判，按钮可见却永远枚举 0 页，更误导）。 */
 private fun offlineEnhanceSupported(bookId: Long, bookPath: String?): Pair<Boolean, String?> {
     // ★ 2026-10-03 关键修复：以【路由 bookId】为真实来源，不再要求 book 状态非空——
     //   实测（GACHIAKUTA 199章）book 为 null 时整个离线 Tab 变兜底卡，用户无法入队；
     //   而入队器内部本来就会按 id 自查 DB（查无此书有 sr: enq nobook id=N 短码）。
     //   bookPath 仅用于网络来源判定（null = 按本地处理）。
     if (bookId <= 0) return false to "本书未关联到书架条目，无法离线增强"
-    if (bookPath?.startsWith("smb:") == true || bookPath?.startsWith("webdav:") == true) {
-        return false to "网络来源的书暂不支持一键离线增强（可先下载到本地后使用）"
+    if (bookPath?.startsWith("komga:") == true) {
+        return false to "Komga 来源暂不支持离线增强（页面实时拉取、无本地缓存）"
     }
     // ★ 格式白名单整体放开（用户拍板 2026-10-03）：库里能出现的书（文件夹/压缩包/PDF/
     //   mobi 系/epub…）一律允许入队；真读不了的格式在入队时枚举 0 页并给诚实提示。
@@ -952,6 +956,14 @@ private fun SrPanelContent(
                                 fontSize = 12.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
+                            // ★ 2026-10-05 网络书提示：已缓存页用本地缓存，未缓存页要流量
+                            if (bookPath?.startsWith("smb:") == true || bookPath?.startsWith("webdav:") == true) {
+                                Text(
+                                    "网络书：已看过的页面用手机里的缓存增强（不耗流量），没看过的页会现场下载后增强——整本增强会走一遍全档流量。",
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                             // ★ 当前配置摘要+[去改]（重度读者走查：免跨 Tab 折返确认配置）
                             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                                 Text(

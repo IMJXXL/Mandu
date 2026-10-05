@@ -939,7 +939,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                             (ctx as? android.app.Activity)?.runOnUiThread {
                                 android.widget.Toast.makeText(
                                     ctx,
-                                    if (r.chapters > 0) "已加入批量增强队列（${r.chapters} 章 ${r.pages} 页），通知栏可看进度\n（安卓13+ 需先允许通知权限）" else "所选书籍已在队列中",
+                                    if (r.chapters > 0) "已加入批量增强队列（${r.chapters} 章 ${r.pages} 页），通知栏可看进度\n（安卓13+ 需先允许通知权限）" else "没有找到可处理的页面——所选书籍可能无法离线枚举",
                                     android.widget.Toast.LENGTH_LONG,
                                 ).show()
                             }

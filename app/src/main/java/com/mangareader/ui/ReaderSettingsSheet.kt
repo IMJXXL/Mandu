@@ -488,7 +488,8 @@ private fun AmbienceSection(config: ReaderConfig, onConfigChange: (ReaderConfig)
     }
 
     SettingsChipRow("氛围音") {
-        listOf("关闭" to "", "下雨" to "rain").forEach { (label, value) ->
+        // ★ 预置与 AmbiencePlayer.PRESETS 同源（下雨/海浪/溪流/篝火/夏夜）
+        (listOf("关闭" to "") + com.mangareader.sound.AmbiencePlayer.PRESETS).forEach { (label, value) ->
             FilterChip(
                 selected = config.ambienceSound == value,
                 onClick = { onConfigChange(config.copy(ambienceSound = value)) },

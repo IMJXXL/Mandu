@@ -1,0 +1,9 @@
+内置环境音来源（均为 freesound.org CC0 授权，无署名义务；此处仍列明出处致谢）：
+- rain.wav      #869851  轻柔雨点击窗（24s 无缝循环剪辑）
+- waves.wav     #867642  bassimat — Gentle Ocean Waves – Calm Shore Ambience（26s 无缝循环剪辑）
+- stream.wav    #578068  BurghRecords — Calm Stream In Forest（26s 无缝循环剪辑）
+- campfire.wav  #588401  FunWithSound — Campfire Close Crackling Sticks（26s 无缝循环剪辑）
+- crickets.wav  #479041  felix.blume — Crickets during the night, close to the beach in Mexico（26s 无缝循环剪辑）
+
+剪辑配方：22050Hz 单声道 16bit PCM；取稳态段 26s，开头 1.5s 与"未来段"做等功率
+交叉淡化（loop-crossfade），两个接缝均样本连续——MediaPlayer.setLooping 对 PCM 严格无缝。

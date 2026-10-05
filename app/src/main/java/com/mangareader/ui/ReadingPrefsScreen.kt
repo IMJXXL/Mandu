@@ -763,7 +763,8 @@ private fun AmbienceChips(values: Map<String, Any?>, enabled: Boolean, onWrite: 
         }
     }
     FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        listOf("关闭" to "", "下雨" to "rain").forEach { (label, value) ->
+        // ★ 预置与 AmbiencePlayer.PRESETS 同源（下雨/海浪/溪流/篝火/夏夜）
+        (listOf("关闭" to "") + com.mangareader.sound.AmbiencePlayer.PRESETS).forEach { (label, value) ->
             FilterChip(
                 selected = current == value,
                 onClick = { onWrite("ambienceSound", value) },

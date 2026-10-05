@@ -6,8 +6,8 @@ import android.util.Log
 import java.io.File
 
 /**
- * 阅读氛围音：预设雨声（assets/sounds/ambience/rain.wav，30s 等功率交叉淡化无缝循环）+
- * 用户经 SAF 导入的自选音频（拷贝到 filesDir/ambience/，mp3/ogg/flac/m4a/wav 均可）。
+ * 阅读氛围音：内置预置（assets/sounds/ambience/<id>.wav，稳态段等功率交叉淡化无缝循环）
+ * + 用户经 SAF 导入的自选音频（拷贝到 filesDir/ambience/，mp3/ogg/flac/m4a/wav 均可）。
  *
  * 用 MediaPlayer（setLooping）而非 SoundPool：v1 的 SoundPool 异步解码链路在用户设备上无声
  * （无法远程定位），MediaPlayer 直接流式播放、setLooping 对 PCM 严格无缝，且 MIUI 等
@@ -16,6 +16,23 @@ import java.io.File
 object AmbiencePlayer {
 
     private const val TAG = "Ambience"
+
+    /**
+     * ★ 内置预置表（2026-10-05 从单 rain 扩到五个；selection 值即 assets 文件名去扩展名）。
+     *   两处设置 UI（ReaderSettingsSheet / ReadingPrefsScreen）的芯片直接引用本表，
+     *   新增预置 = 放 wav 资产 + 本表加一行，别处不用动；已发布的 selection 值不许改名
+     *   （它是持久化配置值）。来源与循环剪辑配方见 assets/sounds/ambience/CREDITS.txt。
+     */
+    val PRESETS: List<Pair<String, String>> = listOf(
+        "rain" to "下雨",
+        "waves" to "海浪",
+        "stream" to "溪流",
+        "campfire" to "篝火",
+        "crickets" to "夏夜",
+    )
+
+    private fun presetAsset(selection: String): String? =
+        if (PRESETS.any { it.first == selection }) "sounds/ambience/$selection.wav" else null
 
     private var player: MediaPlayer? = null
     private var currentTrack = ""
@@ -60,8 +77,9 @@ object AmbiencePlayer {
         Thread {
             try {
                 val mp = MediaPlayer()
-                if (selection == "rain") {
-                    ctx.assets.openFd("sounds/ambience/rain.wav").use { afd ->
+                val preset = presetAsset(selection)
+                if (preset != null) {
+                    ctx.assets.openFd(preset).use { afd ->
                         mp.setDataSource(afd.fileDescriptor, afd.startOffset, afd.length)
                     }
                 } else {

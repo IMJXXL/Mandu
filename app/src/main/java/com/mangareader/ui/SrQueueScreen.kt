@@ -132,9 +132,13 @@ fun SrQueueScreen(onBack: () -> Unit, onOpenBook: ((Long, String) -> Unit)? = nu
                 val queuedIds = SrCore.queueStore.load().map { it.bookId }.toSet()
                 val doneIds = com.mangareader.sr.SrCore.diskCache.getCompletedBatchChapters().map { it.bookId }.toSet()
                 // getVisibleBooks 过滤 isHidden——书架管理里隐藏的书不参与批量入队
+                // ★ 网络书不进"一键全加"扫描（2026-10-05）：smb/webdav 支持离线增强但不走
+                //   批量扫描（避免整库网络书一起跑的流量惊吓，单本在面板/多选里加）；komga
+                //   无磁盘缓存压根不支持（面板门禁同口径排除，此前漏判 komga 会静默 0 章）
                 val found = dao.getVisibleBooks().first()
                     .filter { b ->
                         !b.filePath.startsWith("smb:") && !b.filePath.startsWith("webdav:") &&
+                            !b.filePath.startsWith("komga:") &&
                             b.id !in queuedIds && b.id !in doneIds &&
                             !SrCore.diskCache.hasArtifactsForBook(b.id)
                     }

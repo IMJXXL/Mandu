@@ -89,6 +89,8 @@ class SrBatchService : Service() {
         serviceScope.launch {
             try {
                 runQueue()
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // 服务销毁/协程取消：条目原样留在队列，下次启动断点续做（F4.2 语义）
             } catch (e: Exception) {
                 Log.e(TAG, "queue loop crashed", e)
             } finally {
@@ -111,6 +113,7 @@ class SrBatchService : Service() {
             waited += 200
         }
         if (!SrCore.manager.isReady) Log.w(TAG, "model not ready after ${waited}ms, run anyway")
+        val batchModelKey = SrCore.settings.model.key   // 本轮批处理统一模型键（收尾盖章用）
 
         while (true) {
             val queue = SrCore.queueStore.load()
@@ -126,107 +129,23 @@ class SrBatchService : Service() {
 
             notifyProgress("正在增强：${item.bookTitle}", item.processedPages, item.totalPages)
 
-            val pages = try {
-                engine.listPages(item.path)
-            } catch (e: Exception) {
-                Log.e(TAG, "listPages failed for ${item.path}", e)
-                emptyList()
-            }
-            if (pages.isEmpty()) {
-                // 章节不存在/读不出 → 移出队列防死循环
+            val summary = processItem(item, batchModelKey)
+            if (summary == null) {
+                // 章节不存在/读不出/远程打不开 → 移出队列防死循环
                 SrBatchRunner.remove(applicationContext, item.chapterKey)
                 continue
-            }
-
-            val total = pages.size
-            // 模型一致性检查：章节产物是用别的模型生成的 → 整章删除重算。
-            // 无任何模型记录（老产物/未写完章节）→ 保留产物，断点续做不受影响。
-            val batchModelKey = SrCore.settings.model.key
-            val existingModel = SrCore.diskCache.getBatchChapterModelStamp(item.bookTitle, item.chapterKey)
-                ?: SrCore.diskCache.getBatchChapterModelKey(item.bookTitle, item.chapterKey)
-            if (existingModel != null && existingModel != batchModelKey) {
-                Log.i(TAG, "batch model changed (${existingModel} -> ${batchModelKey}), re-run chapter ${item.chapterKey}")
-                SrCore.diskCache.removeBatchChapter(item.bookTitle, item.chapterKey)
-            }
-            SrCore.diskCache.putBatchChapterModelStamp(item.bookTitle, item.chapterKey, batchModelKey)
-
-            // 进度基线以"磁盘上真实存在的产物数量"为准，不信任队列里的旧数字：
-            // 产物被清空后基线归零从头显示；断点续做时自动对准真实进度。
-            var processed = SrCore.diskCache.countBatchDonePrefix(item.bookTitle, item.chapterKey, total)
-            if (processed != item.processedPages) {
-                updateItemProgress(item.chapterKey, processed, total)
-                SrCore.emitBatchProgress(item.copy(processedPages = processed, totalPages = total))
-            }
-            var failedAll = true
-            var sawApplicablePage = false
-
-            for (i in 0 until total) {
-                // 暂停：页面粒度停走，等恢复
-                while (paused) {
-                    kotlinx.coroutines.delay(400)
-                }
-                // ★ 批量礼让（2026-10-02）：用户在阅读且实时超分活跃（15 秒内有实时请求）时
-                //   让出引擎，防止翻页时批量与实时互相排队卡顿；停下阅读/关作用域后自动继续。
-                //   页粒度等待：当前页开始解码前判定一次，推理一旦开始不打断
-                while (SrPipeline.realtimeActiveRecently()) {
-                    kotlinx.coroutines.delay(1500)
-                    if (item.chapterKey in cancelledKeys) break
-                }
-                if (item.chapterKey in cancelledKeys) break
-
-                // 已存在产物（断点续做）直接跳过；只看文件存在与否，不解码整图
-                if (SrCore.diskCache.hasBatchPage(item.bookTitle, item.chapterKey, i)) {
-                    processed = i + 1
-                    continue
-                }
-
-                val meta = pages[i]
-                if (!SrPipeline.isApplicable(meta)) {
-                    processed = i + 1
-                    continue
-                }
-                sawApplicablePage = true
-
-                try {
-                    val original = engine.loadPage(meta, item.path) ?: continue
-                    if (original.isRecycled) continue
-                    if (original.width < 100 || original.height < 100) continue
-
-                    val version = SrCore.manager.currentModelVersion()
-                    // 看门狗：批处理崩了下次启动也会自动切 CPU
-                    if (!SrCore.inferenceInFlight) SrCore.markInferenceStart()
-                    val result = SrCore.manager.process(original, version)
-                    SrCore.markInferenceEnd()
-                    if (result !== original && !result.isRecycled) {
-                        SrCore.diskCache.putBatchPage(item.bookTitle, item.chapterKey, i, result)
-                        failedAll = false
-                    }
-                } catch (_: kotlinx.coroutines.CancellationException) {
-                    // ★ F4.2：服务被销毁/协程取消——不盖章不删产物，条目原样留在队列，
-                    //   下次服务启动按磁盘产物断点续做
-                    return
-                } catch (e: Exception) {
-                    Log.e(TAG, "page $i failed", e)
-                }
-
-                processed = i + 1
-                if (i % 5 == 0 || i == total - 1) {
-                    updateItemProgress(item.chapterKey, processed, total)
-                    notifyProgress("${item.bookTitle}（${processed}/$total 页）", processed, total)
-                    SrCore.emitBatchProgress(item.copy(processedPages = processed, totalPages = total))
-                }
             }
 
             if (item.chapterKey in cancelledKeys) {
                 // 取消：删掉半成品，避免半成品章节被当成完成品
                 SrCore.diskCache.removeBatchChapter(item.bookTitle, item.chapterKey)
-            } else if (sawApplicablePage && failedAll) {
+            } else if (summary.sawApplicablePage && summary.failedAll) {
                 // ★ F4.2：整章零产物不盖章——盖章会让该章"实时超分被禁、永远原图"。
                 //   不写 metadata、清残留产物、条目照常移出（用户修好环境后可重新入队）
                 Log.w(TAG, "chapter all-failed, NOT stamped: ${item.chapterKey}")
                 SrCore.diskCache.removeBatchChapter(item.bookTitle, item.chapterKey)
             } else {
-                SrCore.diskCache.putBatchMetadata(item.bookTitle, item.chapterKey, total, item.bookId, item.path, batchModelKey)
+                SrCore.diskCache.putBatchMetadata(item.bookTitle, item.chapterKey, summary.total, item.bookId, item.path, batchModelKey)
             }
             // ★ F4.4：收尾移除前比对代际——运行中被重新入队的条目（代际更新）不删，留给下一轮
             val stillQueued = SrCore.queueStore.load().firstOrNull { it.chapterKey == item.chapterKey }
@@ -239,6 +158,174 @@ class SrBatchService : Service() {
         }
 
         notifyDone()
+    }
+
+    private class ChapterSummary(val total: Int, val sawApplicablePage: Boolean, val failedAll: Boolean)
+
+    /**
+     * 处理一个队列条目（一章）。null = 页面枚举为空/远程会话打不开，调用方应移出队列。
+     * ★ 2026-10-05 网络书（smb:/webdav:）：走阅读同款路由会话（openTransient 托管会话
+     * 生命周期，整章处理在其 block 内完成）。loadPageRaw 与阅读完全同链——已缓存的整档/
+     * 整页直接本地盘读，未缓存的页现场下载（边下边增强）；komga 无磁盘缓存不入队（门禁挡）。
+     */
+    private suspend fun processItem(item: SRQueueItem, batchModelKey: String): ChapterSummary? {
+        // 模型一致性检查：章节产物是用别的模型生成的 → 整章删除重算。
+        // 无任何模型记录（老产物/未写完章节）→ 保留产物，断点续做不受影响。
+        val existingModel = SrCore.diskCache.getBatchChapterModelStamp(item.bookTitle, item.chapterKey)
+            ?: SrCore.diskCache.getBatchChapterModelKey(item.bookTitle, item.chapterKey)
+        if (existingModel != null && existingModel != batchModelKey) {
+            Log.i(TAG, "batch model changed (${existingModel} -> ${batchModelKey}), re-run chapter ${item.chapterKey}")
+            SrCore.diskCache.removeBatchChapter(item.bookTitle, item.chapterKey)
+        }
+        SrCore.diskCache.putBatchChapterModelStamp(item.bookTitle, item.chapterKey, batchModelKey)
+
+        return if (item.path.startsWith("webdav:")) {
+            try {
+                com.mangareader.webdavbridge.WebDavPaths.parseBookPath(item.path)?.let { ref ->
+                    com.mangareader.webdavbridge.WebDavBookRouter.openTransient(ref) { _, supply ->
+                        val total = supply.pageCount
+                        if (total <= 0) null else runChapterPages(item, total, null, supply)
+                    }
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e   // openTransient 的 finally 已关会话；条目原样留队列断点续做
+            } catch (e: Exception) {
+                Log.e(TAG, "remote chapter failed for ${item.path}", e)
+                null
+            }
+        } else if (item.path.startsWith("smb:")) {
+            try {
+                com.mangareader.smbbridge.SmbPaths.parseBookPath(item.path)?.let { ref ->
+                    com.mangareader.smbbridge.SmbBookRouter.openTransient(ref) { _, supply ->
+                        val total = supply.pageCount
+                        if (total <= 0) null else runChapterPages(item, total, null, supply)
+                    }
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e(TAG, "remote chapter failed for ${item.path}", e)
+                null
+            }
+        } else {
+            val pages = try {
+                engine.listPages(item.path)
+            } catch (e: Exception) {
+                Log.e(TAG, "listPages failed for ${item.path}", e)
+                emptyList()
+            }
+            if (pages.isEmpty()) null else runChapterPages(item, pages.size, pages, null)
+        }
+    }
+
+    /**
+     * 单章页循环（本地/远程统一骨架）。取页差异收敛在页首：本地 engine.loadPage；
+     * 远程 supply.loadPageRaw 原始字节 → engine.decodeBitmap（与本地批量同解码口径：
+     * downsampleTier 闸 + OOM 降级）；远程页没有页级 ext 元数据，gif/apng 用字节嗅探
+     * 排除，与本地 isApplicable 同语义。取页 null → 本页失败不计产物（整章零产物不盖章）。
+     */
+    private suspend fun runChapterPages(
+        item: SRQueueItem,
+        total: Int,
+        localPages: List<ArchiveEngine.PageMeta>?,
+        remoteSupply: com.mangareader.native.RemotePageSupply?,
+    ): ChapterSummary {
+        var failedAll = true
+        var sawApplicablePage = false
+
+        // 进度基线以"磁盘上真实存在的产物数量"为准，不信任队列里的旧数字：
+        // 产物被清空后基线归零从头显示；断点续做时自动对准真实进度。
+        var processed = SrCore.diskCache.countBatchDonePrefix(item.bookTitle, item.chapterKey, total)
+        if (processed != item.processedPages) {
+            updateItemProgress(item.chapterKey, processed, total)
+            SrCore.emitBatchProgress(item.copy(processedPages = processed, totalPages = total))
+        }
+
+        for (i in 0 until total) {
+            // 暂停：页面粒度停走，等恢复
+            while (paused) {
+                kotlinx.coroutines.delay(400)
+            }
+            // ★ 批量礼让（2026-10-02）：用户在阅读且实时超分活跃（15 秒内有实时请求）时
+            //   让出引擎，防止翻页时批量与实时互相排队卡顿；停下阅读/关作用域后自动继续。
+            //   页粒度等待：当前页开始解码前判定一次，推理一旦开始不打断
+            while (SrPipeline.realtimeActiveRecently()) {
+                kotlinx.coroutines.delay(1500)
+                if (item.chapterKey in cancelledKeys) break
+            }
+            if (item.chapterKey in cancelledKeys) break
+
+            // 已存在产物（断点续做）直接跳过；只看文件存在与否，不解码整图
+            if (SrCore.diskCache.hasBatchPage(item.bookTitle, item.chapterKey, i)) {
+                processed = i + 1
+                continue
+            }
+
+            var skip = false
+            val original: android.graphics.Bitmap? = if (remoteSupply != null) {
+                val bytes = try {
+                    remoteSupply.loadPageRaw(i)
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (t: Throwable) {
+                    Log.w(TAG, "remote page $i failed: ${t.message}")
+                    null
+                }
+                when {
+                    bytes == null -> null
+                    ArchiveEngine.isAnimatedBytes(bytes) -> { skip = true; null }
+                    else -> engine.decodeBitmap(bytes)
+                }
+            } else {
+                val meta = localPages!![i]
+                if (!SrPipeline.isApplicable(meta)) {
+                    skip = true
+                    null
+                } else {
+                    try {
+                        engine.loadPage(meta, item.path)
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        Log.e(TAG, "page $i failed", e)
+                        null
+                    }
+                }
+            }
+            if (skip) {
+                processed = i + 1
+                continue
+            }
+            sawApplicablePage = true
+            if (original == null || original.isRecycled || original.width < 100 || original.height < 100) continue
+
+            try {
+                val version = SrCore.manager.currentModelVersion()
+                // 看门狗：批处理崩了下次启动也会自动切 CPU
+                if (!SrCore.inferenceInFlight) SrCore.markInferenceStart()
+                val result = SrCore.manager.process(original, version)
+                SrCore.markInferenceEnd()
+                if (result !== original && !result.isRecycled) {
+                    SrCore.diskCache.putBatchPage(item.bookTitle, item.chapterKey, i, result)
+                    failedAll = false
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // ★ F4.2：服务被销毁/协程取消——不盖章不删产物，条目原样留在队列，
+                //   下次服务启动按磁盘产物断点续做
+                throw e
+            } catch (e: Exception) {
+                Log.e(TAG, "page $i failed", e)
+            }
+
+            processed = i + 1
+            if (i % 5 == 0 || i == total - 1) {
+                updateItemProgress(item.chapterKey, processed, total)
+                notifyProgress("${item.bookTitle}（${processed}/$total 页）", processed, total)
+                SrCore.emitBatchProgress(item.copy(processedPages = processed, totalPages = total))
+            }
+        }
+
+        return ChapterSummary(total, sawApplicablePage, failedAll)
     }
 
     private fun updateItemProgress(chapterKey: String, processed: Int, total: Int) {
