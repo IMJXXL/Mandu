@@ -2483,11 +2483,9 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                             clickFlipInvert = config.clickFlipInvertH,
                             pageLayout = when (config.pageLayout) {
                                 com.mangareader.data.ReaderConfig.PageLayout.SINGLE ->
-                                    // ★ 横屏自动双页：单页布局 + 开关开 + 当前横屏 + 最小屏宽≥600dp（平板）→ 双页。
-                                    //   1001 UI 审查：矮横屏手机（sw≈360-430dp）双页每页仅 ~200dp 宽不可读，收窄到平板生效
-                                    if (config.autoDoubleLandscape && (LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE) &&
-                                        LocalConfiguration.current.smallestScreenWidthDp >= 600
-                                    ) 1 else 0
+                                    // ★ 横屏自动双页：单页布局 + 开关开 + 当前横屏 → 双页。
+                                    //   2026-10-05 工单：手机横屏也要生效，移除原 600dp 平板门槛
+                                    if (config.autoDoubleLandscape && (LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE)) 1 else 0
                                 com.mangareader.data.ReaderConfig.PageLayout.DOUBLE -> 1
                                 com.mangareader.data.ReaderConfig.PageLayout.DOUBLE_SHIFTED -> 2
                             },

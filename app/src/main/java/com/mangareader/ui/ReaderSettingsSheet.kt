@@ -530,8 +530,10 @@ private fun AmbienceSection(config: ReaderConfig, onConfigChange: (ReaderConfig)
     }
 
     SettingsChipRow("氛围音") {
-        // ★ 预置与 AmbiencePlayer.PRESETS 同源（下雨/海浪/溪流/篝火/夏夜）
-        (listOf("关闭" to "") + com.mangareader.sound.AmbiencePlayer.PRESETS).forEach { (label, value) ->
+        // ★ 预置与 AmbiencePlayer.PRESETS 同源。注意配对序＝(值, 中文标签)——此前按
+        //   (label, value) 解构把英文值显示出来、还把中文标签当值写入（工单实锤：
+        //   芯片显示 rain/waves、选什么声音都一样）。显示标签、写值，两者分开。
+        (listOf("" to "关闭") + com.mangareader.sound.AmbiencePlayer.PRESETS).forEach { (value, label) ->
             FilterChip(
                 selected = config.ambienceSound == value,
                 onClick = { onConfigChange(config.copy(ambienceSound = value)) },

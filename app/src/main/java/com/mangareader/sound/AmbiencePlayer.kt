@@ -66,6 +66,10 @@ object AmbiencePlayer {
             stop()
             return
         }
+        // ★ 2026-10-05 兼容旧配置：芯片解构反 bug 期间写入的是中文标签（"下雨"等）——
+        //   映射回真实资产值，否则 presetAsset 找不到全走 rain 兜底（工单实锤"声音都一样"）
+        val normalized = PRESETS.firstOrNull { it.second == selection }?.first ?: selection
+        val selection = normalized
         if (selection == currentTrack) {
             // 同一音色：已存在则确保在播（音量拖动/重组反复调用无副作用）
             runCatching { player?.takeIf { !it.isPlaying }?.start() }

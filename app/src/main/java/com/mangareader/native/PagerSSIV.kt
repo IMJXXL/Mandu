@@ -158,9 +158,12 @@ class PagerSSIV @JvmOverloads constructor(
                 // ★ 未放大方向分流：沿放行主轴的滑动交还翻页（ViewPager2），
                 //   垂直轴且图上还有可拖空间 → 归 SSIV 拖动看图（铺满屏幕"划着看"）；
                 //   无可拖空间（完整显示模式纵向贴边）→ 一并放行翻页，与旧行为一致
+                // ★ 2026-10-05 横屏滑动翻页修复：拇指弧线拖动 dx≈dy 时旧判据(dy>=dx)把它归成
+                //   "垂直拖图"——横屏铺满下竖版页纵向有余量，全变成 hold-pan 永不翻页（工单实锤
+                //   hold-pan 连发）。正交分量需明显占优（×1.25）才判拖图，模糊弧线一律放行翻页。
                 val dx = kotlin.math.abs(event.x - downX)
                 val dy = kotlin.math.abs(event.y - downY)
-                val alongAxis = if (axisPassthroughHorizontal) dx >= dy else dy >= dx
+                val alongAxis = if (axisPassthroughHorizontal) dy < dx * 1.25f else dx < dy * 1.25f
                 if (alongAxis) { markSwipe(context, "pass-flip"); return false }
                 val hasRoom = if (axisPassthroughHorizontal) hasVerticalPanRoom() else hasHorizontalPanRoom()
                 if (!hasRoom) { markSwipe(context, "v-noPan-pass"); return false }
