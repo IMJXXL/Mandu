@@ -61,16 +61,16 @@ class PagerSSIV @JvmOverloads constructor(
 
     private fun gestureBaseScale(): Float = if (viewportBaseScale > 0f) viewportBaseScale else minScale
 
+    // ★ 2026-10-05 二次审查改自算：minScale 下放到 0.5×基准后，捏小的图小于视口，
+    //   SSIV 默认 PAN_LIMIT_INSIDE 仍允许自由拖动 → getPanRemaining 返回正值 →
+    //   沿轴滑动被误判 hold-pan，捏小态翻页失效（捏小恰是铺满/贴宽用户看全貌后的下一步）。
+    //   改比"图当前显示尺寸是否真溢出视口"：溢出才有拖图意义；捏小/贴边一律放行翻页。
     private fun hasVerticalPanRoom(): Boolean = try {
-        val rect = RectF()
-        getPanRemaining(rect)
-        rect.top > 1f || rect.bottom > 1f
+        sHeight * scale > height + 1f
     } catch (_: Exception) { false }
 
     private fun hasHorizontalPanRoom(): Boolean = try {
-        val rect = RectF()
-        getPanRemaining(rect)
-        rect.left > 1f || rect.right > 1f
+        sWidth * scale > width + 1f
     } catch (_: Exception) { false }
 
     // 双击检测器

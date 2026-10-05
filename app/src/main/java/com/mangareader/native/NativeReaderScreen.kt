@@ -324,10 +324,9 @@ fun NativeReaderScreen(
             delegate.pageBgColor = pageBgColor
             delegate.landscapeZoom = landscapeZoom
             delegate.scaleMode = scaleMode
-            delegate.zoomStart = zoomStart
-            delegate.doubleTapZoom = doubleTapZoom
-            delegate.doubleTapZoom = doubleTapZoom
-            delegate.curlContentAreaOnly = curlContentAreaOnly
+                delegate.zoomStart = zoomStart
+                delegate.doubleTapZoom = doubleTapZoom
+                delegate.curlContentAreaOnly = curlContentAreaOnly
             delegate.setTrimWhiteBorder(trimWhiteBorder, trimThreshold, trimWhiteRatio)
             delegate.setFixedCrop(fixedCropL, fixedCropT, fixedCropR, fixedCropB)
             delegate.setPanNavigation(panNavigation)
@@ -344,6 +343,9 @@ fun NativeReaderScreen(
             delegate.setFixedCrop(fixedCropL, fixedCropT, fixedCropR, fixedCropB)
             delegate.setPanNavigation(panNavigation)
             delegate.setEinkDither(einkDither, einkDitherAlgorithm, einkDitherLevels, einkEndpointPassthrough)
+            // ★ 2026-10-05 二次审查补：仿真双页视图自身已有 doubleTapZoom state 承载（同单页仿真），
+            //   此前 setup/运行时两处都没接线 → 仿真双页下双击放大开关改了没反应
+            delegate.doubleTapZoom = doubleTapZoom
 
             delegate.setDoublePageModeAndShift(pageLayout == 1 || pageLayout == 2, pageLayout == 2)
             delegate.setDoublePageReverse(doublePageReverse)
@@ -525,6 +527,8 @@ fun NativeReaderScreen(
             is com.mangareader.native.curl.CurlDoublePageView -> {
                 d.scaleMode = scaleMode
                 d.zoomStart = zoomStart
+                d.doubleTapZoom = doubleTapZoom
+                d.landscapeZoom = landscapeZoom
                 d.setPanNavigation(panNavigation)
             }
             is WebtoonReaderView -> d.doubleTapZoom = doubleTapZoom
