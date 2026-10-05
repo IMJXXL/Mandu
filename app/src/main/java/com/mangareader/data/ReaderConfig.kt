@@ -120,7 +120,7 @@ data class ReaderConfig(
     val ambienceVolume: Int = 60
 ) {
     enum class ScrollMode { VERTICAL, HORIZONTAL_LEFT, HORIZONTAL_RIGHT }
-    @Deprecated("Dead code - navigation uses Int field navigationMode instead") enum class ClickFlipType { NO, LEFT_RIGHT, DIAGONAL_LB_RT, DIAGONAL_LT_RB, L_SHAPE }
+    @Deprecated("注释过时——clickFlipType.ordinal 正被 Reader/各视图使用；新模式 EDGE/KINDLISH 已接 buildNavigation") enum class ClickFlipType { NO, LEFT_RIGHT, DIAGONAL_LB_RT, DIAGONAL_LT_RB, L_SHAPE, EDGE, KINDLISH }
     @Deprecated("Dead code - navigationMode is stored as Int, this enum is never referenced") enum class NavigationMode(val label: String) {
         DEFAULT("默认"), L_NAV("L形"), KINDLISH("Kindlish"), EDGE("边沿"), RIGHT_LEFT("右与左")
     }

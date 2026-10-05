@@ -61,3 +61,42 @@ object VerticalPagerNavigation : ViewerNavigation() {
         NavigationRegion(RectF(0f, 0.6f, 1f, 1f), NavigationAction.NEXT)
     )
 }
+
+/** 边沿（对齐 mihon EdgeNavigation"两侧前进"型）：左 1/3 与右 1/3 = 前进，
+ *  中下 1/3 = 后退，其余（含顶条）= 菜单。mihon 用绝对 NEXT/PREV，此处沿用本工程
+ *  阅读序语义（NEXT/PREV 随 RTL 翻转）——LTR 下与 mihon 完全一致，RTL 下方向正确。 */
+object EdgeNavigation : ViewerNavigation() {
+    override val regions = listOf(
+        NavigationRegion(RectF(0f, 0.05f, 0.33f, 1f), NavigationAction.NEXT),
+        NavigationRegion(RectF(0.67f, 0.05f, 1f, 1f), NavigationAction.NEXT),
+        NavigationRegion(RectF(0.33f, 0.66f, 0.67f, 1f), NavigationAction.PREV),
+    )
+}
+
+/** Kindle 型（对齐 mihon KindlishNavigation）：左 1/3 = 上一页，右 2/3 = 下一页，
+ *  顶条与未覆盖区 = 菜单（mihon 顶部为死区，此处改良为菜单，菜单永远可达）。 */
+object KindlishNavigation : ViewerNavigation() {
+    override val regions = listOf(
+        NavigationRegion(RectF(0f, 0.05f, 0.33f, 1f), NavigationAction.PREV),
+        NavigationRegion(RectF(0.33f, 0.05f, 1f, 1f), NavigationAction.NEXT),
+    )
+}
+
+/** ★ 导航模式 Int→实现 映射唯一入口（2026-10-05 抽出）：PagerReaderView/CurlReaderView/
+ *  CurlDoublePageView 三处重复 when 收敛于此，新增模式只改这一处。
+ *  Int 沿用 ClickFlipType.ordinal：0=关闭(全屏菜单) 1=左右分区 4=L型 5=边沿 6=Kindlish；
+ *  竖向翻页恒用纵切预设（fx 无意义），对调只对横向有意义。 */
+fun buildNavigation(type: Int, invertH: Boolean, verticalPager: Boolean): ViewerNavigation {
+    val base = when (type) {
+        0 -> AllMenuNavigation
+        4 -> LNavigation
+        5 -> EdgeNavigation
+        6 -> KindlishNavigation
+        else -> DefaultNavigation
+    }
+    return when {
+        verticalPager -> VerticalPagerNavigation
+        invertH -> InvertedNavigation(base)
+        else -> base
+    }
+}

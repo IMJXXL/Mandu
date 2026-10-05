@@ -759,17 +759,8 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     }
 
     private fun applyNavigation(verticalPagerNow: Boolean = verticalPager) {
-        val base = when (clickFlipType) {
-            0 -> AllMenuNavigation
-            4 -> LNavigation
-            else -> DefaultNavigation
-        }
-        // 竖向翻页 fx 无意义，恒用纵切预设；对调只对横向有意义
-        this.navigation = when {
-            verticalPagerNow -> VerticalPagerNavigation
-            clickFlipInvertH -> InvertedNavigation(base)
-            else -> base
-        }
+        // ★ 映射收敛到 buildNavigation（新增边沿/Kindlish 模式只改一处）
+        this.navigation = buildNavigation(clickFlipType, clickFlipInvertH, verticalPagerNow)
     }
 
     // ★ 2026-10-05 setup 锚定窗口：adapter 挂上到 setCurrentItem 落位期间抑制 onPageSelected

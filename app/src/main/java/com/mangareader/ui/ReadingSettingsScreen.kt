@@ -409,6 +409,8 @@ fun ReadingSettingsScreen(onBack: () -> Unit, onOpenKeyMap: (() -> Unit)? = null
                             "关闭" to com.mangareader.data.ReaderConfig.ClickFlipType.NO,
                             "左右分区" to com.mangareader.data.ReaderConfig.ClickFlipType.LEFT_RIGHT,
                             "L型" to com.mangareader.data.ReaderConfig.ClickFlipType.L_SHAPE,
+                            "边沿" to com.mangareader.data.ReaderConfig.ClickFlipType.EDGE,
+                            "Kindlish" to com.mangareader.data.ReaderConfig.ClickFlipType.KINDLISH,
                         ).forEach { (label, value) ->
                             Surface(
                                 modifier = Modifier.weight(1f).clickable { config = config.copy(clickFlipType = value); config.save(ctx) },
@@ -423,7 +425,6 @@ fun ReadingSettingsScreen(onBack: () -> Unit, onOpenKeyMap: (() -> Unit)? = null
                     Spacer(Modifier.height(8.dp))
                     // 染色预览：上一页=主色 / 菜单=灰 / 下一页=主色深，对调后水平镜像
                     ClickZonePreview(config.clickFlipType, config.clickFlipInvertH)
-                    Text("深色区=上一页 · 浅色区=下一页 · 空白=唤出菜单", fontSize = 10.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
                     Text("深色区=上一页 · 浅色区=下一页 · 空白=唤出菜单", fontSize = 10.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
                     Spacer(Modifier.height(8.dp))
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -528,6 +529,29 @@ private fun ClickZonePreview(type: com.mangareader.data.ReaderConfig.ClickFlipTy
                 rect(0.67f, 0.33f, 1f, 0.67f, nextC)
                 rect(0f, 0.67f, 1f, 1f, nextC)
                 rect(0.33f, 0.33f, 0.67f, 0.67f, menuC)
+            }
+            com.mangareader.data.ReaderConfig.ClickFlipType.EDGE -> {
+                // 边沿（mihon EdgeNavigation）：左右两竖条=下一页（前进），中下横条=上一页，其余=菜单
+                fun rect(x0: Float, y0: Float, x1: Float, y1: Float, color: androidx.compose.ui.graphics.Color) {
+                    val mx0 = mirrorX(x0); val mx1 = mirrorX(x1)
+                    drawRect(color, topLeft = androidx.compose.ui.geometry.Offset(minOf(mx0, mx1) * w, y0 * h),
+                        size = androidx.compose.ui.geometry.Size(kotlin.math.abs(mx1 - mx0) * w, (y1 - y0) * h))
+                }
+                drawRect(menuC) // 顶部 5%
+                rect(0f, 0.05f, 0.33f, 1f, nextC)
+                rect(0.67f, 0.05f, 1f, 1f, nextC)
+                rect(0.33f, 0.66f, 0.67f, 1f, prevC)
+            }
+            com.mangareader.data.ReaderConfig.ClickFlipType.KINDLISH -> {
+                // Kindle 型（mihon KindlishNavigation）：左 1/3=上一页，右 2/3=下一页，顶条=菜单
+                fun rect(x0: Float, x1: Float, color: androidx.compose.ui.graphics.Color) {
+                    val mx0 = mirrorX(x0); val mx1 = mirrorX(x1)
+                    drawRect(color, topLeft = androidx.compose.ui.geometry.Offset(minOf(mx0, mx1) * w, 0.05f * h),
+                        size = androidx.compose.ui.geometry.Size(kotlin.math.abs(mx1 - mx0) * w, 0.95f * h))
+                }
+                drawRect(menuC) // 顶部 5%
+                rect(0f, 0.33f, prevC)
+                rect(0.33f, 1f, nextC)
             }
             else -> {
                 // 左右分区：左 1/3 PREV / 中 MENU / 右 1/3 NEXT；顶部 5% 与 getAction 一致为 MENU
