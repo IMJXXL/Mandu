@@ -58,6 +58,9 @@ class PagerSSIV @JvmOverloads constructor(
      *  CANCEL，这两处根本不触发（零双重翻页）；短码 fling-fb / up-fb 证明走到了兜底。 */
     var pagerSwipeFallback: ((dir: Int) -> Unit)? = null
     private var fallbackFired = false
+    // ★ pass-flip 自接管标记：消费的手势流（DOWN 未放大态本视图就吞了，super 全程不知情）
+    //   在 UP/CANCEL 时直接收尾归还，不走 super（基类收到没有 DOWN 前缀的孤立流行为未定义）
+    private var passFlipOwns = false
 
     private fun gestureBaseScale(): Float = if (viewportBaseScale > 0f) viewportBaseScale else minScale
 
@@ -145,6 +148,7 @@ class PagerSSIV @JvmOverloads constructor(
                 consumedDown = false
                 swipeDiagMarked = false
                 fallbackFired = false
+                passFlipOwns = false
                 if (scale <= base + 0.01f) {
                     // 未放大：消费 DOWN 保留事件流，MOVE 按方向分流（翻页/拖图）
                     return true
@@ -182,7 +186,31 @@ class PagerSSIV @JvmOverloads constructor(
                         consumedDown = true
                         return super.onTouchEvent(event)
                     }
-                    markSwipe(context, "pass-flip"); return false
+                    // ★ 2026-10-05 深度定位（1005-205951 日志实锤）：126 次放行翻页 0 次
+                    //   pagerScroll=DRAGGED、0 次 fling-fb/up-fb——放行后事件流在转发层丢失，
+                    //   本视图每手势只收到首条 MOVE（旧 return false 假设"父会持续看到流并
+                    //   在 touchSlop 处接管"在部分设备/转发链上不成立），UP 兜底也因 UP 从未
+                    //   回到本视图而死。改为消费事件流并自累计沿轴位移：
+                    //   - 正常设备 touchSlop(≈24px) 处 RV 先拦截接管（远小于 25% 视口阈值），
+                    //     本视图收 CANCEL 不翻页——零双重翻页，与旧链路完全兼容；
+                    //   - 拦截失效设备由本视图自己累计到 25% 视口直接翻一页（fallback 防重），
+                    //     不再依赖 RV/UP/fling 任何一环。
+                    if (!fallbackFired) {
+                        val d = if (axisPassthroughHorizontal) event.x - downX else event.y - downY
+                        val extent = if (axisPassthroughHorizontal) width else height
+                        if (extent > 0 && kotlin.math.abs(d) > extent * 0.25f) {
+                            fallbackFired = true
+                            markSwipe(context, "pass-flip-self")
+                            pagerSwipeFallback?.invoke(if (d < 0) 1 else -1)
+                            consumedDown = true
+                            passFlipOwns = true
+                            return true
+                        }
+                    }
+                    if (!swipeDiagMarked) markSwipe(context, "pass-flip")
+                    consumedDown = true
+                    passFlipOwns = true
+                    return true
                 }
                 val hasRoom = if (axisPassthroughHorizontal) hasVerticalPanRoom() else hasHorizontalPanRoom()
                 if (!hasRoom) { markSwipe(context, "v-noPan-pass"); return false }
@@ -193,6 +221,13 @@ class PagerSSIV @JvmOverloads constructor(
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 parent?.requestDisallowInterceptTouchEvent(false)
+                // ★ pass-flip 自接管的手势流在此收尾：翻页判定已在 MOVE 内完成（自翻或
+                //   正常设备 RV 拦截时收 CANCEL），super 从未见过这段流的 DOWN，不透传
+                if (passFlipOwns) {
+                    passFlipOwns = false
+                    consumedDown = false
+                    return true
+                }
                 // ★ UP 兜底（仅 UP；VP2 拦截后会发 CANCEL，正常设备走不到这里）：
                 // 未放大态沿主轴慢拖超 30% 视口且拦截没接管 → 显式翻一页
                 if (event.actionMasked == MotionEvent.ACTION_UP && !consumedDown && !fallbackFired &&

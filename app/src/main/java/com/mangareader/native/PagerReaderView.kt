@@ -1515,9 +1515,11 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             loadPageAsync(spreadTable.firstPage(curSlot))
             val curSecond = spreadTable.secondPage(curSlot)
             if (curSecond >= 0) loadPageAsync(curSecond)
-            // 相邻跨页（±1）+ 次相邻跨页（±2）：双页一次前进一跨页，±1 缓冲只够翻一次；
-            //   拉到 ±2 跨页让快翻也不打空（prioritizeLoad 窗口 ±8 容得下）
-            for (delta in intArrayOf(-2, -1, 1, 2)) {
+            // 相邻跨页（±1）：双页一次前进一跨页，±1 保证至少连续翻两次不重新解码。
+            //   ★ 2026-10-05 卡顿工单收窄：曾拉到 ±2 跨页=一次预载 6 页（2057×3000 位图
+            //   ≈290MB 峰值分配），进书/旋转/翻页即 GC 风暴，横屏高分页解码 p50 414ms
+            //   叠加成"特别卡"。收窄到 ±1（4 页），快翻第三跨页才打空，实时解码补上。
+            for (delta in intArrayOf(-1, 1)) {
                 val s = curSlot + delta
                 if (s < 0 || s >= spreadTable.slotCount) continue
                 loadPageAsync(spreadTable.firstPage(s), isPreload = true)

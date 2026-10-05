@@ -467,6 +467,10 @@ data class ReaderConfig(
             "orientation" to { it.orientation },
             "autoFlipInterval" to { it.autoFlipInterval },
             "landscapeZoom" to { it.landscapeZoom },
+            // ★ 2026-10-05 实锤"双击放大关不掉"根因：本字段漏登记 → changedFields 永远比不出
+            //   它的改动 → 写盘从不执行，落盘值恒为旧值，UI 重读必回弹。登记后全链闭环
+            //   （diff→write 落全局层→重读一致→NES 运行时同步→视图守卫生效）。
+            "isDoubleTapZoom" to { it.isDoubleTapZoom },
             "imageScaleMode" to { it.imageScaleMode },
             "zoomStart" to { it.zoomStart },
             "autoWebtoon" to { it.autoWebtoon },

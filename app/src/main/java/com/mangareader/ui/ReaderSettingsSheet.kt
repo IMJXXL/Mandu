@@ -285,14 +285,34 @@ private fun ReadingModeTab(config: ReaderConfig, mode: Mode, bookId: Long, onCon
         }
     }
     SettingsChipRow("页面布局") {
+        // ★ 2026-10-05 工单：横屏自动双页生效时面板要显示实际所见——存储值仍是"单页"
+        //   （回竖屏恢复），选中态按有效布局派生；点击仍写存储值
+        val isLandscapeNow = androidx.compose.ui.platform.LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+        val autoDoubleActive = config.pageLayout == ReaderConfig.PageLayout.SINGLE &&
+            config.autoDoubleLandscape && isLandscapeNow
+        val effectiveLayout = if (autoDoubleActive) ReaderConfig.PageLayout.DOUBLE else config.pageLayout
             listOf("单页" to ReaderConfig.PageLayout.SINGLE, "双页" to ReaderConfig.PageLayout.DOUBLE,
                 "双页跳过首页" to ReaderConfig.PageLayout.DOUBLE_SHIFTED).forEach { (label, value) ->
                 FilterChip(
-                    selected = value == config.pageLayout,
-                    onClick = { onConfigChange(config.copy(pageLayout = value)) },
+                    selected = value == effectiveLayout,
+                    onClick = {
+                        if (value == ReaderConfig.PageLayout.SINGLE && autoDoubleActive) {
+                            // 横屏自动双页生效中点"单页"=此刻就要单页：不同时关掉自动开关，
+                            // 点击等于没点（布局派生立刻又变回双页）
+                            onConfigChange(config.copy(pageLayout = ReaderConfig.PageLayout.SINGLE, autoDoubleLandscape = false))
+                        } else {
+                            onConfigChange(config.copy(pageLayout = value))
+                        }
+                    },
                     label = { Text(label, fontSize = 13.sp) },
                 )
             }
+        }
+        if (config.pageLayout == ReaderConfig.PageLayout.SINGLE && config.autoDoubleLandscape) {
+            Text(
+                "横屏时这本会自动以双页显示（回竖屏恢复单页）；开关对没单独调过的书全局生效",
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f), fontSize = 11.sp, modifier = Modifier.padding(start = 4.dp, bottom = 4.dp),
+            )
         }
         Text("切换双页模式时可能会短暂卡顿，滑动一下即可恢复", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f), fontSize = 11.sp, modifier = Modifier.padding(start = 4.dp, bottom = 4.dp))
         // ★ 2026-10-05 工单：想要"左/右为起始页"——日漫右开（首页独占右侧）＝"双页跳过首页"；
