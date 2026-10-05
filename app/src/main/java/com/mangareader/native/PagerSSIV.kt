@@ -78,6 +78,21 @@ class PagerSSIV @JvmOverloads constructor(
         sWidth * scale > width + 1f
     } catch (_: Exception) { false }
 
+    private val touchSlopPx by lazy { android.view.ViewConfiguration.get(context).scaledTouchSlop }
+
+    /** ★ 拖图接力判定（mihon SSIV fork 同款体验）：滑动方向图已贴边（该向 pan 余量耗尽）
+     *  时返回 true——此时继续拖动应交还翻页容器接力，而不是把图顶在边上不动。
+     *  getPanRemaining 是"当前位置的真实余量"，与自算的 hasXXPanRoom（图是否溢出）互补。 */
+    private fun panExhaustedToward(dx: Float, dy: Float): Boolean = try {
+        val r = RectF()
+        getPanRemaining(r)
+        if (axisPassthroughHorizontal) {
+            (dx > touchSlopPx && r.right <= 1f) || (dx < -touchSlopPx && r.left <= 1f)
+        } else {
+            (dy > touchSlopPx && r.bottom <= 1f) || (dy < -touchSlopPx && r.top <= 1f)
+        }
+    } catch (_: Exception) { false }
+
     // 双击检测器
     private val doubleTapDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
         override fun onFling(e1: MotionEvent?, e2: MotionEvent, vx: Float, vy: Float): Boolean {
@@ -166,6 +181,13 @@ class PagerSSIV @JvmOverloads constructor(
                     return super.onTouchEvent(event)
                 }
                 if (scale > base + 0.01f) {
+                    // ★ 拖图接力（mihon 同款）：放大态沿滑动方向图已贴边→交还翻页容器继续
+                    //   接力翻页，不再把图顶在边上；未贴边仍是拖图（惯性平移不受影响）
+                    if (panExhaustedToward(event.x - downX, event.y - downY)) {
+                        parent?.requestDisallowInterceptTouchEvent(false)
+                        markSwipe(context, "zoom-pan-edge")
+                        return false
+                    }
                     markSwipe(context, "hold-zoomedPan")
                     parent?.requestDisallowInterceptTouchEvent(true)
                     return super.onTouchEvent(event)
@@ -183,6 +205,15 @@ class PagerSSIV @JvmOverloads constructor(
                 if (alongAxis) {
                     val alongRoom = if (axisPassthroughHorizontal) hasHorizontalPanRoom() else hasVerticalPanRoom()
                     if (alongRoom) {
+                        // ★ 拖图接力（mihon 同款）：基准态图溢出但当前位置沿滑动方向已贴边
+                        //   （原始尺寸/贴满高度档拖到边）→交还翻页容器接力，治"个别不能翻"
+                        if (panExhaustedToward(event.x - downX, event.y - downY)) {
+                            parent?.requestDisallowInterceptTouchEvent(false)
+                            markSwipe(context, "hold-pan-edge")
+                            consumedDown = true
+                            passFlipOwns = true
+                            return false
+                        }
                         markSwipe(context, "hold-pan")
                         parent?.requestDisallowInterceptTouchEvent(true)
                         consumedDown = true
@@ -217,7 +248,27 @@ class PagerSSIV @JvmOverloads constructor(
                     return true
                 }
                 val hasRoom = if (axisPassthroughHorizontal) hasVerticalPanRoom() else hasHorizontalPanRoom()
-                if (!hasRoom) { markSwipe(context, "v-noPan-pass"); return false }
+                if (!hasRoom) {
+                    // ★ 斜滑死路收口：图上无任何可拖空间时，任何方向滑动唯一有意义的就是翻页。
+                    //   沿轴分量超 8% 视口按其方向自翻（斜度略大的滑动曾被归到这里放行后
+                    //   断流死，是"个别不能翻"的另一来源）；纯正交滑动吞流放空（无意义动作）
+                    if (!fallbackFired) {
+                        val d = if (axisPassthroughHorizontal) event.x - downX else event.y - downY
+                        val extent = if (axisPassthroughHorizontal) width else height
+                        if (extent > 0 && kotlin.math.abs(d) > extent * 0.08f) {
+                            fallbackFired = true
+                            markSwipe(context, "pass-flip-self")
+                            pagerSwipeFallback?.invoke(if (d < 0) 1 else -1)
+                            consumedDown = true
+                            passFlipOwns = true
+                            return true
+                        }
+                    }
+                    if (!swipeDiagMarked) markSwipe(context, "v-noPan-pass")
+                    consumedDown = true
+                    passFlipOwns = true
+                    return true
+                }
                 markSwipe(context, "hold-pan")
                 parent?.requestDisallowInterceptTouchEvent(true)
                 consumedDown = true
