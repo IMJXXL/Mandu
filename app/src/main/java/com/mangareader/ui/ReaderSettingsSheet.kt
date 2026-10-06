@@ -292,7 +292,7 @@ private fun ReadingModeTab(config: ReaderConfig, mode: Mode, bookId: Long, onCon
             config.autoDoubleLandscape && isLandscapeNow
         val effectiveLayout = if (autoDoubleActive) ReaderConfig.PageLayout.DOUBLE else config.pageLayout
             listOf("单页" to ReaderConfig.PageLayout.SINGLE, "双页" to ReaderConfig.PageLayout.DOUBLE,
-                "双页跳过首页" to ReaderConfig.PageLayout.DOUBLE_SHIFTED).forEach { (label, value) ->
+                "双页+起始页" to ReaderConfig.PageLayout.DOUBLE_SHIFTED).forEach { (label, value) ->
                 FilterChip(
                     selected = value == effectiveLayout,
                     onClick = {
@@ -315,13 +315,19 @@ private fun ReadingModeTab(config: ReaderConfig, mode: Mode, bookId: Long, onCon
             )
         }
         Text("切换双页模式时可能会短暂卡顿，滑动一下即可恢复", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f), fontSize = 11.sp, modifier = Modifier.padding(start = 4.dp, bottom = 4.dp))
-        // ★ 2026-10-05 工单：想要"左/右为起始页"——日漫右开（首页独占右侧）＝"双页跳过首页"；
-        //   每对页面的左右先后顺序＝"反转双页"
+        // ★ 2026-10-06 工单：起始页 2..10 可配（"跳过首页"泛化）；反转双页挪到页面布局区
+        if (config.pageLayout == ReaderConfig.PageLayout.DOUBLE_SHIFTED) {
+            SliderItem(
+                "合并起始页", config.doublePageStart.toFloat(), 2f..10f, 8,
+                "第 ${config.doublePageStart} 页起合并（前 ${config.doublePageStart - 1} 页单独显示）",
+            ) { onConfigChange(config.copy(doublePageStart = it.toInt())) }
+        }
         if (config.pageLayout != ReaderConfig.PageLayout.SINGLE) {
-            Text(
-                "起始页怎么选：首页独占一侧（日漫右开）＝上方选「双页跳过首页」；每对页面左右互换＝「反转双页」",
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f), fontSize = 11.sp, modifier = Modifier.padding(start = 4.dp, bottom = 4.dp),
-            )
+            // ★ 2026-10-06 工单：反转双页归位页面布局区（原在画面区深处，与拆分无关）
+            CheckboxItem(
+                "反转双页（每对页面左右顺序镜像）", config.doublePageReverse,
+                info = "日漫右开想从左页开始、或起始页档下想先看右半，用它互换每对页面的左右顺序",
+            ) { onConfigChange(config.copy(doublePageReverse = it)) }
         }
         if (config.pageLayout != ReaderConfig.PageLayout.SINGLE) {
             // ★ 智能配对提示（2026-10-05）：双页布局下宽图/长图不再硬拼，开关在常规页
@@ -441,8 +447,6 @@ private fun ReadingModeTab(config: ReaderConfig, mode: Mode, bookId: Long, onCon
         )
         CheckboxItem("拆分双页（跨页图拆成左右两页，翻页/条漫均生效）", config.doublePageSplit) { onConfigChange(config.copy(doublePageSplit = it)) }
         if (config.pageLayout != ReaderConfig.PageLayout.SINGLE) {
-            // ★ 2026-10-05：反转双页不再藏在"拆分双页"下——合并双页也需要左右顺序镜像（工单：起始页左右）
-            CheckboxItem("反转双页（每对页面左右顺序镜像）", config.doublePageReverse) { onConfigChange(config.copy(doublePageReverse = it)) }
         }
         SliderItem("侧边留白", config.imageMarginH.toFloat(), -20f..50f, 70, "${config.imageMarginH}dp") {
             onConfigChange(config.copy(imageMarginH = it.toInt()))

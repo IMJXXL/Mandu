@@ -1,5 +1,6 @@
 package com.mangareader.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -22,6 +23,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -73,6 +78,9 @@ fun LandscapeReaderChrome(
     Box(Modifier.fillMaxSize()) {
         // 左侧胶囊：信息头（书名+页码，真机反馈"不能看不到信息"——嵌入胶囊头部而非独立浮层）
         //          + 返回 / 重命名 / 加入书架（隐藏书）/ 收藏 —— 顶栏动作镜像
+        // ★ 2026-10-06 工单"不能一直让 UI 太宽"：书名默认折叠——平时只显示页码（窄），
+        //   点页码展开书名（180dp 限宽），再点收起。信息可看 + 胶囊恒窄两头兼顾
+        var titleExpanded by remember { mutableStateOf(false) }
         Surface(color = pillColor, shape = railShape, modifier = Modifier.align(Alignment.TopStart).padding(start = 10.dp, top = 10.dp)) {
             Column(Modifier.padding(vertical = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 if (title.isNotEmpty() || subtitle.isNotEmpty()) {
@@ -80,13 +88,14 @@ fun LandscapeReaderChrome(
                         Modifier.padding(horizontal = 8.dp, vertical = 2.dp).widthIn(max = 180.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        if (title.isNotEmpty()) Text(
+                        if (titleExpanded && title.isNotEmpty()) Text(
                             title, color = textColor, fontSize = 11.sp, maxLines = 1,
                             overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium
                         )
                         if (subtitle.isNotEmpty()) Text(
                             subtitle, color = textColor.copy(alpha = 0.6f), fontSize = 9.sp,
-                            maxLines = 1, overflow = TextOverflow.Ellipsis
+                            maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.clickable { titleExpanded = !titleExpanded },
                         )
                     }
                 }

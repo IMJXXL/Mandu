@@ -67,7 +67,9 @@ data class ReaderConfig(
     // ★ 画面缩放档位（2026-10-05 重做，替代 fitScreen 布尔，ScalePlan 是唯一公式出处）：
     //   0=完整显示(contain) 1=铺满屏幕(贴宽,平板防糊封顶) 2=贴满高度 3=原始尺寸 4=智能适应(竖版贴宽/横版贴高)
     //   条漫模式恒贴宽不参与；双页仿真收敛为 完整显示/铺满 两档（ScalePlan.spreadMode）
-    val imageScaleMode: Int = 1,
+    // ★ 出厂默认改"适应屏幕"（2026-10-06 用户拍板，mihon 同款）：contain 档宽图完整显示、
+    //   横滑直接翻页（原"适应宽度"对竖图纵向溢出，横屏体验差）。动过此设置的用户不受影响
+    val imageScaleMode: Int = 0,
     /** 缩放起始位置（mihon zoomStart）：0=自动(跟随阅读方向,RTL→右缘) 1=左 2=中 3=右；横向留白/宽图放大后对齐此缘 */
     val zoomStart: Int = 0,
     val panNavigation: Boolean = true,
@@ -129,7 +131,7 @@ data class ReaderConfig(
         DEFAULT("默认"), L_NAV("L形"), KINDLISH("Kindlish"), EDGE("边沿"), RIGHT_LEFT("右与左")
     }
     enum class ReadBackground { DEFAULT, LIGHT, DARK, WHITE, GRAY }
-    enum class PageLayout(val label: String) { SINGLE("单页"), DOUBLE("双页"), DOUBLE_SHIFTED("双页跳过首页") }
+    enum class PageLayout(val label: String) { SINGLE("单页"), DOUBLE("双页"), DOUBLE_SHIFTED("双页+起始页") }
     enum class DownsampleTier(val threshold: Long, val label: String) {
         STANDARD(6_291_456L, "标准"), HD(12_582_912L, "高清"), ULTRA_HD(25_165_824L, "超清"), ORIGINAL(Long.MAX_VALUE, "原图")
     }
@@ -291,7 +293,7 @@ data class ReaderConfig(
                 useSSIV = rBoolean("useSSIV", true),
                 landscapeZoom = rBoolean("landscapeZoom", false),
                 isDoubleTapZoom = rBoolean("isDoubleTapZoom", true),
-                imageScaleMode = rInt("imageScaleMode", 1).let { if (it in 0..5) it else 1 },   // 0..5 与 ScalePlan 档位一致（mihon 六档）
+                imageScaleMode = rInt("imageScaleMode", 0).let { if (it in 0..5) it else 0 },   // 0..5 与 ScalePlan 档位一致（mihon 六档）
                 zoomStart = rInt("zoomStart", 0).let { if (it in 0..3) it else 0 },             // 0..3 与 ScalePlan zoomStart 一致
                 panNavigation = rBoolean("panNavigation", true),
                 doublePageShift = rInt("doublePageShift", 0),

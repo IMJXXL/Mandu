@@ -110,7 +110,7 @@ internal val PREF_DEFAULTS: Map<String, Any> = mapOf(
     "brightnessEnabled" to false, "screenBrightnessEnabled" to false, "contrastEnabled" to false, "gammaEnabled" to false,
     "textureEnabled" to false, "texturePresetId" to 0, "textureAlpha" to 15, "textureConcentration" to 100, "textureScope" to 0,
     "ambienceSound" to "", "ambienceVolume" to 60,
-    "imageScaleMode" to 1, "zoomStart" to 0, "seamlessNextVolume" to true, "tileModeEnabled" to false,
+    "imageScaleMode" to 0, "zoomStart" to 0, "seamlessNextVolume" to true, "tileModeEnabled" to false,
     "tallSplitEnabled" to false, "tallSplitSensitivity" to 0, "downsampleTier" to "STANDARD", "clickFlipType" to "LEFT_RIGHT",
     "scrollMode" to "HORIZONTAL_LEFT",
 )

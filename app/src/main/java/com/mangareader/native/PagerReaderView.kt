@@ -39,6 +39,20 @@ import kotlinx.coroutines.withContext
 
 class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelegate {
 
+    // ★ 旋转重算（2026-10-06 工单"横屏没跟随适应宽度/横屏单页不能翻页/竖滑不能拖图"同根）：
+    //   manifest configChanges 拦了旋转，视图不重建、已绑定 holder 不再走 onBindViewHolder——
+    //   viewportBaseScale 停留旧屏向值（竖屏贴宽≠横屏贴宽），base≠旋转后新 scale → 未放大被误判
+    //   放大 → 根检测器门闩+SSIV 分流全堵（翻页死/拖图死），"重新调一下缩放档才好"＝切设置触发
+    //   重载掩盖了问题。尺寸真实变化时重载当前窗口：缓存命中零重解码，onReady→applyPlanScale
+    //   以新屏尺寸重设 base/scale（同 setTrimWhiteBorder 无白屏模式）。
+    override fun onSizeChanged(w: Int, h: Int, ow: Int, oh: Int) {
+        super.onSizeChanged(w, h, ow, oh)
+        if (ow <= 0 || oh <= 0 || (w == ow && h == oh)) return
+        if (pageList.isEmpty() || pagerAdapter == null) return
+        val cur = currentPage
+        (cur - 1..cur + 1).forEach { if (it in pageList.indices) loadPageAsync(it) }
+    }
+
     private val viewPager: ViewPager2
     private var pagerAdapter: PagerAdapter? = null
 

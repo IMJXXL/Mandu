@@ -212,8 +212,8 @@ class ReaderScopeModelTest {
         ReaderScope.write(prefs, 1L, "imageScaleMode", 0)
         assertEquals(0, prefs.getInt("book_1_imageScaleMode", -1))
         assertEquals(0, ReaderConfig.load(prefs, 1L).imageScaleMode)
-        // 其他书不受影响（出厂默认 1=铺满屏幕）
-        assertEquals(1, ReaderConfig.load(prefs, 2L).imageScaleMode)
+        // 其他书不受影响（出厂默认 0=适应屏幕，2026-10-06 对齐 mihon）
+        assertEquals(0, ReaderConfig.load(prefs, 2L).imageScaleMode)
     }
 
     // ── 写路由 ──
