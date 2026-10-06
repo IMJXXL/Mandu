@@ -189,6 +189,7 @@ class MobiFileTest {
             textJunk, jpeg,
         )
         assertNull(mf)
+        assert(MobiFile.lastReject.contains("DRM")) { MobiFile.lastReject }
     }
 
     @Test
@@ -203,6 +204,59 @@ class MobiFileTest {
         out.write(byteArrayOf(0, 0, 0, 2))
         out.write(ByteArray(48))
         assertNull(MobiFile.open(ByteArraySeekable(out.toByteArray())))
+        assert(MobiFile.lastReject.contains("record table broken")) { MobiFile.lastReject }
+    }
+
+    // ---- 兜底轮（2026-10-06 "有的 mobi 能读有的不行"）----
+
+    @Test
+    fun bogusFirstNonBookFallsBackToFullScan() {
+        // 工具写坏 firstNonBook=1：主探测区 [3,1) 为空 → 兜底轮全记录扫出 3 张图。
+        // 记录需 ≥64B（兜底轮滤短垃圾），给合成图补零填充（readImage 容忍记录尾部填充）
+        fun pad(b: ByteArray) = b + ByteArray(64)
+        val bytes = pdb(
+            "BOOK", "MOBI", arrayOf(
+                rec0(textRecordCount = 2, mobi = mobiHeader(firstImage = 3, firstNonBook = 1)),
+                textJunk, textJunk,
+                pad(jpeg), pad(png), pad(gif),
+                flisJunk,
+            ),
+        )
+        val mf = MobiFile.open(ByteArraySeekable(bytes))!!
+        assertEquals(3, mf.imageCount)
+        assertEquals("jpg", mf.imageExt(0))
+        assertEquals("png", mf.imageExt(1))
+        assertEquals("gif", mf.imageExt(2))
+    }
+
+    @Test
+    fun bogusFirstImageFallsBackToFullScan() {
+        // firstImage 指到资源区之后（工具 bug）：主区只剩 gif → 但若主区仍有图则不进兜底；
+        // 这里 firstImage=99 使主区为空 → 兜底轮救回全部
+        val mf = open(
+            rec0(textRecordCount = 2, mobi = mobiHeader(firstImage = 99, firstNonBook = 6)),
+            textJunk, textJunk,
+            jpeg, png, gif,
+            flisJunk,
+        )!!
+        assertEquals(3, mf.imageCount)
+    }
+
+    @Test
+    fun fallbackIgnoresShortJunkRecords() {
+        // 兜底轮跳过 <64B 垃圾记录：textJunk(12B)/flisJunk(12B) 不计入
+        val mf = open(
+            rec0(textRecordCount = 2, mobi = mobiHeader(firstImage = 99, firstNonBook = 99)),
+            textJunk, textJunk,
+            flisJunk, flisJunk,
+        )!!
+        assertEquals(0, mf.imageCount)
+    }
+
+    @Test
+    fun rejectReasonsAreDistinct() {
+        assertNull(MobiFile.open(ByteArraySeekable(ByteArray(10))))
+        assert(MobiFile.lastReject.contains("too small")) { MobiFile.lastReject }
     }
 
     @Test

@@ -580,7 +580,12 @@ internal fun openDocumentEngine(
             } else {
                 MobiEngine.open(source, remoteSize = sizeHint, coverOnly = false)
             }
-            engine ?: error("Not a readable MOBI (encrypted or unsupported)")
+            // ★ 2026-10-06 "有的 mobi 能读有的不行"：MobiFile.open 各拒收路径写 lastReject
+            //   （DRM/坏表/0图/IO），拼进 error 消息 → toast 与 open fail 日志直接给原因
+            engine ?: error(
+                "Not a readable MOBI (encrypted or unsupported)" +
+                    (com.mangareader.mobi.MobiFile.lastReject.takeIf { it.isNotEmpty() }?.let { ": $it" } ?: "")
+            )
         }
         isEpub -> {
             // Bind elvis to the whole if (not only the last branch).

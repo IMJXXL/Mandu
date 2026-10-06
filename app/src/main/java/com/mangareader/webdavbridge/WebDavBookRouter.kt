@@ -125,7 +125,7 @@ object WebDavBookRouter {
             OpenResult.Failed("无法连接服务器：打开超时")
         } catch (t: Throwable) {
             adapter.close()
-            runCatching { com.mangareader.DiagTracer.markStatic("remote: open fail ${(android.os.SystemClock.uptimeMillis() - openStartMs)}ms e=${t::class.java.simpleName}") }
+            runCatching { com.mangareader.DiagTracer.markStatic("remote: open fail ${(android.os.SystemClock.uptimeMillis() - openStartMs)}ms e=${t::class.java.simpleName}${t.message?.take(80)?.let { " msg=$it" } ?: ""}") }
             OpenResult.Failed(humanize(t))
         }
     }

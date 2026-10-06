@@ -79,7 +79,8 @@ class MobiEngine private constructor(
                 ?: runCatching { source.size }.getOrDefault(0L)
             val mobi = try {
                 MobiFile.open(ByteSourceSeekable(source))
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                MobiFile.lastReject = "open exception: ${e::class.java.simpleName}"
                 null
             } ?: return null
             val pages = (0 until mobi.imageCount).map { i ->
@@ -102,13 +103,19 @@ class MobiEngine private constructor(
             index: DocumentExtractCache.Index,
             remoteSize: Long = 0L,
         ): MobiEngine? {
-            if (index.members.isEmpty()) return null
+            if (index.members.isEmpty()) {
+                MobiFile.lastReject = "cached index empty"
+                return null
+            }
             val fresh = open(source, remoteSize, coverOnly = false) ?: return null
             val matches = fresh.pages.size == index.members.size &&
                 fresh.pages.withIndex().all { (i, p) ->
                     index.members.getOrNull(i)?.ext == p.ext
                 }
-            if (!matches) return null
+            if (!matches) {
+                MobiFile.lastReject = "cached index mismatch (${index.members.size} members vs ${fresh.pages.size} fresh)"
+                return null
+            }
             return fresh
         }
     }

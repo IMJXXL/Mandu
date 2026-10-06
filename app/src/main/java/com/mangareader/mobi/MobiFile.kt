@@ -54,6 +54,18 @@ class MobiFile private constructor(
         /** 单条记录读取上限：防御坏偏移产生天文数字分配（超长扫描页也远小于此）。 */
         const val MAX_RECORD_BYTES = 64L * 1024 * 1024
 
+        /** 最近一次拒收原因（2026-10-06 "有的 mobi 能读有的不行"工单）：open 返回 null 时
+         *  写明具体路径，MobiEngine/DocumentExtractPageLoader 透传进 error 消息——下一轮
+         *  日志/toast 直接区分 DRM、坏表、0 图还是 IO。无 android 依赖故用伴生字段。 */
+        @JvmField
+        @Volatile
+        var lastReject: String = ""
+
+        private fun reject(reason: String): MobiFile? {
+            lastReject = reason
+            return null
+        }
+
         /**
          * 解析 PDB 头 + 记录表 + MOBI 头，魔数探测资源区图片记录。
          * 返回 null = 不是可流式读取的 MOBI（结构坏/DRM），调用方回退既有路径；
@@ -61,16 +73,16 @@ class MobiFile private constructor(
          */
         fun open(source: SeekableSource): MobiFile? {
             val size = source.size
-            if (size < 78L + 8) return null
-            val head = source.readFullyAt(0, 78) ?: return null
+            if (size < 78L + 8) return reject("file too small ($size B)")
+            val head = source.readFullyAt(0, 78) ?: return reject("PDB header read failed")
             val numRecords = u16(head, 76)
-            if (numRecords !in 1..MAX_RECORDS) return null
-            val list = source.readFullyAt(78, numRecords * 8) ?: return null
+            if (numRecords !in 1..MAX_RECORDS) return reject("bad record count ($numRecords)")
+            val list = source.readFullyAt(78, numRecords * 8) ?: return reject("record table read failed")
             val offsets = LongArray(numRecords)
             var prev = 0L
             for (i in 0 until numRecords) {
                 val o = u32(list, i * 8)
-                if (o < prev || o >= size) return null  // 记录表必须单调不减且在界内
+                if (o < prev || o >= size) return reject("record table broken at #$i (offset=$o size=$size)")
                 offsets[i] = o
                 prev = o
             }
@@ -78,10 +90,10 @@ class MobiFile private constructor(
 
             // 记录 0：PalmDOC 头 16B [+ MOBI 头]
             val rec0Len = (recordEnd(0) - offsets[0]).toInt()
-            if (rec0Len < 16) return null
-            val rec0 = source.readFullyAt(offsets[0], minOf(rec0Len, 4096)) ?: return null
+            if (rec0Len < 16) return reject("rec0 too small ($rec0Len B)")
+            val rec0 = source.readFullyAt(offsets[0], minOf(rec0Len, 4096)) ?: return reject("rec0 read failed")
             val textRecordCount = u16(rec0, 8)
-            if (u16(rec0, 12) != 0) return null  // encryption != 0 → DRM：快路径不接
+            if (u16(rec0, 12) != 0) return reject("DRM/encrypted (encryption=${u16(rec0, 12)})")
 
             // MOBI 头圈定资源区（firstNonBook/firstImage 为 MOBI 头内偏移 64/92）；
             // 无 MOBI 头（纯 PalmDOC PDB）则从文本记录之后探测
@@ -102,16 +114,32 @@ class MobiFile private constructor(
             val end = minOf(firstNonBook, numRecords)
 
             val probe = ByteArray(12)
+            fun probeRecord(i: Int): Pair<Int, String>? {
+                val len = (recordEnd(i) - offsets[i]).toInt()
+                // 兜底轮复用：<64B 记录不可能是图片（顺带滤掉短垃圾记录降低文本误报面）
+                if (len < 12) return null
+                if (source.readAt(offsets[i], probe, 0, 12) < 12) return null
+                val ext = imageExtOf(probe) ?: return null
+                return i to ext
+            }
             val images = ArrayList<Int>()
             val exts = ArrayList<String>()
             for (i in start until end) {
-                val len = (recordEnd(i) - offsets[i]).toInt()
-                if (len < 12) continue
-                if (source.readAt(offsets[i], probe, 0, 12) < 12) continue
-                val ext = imageExtOf(probe) ?: continue
-                images.add(i)
-                exts.add(ext)
+                probeRecord(i)?.let { (i2, ext) -> images.add(i2); exts.add(ext) }
             }
+            // ★ 兜底轮（2026-10-06 "有的 mobi 不行"）：firstNonBook/firstImage 由转换工具写入，
+            //   异常值（azw3 复合书指进 KF8 区、工具 bug 写小）会把探测区收成空/截断 → 0 图 →
+            //   整书拒收。主区 0 图时按"记录序全扫（跳 rec0 与 <64B 垃圾）"再试一轮——转换正常
+            //   的书主区即命中（不进此分支）；不规范书以可能引入少量文本误报换整本可开。
+            if (images.isEmpty() && (start > 1 || end < numRecords)) {
+                for (i in 1 until numRecords) {
+                    val len = (recordEnd(i) - offsets[i]).toInt()
+                    if (len < 64) continue
+                    probeRecord(i)?.let { (i2, ext) -> images.add(i2); exts.add(ext) }
+                }
+                if (images.isNotEmpty()) lastReject = ""
+            }
+            if (images.isEmpty()) lastReject = "no image records (probe [$start,$end) of $numRecords recs)"
             return MobiFile(offsets, size, images.toIntArray(), exts.toTypedArray())
         }
 
