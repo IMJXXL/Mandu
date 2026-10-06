@@ -190,10 +190,26 @@ class PagerSSIV @JvmOverloads constructor(
                 if (scale > base + 0.01f) {
                     // ★ 拖图接力（mihon 同款）：放大态沿滑动方向图已贴边→交还翻页容器继续
                     //   接力翻页，不再把图顶在边上；未贴边仍是拖图（惯性平移不受影响）
+                    // ★ 2026-10-06 交还方式对齐 mihon fork：mihon 是 requestDisallow(false)+
+                    //   继续消费本帧，parent 下一帧走正常 onInterceptTouchEvent 接管；旧写法
+                    //   return false 把本帧甩回 parent 时 intercept 阶段已过，parent 只能进
+                    //   onTouchEvent（RV 未拦截态，状态错乱）→ 交还后断流翻不了页（123307 日志
+                    //   zoom-pan-edge 之后 0 次 pagerScroll=dragging 实锤）。改为消费本帧后，
+                    //   后续帧重复本判定保持 disallow=false，parent 在 touchSlop 处正常拦截。
                     if (panExhaustedToward(event.x - downX, event.y - downY)) {
                         parent?.requestDisallowInterceptTouchEvent(false)
+                        if (!fallbackFired) {
+                            val d = if (axisPassthroughHorizontal) event.x - downX else event.y - downY
+                            val extent = if (axisPassthroughHorizontal) width else height
+                            if (extent > 0 && kotlin.math.abs(d) > extent * 0.08f) {
+                                fallbackFired = true
+                                markSwipe(context, "pass-flip-self")
+                                pagerSwipeFallback?.invoke(if (d < 0) 1 else -1)
+                                return true
+                            }
+                        }
                         markSwipe(context, "zoom-pan-edge")
-                        return false
+                        return true
                     }
                     markSwipe(context, "hold-zoomedPan")
                     panActive = true
@@ -217,12 +233,25 @@ class PagerSSIV @JvmOverloads constructor(
                     if (alongRoom) {
                         // ★ 拖图接力（mihon 同款）：基准态图溢出但当前位置沿滑动方向已贴边
                         //   （原始尺寸/贴满高度档拖到边）→交还翻页容器接力，治"个别不能翻"
+                        // ★ 2026-10-06 交还方式对齐 mihon（同 zoom-pan-edge）：disallow(false)+
+                        //   消费本帧，parent 下帧正常 intercept；旧 return false 断流。拦截失效
+                        //   设备沿用 pass-flip-self 自翻兜底（位移超 8% 视口直接翻一页）。
                         if (panExhaustedToward(event.x - downX, event.y - downY)) {
                             parent?.requestDisallowInterceptTouchEvent(false)
-                            markSwipe(context, "hold-pan-edge")
                             consumedDown = true
                             passFlipOwns = true
-                            return false
+                            if (!fallbackFired) {
+                                val d = if (axisPassthroughHorizontal) event.x - downX else event.y - downY
+                                val extent = if (axisPassthroughHorizontal) width else height
+                                if (extent > 0 && kotlin.math.abs(d) > extent * 0.08f) {
+                                    fallbackFired = true
+                                    markSwipe(context, "pass-flip-self")
+                                    pagerSwipeFallback?.invoke(if (d < 0) 1 else -1)
+                                    return true
+                                }
+                            }
+                            markSwipe(context, "hold-pan-edge")
+                            return true
                         }
                         markSwipe(context, "hold-pan")
                         panActive = true

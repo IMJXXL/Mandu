@@ -2077,13 +2077,23 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 //   缓存命中重绑的 onReady 到达前手势已可开滑，base 残留上一页值 → 未放大被
                 //   误判放大 → hold-zoomedPan 吞滑数秒。onReady 后 applyPlanScale 以同公式设
                 //   同值（幂等），此处只补窗口期的判定基准。
+                //   ★ bsync 探针：此刻 SSIV 内部 scale 偏离新页基准超阈值 = onReady 全量路径
+                //   没跑、scale 停留旧值（123307 日志 scale 卡 0.81 残留的直击取证），异常时
+                //   显式落日志定位残留路径；正常页 scale≈base 零输出。
                 if (ssv.width > 0 && ssv.height > 0) {
                     try {
                         val isTablet = resources.configuration.smallestScreenWidthDp >= 600
-                        ssv.viewportBaseScale = ScalePlan.baseScale(
+                        val bs = ScalePlan.baseScale(
                             scaleMode, ssv.width.toFloat(), ssv.height.toFloat(),
                             bmp.width.toFloat(), bmp.height.toFloat(), isTablet
                         )
+                        val curScale = try { ssv.scale.toFloat() } catch (_: Exception) { 0f }
+                        if (curScale > 0f && kotlin.math.abs(curScale - bs) > 0.02f) {
+                            com.mangareader.DiagTracer.markStatic(
+                                "bsync s=${"%.2f".format(curScale)} b=${"%.2f".format(bs)}"
+                            )
+                        }
+                        ssv.viewportBaseScale = bs
                     } catch (_: Exception) {}
                 }
                 ssv.setImage(com.davemorrissey.labs.subscaleview.ImageSource.cachedBitmap(bmp))
@@ -2248,6 +2258,16 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                     // ★ gen 守卫 + isShown（mihon isVisibleOnScreen 同款）：500ms 内重绑/离屏不再放大
                     if (gen == scaleGen && ssiv.isReady && ssiv.isShown) {
                         val targetScale = ssiv.height.toFloat() / ih
+                        // ★ base 随 landscapeZoom 终值更新（2026-10-06）：贴高态是本档"初始视图"的
+                        //   一部分而非用户放大——base 停留 contain 值会把合法初始态误判成放大态，
+                        //   横滑全落 hold-zoomedPan 吞掉（123307 日志 scale=0.81 base=0.75 交替实锤）。
+                        //   同步后横滑走未放大分支的拖图接力、竖拖走正交轴拖图（贴高纵向溢出可拖）。
+                        ssiv.viewportBaseScale = targetScale
+                        try {
+                            com.mangareader.DiagTracer.markStatic(
+                                "lz t=${"%.2f".format(targetScale)} g$gen ${iw.toInt()}x${ih.toInt()}"
+                            )
+                        } catch (_: Exception) {}
                         val cx = ScalePlan.landscapeZoomCenterX(zoomStart, isRtl, forward, ssiv.width.toFloat(), iw, targetScale)
                         val cy = if (ScalePlan.alignY(zoomStart) == 0)
                             (ssiv.center?.y ?: ih / 2f)
