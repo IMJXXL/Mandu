@@ -173,6 +173,26 @@ object VirtualPageExpander {
         return result
     }
 
+    /** ★ 远程书渐进尺寸合并落盘（2026-10-06 条漫宽图二分工单）：远程页 loadPageBounds 被
+     *  requireNotRemote 拒收 → expand 探测全失败 → 宽图二分永不生效。解法：解码时顺带记录
+     *  真实尺寸（零额外流量），节流后用【原始表】stamp 合并写尺寸缓存——下次进书 expand
+     *  命中缓存，宽图/长图全量生效。pages 必须是展开前的原始表（stamp 才与 expand 读取一致；
+     *  页键 pageSizeKey 不掺 splitSide/segment，展开段 meta 可直接取键）。 */
+    fun mergeProbedSizes(
+        engine: ArchiveEngine,
+        treePath: String,
+        pages: List<ArchiveEngine.PageMeta>,
+        sizes: Map<String, IntArray>,
+    ) {
+        if (sizes.isEmpty()) return
+        try {
+            val stamp = sizeStamp(pages)
+            val merged = HashMap<String, IntArray>(engine.loadPageSizeCache(treePath, stamp) ?: emptyMap())
+            merged.putAll(sizes)
+            engine.savePageSizeCache(treePath, stamp, merged)
+        } catch (_: Exception) {}
+    }
+
     /** 尺寸表条目键。localIdx|source 在 dir 源（ext=文档ID、localIdx 恒 0）与 d:/z: 多子包书
      *  （各子包 localIdx 皆从 0 起）上跨页/跨包碰撞——一页尺寸被整本共用、竖切/宽图判定全错；
      *  掺 ext（各源 PageMeta 第三参：dir/子包=文档ID，整档书=档自身 docId 恒定不碍事）消歧。

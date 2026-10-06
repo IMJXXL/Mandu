@@ -110,6 +110,35 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
     //   （"滑动不会返回"铁律；落位纠偏仅保留给"用户从未碰屏幕"的纯恢复场景）。
     @Volatile private var sawUserScroll = false
 
+    /** ★ 渐进尺寸缓存（2026-10-06 条漫宽图二分工单）：远程书探测被拒 → 首次进书宽图不拆。
+     *  解码时顺带记录原始尺寸，节流合并进 PageSizeCacheStore——下次进书 expand 命中缓存全量生效 */
+    private var setupPages: List<ArchiveEngine.PageMeta> = emptyList()
+    private val probedSizes = java.util.concurrent.ConcurrentHashMap<String, IntArray>()
+    private var probedFlushAt = 0L
+
+    private fun observeProbedSize(idx: Int, w: Int, h: Int) {
+        if (w <= 0 || h <= 0) return
+        if (idx !in pageList.indices) return
+        if (pageAnimFlags.any { it.pageIdx == idx && it.kind != AnimKind.NONE }) return // 动图页不参与拆分判定
+        val key = com.mangareader.engine.pdf.VirtualPageExpander.pageSizeKey(pageList[idx])
+        probedSizes[key]?.let { if (it[0] == w && it[1] == h) return }
+        probedSizes[key] = intArrayOf(w, h)
+        val now = android.os.SystemClock.uptimeMillis()
+        if (now - probedFlushAt < 8000L) return
+        probedFlushAt = now
+        flushProbedSizes()
+    }
+
+    private fun flushProbedSizes() {
+        val eng = engine ?: return
+        if (probedSizes.isEmpty() || setupPages.isEmpty()) return
+        val batch = HashMap(probedSizes)
+        probedSizes.clear()
+        try {
+            com.mangareader.engine.pdf.VirtualPageExpander.mergeProbedSizes(eng, treePath, setupPages, batch)
+        } catch (_: Exception) {}
+    }
+
     // ★ 锚点落位确认（2026-09-26 实测修复）：setup 登记位可能被 notifyDataSetChanged 同帧
     //   竞争丢弃（P0-B4 已知 race）→ 视觉停在 item 0。此时任何"接受视觉位置"的逻辑都会把
     //   恢复位冲掉（15:27 日志实锤：sp=1 → user-takeover f=0 → cur=0 进度写成 0，用户侧
@@ -536,6 +565,9 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
         val screenWidth = context.resources.displayMetrics.widthPixels
         val cfg = com.mangareader.data.ReaderConfig.load(context)
         tabletWebtoonWidthPct = context.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE).getInt("webtoon_tablet_cap_pct", 100).coerceIn(50, 100)
+        // ★ 原始表留底（2026-10-06）：渐进尺寸缓存要用与 expand 读取一致的 stamp（sizeStamp 原始表），
+        //   展开后的 pageList 页数变了 stamp 就对不上
+        setupPages = pages
         this.pageList = com.mangareader.engine.pdf.VirtualPageExpander.expand(pages, cfg.tallSplitEnabled, true, screenMax, screenWidth, engine, treePath,
             tallRatioThreshold = com.mangareader.engine.pdf.PdfTallSplitCalculator.ratioThreshold(cfg.tallSplitSensitivity))
         this.currentPage = startPage
@@ -875,6 +907,8 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
                 }
                 result
             }
+            // ★ 渐进尺寸收集：用原始 bmp（processBitmap 会裁白边，尺寸会变）
+            if (bmp != null && !bmp.isRecycled) observeProbedSize(idx, bmp.width, bmp.height)
             var processed = processBitmap(bmp)
             if (processed == null) {
                 ArchiveEngine.w("WebtoonRV", "loadPage FAIL idx=$idx bmpNull=${bmp == null} tile=$tileModeEnabled src=${meta.source}")
@@ -1020,6 +1054,7 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
     }
 
     override fun release() {
+        runCatching { flushProbedSizes() } // ★ 退出前把渐进收集的尺寸落盘，下次进书拆分全量生效
         srEventJob?.cancel(); srEventJob = null
         // ★ v1.11 P0：清掉挂起的 settleWindow 与 pending 释放机制（view 销毁/切视图后不再执行）
         cancelPendingRelease()
