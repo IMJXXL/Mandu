@@ -705,6 +705,11 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                         } catch (_: Throwable) {}
                     }
                     if (!isScrolling) {
+                        // ★ 翻页中延迟的表重排在此补做（见 pendingRebindForNewTable 注释）
+                        if (pendingRebindForNewTable) {
+                            pendingRebindForNewTable = false
+                            rebindForNewTable()
+                        }
                         preloadAround(currentPage)
 
                         // ★ Bug#14：如果当前页或附近页是动图但 IDLE 之前 onBindViewHolder 因 isScrolling=true
@@ -1107,9 +1112,17 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         )
     }
 
+    // ★ 翻页中表重排延迟旗（2026-10-06 海贼王闪烁工单）：后台尺寸回填/渐进收集触发的
+    //  rebindForNewTable 落在拖拽/动画中会对可见槽全量重绑（SSIV 重置=闪烁）。isScrolling 时
+    //  只挂旗（layoutSwitchPending 同步置位，onPageSelected 错位外报被既有守卫拦住），
+    //  落位 IDLE 后补一次重排锚定
+    private var pendingRebindForNewTable = false
+
     /** 表变化后的统一落地：重绑 + 立即 post 锚定当前页（notify 后 VP2 会把旧位置弹回，
      *  与 setDoublePageModeAndShift 同款校正；layoutSwitchPending 抑制脏章末回调） */
     private fun rebindForNewTable() {
+        if (isScrolling) { pendingRebindForNewTable = true; layoutSwitchPending = true; return }
+        pendingRebindForNewTable = false
         layoutSwitchPending = true
         pagerAdapter?.notifyDataSetChanged()
         val count = pagerAdapter?.itemCount ?: 0
@@ -2027,6 +2040,15 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         fun setImage(bmp: Bitmap, useSsiv: Boolean, landscapeZoom: Boolean = true, forward: Boolean = true) {
             isSplitPage = false
             if (bmp.isRecycled) return
+            // ★ 同图重绑短路（2026-10-06 海贼王闪烁工单"内部机制打架"）：表重排/设置同步触发的
+            //   notify 会让可见槽重新走 setImage——SSIV.setImage 会重置 decoder/tile 状态（可见帧
+            //   闪一下）。同一位图已在显示时只重设基准/定位（applyScale），滚动帧零扰动
+            ssiv?.let { ssv ->
+                if (ssv.visibility == View.VISIBLE && ssv.isReady && heldBitmap === bmp) {
+                    applyScale(ssv, bmp, landscapeZoom, forward)
+                    return
+                }
+            }
             heldBitmap = bmp
             if (useSsiv) {
                 val container = itemView as android.widget.FrameLayout
@@ -2110,6 +2132,13 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         fun setImageSplit(bmp: Bitmap, showRight: Boolean, useSsiv: Boolean, landscapeZoom: Boolean) {
             isSplitPage = true
             if (bmp.isRecycled) return
+            // ★ 同图重绑短路（同 setImage）：showRight 翻转也只需 applySplitScale 重定位视口，不必重置 SSIV
+            ssiv?.let { ssv ->
+                if (ssv.visibility == View.VISIBLE && ssv.isReady && heldBitmap === bmp) {
+                    applySplitScale(ssv, bmp, showRight)
+                    return
+                }
+            }
             heldBitmap = bmp
             if (useSsiv) {
                 val container = itemView as android.widget.FrameLayout
