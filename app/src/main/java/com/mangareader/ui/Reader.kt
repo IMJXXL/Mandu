@@ -548,11 +548,11 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             val pageListSnap = pageList
             if (b != null && pageListSnap.isNotEmpty()) {
                 val curSnap = cur
-                val chPathSnap = navStack.lastOrNull() ?: b.filePath
+                val chPathSnap = com.mangareader.data.RemotePaths.normalizeBookKey(navStack.lastOrNull() ?: b.filePath)
                 val now = System.currentTimeMillis()
                 val effectiveSize = if (expandedPageCount > 0) expandedPageCount else pageListSnap.size
                 val done = effectiveSize > 1 && curSnap >= effectiveSize - 1
-                android.util.Log.d("ReaderProgress", "onDispose-save bookId=${b.id} chPath=$chPathSnap cur=$curSnap size=$effectiveSize done=$done")
+                android.util.Log.d("ReaderProgress", "onDispose-save bookId=${b.id} chKey=${pathFingerprint(chPathSnap)} cur=$curSnap size=$effectiveSize done=$done")
                 val sx = scrollX; val sy = scrollY; val zs = zoomLevel
                 val viewHalfRightSnap = activePagerRef?.currentHalfRight ?: false
                 // ★ B1（2026-10-04）：与 save() 同语义——存物理页 + 统一半页位口径。
@@ -599,11 +599,11 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         //   ★ B1（2026-10-04）：换算收口到 progressPhysicalPage/progressHalfSide，与 onDispose 共用
         val savedPage = progressPhysicalPage(pageListSnap, curSnap)
         val halfRight = progressHalfSide(pageListSnap, curSnap, viewHalfRight)
-        val chPathSnap = navStack.lastOrNull() ?: b.filePath
+        val chPathSnap = com.mangareader.data.RemotePaths.normalizeBookKey(navStack.lastOrNull() ?: b.filePath)
         val now = System.currentTimeMillis()
         val effectiveSize = if (expandedPageCount > 0) expandedPageCount else pageListSnap.size
         val done = effectiveSize > 1 && curSnap >= effectiveSize - 1
-        android.util.Log.d("ReaderProgress", "save bookId=${b.id} chPath=$chPathSnap cur=$curSnap savedPage=$savedPage size=$effectiveSize done=$done")
+        android.util.Log.d("ReaderProgress", "save bookId=${b.id} chKey=${pathFingerprint(chPathSnap)} cur=$curSnap savedPage=$savedPage size=$effectiveSize done=$done")
 
         saveJob?.cancel()
         saveJob = app.appScope.launch {
@@ -636,6 +636,20 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         }
     }
 
+    /** ★ 进度键身份归一读（2026-10-06 拆分缓存"时灵时不灵"工单）：同一本书的多种 path
+     *  形式（书架 filePath/浏览器 item.doc/切卷 subPath）各自落了一份进度——恢复值在
+     *  多个会话的旧值间跳变（1006-153624 日志 start=8/14/23/28/34 反复实锤）。
+     *  读=归一键优先、裸键兜底（老进度渐进迁移零丢失）；写端恒写归一键（save 等）。 */
+    suspend fun readProgressCompat(bookId: Long, path: String): com.mangareader.data.ReadingProgress? {
+        val nk = com.mangareader.data.RemotePaths.normalizeBookKey(path)
+        return withContext(Dispatchers.IO) {
+            try {
+                val direct = dao.getProgress(bookId, nk)
+                if (direct != null || nk == path) direct else dao.getProgress(bookId, path)
+            } catch (_: Exception) { null }
+        }
+    }
+
     /** 建立远程供给会话：页面元表 + 进度恢复（与本地 completed→跳第1页 语义一致） */
     suspend fun attachRemoteSession(
         supply: com.mangareader.native.RemotePageSupply,
@@ -649,6 +663,15 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         //   localIdx/originalPageIdx=原始页号——supply 纯索引制，视图解码经 originalPageIdx 还原
         //   原始页，展开后流位≠原始页不再错位
         val remoteSrc = path.substringAfterLast('.', "").lowercase().let { if (it == "cbz") "zip" else it }
+        // ★ 2026-10-06 身份取证：id=裸path指纹→归一指纹，len/segs 看形式差异。同一卷两次进书
+        //   id 相同=身份统一（归一生效）；不同=仍有第二种身份在流转（下轮日志一锤定音）
+        try {
+            val nk = com.mangareader.data.RemotePaths.normalizeBookKey(path)
+            com.mangareader.DiagTracer.markStatic(
+                "remote key id=${pathFingerprint(path)}→${pathFingerprint(nk)} " +
+                    "len=${path.length}/${nk.length} segs=${path.split('/').size - 1}/${nk.split('/').size - 1} ext=$remoteSrc"
+            )
+        } catch (_: Exception) {}
         val pages = (0 until supply.pageCount.coerceAtLeast(0)).map {
             com.mangareader.viewer.ArchiveEngine.PageMeta(it, remoteSrc, "", localIdx = it, originalPageIdx = it, name = "")
         }
@@ -678,7 +701,12 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                         tallRatioThreshold = com.mangareader.engine.pdf.PdfTallSplitCalculator.ratioThreshold(config.tallSplitSensitivity))
                 }
             } catch (_: Exception) { pages }
-            try { com.mangareader.DiagTracer.mark(ctx, "seg expand remote ${com.mangareader.engine.pdf.VirtualPageExpander.lastStats}") } catch (_: Exception) {}
+            try {
+                val nk = com.mangareader.data.RemotePaths.normalizeBookKey(path)
+                com.mangareader.DiagTracer.mark(
+                    ctx, "seg expand remote key=${pathFingerprint(nk)} ${com.mangareader.engine.pdf.VirtualPageExpander.lastStats}"
+                )
+            } catch (_: Exception) {}
         }
         pageList = expandedPages
         // ★ 展开生效即备份原始表：onProbedSizes 落表与切回 pager 族还原都用它（与本地路径同语义）
@@ -723,9 +751,8 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         loading = true
         smbUnsupportedInfo = null
         try {
-            val saved = withContext(Dispatchers.IO) {
-                runCatching { dao.getProgress(b.id, path) }.getOrNull()
-            }
+            // ★ 进度读走身份归一（归一键优先、裸键兜底）：同书多 path 形式不再各读各的旧值
+            val saved = readProgressCompat(b.id, path)
             val resumePage = if (targetPage >= 0) targetPage else (saved?.lastPage ?: 0)
             if (isSmb) {
                 when (val r = com.mangareader.smbbridge.SmbBookRouter.openSmbBook(path, resumePage, archivePasswdProvider)) {
@@ -977,7 +1004,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                 if (cacheExists) {
                     // ★ 进度迁移：旧进度存在远程路径(smb:/webdav:)下，本地路径查不到 → 迁移到 cachePath
                     withContext(Dispatchers.IO) {
-                        val oldProgress = dao.getProgress(b.id, path)
+                        val oldProgress = readProgressCompat(b.id, path)
                         if (oldProgress != null && dao.getProgress(b.id, cachePath) == null) {
                             dao.upsertProgress(b.id, cachePath, oldProgress.lastPage, oldProgress.completed, oldProgress.updatedAt, oldProgress.totalPages)
                         }
@@ -992,7 +1019,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                 val safPages = withContext(Dispatchers.IO) { runCatching { engine.listPages(cachePath) }.getOrDefault(emptyList()) }
                 if (safPages.isNotEmpty()) {
                     withContext(Dispatchers.IO) {
-                        val oldProgress = dao.getProgress(b.id, path)
+                        val oldProgress = readProgressCompat(b.id, path)
                         if (oldProgress != null && dao.getProgress(b.id, cachePath) == null) {
                             dao.upsertProgress(b.id, cachePath, oldProgress.lastPage, oldProgress.completed, oldProgress.updatedAt, oldProgress.totalPages)
                         }
@@ -1155,7 +1182,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         try { engine.setSegmentCacheBoost(expandedPages.size > pages.size) } catch (_: Exception) {}
         val expandedSize = expandedPages.size
         val progress = withContext(Dispatchers.IO) { dao.getProgress(b.id, path) }
-        android.util.Log.d("ReaderProgress", "enterReader bookId=${b.id} path=$path pages=${pages.size} progress=${progress?.let { "lastPage=${it.lastPage} completed=${it.completed} updatedAt=${it.updatedAt}" } ?: "null"}")
+        android.util.Log.d("ReaderProgress", "enterReader bookId=${b.id} key=${pathFingerprint(path)} pages=${pages.size} progress=${progress?.let { "lastPage=${it.lastPage} completed=${it.completed} updatedAt=${it.updatedAt}" } ?: "null"}")
         // ★ v1.11 脏数据自愈：completed=1 且 lastPage==0 且多页卷 → 必为历史污染
         //   （正常"读完"路径写入的 lastPage 恒为末页索引 size-1 或 markAsReadNow 的 size-1，不可能是 0；
         //     唯一来源是旧版 done 误判/单向锁时代把 0 页码配上了 completed）。
@@ -1906,8 +1933,11 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         if (tocItems.size > 1) {
             // ★ 2026-10-06：目录书当前章是完整路径、item.subPath 是相对子路径——双向 endsWith 互容
             val curIdx = tocItems.indexOfFirst { it.subPath == curSubPath || curSubPath.endsWith(it.subPath) || it.subPath.endsWith(curSubPath) }
-            val nextIdx = if (curIdx == -1) 0 else curIdx + 1
-            if (nextIdx < tocItems.size) {
+            // ★ 修（1006-153624 日志 106→111 实锤）：curIdx==-1（当前卷不在目录——身份形式差异/
+            //   目录未含当前卷）旧行为 nextIdx=0 = "下一卷"跳回第一卷。改与"已是末卷"同路走
+            //   跨书/远程兜底；显式命中目录时才在目录内推进
+            val nextIdx = curIdx + 1
+            if (curIdx != -1 && nextIdx < tocItems.size) {
                 switchTargetName = tocItems[nextIdx].name
                 switchTargetPath = tocItems[nextIdx].subPath
                 confirmSwitch()
@@ -2039,7 +2069,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         val b = book ?: return
         val pageListSnap = pageList
         if (pageListSnap.isEmpty()) return
-        val chPathSnap = navStack.lastOrNull() ?: b.filePath
+        val chPathSnap = com.mangareader.data.RemotePaths.normalizeBookKey(navStack.lastOrNull() ?: b.filePath)
         val curPageCount = pageListSnap.size
         val now = System.currentTimeMillis()
         app.appScope.launch {
@@ -2726,9 +2756,20 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                                     //   才能命中。原始表缺失（未展开）时 pageList 本身即原始表
                                     wv.onProbedSizes = { batch ->
                                         val path = navStack.lastOrNull() ?: book?.filePath ?: ""
-                                        val pre = preExpandPages?.takeIf { it.first == path }?.second ?: pageList
+                                        // ★ 原始表匹配兼容归一键：切卷瞬间 navStack.last() 形式变化时，
+                                        //   attach 写入的 key（归一前后任一形式）都能命中
+                                        val nk0 = com.mangareader.data.RemotePaths.normalizeBookKey(path)
+                                        val pre = preExpandPages
+                                            ?.takeIf { it.first == path || it.first == nk0 }?.second ?: pageList
                                         try {
                                             com.mangareader.engine.pdf.VirtualPageExpander.mergeProbedSizes(engine, path, pre, batch)
+                                            // ★ 2026-10-06 落盘取证：key=归一指纹与 "remote key" 行对读——
+                                            //   同 key 批次增长而 expand 仍 miss 才是 stamp 问题
+                                            val nk = com.mangareader.data.RemotePaths.normalizeBookKey(path)
+                                            com.mangareader.DiagTracer.markStatic(
+                                                "probe save key=${pathFingerprint(nk)} n=${batch.size} " +
+                                                    "src=${if (preExpandPages?.first == path) "orig" else "pageList"}"
+                                            )
                                         } catch (_: Exception) {}
                                     }
                                 }
@@ -3953,6 +3994,14 @@ private fun ItemCard(
 }
 
 
+
+/** ★ 诊断指纹（2026-10-06）：path 本体绝不落日志（隐私纪律），只落 6 位摘要——同书多
+ *  身份（书架/浏览器/切卷/继续阅读的 path 形式差异）时两次进书指纹不同一眼实锤，
+ *  恒等则排除身份问题。文件顶层：save/onDispose 等前置调用点无序可用 */
+internal fun pathFingerprint(p: String): String = try {
+    java.security.MessageDigest.getInstance("MD5").digest(p.toByteArray())
+        .joinToString("") { "%02x".format(it) }.take(6)
+} catch (_: Exception) { "??????" }
 
 /** ★ readerView 诊断短码进程级去重门（2026-10-06）：remember 去重位随重组边界重建失效
  *  （平板 123751 日志 20-40 条/秒同值，把 seg expand/remote open 等关键取证挤出环形缓冲）。

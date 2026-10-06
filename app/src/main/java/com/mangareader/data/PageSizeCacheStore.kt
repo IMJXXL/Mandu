@@ -19,8 +19,13 @@ object PageSizeCacheStore {
     //   展开结果永不分叉（二开也从这里直取，磁盘只在冷启动生效）
     private val mem = java.util.concurrent.ConcurrentHashMap<String, Pair<String, Map<String, IntArray>>>()
 
+    // ★ 身份归一（2026-10-06）：同一本书的多种 path 形式（书架/浏览器/切卷/继续阅读）
+    //   必须落到同一张缓存——键在入口统一归一，调用方再传什么形式都救得回来
+    private fun cacheKey(bookPath: String): String =
+        md5(RemotePaths.normalizeBookKey(bookPath))
+
     fun load(ctx: Context, bookPath: String, stamp: String): Map<String, IntArray>? {
-        val key = md5(bookPath)
+        val key = cacheKey(bookPath)
         mem[key]?.let { (s, sizes) -> return if (s == stamp) sizes else null }
         return try {
             val f = java.io.File(ctx.filesDir, "page_sizes/$key.json")
@@ -41,7 +46,7 @@ object PageSizeCacheStore {
 
     fun save(ctx: Context, bookPath: String, stamp: String, sizes: Map<String, IntArray>) {
         try {
-            val key = md5(bookPath)
+            val key = cacheKey(bookPath)
             mem[key] = stamp to java.util.Collections.unmodifiableMap(HashMap(sizes))
             val dir = java.io.File(ctx.filesDir, "page_sizes")
             if (!dir.exists()) dir.mkdirs()
