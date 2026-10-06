@@ -705,11 +705,8 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                         } catch (_: Throwable) {}
                     }
                     if (!isScrolling) {
-                        // ★ 翻页中延迟的表重排在此补做（见 pendingRebindForNewTable 注释）
-                        if (pendingRebindForNewTable) {
-                            pendingRebindForNewTable = false
-                            rebindForNewTable()
-                        }
+                        // ★ 翻页中渐进收集的尺寸在落位后补排（用户停在末页不再解码也不丢）
+                        if (scannedDirty) flushScannedDims()
                         preloadAround(currentPage)
 
                         // ★ Bug#14：如果当前页或附近页是动图但 IDLE 之前 onBindViewHolder 因 isScrolling=true
@@ -1077,14 +1074,23 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
      *  流量），节流重建跨页表——翻到哪配哪；PageSizeCacheStore 不含远程，渐进表随章存活 */
     private val scannedDims = java.util.concurrent.ConcurrentHashMap<Int, IntArray>()
     private var scannedDimsFlushAt = 0L
+    private var scannedDirty = false
 
     private fun observePageDim(idx: Int, w: Int, h: Int) {
         if (w <= 0 || h <= 0) return
         scannedDims[idx]?.let { if (it[0] == w && it[1] == h) return }
         scannedDims[idx] = intArrayOf(w, h)
         val now = android.os.SystemClock.uptimeMillis()
-        if (isScrolling || now - scannedDimsFlushAt < 1500L) return
-        scannedDimsFlushAt = now
+        if (now - scannedDimsFlushAt < 1500L) return
+        flushScannedDims()
+    }
+
+    /** 渐进尺寸落表（节流出口+IDLE 补做共用）：表变了才重排锚定 */
+    private fun flushScannedDims() {
+        if (scannedDims.isEmpty()) return
+        if (isScrolling) { scannedDirty = true; return }
+        scannedDirty = false
+        scannedDimsFlushAt = android.os.SystemClock.uptimeMillis()
         val old = spreadTable
         rebuildSpreadTable()
         if (!spreadTable.sameMapping(old)) rebindForNewTable()
@@ -1112,17 +1118,12 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         )
     }
 
-    // ★ 翻页中表重排延迟旗（2026-10-06 海贼王闪烁工单）：后台尺寸回填/渐进收集触发的
-    //  rebindForNewTable 落在拖拽/动画中会对可见槽全量重绑（SSIV 重置=闪烁）。isScrolling 时
-    //  只挂旗（layoutSwitchPending 同步置位，onPageSelected 错位外报被既有守卫拦住），
-    //  落位 IDLE 后补一次重排锚定
-    private var pendingRebindForNewTable = false
-
     /** 表变化后的统一落地：重绑 + 立即 post 锚定当前页（notify 后 VP2 会把旧位置弹回，
-     *  与 setDoublePageModeAndShift 同款校正；layoutSwitchPending 抑制脏章末回调） */
+     *  与 setDoublePageModeAndShift 同款校正；layoutSwitchPending 抑制脏章末回调）。
+     *  ★ 翻页中的闪烁由 setImage/setImageSplit 同图短路根治（重绑不再重置 SSIV）——
+     *  曾试过"翻页中延迟重排"，但挂旗路径在 notify 之前 return 会让表与 RV 的 itemCount
+     *  短暂不一致（inconsistency 崩溃风险），二轮审查回退，闪烁只治显示层 */
     private fun rebindForNewTable() {
-        if (isScrolling) { pendingRebindForNewTable = true; layoutSwitchPending = true; return }
-        pendingRebindForNewTable = false
         layoutSwitchPending = true
         pagerAdapter?.notifyDataSetChanged()
         val count = pagerAdapter?.itemCount ?: 0
@@ -2045,8 +2046,9 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             if (bmp.isRecycled) return
             // ★ 同图重绑短路（2026-10-06 海贼王闪烁工单"内部机制打架"）：表重排/设置同步触发的
             //   notify 会让可见槽重新走 setImage——SSIV.setImage 会重置 decoder/tile 状态（可见帧
-            //   闪一下）。同一位图已在显示时只重设基准/定位（applyScale），滚动帧零扰动
-            ssiv?.let { ssv ->
+            //   闪一下）。同一位图已在显示时只重设基准/定位（applyScale），滚动帧零扰动。
+            //   二轮审查补 useSsiv 条件：高清缩放开关实时切换（true→false）时同图不得错走 SSIV 短路
+            if (useSsiv) ssiv?.let { ssv ->
                 if (ssv.visibility == View.VISIBLE && ssv.isReady && heldBitmap === bmp) {
                     applyScale(ssv, bmp, landscapeZoom, forward)
                     return
@@ -2136,7 +2138,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             isSplitPage = true
             if (bmp.isRecycled) return
             // ★ 同图重绑短路（同 setImage）：showRight 翻转也只需 applySplitScale 重定位视口，不必重置 SSIV
-            ssiv?.let { ssv ->
+            if (useSsiv) ssiv?.let { ssv ->
                 if (ssv.visibility == View.VISIBLE && ssv.isReady && heldBitmap === bmp) {
                     applySplitScale(ssv, bmp, showRight)
                     return

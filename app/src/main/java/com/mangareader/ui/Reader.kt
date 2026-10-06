@@ -2432,7 +2432,9 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                             // ★ 防抖：3 秒内已触发过就不再接（双页模式切换/末端重复回调的并发窗口）
                             val now = android.os.SystemClock.elapsedRealtime()
                             if (now - lastSeamlessAt < 3000L) return@handler false
-                            val curIdx = tocItems.indexOfFirst { it.subPath == extractSubPathFromNav() }
+                            // ★ 2026-10-06：远程目录书完整路径 vs 相对 subPath——双向 endsWith 互容
+                            val curSub = extractSubPathFromNav()
+                            val curIdx = tocItems.indexOfFirst { it.subPath == curSub || curSub.endsWith(it.subPath) || it.subPath.endsWith(curSub) }
                             if (curIdx == -1) return@handler false
                             val nextIdx = curIdx + 1
                             if (nextIdx >= tocItems.size) return@handler false   // 已是最末卷 → 回退现状
