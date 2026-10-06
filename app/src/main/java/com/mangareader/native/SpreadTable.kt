@@ -62,6 +62,11 @@ class SpreadTable private constructor(
          *                  其余页按顺序重新两两配对（无空洞）。键=当前章物理页号，
          *                  存储按章隔离（page_solo_flags 表），不跨书/跨章。
          * @param dims 2*totalPages，[2i]=宽 [2i+1]=高，0=未知
+         * @param prev 旧表（配合 freezeThroughPage 做稳定重排）
+         * @param freezeThroughPage 冻结边界：该页号（含）之前的所有位逐位照抄 prev——
+         *                  渐进尺寸到达引发的重新配对只发生在用户未看到的后方位，
+         *                  当前正在看的位构图绝不中途改变（"打架乱闪"根修：
+         *                  试探合并→伙伴解码→拆开 的翻转只允许发生在屏外）
          */
         fun build(
             totalPages: Int,
@@ -70,6 +75,8 @@ class SpreadTable private constructor(
             smart: Boolean = false,
             dims: IntArray? = null,
             soloPages: Set<Int> = emptySet(),
+            prev: SpreadTable? = null,
+            freezeThroughPage: Int = -1,
         ): SpreadTable {
             val n = totalPages.coerceAtLeast(0)
             if (!double) {
@@ -82,6 +89,7 @@ class SpreadTable private constructor(
             val p2s = IntArray(n)
             var s = 0
             var i = 0
+            val canFreeze = prev != null && freezeThroughPage >= 0 && prev.pagesCount == n
             // 起始页豁免（startOffset）：前 N 页各自单独显示（与旧 shift 门控语义一致，N=1 即跳过首页）
             val head = startOffset.coerceIn(0, n)
             while (i < head) {
@@ -89,6 +97,18 @@ class SpreadTable private constructor(
                 s++; i++
             }
             while (i < n) {
+                // ★ 冻结前缀（2026-10-06 乱闪根修）：边界（含）前的位照抄旧表——顺序行走从位首
+                //   整位复制，边界所在位及其前所有位与旧表逐位一致，pageToSpread 不变
+                if (canFreeze && i <= freezeThroughPage) {
+                    val ps = prev!!.pageToSpread(i)
+                    val pf = prev.firstPage(ps)
+                    val psec = prev.secondPage(ps)
+                    first[s] = pf; second[s] = psec
+                    p2s[pf] = s
+                    if (psec >= 0) p2s[psec] = s
+                    s++; i += if (psec >= 0) 2 else 1
+                    continue
+                }
                 // ★ 用户页豁免（单本单页，不能影响别人）：命中页强制 solo，其余页顺序重新配对
                 if (i in soloPages) {
                     first[s] = i; second[s] = -1

@@ -235,4 +235,47 @@ class SpreadTableTest {
         val t3 = SpreadTable.build(4, double = false, soloPages = setOf(1, 2))
         assertEquals(4, t3.slotCount)
     }
+
+    @Test
+    fun freezeKeepsVisibleSlotsStable() {
+        // ★ 冻结前缀（2026-10-06 乱闪根修）：渐进尺寸到达引发的重新配对，冻结边界（含）
+        //   之前的位逐位照抄旧表，之后的位重新决策——用户正在看的位构图绝不中途改变。
+        //   场景：6 页双页全配对 [0+1][2+3][4+5]；用户在第 2 页（slot 1=[2,3]）；
+        //   新尺寸说 2 是横宽跨页该 solo（smart 下会拆），冻结边界=当前位末页 3：
+        //   slot0/slot1 照抄，slot2 起重排。
+        val prev = SpreadTable.build(6, smart = true)
+        assertEquals(3, prev.slotCount)
+        assertEquals(0, prev.firstPage(0)); assertEquals(1, prev.secondPage(0))
+        assertEquals(2, prev.firstPage(1)); assertEquals(3, prev.secondPage(1))
+        assertEquals(4, prev.firstPage(2)); assertEquals(5, prev.secondPage(2))
+        // dims：页 2 是横宽跨页（w>h → 不可配），其余正常竖页
+        val dims = dimsOf(
+            800 to 1200, 800 to 1200,
+            1600 to 800, 800 to 1200,
+            800 to 1200, 800 to 1200,
+        )
+        // 无冻结：smart 会拆出 [2] solo → [0+1][2][3+4][5]（4 位）
+        val fresh = SpreadTable.build(6, smart = true, dims = dims)
+        assertEquals(4, fresh.slotCount)
+        assertEquals(2, fresh.firstPage(1)); assertEquals(-1, fresh.secondPage(1))
+        // 冻结到页 3（当前位 [2,3] 末页）：slot0/slot1 逐位照抄，slot2 起重排
+        val frozen = SpreadTable.build(6, smart = true, dims = dims, prev = prev, freezeThroughPage = 3)
+        assertEquals(prev.slotCount - 0, frozen.slotCount - 0)
+        assertEquals(prev.firstPage(0), frozen.firstPage(0)); assertEquals(prev.secondPage(0), frozen.secondPage(0))
+        assertEquals(prev.firstPage(1), frozen.firstPage(1)); assertEquals(prev.secondPage(1), frozen.secondPage(1))
+        // 页 2/3 的归属不变（用户看到的构图稳定），pageToSpread 逐位一致
+        assertEquals(prev.pageToSpread(2), frozen.pageToSpread(2))
+        assertEquals(prev.pageToSpread(3), frozen.pageToSpread(3))
+        // 冻结位之后的页重新决策：4+5 维持配对（形状相同可配）
+        assertEquals(4, frozen.firstPage(2)); assertEquals(5, frozen.secondPage(2))
+        // 冻结边界=0：仅 slot0 照抄，其余全新决策（页 2 拆出）
+        val frozen0 = SpreadTable.build(6, smart = true, dims = dims, prev = prev, freezeThroughPage = 0)
+        assertEquals(0, frozen0.firstPage(0)); assertEquals(1, frozen0.secondPage(0))
+        assertEquals(2, frozen0.firstPage(1)); assertEquals(-1, frozen0.secondPage(1))
+        assertEquals(3, frozen0.firstPage(2)); assertEquals(4, frozen0.secondPage(2))
+        assertEquals(5, frozen0.firstPage(3)); assertEquals(-1, frozen0.secondPage(3))
+        // 越界边界（≥总页数）：整表照抄
+        val frozenAll = SpreadTable.build(6, smart = true, dims = dims, prev = prev, freezeThroughPage = 5)
+        assertTrue(frozenAll.sameMapping(prev))
+    }
 }

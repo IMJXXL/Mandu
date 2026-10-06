@@ -49,6 +49,9 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         super.onSizeChanged(w, h, ow, oh)
         if (ow <= 0 || oh <= 0 || (w == ow && h == oh)) return
         if (pageList.isEmpty() || pagerAdapter == null) return
+        // ★ 尺寸变更=显示配置代数递增（2026-10-06 刀3配套）：旋转后 (cur-1..cur+1) 的重绑
+        //   走同图短路时必须重算适配（新视口 base/定位），cfgVer 守卫据此放行
+        displayCfgVer++
         val cur = currentPage
         (cur - 1..cur + 1).forEach { if (it in pageList.indices) loadPageAsync(it) }
     }
@@ -88,6 +91,9 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     private var smartMergeEnabled = true
     private var useSSIV = true
     private var landscapeZoomEnabled = true
+    /** ★ 显示配置代数（2026-10-06 乱闪根修刀3）：applyLivePrefs 变更时自增——
+     *  同图短路的"需要重设基准"判据，位图与配置全同的重绑零动作 */
+    private var displayCfgVer = 0
     // ★ 双击放大开关（config.isDoubleTapZoom）：false=SSIV 双击不缩放，连点=两次点击翻页
     var doubleTapZoom = true
         private set
@@ -929,7 +935,13 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         if (mode != null && scaleMode != mode) { scaleMode = mode; changed = true }
         if (zoom != null && landscapeZoomEnabled != zoom) { landscapeZoomEnabled = zoom; changed = true }
         if (zoomStart != null && this.zoomStart != zoomStart) { this.zoomStart = zoomStart; changed = true }
-        if (changed) pagerAdapter?.notifyDataSetChanged()
+        if (changed) {
+            // ★ 显示配置代数（2026-10-06 乱闪根修刀3）：同图短路凭它区分"重绑但什么都不用做"
+            //   与"重绑且需重设基准"——位图与配置都没变时同图重绑零动作，不再无脑 applyScale
+            //   把 landscapeZoom 已放大的画面打回 contain 再等 500ms 弹回（可见弹跳）
+            displayCfgVer++
+            pagerAdapter?.notifyDataSetChanged()
+        }
     }
 
     fun setLandscapeZoom(enabled: Boolean) { applyLivePrefs(zoom = enabled) }
@@ -1090,14 +1102,15 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         flushScannedDims()
     }
 
-    /** 渐进尺寸落表（节流出口+IDLE 补做共用）：表变了才重排锚定 */
+    /** 渐进尺寸落表（节流出口+IDLE 补做共用）：表变了才重排锚定。
+     *  ★ 冻结当前位（2026-10-06 乱闪根修）：尺寸渐进到达引发的重新配对不得扰动可见构图 */
     private fun flushScannedDims() {
         if (scannedDims.isEmpty()) return
         if (isScrolling) { scannedDirty = true; return }
         scannedDirty = false
         scannedDimsFlushAt = android.os.SystemClock.uptimeMillis()
         val old = spreadTable
-        rebuildSpreadTable()
+        rebuildSpreadTable(freezeCurrent = true)
         if (!spreadTable.sameMapping(old)) rebindForNewTable()
     }
 
@@ -1111,8 +1124,20 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     }
 
     /** ★ 跨页表重算（唯一构建点）：单页=单位表每页一位；双页才启用起始页豁免/智能配对/页豁免。
-     *  dims 优先 Reader 全量扫描（本地书）；远程书回退视图渐进收集 */
-    private fun rebuildSpreadTable() {
+     *  dims 优先 Reader 全量扫描（本地书）；远程书回退视图渐进收集
+     *  ★ freezeCurrent（2026-10-06 乱闪根修）：渐进尺寸引发的重建冻结"当前位及之前"——
+     *  试探合并→伙伴解码→拆开的翻转只发生在屏外位，可见构图绝不中途改变。
+     *  用户主动动作（模式切换/页豁免/智能开关）不冻结——那是用户要求的重排 */
+    private fun rebuildSpreadTable(freezeCurrent: Boolean = false) {
+        val prev = spreadTable
+        var freezeThrough = -1
+        if (freezeCurrent && prev != null && doublePageMode && pageList.isNotEmpty()) {
+            val cur = currentPage.coerceIn(0, pageList.size - 1)
+            if (prev.containsPage(cur)) {
+                val ps = prev.pageToSpread(cur)
+                freezeThrough = maxOf(prev.firstPage(ps), prev.secondPage(ps))
+            }
+        }
         spreadTable = SpreadTable.build(
             pageList.size,
             double = doublePageMode,
@@ -1120,6 +1145,8 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             smart = doublePageMode && smartMergeEnabled,
             dims = pageDims?.takeIf { it.size >= pageList.size * 2 } ?: scannedDimsArray(),
             soloPages = if (doublePageMode) soloPages else emptySet(),
+            prev = if (freezeThrough >= 0) prev else null,
+            freezeThroughPage = freezeThrough,
         )
     }
 
@@ -1141,14 +1168,15 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
 
     /** ★ 尺寸表回填（2026-10-05 智能配对）：Reader.kt 后台扫描页尺寸后推送。
      *  映射未变（常见：全竖版书扫描确认既有朴素配对）零扰动；变了才重绑重定位。
-     *  长度与当前页表不符（切章窗口）直接不采纳，等下一次扫描。 */
+     *  长度与当前页表不符（切章窗口）直接不采纳，等下一次扫描。
+     *  ★ 后台事件同样冻结当前位（2026-10-06）：扫描落表不得扰动可见构图 */
     fun setPageDims(dims: IntArray?) {
         val valid = dims?.takeIf { pageList.isEmpty() || it.size >= pageList.size * 2 }
         if (pageDims != null && valid != null && pageDims.contentEquals(valid)) return
         pageDims = valid
         if (!doublePageMode) return
         val old = spreadTable
-        rebuildSpreadTable()
+        rebuildSpreadTable(freezeCurrent = true)
         if (!spreadTable.sameMapping(old)) rebindForNewTable()
     }
 
@@ -2044,6 +2072,8 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         /** ★ base/scale 代守卫（2026-10-05）：每次 applyPlanScale 递增；迟到的 post 重试/延时
          *  landscapeZoom 凭 gen 比对判定自己是否还属于当前这次 bind，重绑即作废 */
         private var scaleGen = 0
+        /** ★ 绑定时的显示配置代数（2026-10-06 乱闪根修刀3）：同图短路用它判"零动作还是重设基准" */
+        internal var boundCfgVer = -1
 
         private fun createSsiv(): PagerSSIV {
             return PagerSSIV(itemView.context).apply {
@@ -2073,13 +2103,19 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             //   notify 会让可见槽重新走 setImage——SSIV.setImage 会重置 decoder/tile 状态（可见帧
             //   闪一下）。同一位图已在显示时只重设基准/定位（applyScale），滚动帧零扰动。
             //   二轮审查补 useSsiv 条件：高清缩放开关实时切换（true→false）时同图不得错走 SSIV 短路
+            //   ★ 刀3（2026-10-06 乱闪根修）：位图与显示配置全同的重绑零动作——applyScale 会把
+            //   landscapeZoom 已放大的画面打回 contain 再等 500ms 弹回（重绑风暴下=可见弹跳循环）。
+            //   只有显示配置代数变了（applyLivePrefs bump）才需要重设基准
             if (useSsiv) ssiv?.let { ssv ->
                 if (ssv.visibility == View.VISIBLE && ssv.isReady && heldBitmap === bmp) {
+                    if (boundCfgVer == displayCfgVer) return
                     applyScale(ssv, bmp, landscapeZoom, forward)
+                    boundCfgVer = displayCfgVer
                     return
                 }
             }
             heldBitmap = bmp
+            boundCfgVer = displayCfgVer
             if (useSsiv) {
                 val container = itemView as android.widget.FrameLayout
                 // ★ 修复翻页闪烁：复用已有 SSIV（setImage 会重置内部 decoder/状态），
@@ -2173,13 +2209,17 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             isSplitPage = true
             if (bmp.isRecycled) return
             // ★ 同图重绑短路（同 setImage）：showRight 翻转也只需 applySplitScale 重定位视口，不必重置 SSIV
+            //   ★ 刀3：位图与显示配置全同的重绑零动作（同 setImage，防 landscapeZoom 弹跳）
             if (useSsiv) ssiv?.let { ssv ->
                 if (ssv.visibility == View.VISIBLE && ssv.isReady && heldBitmap === bmp) {
+                    if (boundCfgVer == displayCfgVer && !showRight) return
                     applySplitScale(ssv, bmp, showRight)
+                    boundCfgVer = displayCfgVer
                     return
                 }
             }
             heldBitmap = bmp
+            boundCfgVer = displayCfgVer
             if (useSsiv) {
                 val container = itemView as android.widget.FrameLayout
                 val ssv = ssiv ?: createSsiv().also { container.addView(it); ssiv = it }
