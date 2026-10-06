@@ -116,6 +116,89 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
     private val probedSizes = java.util.concurrent.ConcurrentHashMap<String, IntArray>()
     private var probedFlushAt = 0L
 
+    /**
+     * ★ 远程拆分页解码（2026-10-06 远程条漫拆分接入）：supply 纯索引制，展开后的半页/段页
+     * 供给不了——按元数据还原原始页字节（originalPageIdx），在视图侧完成段页矩形切分与
+     * 半页裁切。几何与展开器严格同源：段矩形走 PdfTallSplitCalculator.segmentRectByCount
+     * （权威段数=meta.segmentTotal），半页走 applySplitSide 同款 1.2 宽高比守卫+左右半规则。
+     * 不拆页（splitSide=0 且无段）由调用方直接 supply.loadBitmap，不走这里。
+     */
+    private suspend fun loadRemoteExpanded(meta: ArchiveEngine.PageMeta): android.graphics.Bitmap? {
+        val supply = remotePageSupply ?: return null
+        val rawIdx = meta.originalPageIdx.coerceIn(0, (supply.pageCount - 1).coerceAtLeast(0))
+        // ★ 复盘修 OOM（2026-10-06）：半页分支原用 decodeByteArray 全尺寸解码——4000×6000 页
+        //   =96MB 位图，平板直爆堆。改走 supply.loadBitmap（适配器自带屏宽采样），采样后比例
+        //   不变，1.2 宽高比守卫与裁半结果不受影响；段页分支保留 BitmapRegionDecoder
+        //   （区域解码本就是省内存路径，supply.loadBitmap 拿不到区域）
+        if (meta.splitSide != 0) {
+            val full = withContext(Dispatchers.IO) { runCatching { supply.loadBitmap(rawIdx) }.getOrNull() }
+                ?: return null
+            if (full.isRecycled) return null
+            // applySplitSide 同款：1.2 宽高比守卫——不是宽图就不裁（展开的页必然裁，守卫只防尺寸漂移）
+            if (full.width <= full.height * 1.2f) return full
+            return try {
+                val halfWidth = full.width / 2
+                val startX = if (meta.splitSide == 1) 0 else halfWidth
+                android.graphics.Bitmap.createBitmap(full, startX, 0, halfWidth, full.height)
+            } catch (_: Exception) { full }
+        }
+        var raw = withContext(Dispatchers.IO) { runCatching { supply.loadPageRaw(rawIdx) }.getOrNull() }
+        if (raw == null || raw.isEmpty()) {
+            try { Thread.sleep(120) } catch (_: InterruptedException) { return null }
+            raw = withContext(Dispatchers.IO) { runCatching { supply.loadPageRaw(rawIdx) }.getOrNull() }
+        }
+        if (raw == null || raw.isEmpty()) return null
+        return withContext(Dispatchers.IO) {
+            try {
+                when {
+                    meta.segmentIndex > 0 -> {
+                        val dec = android.graphics.BitmapRegionDecoder.newInstance(raw, 0, raw.size, false)
+                        try {
+                            val imgW = dec.width; val imgH = dec.height
+                            if (imgW <= 0 || imgH <= 0) return@withContext null
+                            // 已不是长图（尺寸表过期/图被换）→ 整图兜底，绝不错切错位（渲染器同款守卫）
+                            if (imgH.toFloat() / imgW <= com.mangareader.engine.pdf.PdfTallSplitCalculator.TALL_RATIO_THRESHOLD) {
+                                return@withContext null
+                            }
+                            val rect = com.mangareader.engine.pdf.PdfTallSplitCalculator.segmentRectByCount(
+                                imgW.toFloat(), imgH.toFloat(), meta.segmentTotal, meta.segmentIndex
+                            )
+                            val r0 = rect.top.toInt().coerceIn(0, imgH - 1)
+                            val r1 = rect.bottom.toInt().coerceIn(r0 + 1, imgH)
+                            val region = android.graphics.Rect(0, r0, imgW, r1)
+                            val sw = resources.displayMetrics.widthPixels
+                            val s = com.mangareader.engine.img.ImageSegmentRenderer.sampleSizeFor(imgW, sw)
+                            var bmp = dec.decodeRegion(region, android.graphics.BitmapFactory.Options().apply { inSampleSize = s })
+                            if (bmp == null) {
+                                System.gc()
+                                bmp = dec.decodeRegion(region, android.graphics.BitmapFactory.Options().apply { inSampleSize = s * 2 })
+                            }
+                            if (bmp == null) return@withContext null
+                            val cap = maxOf(sw, 720)
+                            if (bmp.width > cap + 2) {
+                                val scaledH = (bmp.height.toLong() * cap / bmp.width).toInt().coerceAtLeast(1)
+                                val scaled = try { android.graphics.Bitmap.createScaledBitmap(bmp, cap, scaledH, true) } catch (_: OutOfMemoryError) { null }
+                                if (scaled != null) {
+                                    if (scaled !== bmp) bmp.recycle()
+                                    bmp = scaled
+                                }
+                            }
+                            bmp
+                        } finally { try { dec.recycle() } catch (_: Exception) {} }
+                    }
+                    else -> null
+                }
+            } catch (_: Exception) { null }
+        }
+    }
+
+    /** 远程页统一解码入口：拆分页走元数据还原，普通页保持 supply 索引直取 */
+    private suspend fun loadRemotePage(meta: ArchiveEngine.PageMeta, idx: Int): android.graphics.Bitmap? {
+        val supply = remotePageSupply ?: return null
+        return if (meta.splitSide != 0 || meta.segmentIndex > 0) loadRemoteExpanded(meta)
+        else supply.loadBitmap(meta.originalPageIdx.coerceAtMost((supply.pageCount - 1).coerceAtLeast(0)))
+    }
+
     private fun observeProbedSize(idx: Int, w: Int, h: Int) {
         if (w <= 0 || h <= 0) return
         val meta = pageList.getOrNull(idx) ?: return
@@ -897,8 +980,9 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
                 // 所有格式统一走 Java BitmapFactory（正确处理 CMYK/ICC 色彩空间）
                 if (result == null) {
                     // ★ SMB/WebDAV 页面供给抽象：远程会话优先，null 时不回退 engine（路径已被守卫拦截）
+                    //   ★ 远程拆分接入：半页/段页按元数据还原原始页后视图侧切分，普通页索引直取
                     val supply = remotePageSupply
-                    result = if (supply != null) supply.loadBitmap(idx)
+                    result = if (supply != null) loadRemotePage(pageList[idx], idx)
                     else {
                         val m = pageList[idx]
                         if (m.segmentIndex > 0) {
@@ -1021,8 +1105,9 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
                 // 所有格式统一走 Java BitmapFactory（正确处理 CMYK/ICC 色彩空间）
                 if (result == null) {
                     // ★ SMB/WebDAV 页面供给抽象：远程会话优先，null 时不回退 engine
+                    //   ★ 远程拆分接入：与 loadPageAsync 主路径同款元数据驱动
                     val supply = remotePageSupply
-                    result = if (supply != null) supply.loadBitmap(idx)
+                    result = if (supply != null) loadRemotePage(pageList[idx], idx)
                     else {
                         val m = pageList[idx]
                         if (m.segmentIndex > 0) {
@@ -1304,7 +1389,9 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
                         if (supply != null) {
                             // 远端页：ArchiveEngine 守卫拦 smb:/webdav:，改用供给字节嗅探
                             // （loadPageRaw 落 SmbCache 页缓存，位图加载本来就取过同一份）
-                            val raw = supply.loadPageRaw(pos) ?: return@withContext AnimKind.NONE
+                            // ★ 拆分接入：展开后流位≠原始页，动图页恒不拆但索引仍按元数据还原
+                            val rawIdx = meta.originalPageIdx.coerceIn(0, (supply.pageCount - 1).coerceAtLeast(0))
+                            val raw = supply.loadPageRaw(rawIdx) ?: return@withContext AnimKind.NONE
                             e.peekAnimKindFromRaw(raw)
                         } else {
                             e.peekAnimKindFast(treePath, meta)
@@ -1349,7 +1436,9 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
                             makeAnimDrawable(ByteArray(0), kind, realFile)
                         } else {
                             val raw = if (supply != null) {
-                                runCatching { supply.loadPageRaw(pos) }.getOrNull()
+                                runCatching {
+                                    supply.loadPageRaw(meta.originalPageIdx.coerceIn(0, (supply.pageCount - 1).coerceAtLeast(0)))
+                                }.getOrNull()
                             } else {
                                 runCatching { engine?.loadPageRaw(meta, treePath) }.getOrNull()
                             }

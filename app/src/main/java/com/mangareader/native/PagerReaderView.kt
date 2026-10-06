@@ -828,7 +828,12 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             if (newCount > pageList.size) {
                 val oldSize = pageList.size
                 val grown = pageList + (pageList.size until newCount).map {
-                    ArchiveEngine.PageMeta(it, "", "", name = "")
+                    // ★ 远程拆分接入：新页同样带 source/originalPageIdx 戳（未展开书 idx 等值，
+                    //   解码/焦点映射统一走元数据还原）
+                    ArchiveEngine.PageMeta(
+                        it, treePath.substringAfterLast('.', "").lowercase().let { e -> if (e == "cbz") "zip" else e },
+                        "", localIdx = it, originalPageIdx = it, name = ""
+                    )
                 }
                 pageList = grown
                 // 远程页表增长：同步扩跨页表（新页尺寸未知=朴素配对，与旧行为一致）
@@ -1410,7 +1415,9 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             val raw = withContext(Dispatchers.IO) { runCatching { engine?.loadPageRaw(meta, treePath) }.getOrNull() }
             if (raw != null) return writeTileTempFile(idx, raw)
         } else {
-            val raw = withContext(Dispatchers.IO) { runCatching { supply.loadPageRaw(idx) }.getOrNull() }
+            // ★ 远程拆分接入：展开后流位≠原始页，按元数据还原（未展开书 originalPageIdx==idx 等值）
+            val rawIdx = meta.originalPageIdx
+            val raw = withContext(Dispatchers.IO) { runCatching { supply.loadPageRaw(rawIdx) }.getOrNull() }
             if (raw != null) return writeTileTempFile(idx, raw)
         }
         return null
@@ -1447,12 +1454,17 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         if (pitTs != null && nowTs - pitTs < 5000L) {
             // ★ 2026-09-09 v3 调度：只有当前页请求才切焦点——预载页（preloadAround ±5 / onBind ±2）
             //   绝不抢焦点，否则 preloadAround 循环后焦点漂移到最后一页，当前页反而被冷落
-            if (remotePageSupply != null && idx == currentPage) remotePageSupply?.onFocus(idx)
+            //   ★ 拆分接入：焦点按原始页号提升（展开后流位≠原始页）
+            if (remotePageSupply != null && idx == currentPage) {
+                remotePageSupply?.onFocus(pageList.getOrNull(idx)?.originalPageIdx ?: idx)
+            }
             ArchiveEngine.d("Dedup", "drop idx=$idx age=${nowTs - pitTs}ms")
             return
         }
         inflightLoads[idx] = nowTs
-        if (remotePageSupply != null && idx == currentPage) remotePageSupply?.onFocus(idx)
+        if (remotePageSupply != null && idx == currentPage) {
+            remotePageSupply?.onFocus(pageList.getOrNull(idx)?.originalPageIdx ?: idx)
+        }
         val job = loadScope.launch {
 
             var acquired = false
@@ -1577,7 +1589,11 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
 
             // ===== 远程（SMB/WebDAV）：原始字节 → Coil3 解码（动图自动识别），路径不变 =====
             //   ★ SMB/WebDAV 页面供给抽象：smb:/webdav: 路径被 ArchiveEngine 守卫拦截，严禁回退 engine
-            val raw = withContext(Dispatchers.IO) { supply.loadPageRaw(idx) }
+            //   ★ 远程拆分接入（2026-10-06）：展开后流位≠原始页——半页按元数据取原始页字节，
+            //     解码后视图侧裁半（applySplitSide 同款 1.2 守卫+左右半规则）；动图页恒不拆，
+            //     Coil 的 DrawableImage 分支不受影响
+            val rawIdx = meta.originalPageIdx.coerceIn(0, (supply.pageCount - 1).coerceAtLeast(0))
+            val raw = withContext(Dispatchers.IO) { supply.loadPageRaw(rawIdx) }
             if (raw == null) {
                 bitmapCache.remove(idx)
                 inflightLoads.remove(idx) // ★ 让位/失败允许立即重试（新焦点页接管后翻回可重载）
@@ -1603,6 +1619,15 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             } else if (image is coil3.BitmapImage) {
                 // 静图：提取 Bitmap → 超分 → bitmapCache → SSIV
                 var bmp = image.bitmap
+                // ★ 远程半页裁切（2026-10-06 拆分接入）：applySplitSide 同款——1.2 宽高比守卫，
+                //   splitSide=1 左半 / 2 右半；源图不 recycle（与引擎实现一致，GC 兜底）
+                if (bmp.width > 0 && meta.splitSide != 0 && bmp.width > bmp.height * 1.2f) {
+                    try {
+                        val halfWidth = bmp.width / 2
+                        val startX = if (meta.splitSide == 1) 0 else halfWidth
+                        bmp = android.graphics.Bitmap.createBitmap(bmp, startX, 0, halfWidth, bmp.height)
+                    } catch (_: Exception) {}
+                }
                 com.mangareader.viewer.ArchiveEngine.d("PagerView", "loaded idx=$idx bmp=${bmp.width}x${bmp.height} source=${meta.source} trimOn=$trimWhiteBorder tileOn=$tileModeEnabled")
                 // ★ 渐进尺寸收集：必须在 fixedCrop/裁白边之前（要的是原图尺寸）；
                 //   段页/半页（宽图二分）的位图尺寸≠整页尺寸，写进表会把整页误判

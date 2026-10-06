@@ -69,6 +69,22 @@ class PagerSSIV @JvmOverloads constructor(
     // ★ pass-flip 自接管标记：消费的手势流（DOWN 未放大态本视图就吞了，super 全程不知情）
     //   在 UP/CANCEL 时直接收尾归还，不走 super（基类收到没有 DOWN 前缀的孤立流行为未定义）
     private var passFlipOwns = false
+    // ★ 2026-10-06 123307/131541 日志实锤（hold-pan 标记了 4 次图纹丝不动）：fork 的平移状态
+    //   （maxTouchCount/vTranslateStart/vCenterStart）全部在 ACTION_DOWN 里初始化，未放大态
+    //   DOWN 被本视图吞掉后 super 收到的孤立 MOVE 直接被无视——"适应宽度上下拖不动"根因。
+    //   pan 分支代理 super 前补一条合成 DOWN（位置=真实落点），fork 平移数学完全成立；
+    //   合成 DOWN 只在用户已实际拖动（pan 判定需超 touchSlop）时发出，内部 GestureDetector
+    //   的 tap/双击计时随首个 MOVE 超界自动作废，不影响双击配置。每手势最多补一条。
+    private var superArmed = false
+
+    private fun armSuper(event: MotionEvent) {
+        if (superArmed) return
+        superArmed = true
+        val down = android.view.MotionEvent.obtain(
+            event.downTime, event.downTime, MotionEvent.ACTION_DOWN, downX, downY, 0
+        )
+        try { super.onTouchEvent(down) } finally { down.recycle() }
+    }
 
     private fun gestureBaseScale(): Float = if (viewportBaseScale > 0f) viewportBaseScale else minScale
 
@@ -173,6 +189,7 @@ class PagerSSIV @JvmOverloads constructor(
                 fallbackFired = false
                 passFlipOwns = false
                 panActive = false
+                superArmed = false
                 if (scale <= base + 0.01f) {
                     // 未放大：消费 DOWN 保留事件流，MOVE 按方向分流（翻页/拖图）
                     return true
@@ -196,7 +213,10 @@ class PagerSSIV @JvmOverloads constructor(
                     //   onTouchEvent（RV 未拦截态，状态错乱）→ 交还后断流翻不了页（123307 日志
                     //   zoom-pan-edge 之后 0 次 pagerScroll=dragging 实锤）。改为消费本帧后，
                     //   后续帧重复本判定保持 disallow=false，parent 在 touchSlop 处正常拦截。
-                    if (panExhaustedToward(event.x - downX, event.y - downY)) {
+                    //   ★ panActive 门（2026-10-06 复盘补）：mihon fork 的 edgeXSwipe 带 !isPanning——
+                    //   已进入拖图的手势贴边不再交还（用户在拖图看右半页，松手后新手势才翻页）；
+                    //   无此门"拖图到边+累计位移超8%"会误翻页（新引入回归，复盘揪出）。
+                    if (!panActive && panExhaustedToward(event.x - downX, event.y - downY)) {
                         parent?.requestDisallowInterceptTouchEvent(false)
                         if (!fallbackFired) {
                             val d = if (axisPassthroughHorizontal) event.x - downX else event.y - downY
@@ -211,6 +231,8 @@ class PagerSSIV @JvmOverloads constructor(
                         markSwipe(context, "zoom-pan-edge")
                         return true
                     }
+                    // 已在拖图（panActive）贴边 → fork 继续平移，fitToBounds 原地钳住（mihon 同款）；
+                    // 松手后下一手势 panActive 复位，首帧即命中边缘交还 → 翻页
                     markSwipe(context, "hold-zoomedPan")
                     panActive = true
                     parent?.requestDisallowInterceptTouchEvent(true)
@@ -236,7 +258,8 @@ class PagerSSIV @JvmOverloads constructor(
                         // ★ 2026-10-06 交还方式对齐 mihon（同 zoom-pan-edge）：disallow(false)+
                         //   消费本帧，parent 下帧正常 intercept；旧 return false 断流。拦截失效
                         //   设备沿用 pass-flip-self 自翻兜底（位移超 8% 视口直接翻一页）。
-                        if (panExhaustedToward(event.x - downX, event.y - downY)) {
+                        //   ★ panActive 门（同 zoom-pan-edge）：拖图中贴边不交还，mihon isPanning 语义
+                        if (!panActive && panExhaustedToward(event.x - downX, event.y - downY)) {
                             parent?.requestDisallowInterceptTouchEvent(false)
                             consumedDown = true
                             passFlipOwns = true
@@ -255,6 +278,7 @@ class PagerSSIV @JvmOverloads constructor(
                         }
                         markSwipe(context, "hold-pan")
                         panActive = true
+                        armSuper(event)
                         parent?.requestDisallowInterceptTouchEvent(true)
                         consumedDown = true
                         return super.onTouchEvent(event)
@@ -268,6 +292,7 @@ class PagerSSIV @JvmOverloads constructor(
                     if (orthoRoom && dOrtho > dAlong) {
                         markSwipe(context, "hold-pan")
                         panActive = true
+                        armSuper(event)
                         parent?.requestDisallowInterceptTouchEvent(true)
                         consumedDown = true
                         return super.onTouchEvent(event)
@@ -324,6 +349,7 @@ class PagerSSIV @JvmOverloads constructor(
                 }
                 markSwipe(context, "hold-pan")
                 panActive = true
+                armSuper(event)
                 parent?.requestDisallowInterceptTouchEvent(true)
                 consumedDown = true
                 return super.onTouchEvent(event)
@@ -331,6 +357,7 @@ class PagerSSIV @JvmOverloads constructor(
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 parent?.requestDisallowInterceptTouchEvent(false)
                 panActive = false
+                superArmed = false
                 // ★ pass-flip 自接管的手势流在此收尾：翻页判定已在 MOVE 内完成（自翻或
                 //   正常设备 RV 拦截时收 CANCEL），super 从未见过这段流的 DOWN，不透传
                 if (passFlipOwns) {

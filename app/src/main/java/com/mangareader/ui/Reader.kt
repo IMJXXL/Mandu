@@ -637,28 +637,69 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     }
 
     /** 建立远程供给会话：页面元表 + 进度恢复（与本地 completed→跳第1页 语义一致） */
-    fun attachRemoteSession(
+    suspend fun attachRemoteSession(
         supply: com.mangareader.native.RemotePageSupply,
         saved: com.mangareader.data.ReadingProgress?,
         targetPage: Int,
+        path: String,
     ): List<com.mangareader.viewer.ArchiveEngine.PageMeta> {
         smbSession = supply
+        // ★ 合成元表带戳（2026-10-06 远程拆分接入）：source=路径扩展名（expand 的 SPLIT_SOURCES
+        //   把关用，cbz 归一 zip；mobi/azw3 不在白名单=远程 mobi 永不拆，与本地语义一致）；
+        //   localIdx/originalPageIdx=原始页号——supply 纯索引制，视图解码经 originalPageIdx 还原
+        //   原始页，展开后流位≠原始页不再错位
+        val remoteSrc = path.substringAfterLast('.', "").lowercase().let { if (it == "cbz") "zip" else it }
         val pages = (0 until supply.pageCount.coerceAtLeast(0)).map {
-            com.mangareader.viewer.ArchiveEngine.PageMeta(it, "", "", name = "")
+            com.mangareader.viewer.ArchiveEngine.PageMeta(it, remoteSrc, "", localIdx = it, originalPageIdx = it, name = "")
         }
-        pageList = pages
+        // ★ 远程书接入与本地一致的展开管线（2026-10-06 123751 日志实锤）：远程 zip 条漫书
+        //   "seg expand" 从未出现——attachRemoteSession 恒不展开（旧注释"远程页表恒不展开"），
+        //   宽图二分/长图竖切整链路失效，此前修的探测缓存写了没人读。此处按同一套 config 门槛
+        //   跑 expand：合成元表 source="" 不在 SPLIT_SOURCES → 头部探测天然跳过（零额外 IO），
+        //   只读尺寸表；首读无表→未知页透传（阅读中解码探测经 onProbedSizes→mergeProbedSizes
+        //   落表，键/戳与本表同源）；重进→命中缓存→拆分生效。与本地首读行为完全同构。
+        val isWebtoonFamily = mode == Mode.VERT || mode == Mode.WEBTOON_GAP
+        val wideSplitOn = config.doublePageSplit &&
+            (isWebtoonFamily || config.pageLayout == com.mangareader.data.ReaderConfig.PageLayout.SINGLE)
+        // ★ zip 门控：rar/7z/tar 是 solid 顺流介质，页数随抽取增长（onPageCountGrow），展开表与
+        //   增长索引互相踩——顺流族保持整表透传（与旧行为一致）；zip 计数开局即知，展开安全
+        val expandable = remoteSrc == "zip"
+        val wantExpand = expandable && ((config.tallSplitEnabled && isWebtoonFamily) || wideSplitOn)
+        var expandedPages = pages
+        if (wantExpand) {
+            val sm = maxOf(ctx.resources.displayMetrics.widthPixels, ctx.resources.displayMetrics.heightPixels)
+            val sw = ctx.resources.displayMetrics.widthPixels
+            val leftFirst = !(isRtl != config.doublePageReverse)
+            expandedPages = try {
+                withContext(Dispatchers.IO) {
+                    com.mangareader.engine.pdf.VirtualPageExpander.expand(
+                        pages, config.tallSplitEnabled, isWebtoonFamily, sm, sw, engine, path,
+                        allowProbe = true, wideSplitEnabled = wideSplitOn, splitLeftFirst = leftFirst,
+                        tallRatioThreshold = com.mangareader.engine.pdf.PdfTallSplitCalculator.ratioThreshold(config.tallSplitSensitivity))
+                }
+            } catch (_: Exception) { pages }
+            try { com.mangareader.DiagTracer.mark(ctx, "seg expand remote ${com.mangareader.engine.pdf.VirtualPageExpander.lastStats}") } catch (_: Exception) {}
+        }
+        pageList = expandedPages
+        // ★ 展开生效即备份原始表：onProbedSizes 落表与切回 pager 族还原都用它（与本地路径同语义）
+        preExpandPages = if (expandedPages.size > pages.size) path to pages else null
         supply.onPageCountGrow.add { newCount ->
             if (newCount > pageList.size) {
                 pageList = (0 until newCount).map {
-                    com.mangareader.viewer.ArchiveEngine.PageMeta(it, "", "", name = "")
+                    com.mangareader.viewer.ArchiveEngine.PageMeta(it, remoteSrc, "", localIdx = it, originalPageIdx = it, name = "")
                 }
             }
         }
-        val lastPage = if (saved?.completed == true) 0 else (saved?.lastPage ?: 0)
-        cur = (if (targetPage >= 0) targetPage else lastPage).coerceIn(0, (pages.size - 1).coerceAtLeast(0))
-        // ★ B4② 远程书对齐：远程页表恒不展开（本地宽分只作用于本地书），双页布局+拆分的远程书
-        //   save 照写 halfRight，重进须经同一注入路径落位——否则远程拆分书续读恒落第一半
-        initialHalfRightRestore = targetPage < 0 && saved != null && !saved.completed && saved.halfRight
+        var resume = if (targetPage >= 0) targetPage else (if (saved?.completed == true) 0 else (saved?.lastPage ?: 0))
+        // ★ 展开生效：恢复位是物理页号（远程 save 存原始表索引），映射到展开流位置（与本地同款）
+        if (expandedPages.size > pages.size && resume in pages.indices) {
+            val mapped = expandedPages.indexOfFirst { it.originalPageIdx == resume }
+            if (mapped >= 0) resume = mapped
+        }
+        cur = resume.coerceIn(0, (expandedPages.size - 1).coerceAtLeast(0))
+        // ★ B4② 远程书对齐：远程页表展开后半页位已是独立流位，halfRight 仅对未展开书继续注入
+        initialHalfRightRestore = targetPage < 0 && saved != null && !saved.completed && saved.halfRight &&
+            expandedPages.size <= pages.size
         viewing = true
         loading = false
         // ★ 本地打开锚点 ok：点开→首页可看整链路
@@ -666,7 +707,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             localOpenMarked = true
             runCatching { com.mangareader.DiagTracer.markStatic("local: open ok ${android.os.SystemClock.uptimeMillis() - localOpenStartMs}ms") }
         }
-        return pages
+        return expandedPages
     }
     /**
      * ★ SMB/WebDAV 远程阅读入口（smb_embed_lv119 任务4.1-4.3 / 14.1-14.4）。
@@ -689,7 +730,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             if (isSmb) {
                 when (val r = com.mangareader.smbbridge.SmbBookRouter.openSmbBook(path, resumePage, archivePasswdProvider)) {
                     is com.mangareader.smbbridge.SmbBookRouter.OpenResult.Supported ->
-                        return attachRemoteSession(r.supply, saved, targetPage)
+                        return attachRemoteSession(r.supply, saved, targetPage, path)
                     is com.mangareader.smbbridge.SmbBookRouter.OpenResult.Unsupported -> {
                         com.mangareader.smbbridge.RemoteDownloadDialogState.showDialog(path, "smb", b.id, b.title)
                         viewing = false; loading = false
@@ -705,7 +746,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             } else {
                 when (val r = com.mangareader.webdavbridge.WebDavBookRouter.openWebDavBook(path, resumePage, archivePasswdProvider)) {
                     is com.mangareader.webdavbridge.WebDavBookRouter.OpenResult.Supported ->
-                        return attachRemoteSession(r.supply, saved, targetPage)
+                        return attachRemoteSession(r.supply, saved, targetPage, path)
                     is com.mangareader.webdavbridge.WebDavBookRouter.OpenResult.Unsupported -> {
                         com.mangareader.smbbridge.RemoteDownloadDialogState.showDialog(path, "webdav", b.id, b.title)
                         viewing = false; loading = false
@@ -741,7 +782,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             val resumePage = if (targetPage >= 0) targetPage else (saved?.lastPage ?: 0)
             when (val r = com.mangareader.komgabridge.reader.KomgaBookRouter.openKomgaBook(path, resumePage)) {
                 is com.mangareader.komgabridge.reader.KomgaBookRouter.OpenResult.Supported ->
-                    return attachRemoteSession(r.supply, saved, targetPage)
+                    return attachRemoteSession(r.supply, saved, targetPage, path)
                 is com.mangareader.komgabridge.reader.KomgaBookRouter.OpenResult.Unsupported -> {
                     android.widget.Toast.makeText(ctx, "该 EPUB 为文字电子书，不支持图片阅读", android.widget.Toast.LENGTH_SHORT).show()
                     viewing = false; loading = false; back()
@@ -805,7 +846,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             }
             try {
                 kotlinx.coroutines.withTimeout(45_000L) { adapter.awaitReady() }
-                return attachRemoteSession(adapter, saved, targetPage)
+                return attachRemoteSession(adapter, saved, targetPage, localPath)
             } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
                 adapter.close()
                 android.widget.Toast.makeText(ctx, "打开超时", android.widget.Toast.LENGTH_SHORT).show()
@@ -1507,6 +1548,18 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     fun openItem(item: ArchiveEngine.Item) {
         if (item.auth == "smb" || item.auth == "webdav") {
             navStack = navStack + item.doc
+            // ★ 远程卷间切换（2026-10-06 "没有上一本了"根因修）：远程浏览器开的卷从不填
+            //   tocItems——switchToPrevious/Next 落 findAdjacentBook（只查书库），书库书是
+            //   整个文件夹时同夹=0 恒报"没有上一本/下一本"。此处把当前文件夹的文件兄弟卷
+            //   （自然序）填成 tocItems（subPath=完整远程路径，与 navStack 同格式可互查），
+            //   卷间切换/无缝续读全走既有 tocItems 管线（confirmSwitch 的 bookRoot/navStack
+            //   语义也一并正确）。目录项不进目录（进目录=浏览，不是阅读单元）
+            if (items.isNotEmpty()) {
+                val fileSiblings = items.filter { !it.dir }
+                    .sortedWith(compareBy(com.mangareader.util.ComicSortUtil.fileNameComparator) { it.name })
+                    .map { it.copy(subPath = it.doc) }
+                if (fileSiblings.size >= 1) tocItems = fileSiblings
+            }
             if (item.dir) {
                 openFolder(navStack.last())
             } else {
@@ -1606,6 +1659,29 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         } catch (e: Exception) {
             android.util.Log.w("AdjBook", "adj 异常", e); null
         }
+    }
+
+    /** ★ 远程卷间切换兜底（2026-10-06 "没有上一本了"第二修）：书库直开的远程书 tocItems
+     *  为空、书库同夹也查不到（书库书=整个文件夹）→ 直接列当前远程路径父文件夹的文件兄弟，
+     *  自然序取相邻卷。返回 (卷名, 完整路径)；非 smb:/webdav: 或解析失败返回 null */
+    var switchTargetRemoteFile = false
+    suspend fun findAdjacentRemoteVolume(direction: Int): Pair<String, String>? {
+        val cur = navStack.lastOrNull() ?: return null
+        if (!cur.startsWith("smb:") && !cur.startsWith("webdav:")) return null
+        val parent = navStack.getOrNull(navStack.size - 2)?.takeIf {
+            it.startsWith("smb:") || it.startsWith("webdav:")
+        } ?: cur.substringBeforeLast('/', "")
+        if (parent.isEmpty() || parent == cur) return null
+        val siblings = withContext(Dispatchers.IO) {
+            runCatching { listRemoteFolderAsItems(parent) }.getOrNull()
+        } ?: return null
+        val files = siblings.filter { !it.dir }
+            .sortedWith(compareBy(com.mangareader.util.ComicSortUtil.fileNameComparator) { it.name })
+        val curName = cur.substringAfterLast('/')
+        val idx = files.indexOfFirst { it.doc == cur || it.name == curName }
+        if (idx == -1) return null
+        val t = files.getOrNull(idx + direction) ?: return null
+        return t.name to t.doc
     }
 
     fun extractSubPathFromNav(): String {
@@ -1759,12 +1835,16 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
 
         if (switchTargetPath.isEmpty()) return
         isSwitching = true
+        val remoteFileTarget = switchTargetRemoteFile
+        switchTargetRemoteFile = false
         if (tocItems.size > 1 && tocItems.any { it.subPath == switchTargetPath }) {
             // 切章节：重置navStack到书根+新章节，不嵌套
             // ★ F2.2：d: 书的书根取 navStack 首位（d: 栈首即书根；原来 fallback 到 switchTargetPath
             //   会把目标卷当书根压栈）；z: 维持原取法
+            // ★ 远程目录书（2026-10-06 卷间切换接入）：smb:/webdav: 书根取栈首，否则 [zip,zip] 双压
             val bookRoot = navStack.firstOrNull { it.startsWith("z:") }
                 ?: navStack.firstOrNull()?.takeIf { it.startsWith("d:") }
+                ?: navStack.firstOrNull()?.takeIf { it.startsWith("smb:") || it.startsWith("webdav:") }
                 ?: switchTargetPath
             // ★ 修复白屏：先同步清 pageList+viewing，再更新 navStack，防止 NativeReaderScreen
             //   重建时拿到旧/空 pageList 白屏（navStack 更新触发 key 变→重建，此时 pageList 已空+viewing=false 不显示）
@@ -1809,7 +1889,8 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                 }
                 // ★ 切书落点分发：文件夹书(d:)走 openFolder 列目录；单文件书(a:/z:)直达正文
                 //   （原实现一律 openFolder——对单文件路径 children 为空，表现为"说切换了实际没切"）
-                if (switchTargetPath.startsWith("a:") || switchTargetPath.startsWith("z:")) {
+                //   ★ 远程卷兜底切换（switchTargetRemoteFile）：smb:/webdav: 文件卷直达 enterReader
+                if (switchTargetPath.startsWith("a:") || switchTargetPath.startsWith("z:") || remoteFileTarget) {
                     // ★ §23 改走 enterReader 恢复 lastPage
                     enterReader(switchTargetPath)
                 } else {
@@ -1838,7 +1919,16 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                         switchTargetPath = nextBook.filePath
                         confirmSwitch()
                     } else {
-                        android.widget.Toast.makeText(ctx, "没有下一本了", android.widget.Toast.LENGTH_SHORT).show()
+                        // ★ 远程浏览器卷兜底：书库同夹查不到时列远程父文件夹取相邻卷
+                        val remoteVol = findAdjacentRemoteVolume(1)
+                        if (remoteVol != null) {
+                            switchTargetName = remoteVol.first
+                            switchTargetPath = remoteVol.second
+                            switchTargetRemoteFile = true
+                            confirmSwitch()
+                        } else {
+                            android.widget.Toast.makeText(ctx, "没有下一本了", android.widget.Toast.LENGTH_SHORT).show()
+                        }
                     }
                 }
             }
@@ -1850,7 +1940,16 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                     switchTargetPath = nextBook.filePath
                     confirmSwitch()
                 } else {
-                    android.widget.Toast.makeText(ctx, "没有下一本了", android.widget.Toast.LENGTH_SHORT).show()
+                    // ★ 远程浏览器卷兜底（书库直开卷 tocItems 为空的场景）
+                    val remoteVol = findAdjacentRemoteVolume(1)
+                    if (remoteVol != null) {
+                        switchTargetName = remoteVol.first
+                        switchTargetPath = remoteVol.second
+                        switchTargetRemoteFile = true
+                        confirmSwitch()
+                    } else {
+                        android.widget.Toast.makeText(ctx, "没有下一本了", android.widget.Toast.LENGTH_SHORT).show()
+                    }
                 }
             }
         }
@@ -1875,7 +1974,16 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                         switchTargetPath = prevBook.filePath
                         confirmSwitch()
                     } else {
-                        android.widget.Toast.makeText(ctx, "没有上一本了", android.widget.Toast.LENGTH_SHORT).show()
+                        // ★ 远程浏览器卷兜底（与 switchToNext 同款）：书库同夹查不到时列远程父文件夹
+                        val remoteVol = findAdjacentRemoteVolume(-1)
+                        if (remoteVol != null) {
+                            switchTargetName = remoteVol.first
+                            switchTargetPath = remoteVol.second
+                            switchTargetRemoteFile = true
+                            confirmSwitch()
+                        } else {
+                            android.widget.Toast.makeText(ctx, "没有上一本了", android.widget.Toast.LENGTH_SHORT).show()
+                        }
                     }
                 }
             }
@@ -1887,7 +1995,16 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                     switchTargetPath = prevBook.filePath
                     confirmSwitch()
                 } else {
-                    android.widget.Toast.makeText(ctx, "没有上一本了", android.widget.Toast.LENGTH_SHORT).show()
+                    // ★ 远程浏览器卷兜底（书库直开卷 tocItems 为空的场景）
+                    val remoteVol = findAdjacentRemoteVolume(-1)
+                    if (remoteVol != null) {
+                        switchTargetName = remoteVol.first
+                        switchTargetPath = remoteVol.second
+                        switchTargetRemoteFile = true
+                        confirmSwitch()
+                    } else {
+                        android.widget.Toast.makeText(ctx, "没有上一本了", android.widget.Toast.LENGTH_SHORT).show()
+                    }
                 }
             }
         }
@@ -2468,10 +2585,10 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                         // ★ 2026-10-05 日志治理：此 mark 在重组体内逐次执行——翻页沉降期每帧重组
                         //   连写 20-30 条同值短码（实锤 581 条/次阅读，diag_stages 是持久存储，
                         //   白白写盘）。只在五元组变化时落一条。
-                        var lastReaderViewDiag by remember { mutableStateOf("") }
+                        //   ★ 2026-10-06 二修（123751 平板日志 20-40 条/秒同值实锤）：remember 的
+                        //   去重位随重组边界重建失效——改进程级门（诊断场景语义无损，值变即过）
                         val rvDiag = "readerView mode=$mode vert=$vertical pages=${displayPages.size} start=$safeCur trim=${config.isTrimWhiteBorder} tile=${config.tileModeEnabled}"
-                        if (rvDiag != lastReaderViewDiag) {
-                            lastReaderViewDiag = rvDiag
+                        if (RvDiagGate.shouldMark(rvDiag)) {
                             try { com.mangareader.DiagTracer.mark(ctx, rvDiag) } catch (_: Exception) {}
                         }
                         com.mangareader.native.NativeReaderScreen(
@@ -3836,3 +3953,11 @@ private fun ItemCard(
 }
 
 
+
+/** ★ readerView 诊断短码进程级去重门（2026-10-06）：remember 去重位随重组边界重建失效
+ *  （平板 123751 日志 20-40 条/秒同值，把 seg expand/remote open 等关键取证挤出环形缓冲）。
+ *  诊断去重语义本就是"值变即记"，进程级单例最贴合且免疫重组 */
+private object RvDiagGate {
+    private val last = java.util.concurrent.atomic.AtomicReference("")
+    fun shouldMark(s: String): Boolean = last.getAndSet(s) != s
+}
