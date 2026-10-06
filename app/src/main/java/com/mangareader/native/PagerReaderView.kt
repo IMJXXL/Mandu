@@ -974,6 +974,20 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 }
             } catch (_: Exception) {}
         }
+        // ★ v1.381 放大贴边接力：SSIV 手势起点即贴边时用 fake drag 自驱翻页（页面跟手，
+        //  松手按位移/速度落页）。fakeDragBy(x) 内部 scrollBy(-x)（VP2 1.1.0 字节码核实），
+        //  故喂 -delta 才是内容跟手；起拖仅真实拖动进行中会失败（SETTLING 也能起，内部自停滚动）。
+        s.edgeDrag = object : PagerSSIV.EdgeDragController {
+            override fun start(): Boolean {
+                return try { viewPager.beginFakeDrag() } catch (_: Exception) { false }
+            }
+            override fun dragBy(delta: Float) {
+                try { if (viewPager.isFakeDragging) viewPager.fakeDragBy(-delta) } catch (_: Exception) {}
+            }
+            override fun end() {
+                try { if (viewPager.isFakeDragging) viewPager.endFakeDrag() } catch (_: Exception) {}
+            }
+        }
     }
 
     fun setScaleMode(mode: Int) { applyLivePrefs(mode = mode) }

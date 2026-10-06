@@ -66,6 +66,25 @@ class PagerSSIV @JvmOverloads constructor(
      *  CANCEL，这两处根本不触发（零双重翻页）；短码 fling-fb / up-fb 证明走到了兜底。 */
     var pagerSwipeFallback: ((dir: Int) -> Unit)? = null
     private var fallbackFired = false
+
+    /** ★ 放大贴边接力控制器（v1.381）：宿主用 ViewPager2 fake drag 实现——beginFakeDrag/
+     *  fakeDragBy/endFakeDrag 全程程序化驱动内部 RV 滚动，不依赖 touchSlop 手势中途拦截。
+     *  背景：v379 return false / v380 disallow(false)+消费帧两版交还，174625 日志十余次
+     *  zoom-pan-edge 后 0 次 pagerScroll=dragging——该机 VP2 手势中途不接手（未放大态
+     *  pass-flip→dragging 全成，唯一差异=中途 disallow true→false），mihon fork 式
+     *  "交还 parent 拦截接力"在其成立、在我们不成立，故换确定性 API。 */
+    interface EdgeDragController {
+        /** 起拖；false=宿主忙（真实拖动进行中）。成功后宿主进入 DRAGGING 态。 */
+        fun start(): Boolean
+        /** 喂手指沿翻页轴的帧位移（正=手指向轴正向）；换算成 fakeDragBy 由宿主负责（跟手方向）。 */
+        fun dragBy(delta: Float)
+        /** 松手/取消：宿主按累积位移与速度落页（内部 endFakeDrag→fling/settle）。 */
+        fun end()
+    }
+
+    var edgeDrag: EdgeDragController? = null
+    private var edgeDragOwns = false
+    private var edgeDragLast = 0f
     // ★ pass-flip 自接管标记：消费的手势流（DOWN 未放大态本视图就吞了，super 全程不知情）
     //   在 UP/CANCEL 时直接收尾归还，不走 super（基类收到没有 DOWN 前缀的孤立流行为未定义）
     private var passFlipOwns = false
@@ -190,6 +209,7 @@ class PagerSSIV @JvmOverloads constructor(
                 passFlipOwns = false
                 panActive = false
                 superArmed = false
+                if (edgeDragOwns) { edgeDrag?.end(); edgeDragOwns = false }  // 上手势 UP 丢失的保险
                 if (scale <= base + 0.01f) {
                     // 未放大：消费 DOWN 保留事件流，MOVE 按方向分流（翻页/拖图）
                     return true
@@ -205,18 +225,33 @@ class PagerSSIV @JvmOverloads constructor(
                     return super.onTouchEvent(event)
                 }
                 if (scale > base + 0.01f) {
-                    // ★ 拖图接力（mihon 同款）：放大态沿滑动方向图已贴边→交还翻页容器继续
-                    //   接力翻页，不再把图顶在边上；未贴边仍是拖图（惯性平移不受影响）
-                    // ★ 2026-10-06 交还方式对齐 mihon fork：mihon 是 requestDisallow(false)+
-                    //   继续消费本帧，parent 下一帧走正常 onInterceptTouchEvent 接管；旧写法
-                    //   return false 把本帧甩回 parent 时 intercept 阶段已过，parent 只能进
-                    //   onTouchEvent（RV 未拦截态，状态错乱）→ 交还后断流翻不了页（123307 日志
-                    //   zoom-pan-edge 之后 0 次 pagerScroll=dragging 实锤）。改为消费本帧后，
-                    //   后续帧重复本判定保持 disallow=false，parent 在 touchSlop 处正常拦截。
-                    //   ★ panActive 门（2026-10-06 复盘补）：mihon fork 的 edgeXSwipe 带 !isPanning——
-                    //   已进入拖图的手势贴边不再交还（用户在拖图看右半页，松手后新手势才翻页）；
-                    //   无此门"拖图到边+累计位移超8%"会误翻页（新引入回归，复盘揪出）。
+                    // ★ v1.381 放大贴边接力 = VP2 fake drag 自驱跟手翻页。两版交还实测死路：
+                    //   v379 return false / v380 disallow(false)+fork 继续钳边平移，174625 日志
+                    //   zoom-pan-edge 十余次 0 次 pagerScroll=dragging——该机 VP2/RV 手势中途
+                    //   不接手（未放大态 pass-flip→dragging 全成，唯一差异=中途 disallow
+                    //   true→false），mihon fork 式"交还 parent touchSlop 拦截"在 mihon 成立、
+                    //   在我们不成立；8% 自翻阈值对贴边轻扫又太高（全程 <8% 视口，pass-flip-self
+                    //   一次没出现）。改为手势起点即贴边时 beginFakeDrag 起拖、逐帧 fakeDragBy
+                    //   跟手、松手 endFakeDrag 按位移/速度落页——程序化驱动 RV 滚动，不赌任何
+                    //   拦截行为，全设备确定（fake drag 语义已对 VP2 1.1.0 字节码核实）。
+                    if (edgeDragOwns) {
+                        val d = if (axisPassthroughHorizontal) event.x - edgeDragLast else event.y - edgeDragLast
+                        edgeDragLast = if (axisPassthroughHorizontal) event.x else event.y
+                        if (d != 0f) edgeDrag?.dragBy(d)
+                        parent?.requestDisallowInterceptTouchEvent(true)
+                        return true
+                    }
+                    // ★ panActive 门保持 mihon !isPanning 语义：拖图中贴边不接力（用户在拖图
+                    //   看画面，继续顶在边上）；松手后新手势起点即贴边 → 走上方 fake drag 接力
                     if (!panActive && panExhaustedToward(event.x - downX, event.y - downY)) {
+                        if (edgeDrag?.start() == true) {
+                            edgeDragOwns = true
+                            edgeDragLast = if (axisPassthroughHorizontal) event.x else event.y
+                            markSwipe(context, "zoom-edge-drag")
+                            parent?.requestDisallowInterceptTouchEvent(true)
+                            return true
+                        }
+                        // 起拖失败（仅真实拖动进行中可能出现）——退回旧交还帧+8% 自翻兜底
                         parent?.requestDisallowInterceptTouchEvent(false)
                         if (!fallbackFired) {
                             val d = if (axisPassthroughHorizontal) event.x - downX else event.y - downY
@@ -229,15 +264,7 @@ class PagerSSIV @JvmOverloads constructor(
                             }
                         }
                         markSwipe(context, "zoom-pan-edge")
-                        consumedDown = true
-                        // ★ 2026-10-06 三修（165615 日志实锤）：交还后消费本帧（return true）会让
-                        //   fork 停摆、画面钳死在边上，用户体感"放大拖图到边继续滑没反应"
-                        //   （56.174/01.718 两次交还后均 0 次 pagerScroll=dragging，被迫改点击翻页）。
-                        //   对齐 mihon handoff：disallow(false) 之后【本帧继续交给 fork 平移】——
-                        //   贴边方向被 fitToBounds 钳住（画面顶边跟手），正交轴仍可拖看；
-                        //   VP2 在 touchSlop 处拦截接力翻页，拦截前 fork 每帧重复本判定维持
-                        //   disallow=false；用户反向拖时落回下方 hold-zoomedPan（panActive 门）恢复拖图。
-                        return super.onTouchEvent(event)
+                        return true
                     }
                     // 已在拖图（panActive）贴边 → fork 继续平移，fitToBounds 原地钳住（mihon 同款）；
                     // 松手后下一手势 panActive 复位，首帧即命中边缘交还 → 翻页
@@ -363,6 +390,17 @@ class PagerSSIV @JvmOverloads constructor(
                 return super.onTouchEvent(event)
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                // ★ 贴边拖页收尾：endFakeDrag 让宿主按累积位移/速度落页（settle 或 fling）；
+                //   super 见过 DOWN 与 pan 帧但缺贴边段 MOVE，喂收尾帧复位内部 pan 态
+                if (edgeDragOwns) {
+                    edgeDragOwns = false
+                    edgeDrag?.end()
+                    parent?.requestDisallowInterceptTouchEvent(false)
+                    panActive = false
+                    superArmed = false
+                    consumedDown = false
+                    return super.onTouchEvent(event)
+                }
                 parent?.requestDisallowInterceptTouchEvent(false)
                 panActive = false
                 superArmed = false
