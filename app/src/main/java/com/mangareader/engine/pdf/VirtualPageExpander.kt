@@ -28,6 +28,16 @@ object VirtualPageExpander {
     var lastStats: String = ""
         private set
 
+    /** ★ 最近一次 expand 实际读取尺寸表所用的 stamp（v1.382 拆分缓存根治）：入口 expand
+     *  （allowProbe=true）恒加载尺寸表→此值即"读取端表身份"。存盘端（onProbedSizes 渐进
+     *  合并）必须锚定它，而不是从页表现推 sizeStamp——页表在会话中变体（展开前后/合成替换/
+     *  实例重建空表）时现推 stamp 与读取端分叉，每批存盘整表覆盖、重开恒 miss
+     *  （175928 日志：410dad 存 n=1..8 后重开 unprobed 106→107 全丢，ecd94c 首开即长位时
+     *  preExpandPages 有值才侥幸命中——"拆分时灵时不灵"第二根源）。 */
+    @Volatile
+    var lastStoreStamp: String? = null
+        private set
+
     fun expand(
         pages: List<ArchiveEngine.PageMeta>,
         tallSplitEnabled: Boolean,
@@ -170,27 +180,27 @@ object VirtualPageExpander {
             engine.savePageSizeCache(treePath, storeStamp ?: sizeStamp(pages), merged)
         }
         lastStats = "in=${pages.size} out=${result.size} unprobed=$unprobedCount"
+        lastStoreStamp = storeStamp
         return result
     }
 
-    /** ★ 远程书渐进尺寸合并落盘（2026-10-06 条漫宽图二分工单）：远程页 loadPageBounds 被
-     *  requireNotRemote 拒收 → expand 探测全失败 → 宽图二分永不生效。解法：解码时顺带记录
-     *  真实尺寸（零额外流量），节流后用【原始表】stamp 合并写尺寸缓存——下次进书 expand
-     *  命中缓存，宽图/长图全量生效。pages 必须是展开前的原始表（stamp 才与 expand 读取一致；
-     *  页键 pageSizeKey 不掺 splitSide/segment，展开段 meta 可直接取键）。 */
-    fun mergeProbedSizes(
+    /** ★ 锚定 stamp 版渐进合并（v1.382）：stamp 由调用方传【入口 expand 实际读取的那一个】
+     *  （lastStoreStamp），不再从页表现推——页表变体不再引发存/读 stamp 分叉整表覆盖。
+     *  stamp 为空（会话未锚定/无 expand）直接拒绝，防垃圾落盘。 */
+    fun mergeProbedSizesWithStamp(
         engine: ArchiveEngine,
         treePath: String,
-        pages: List<ArchiveEngine.PageMeta>,
+        stamp: String?,
         sizes: Map<String, IntArray>,
-    ) {
-        if (sizes.isEmpty()) return
-        try {
-            val stamp = sizeStamp(pages)
-            val merged = HashMap<String, IntArray>(engine.loadPageSizeCache(treePath, stamp) ?: emptyMap())
+    ): Boolean {
+        if (sizes.isEmpty()) return false
+        val st = stamp?.takeIf { it.isNotEmpty() } ?: return false
+        return try {
+            val merged = HashMap<String, IntArray>(engine.loadPageSizeCache(treePath, st) ?: emptyMap())
             merged.putAll(sizes)
-            engine.savePageSizeCache(treePath, stamp, merged)
-        } catch (_: Exception) {}
+            engine.savePageSizeCache(treePath, st, merged)
+            true
+        } catch (_: Exception) { false }
     }
 
     /** 尺寸表条目键。localIdx|source 在 dir 源（ext=文档ID、localIdx 恒 0）与 d:/z: 多子包书

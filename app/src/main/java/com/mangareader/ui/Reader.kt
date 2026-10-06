@@ -245,6 +245,12 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     //   回调，退出阅读器瞬间 navStack 可能已弹栈——用会话锚定 path，探测永远落到当前卷的
     //   缓存键（165819 日志：退出瞬间 probe save 写到 0ef61a=书根键，src=pageList 垃圾落盘）
     var currentRemoteSessionPath by remember { mutableStateOf("") }
+    // ★ 会话锚定的尺寸表 stamp（v1.382 拆分缓存根治）：入口 expand 实际读取的表身份。
+    //   存盘端（onProbedSizes）恒用锚定值合并落盘，不再从页表现推——页表变体（展开前后/
+    //   合成替换/实例重建）曾致存/读 stamp 分叉，每批整表覆盖、重开恒 miss（175928 日志
+    //   410dad：存 n=1..8 后重开 unprobed 106→107 全丢）。null=本会话无 expand 读取端，
+    //   onProbedSizes 跳过落盘（无消费者，存了也是垃圾——0ef61a 根除）
+    var currentSessionSizeStamp by remember { mutableStateOf<String?>(null) }
     var effectiveRootPath by remember { mutableStateOf("") }
     var items by remember { mutableStateOf(listOf<ArchiveEngine.Item>()) }
     var tocItems by remember { mutableStateOf(listOf<ArchiveEngine.Item>()) }
@@ -686,7 +692,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         //   "seg expand" 从未出现——attachRemoteSession 恒不展开（旧注释"远程页表恒不展开"），
         //   宽图二分/长图竖切整链路失效，此前修的探测缓存写了没人读。此处按同一套 config 门槛
         //   跑 expand：合成元表 source="" 不在 SPLIT_SOURCES → 头部探测天然跳过（零额外 IO），
-        //   只读尺寸表；首读无表→未知页透传（阅读中解码探测经 onProbedSizes→mergeProbedSizes
+        //   只读尺寸表；首读无表→未知页透传（阅读中解码探测经 onProbedSizes→mergeProbedSizesWithStamp
         //   落表，键/戳与本表同源）；重进→命中缓存→拆分生效。与本地首读行为完全同构。
         val isWebtoonFamily = mode == Mode.VERT || mode == Mode.WEBTOON_GAP
         val wideSplitOn = config.doublePageSplit &&
@@ -696,6 +702,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         val expandable = remoteSrc == "zip"
         val wantExpand = expandable && ((config.tallSplitEnabled && isWebtoonFamily) || wideSplitOn)
         var expandedPages = pages
+        var expandedStamp: String? = null
         if (wantExpand) {
             val sm = maxOf(ctx.resources.displayMetrics.widthPixels, ctx.resources.displayMetrics.heightPixels)
             val sw = ctx.resources.displayMetrics.widthPixels
@@ -706,7 +713,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                         pages, config.tallSplitEnabled, isWebtoonFamily, sm, sw, engine, path,
                         allowProbe = true, wideSplitEnabled = wideSplitOn, splitLeftFirst = leftFirst,
                         tallRatioThreshold = com.mangareader.engine.pdf.PdfTallSplitCalculator.ratioThreshold(config.tallSplitSensitivity))
-                }
+                }.also { expandedStamp = com.mangareader.engine.pdf.VirtualPageExpander.lastStoreStamp }
             } catch (_: Exception) { pages }
             try {
                 val nk = com.mangareader.data.RemotePaths.normalizeBookKey(path)
@@ -718,6 +725,10 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         pageList = expandedPages
         // ★ 展开生效即备份原始表：onProbedSizes 落表与切回 pager 族还原都用它（与本地路径同语义）
         preExpandPages = if (expandedPages.size > pages.size) path to pages else null
+        // ★ v1.382 锚定读取端 stamp：onProbedSizes 存盘恒用它（与本 expand 的 load 同一身份），
+        //   页表后续变体不再引发存/读分叉整表覆盖；仅 expand 成功时锚定（失败时单例残留
+        //   上次会话的 stamp,锚上去会张冠李戴）;null=本会话无读取端,探测批次直接跳过落盘
+        currentSessionSizeStamp = expandedStamp
         supply.onPageCountGrow.add { newCount ->
             if (newCount > pageList.size) {
                 pageList = (0 until newCount).map {
@@ -1162,6 +1173,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         val isWebtoonFamily = mode == Mode.VERT || mode == Mode.WEBTOON_GAP
         val wideSplitOn = config.doublePageSplit &&
             (isWebtoonFamily || config.pageLayout == com.mangareader.data.ReaderConfig.PageLayout.SINGLE)
+        var expandedStampLocal: String? = null
         val expandedPages = if ((config.tallSplitEnabled && isWebtoonFamily) || wideSplitOn) {
             val sm = maxOf(ctx.resources.displayMetrics.widthPixels, ctx.resources.displayMetrics.heightPixels)
             val sw = ctx.resources.displayMetrics.widthPixels
@@ -1172,12 +1184,16 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             try { withContext(Dispatchers.IO) { com.mangareader.engine.pdf.VirtualPageExpander.expand(
                 pages, config.tallSplitEnabled, isWebtoonFamily, sm, sw, engine, path,
                 allowProbe = true, wideSplitEnabled = wideSplitOn, splitLeftFirst = leftFirst,
-                tallRatioThreshold = com.mangareader.engine.pdf.PdfTallSplitCalculator.ratioThreshold(config.tallSplitSensitivity)) } }
+                tallRatioThreshold = com.mangareader.engine.pdf.PdfTallSplitCalculator.ratioThreshold(config.tallSplitSensitivity)) }
+                .also { expandedStampLocal = com.mangareader.engine.pdf.VirtualPageExpander.lastStoreStamp } }
             catch (_: Exception) { pages }
         } else pages
         pageList = expandedPages
         // ★ 展开生效即备份原始表：切回 pager 族时还原（竖切段页只在条漫视图可渲染）
         preExpandPages = if (expandedPages.size > pages.size) path to pages else null
+        // ★ v1.382 锚定读取端 stamp（本地入口 expand 同样跑过 allowProbe=true 的表加载）；
+        //   仅成功时锚定，失败不取单例残留
+        currentSessionSizeStamp = expandedStampLocal
         // ★ 恢复位映射：lastPage 语义=物理页（save 存 originalPageIdx），展开后映射到半页流位
         if (expandedPages.size > pages.size && cur in pages.indices) {
             val mapped = expandedPages.indexOfFirst { it.originalPageIdx == cur }
@@ -2758,31 +2774,32 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                                     }
                                     // ★ N1：条漫到底哨兵接入无缝续读
                                     wv.onChapterEnd = handleChapterEnd
-                                    // ★ 远程条漫宽图二分渐进缓存（2026-10-06 修正）：收集批回传 Reader，
-                                    //   用【原始表】(preExpandPages，未展开) 的 stamp 合并落盘——expand 读取端
-                                    //   才能命中。原始表缺失（未展开）时 pageList 本身即原始表
+                                    // ★ 远程条漫宽图二分渐进缓存（2026-10-06 修正）：收集批回传 Reader。
+                                    //   v1.382 起落盘 stamp 锚定【入口 expand 实际读取的那一个】
+                                    //   （currentSessionSizeStamp）——从页表现推曾与读取端分叉整表覆盖
                                     wv.onProbedSizes = { batch ->
-                                        // ★ 会话锚定 path（2026-10-06）：navStack 在退出瞬间会弹栈，
-                                        //   回调读到书根→probe save 落到错误键（0ef61a 实锤）；优先用
-                                        //   attachRemoteSession 锚定的本会话 path
-                                        val path = currentRemoteSessionPath.ifEmpty {
-                                            navStack.lastOrNull() ?: book?.filePath ?: ""
+                                        // ★ v1.382 stamp 锚定存盘：入口 expand 读表用哪个 stamp，
+                                        //   存盘就恒用哪个（currentSessionSizeStamp=锚定值）——旧逻辑
+                                        //   从页表现推 sizeStamp，页表变体（展开前后/合成替换/实例
+                                        //   重建空表）即与读取端分叉，每批存盘整表覆盖、重开恒 miss
+                                        //   （175928 日志 410dad：存 n=1..8 后重开 unprobed 106→107
+                                        //   全丢；ecd94c 首开即长位时 preExpandPages 有值才侥幸命中）。
+                                        //   未锚定（会话无 expand 读取端/实例重建中）→ 跳过落盘，
+                                        //   无消费者，存了也是垃圾（0ef61a 根除）
+                                        val anchored = currentSessionSizeStamp
+                                        if (anchored != null) {
+                                            val path = currentRemoteSessionPath.ifEmpty {
+                                                navStack.lastOrNull() ?: book?.filePath ?: ""
+                                            }
+                                            try {
+                                                com.mangareader.engine.pdf.VirtualPageExpander
+                                                    .mergeProbedSizesWithStamp(engine, path, anchored, batch)
+                                                val nk = com.mangareader.data.RemotePaths.normalizeBookKey(path)
+                                                com.mangareader.DiagTracer.markStatic(
+                                                    "probe save key=${pathFingerprint(nk)} n=${batch.size} src=stamp"
+                                                )
+                                            } catch (_: Exception) {}
                                         }
-                                        // ★ 原始表匹配兼容归一键：切卷瞬间 navStack.last() 形式变化时，
-                                        //   attach 写入的 key（归一前后任一形式）都能命中
-                                        val nk0 = com.mangareader.data.RemotePaths.normalizeBookKey(path)
-                                        val pre = preExpandPages
-                                            ?.takeIf { it.first == path || it.first == nk0 }?.second ?: pageList
-                                        try {
-                                            com.mangareader.engine.pdf.VirtualPageExpander.mergeProbedSizes(engine, path, pre, batch)
-                                            // ★ 2026-10-06 落盘取证：key=归一指纹与 "remote key" 行对读——
-                                            //   同 key 批次增长而 expand 仍 miss 才是 stamp 问题
-                                            val nk = com.mangareader.data.RemotePaths.normalizeBookKey(path)
-                                            com.mangareader.DiagTracer.markStatic(
-                                                "probe save key=${pathFingerprint(nk)} n=${batch.size} " +
-                                                    "src=${if (preExpandPages?.first == path) "orig" else "pageList"}"
-                                            )
-                                        } catch (_: Exception) {}
                                     }
                                 }
                                 // ★ §24 二代：PagerReaderView 接动图播放，hook 同 wait——但翻页模式下不需"切翻页"对话框（已在翻页中）
