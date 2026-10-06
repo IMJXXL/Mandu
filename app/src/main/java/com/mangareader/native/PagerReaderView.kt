@@ -1603,8 +1603,11 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 // 静图：提取 Bitmap → 超分 → bitmapCache → SSIV
                 var bmp = image.bitmap
                 com.mangareader.viewer.ArchiveEngine.d("PagerView", "loaded idx=$idx bmp=${bmp.width}x${bmp.height} source=${meta.source} trimOn=$trimWhiteBorder tileOn=$tileModeEnabled")
-                // ★ 渐进尺寸收集：必须在 fixedCrop/裁白边之前（要的是原图尺寸）
-                if (doublePageMode) observePageDim(idx, bmp.width, bmp.height)
+                // ★ 渐进尺寸收集：必须在 fixedCrop/裁白边之前（要的是原图尺寸）；
+                //   段页/半页（宽图二分）的位图尺寸≠整页尺寸，写进表会把整页误判
+                if (doublePageMode && pageList.getOrNull(idx)?.let { it.segmentIndex == 0 && it.splitSide == 0 } == true) {
+                    observePageDim(idx, bmp.width, bmp.height)
+                }
                 if (fixedCropActive && bmp.width > 10 && bmp.height > 10) {
                     try {
                         val segTall = pageList[idx].segmentTotal > 1

@@ -118,7 +118,9 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
 
     private fun observeProbedSize(idx: Int, w: Int, h: Int) {
         if (w <= 0 || h <= 0) return
-        if (idx !in pageList.indices) return
+        val meta = pageList.getOrNull(idx) ?: return
+        // ★ 段页/半页的位图尺寸≠整页尺寸——写进缓存会把整页误判成普通图/宽图（tallSplit/二分全乱）
+        if (meta.segmentIndex != 0 || meta.splitSide != 0) return
         if (pageAnimFlags.any { it.pageIdx == idx && it.kind != AnimKind.NONE }) return // 动图页不参与拆分判定
         val key = com.mangareader.engine.pdf.VirtualPageExpander.pageSizeKey(pageList[idx])
         probedSizes[key]?.let { if (it[0] == w && it[1] == h) return }
@@ -129,14 +131,16 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
         flushProbedSizes()
     }
 
+    /** ★ 渐进尺寸批回调（2026-10-06 修正）：expand 在 Reader.enterReader 端跑、读缓存用的是
+     *  【原始表】stamp，而视图 setup 收到的 pages 是已展开表——在此写缓存永远差一个命名空间
+     *  （1.375 首版"还不行"的根因）。改为回传给 Reader，由持有原始表的一方合并落盘 */
+    var onProbedSizes: ((Map<String, IntArray>) -> Unit)? = null
+
     private fun flushProbedSizes() {
-        val eng = engine ?: return
-        if (probedSizes.isEmpty() || setupPages.isEmpty()) return
+        if (probedSizes.isEmpty()) return
         val batch = HashMap(probedSizes)
         probedSizes.clear()
-        try {
-            com.mangareader.engine.pdf.VirtualPageExpander.mergeProbedSizes(eng, treePath, setupPages, batch)
-        } catch (_: Exception) {}
+        try { onProbedSizes?.invoke(batch) } catch (_: Exception) {}
     }
 
     // ★ 锚点落位确认（2026-09-26 实测修复）：setup 登记位可能被 notifyDataSetChanged 同帧
@@ -565,8 +569,6 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
         val screenWidth = context.resources.displayMetrics.widthPixels
         val cfg = com.mangareader.data.ReaderConfig.load(context)
         tabletWebtoonWidthPct = context.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE).getInt("webtoon_tablet_cap_pct", 100).coerceIn(50, 100)
-        // ★ 原始表留底（2026-10-06）：渐进尺寸缓存要用与 expand 读取一致的 stamp（sizeStamp 原始表），
-        //   展开后的 pageList 页数变了 stamp 就对不上
         setupPages = pages
         this.pageList = com.mangareader.engine.pdf.VirtualPageExpander.expand(pages, cfg.tallSplitEnabled, true, screenMax, screenWidth, engine, treePath,
             tallRatioThreshold = com.mangareader.engine.pdf.PdfTallSplitCalculator.ratioThreshold(cfg.tallSplitSensitivity))

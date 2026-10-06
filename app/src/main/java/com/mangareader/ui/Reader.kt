@@ -1613,6 +1613,10 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         // ★ F2.2 章节身份（与 openItem 压栈格式一致，tocItems.subPath 同格式即可互查）：
         //   d: 书内的文件夹章 = 完整 d: 路径；文件章 = 完整 a: 路径；z: 卷 = 相对子路径
         if (last.startsWith("d:") || last.startsWith("a:")) return last
+        // ★ 2026-10-06 工单（1006-114712 日志实锤）：smb:/webdav: 目录书（如 webdav:2:典藏版/第2卷.cbz）
+        //   此前落空返回 ""——switchToPrevious 的目录匹配恒 -1 → 坠入跨书查找 → "没有上一本了"。
+        //   远程章 = 完整路径（目录面板 item.subPath 为相对子路径，靠 endsWith 匹配）
+        if (last.startsWith("smb:") || last.startsWith("webdav:")) return last
         if (!last.startsWith("z:")) return ""
         val inner = last.removePrefix("z:")
         val sep = inner.indexOf("//")
@@ -1819,7 +1823,8 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         if (isSwitching) return
         val curSubPath = extractSubPathFromNav()
         if (tocItems.size > 1) {
-            val curIdx = tocItems.indexOfFirst { it.subPath == curSubPath }
+            // ★ 2026-10-06：目录书当前章是完整路径、item.subPath 是相对子路径——双向 endsWith 互容
+            val curIdx = tocItems.indexOfFirst { it.subPath == curSubPath || curSubPath.endsWith(it.subPath) || it.subPath.endsWith(curSubPath) }
             val nextIdx = if (curIdx == -1) 0 else curIdx + 1
             if (nextIdx < tocItems.size) {
                 switchTargetName = tocItems[nextIdx].name
@@ -1855,7 +1860,8 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         if (isSwitching) return
         val curSubPath = extractSubPathFromNav()
         if (tocItems.size > 1) {
-            val curIdx = tocItems.indexOfFirst { it.subPath == curSubPath }
+            // ★ 同 switchToNext：远程目录书完整路径与相对 subPath 双向 endsWith 互容
+            val curIdx = tocItems.indexOfFirst { it.subPath == curSubPath || curSubPath.endsWith(it.subPath) || it.subPath.endsWith(curSubPath) }
             val prevIdx = if (curIdx <= 0) -1 else curIdx - 1
             if (prevIdx >= 0) {
                 switchTargetName = tocItems[prevIdx].name
@@ -2596,6 +2602,16 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                                     }
                                     // ★ N1：条漫到底哨兵接入无缝续读
                                     wv.onChapterEnd = handleChapterEnd
+                                    // ★ 远程条漫宽图二分渐进缓存（2026-10-06 修正）：收集批回传 Reader，
+                                    //   用【原始表】(preExpandPages，未展开) 的 stamp 合并落盘——expand 读取端
+                                    //   才能命中。原始表缺失（未展开）时 pageList 本身即原始表
+                                    wv.onProbedSizes = { batch ->
+                                        val path = navStack.lastOrNull() ?: book?.filePath ?: ""
+                                        val pre = preExpandPages?.takeIf { it.first == path }?.second ?: pageList
+                                        try {
+                                            com.mangareader.engine.pdf.VirtualPageExpander.mergeProbedSizes(engine, path, pre, batch)
+                                        } catch (_: Exception) {}
+                                    }
                                 }
                                 // ★ §24 二代：PagerReaderView 接动图播放，hook 同 wait——但翻页模式下不需"切翻页"对话框（已在翻页中）
                                 (p as? com.mangareader.native.PagerReaderView)?.let { pv ->
