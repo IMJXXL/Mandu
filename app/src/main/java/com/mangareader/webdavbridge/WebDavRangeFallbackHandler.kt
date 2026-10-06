@@ -44,6 +44,13 @@ object WebDavRangeFallbackHandler {
             local.path.toString()
         } catch (t: Throwable) {
             android.util.Log.w(TAG, "range fallback download failed: ${t.message}")
+            // ★ 2026-10-06 诊断补强（用户日志"open fail e=IllegalStateException"只见外层包装
+            //   看不到真因）：下载失败的具体异常类名+消息进持久短码，下一份导出日志可直接定位
+            runCatching {
+                com.mangareader.DiagTracer.markStatic(
+                    "remote: range fallback fail e=${t::class.java.simpleName}: ${t.message?.take(140) ?: ""}",
+                )
+            }
             null
         }
     }

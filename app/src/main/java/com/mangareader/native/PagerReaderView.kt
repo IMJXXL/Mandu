@@ -872,6 +872,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             //     但此 race 在修复前就同样存在，本改动不引入新 race。
             inflightAnimLoads.clear()
             inflightLoads.clear() // ★ 白屏工单任务3：切章清加载坑（对齐 inflightAnimLoads 现有处理）
+            scannedDims.clear() // ★ 渐进尺寸随章换身份，残留会把新章表按旧章尺寸排
             synchronized(animRawCache) { animRawCache.clear() }
             viewPager.setPageTransformer(NoOpTransformer())
             pagerAdapter = PagerAdapter()
@@ -1065,14 +1066,43 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         if (!spreadTable.sameMapping(old)) rebindForNewTable()
     }
 
-    /** ★ 跨页表重算（唯一构建点）：单页=单位表每页一位；双页才启用起始页豁免/智能配对/页豁免 */
+    /** ★ 远程书渐进尺寸收集（2026-10-06 用户工单"不同尺寸匹配到一起"）：远程书被
+     *  ArchiveEngine requireNotRemote 拒收、Reader 扫描跳过 smb:/webdav: → 跨页表恒朴素
+     *  盲配，横宽跨页图被硬拼半屏。解法：解码时顺带记录原始尺寸（裁剪/白边前，零额外
+     *  流量），节流重建跨页表——翻到哪配哪；PageSizeCacheStore 不含远程，渐进表随章存活 */
+    private val scannedDims = java.util.concurrent.ConcurrentHashMap<Int, IntArray>()
+    private var scannedDimsFlushAt = 0L
+
+    private fun observePageDim(idx: Int, w: Int, h: Int) {
+        if (w <= 0 || h <= 0) return
+        scannedDims[idx]?.let { if (it[0] == w && it[1] == h) return }
+        scannedDims[idx] = intArrayOf(w, h)
+        val now = android.os.SystemClock.uptimeMillis()
+        if (isScrolling || now - scannedDimsFlushAt < 1500L) return
+        scannedDimsFlushAt = now
+        val old = spreadTable
+        rebuildSpreadTable()
+        if (!spreadTable.sameMapping(old)) rebindForNewTable()
+    }
+
+    private fun scannedDimsArray(): IntArray? {
+        if (scannedDims.isEmpty()) return null
+        val out = IntArray(pageList.size * 2)
+        for ((idx, wh) in scannedDims) {
+            if (idx * 2 + 1 < out.size) { out[idx * 2] = wh[0]; out[idx * 2 + 1] = wh[1] }
+        }
+        return out
+    }
+
+    /** ★ 跨页表重算（唯一构建点）：单页=单位表每页一位；双页才启用起始页豁免/智能配对/页豁免。
+     *  dims 优先 Reader 全量扫描（本地书）；远程书回退视图渐进收集 */
     private fun rebuildSpreadTable() {
         spreadTable = SpreadTable.build(
             pageList.size,
             double = doublePageMode,
             startOffset = if (doublePageMode && shiftDoublePage && pageList.size > 1) doublePageStart - 1 else 0,
             smart = doublePageMode && smartMergeEnabled,
-            dims = pageDims?.takeIf { it.size >= pageList.size * 2 },
+            dims = pageDims?.takeIf { it.size >= pageList.size * 2 } ?: scannedDimsArray(),
             soloPages = if (doublePageMode) soloPages else emptySet(),
         )
     }
@@ -1560,6 +1590,8 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 // 静图：提取 Bitmap → 超分 → bitmapCache → SSIV
                 var bmp = image.bitmap
                 com.mangareader.viewer.ArchiveEngine.d("PagerView", "loaded idx=$idx bmp=${bmp.width}x${bmp.height} source=${meta.source} trimOn=$trimWhiteBorder tileOn=$tileModeEnabled")
+                // ★ 渐进尺寸收集：必须在 fixedCrop/裁白边之前（要的是原图尺寸）
+                if (doublePageMode) observePageDim(idx, bmp.width, bmp.height)
                 if (fixedCropActive && bmp.width > 10 && bmp.height > 10) {
                     try {
                         val segTall = pageList[idx].segmentTotal > 1
