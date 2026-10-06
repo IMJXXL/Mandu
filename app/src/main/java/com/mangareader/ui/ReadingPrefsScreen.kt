@@ -49,10 +49,11 @@ internal sealed interface PrefEditor {
     /** 选项块（value: String/Int/Long/Boolean，写入类型与默认值一致）；info=选项下的说明小字 */
     data class Chips(val options: List<Pair<String, Any>>, val info: String? = null) : PrefEditor
     data class Toggle(val info: String? = null) : PrefEditor
-    /** 滑条；isFloat=false 时写 Int */
+    /** 滑条；isFloat=false 时写 Int；info=滑条下的说明小字（与 Chips/Toggle 同款） */
     data class Slider(
         val min: Float, val max: Float, val steps: Int,
         val fmt: (Float) -> String, val isFloat: Boolean = false,
+        val info: String? = null,
     ) : PrefEditor
     /** 复合项子件：key + 界面标签 + 控件 */
     data class Part(val key: String, val label: String, val editor: PrefEditor)
@@ -102,7 +103,7 @@ internal val PREF_DEFAULTS: Map<String, Any> = mapOf(
     "isGrayscale" to false, "isInvertColors" to false,
     "isFlipFlashEnabled" to false, "flipFlashDuration" to 100, "flipFlashInterval" to 1, "flipFlashColor" to 0,
     "pageLayout" to "SINGLE", "useSSIV" to true, "landscapeZoom" to false, "isDoubleTapZoom" to true,
-    "panNavigation" to true, "doublePageShift" to 0, "doublePageSplit" to false, "doublePageReverse" to false,
+    "panNavigation" to true, "doublePageShift" to 0, "doublePageSplit" to false, "doublePageReverse" to false, "doublePageStart" to 2,
     "autoWebtoon" to true, "chapterTransition" to true, "centerGapType" to 0,
     "autoDoubleLandscape" to false, "landscapeAutoWebtoon" to false, "doubleMergeSmart" to true, "clickFlipInvertH" to false, "forceFullDecode" to false,
     "brightness" to 0, "screenBrightness" to 0, "contrast" to 100, "gamma" to 100,
@@ -122,7 +123,10 @@ internal val PREF_ROWS: List<PrefRow> = listOf(
     // ── Tab 0 阅读模式（顺序=书内面板第一页）──
     PrefRow(ReaderScope.READ_MODE_KEY, "阅读模式", 0, PrefEditor.ReadMode),
     PrefRow("pageLayout", "页面布局", 0, PrefEditor.Chips(
-        listOf("单页" to "SINGLE", "双页" to "DOUBLE", "双页跳过首页" to "DOUBLE_SHIFTED"))),
+        listOf("单页" to "SINGLE", "双页" to "DOUBLE", "双页+起始页" to "DOUBLE_SHIFTED"))),
+    PrefRow("doublePageStart", "双页合并起始页", 0, PrefEditor.Slider(
+        2f, 10f, 8, { "第 ${it.toInt()} 页起合并（前 ${it.toInt() - 1} 页单独显示）" },
+        info = "仅「双页+起始页」档生效，第 2 页=旧「跳过首页」。单页豁免：阅读中目录 → 浏览页签，长按页面标记「单独显示」（不参与合并，持续有效可多个，重置入口同页顶部；仅双页相关布局可长按）")),
     PrefRow("clickFlipType", "点击翻页区域", 0, PrefEditor.Chips(
         listOf("关闭" to "NO", "左右分区" to "LEFT_RIGHT", "L型" to "L_SHAPE", "边沿" to "EDGE", "Kindlish" to "KINDLISH"),
         info = "mihon 同款五种：边沿=两侧前进中下后退；Kindlish=左1/3上一页右2/3下一页。条漫中上一页=上滚一屏、下一页=下滚一屏")),
@@ -721,7 +725,10 @@ private fun SliderBlock(
     var v by remember(key) { mutableStateOf((valueOf(values, key) as? Number)?.toFloat() ?: ed.min) }
     Column(Modifier.padding(vertical = 4.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(label, fontSize = 14.sp, modifier = Modifier.weight(1f))
+            Column(Modifier.weight(1f)) {
+                Text(label, fontSize = 14.sp)
+                ed.info?.let { Text(it, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            }
             Text(
                 ed.fmt(v), fontSize = 13.sp,
                 fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,

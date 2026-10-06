@@ -54,10 +54,23 @@ class SpreadTable private constructor(
          * @param double false=单页模式：单位表，每页独占一位（slotCount==totalPages）；
          *               true=双页布局：!smart 时全配对（与旧 2s/2s+1 算术逐位一致），
          *               smart 时按尺寸智能配对。
-         * @param shift 首张单页（仅 double 且页数>1 时生效）
+         * @param startOffset 起始页豁免数（仅 double 时生效）：前 startOffset 页各占一位
+         *                    单独显示，第 startOffset+1 页（0 基）起两两合并。
+         *                    0=全合并（旧"双页"）；1=跳过首页（旧"双页跳过首页"）；
+         *                    上限 9（"从第 10 页开始双页"，UI 滑条 2..10）。
+         * @param soloPages 用户标记的页豁免（仅 double 时生效）：命中页强制单独占一位，
+         *                  其余页按顺序重新两两配对（无空洞）。键=当前章物理页号，
+         *                  存储按章隔离（page_solo_flags 表），不跨书/跨章。
          * @param dims 2*totalPages，[2i]=宽 [2i+1]=高，0=未知
          */
-        fun build(totalPages: Int, double: Boolean = true, shift: Boolean = false, smart: Boolean = false, dims: IntArray? = null): SpreadTable {
+        fun build(
+            totalPages: Int,
+            double: Boolean = true,
+            startOffset: Int = 0,
+            smart: Boolean = false,
+            dims: IntArray? = null,
+            soloPages: Set<Int> = emptySet(),
+        ): SpreadTable {
             val n = totalPages.coerceAtLeast(0)
             if (!double) {
                 // 单位表：单页模式每页一位（页号==跨页号，second 恒 -1）
@@ -69,12 +82,20 @@ class SpreadTable private constructor(
             val p2s = IntArray(n)
             var s = 0
             var i = 0
-            // 首张单页（shift）：仅双页布局且页数>1 时生效（与旧算术 shiftActive 门控一致）
-            if (shift && n > 1) {
-                first[0] = 0; second[0] = -1; p2s[0] = 0
-                s = 1; i = 1
+            // 起始页豁免（startOffset）：前 N 页各自单独显示（与旧 shift 门控语义一致，N=1 即跳过首页）
+            val head = startOffset.coerceIn(0, n)
+            while (i < head) {
+                first[s] = i; second[s] = -1; p2s[i] = s
+                s++; i++
             }
             while (i < n) {
+                // ★ 用户页豁免（单本单页，不能影响别人）：命中页强制 solo，其余页顺序重新配对
+                if (i in soloPages) {
+                    first[s] = i; second[s] = -1
+                    p2s[i] = s
+                    s++; i += 1
+                    continue
+                }
                 // 非智能=全配对（与旧 2s/2s+1 算术逐位一致）；智能=按尺寸判定
                 val canPairNext = if (smart) (i + 1 < n && canPair(i, i + 1, dims)) else (i + 1 < n)
                 if (canPairNext) {

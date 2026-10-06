@@ -138,6 +138,10 @@ fun NativeReaderScreen(
     //   页尺寸由 Reader 后台扫描（复用 PageSizeCacheStore）经 pageDims 异步回填，
     //   空/全 0=未知尺寸回退旧行为（全部合并），远程书恒走该回退
     doubleMergeSmart: Boolean = true,
+    // ★ 双页合并起始页（2026-10-06，"双页跳过首页"泛化，用户拍板 2..10）：仅 pageLayout=2 生效
+    doublePageStart: Int = 2,
+    // ★ 单本单页豁免（当前章不参与双页合并的物理页集合，DB 按章隔离，Reader.kt 读写）
+    soloPages: Set<Int> = emptySet(),
     pageDims: IntArray = IntArray(0),
     tileModeEnabled: Boolean = false,
     /** ★ §34.3：VERT_PAGER 模式——竖向翻页走 PagerReaderView（不是 webtoon 连续滚动） */
@@ -348,6 +352,8 @@ fun NativeReaderScreen(
             delegate.doubleTapZoom = doubleTapZoom
 
             delegate.setDoublePageModeAndShift(pageLayout == 1 || pageLayout == 2, pageLayout == 2)
+            // ★ 起始页（与 PagerReaderView 同口径）：modeAndShift 幂等早退时起始页变化仍需重建
+            if (pageLayout == 2) delegate.setDoublePageStart(doublePageStart)
             delegate.setDoublePageReverse(doublePageReverse)
             delegate.onChapterEnd = onChapterEnd
         }
@@ -361,6 +367,8 @@ fun NativeReaderScreen(
         //   子集，且外层 key() 五元组含这三项，变化时本 effect 必随新实例重跑，行为全覆盖。
         if (!isVertical && delegate is PagerReaderView) {
             delegate.setDoublePageModeAndShift(pageLayout == 1 || pageLayout == 2, pageLayout == 2)
+            // ★ 双页合并起始页（"双页+起始页"档）：modeAndShift 同值早退时起始页变化仍需重建
+            if (pageLayout == 2) delegate.setDoublePageStart(doublePageStart)
         }
         // consume-once 不分视图类型：首次 effect 即消费并回执复位，仅对 PagerReaderView 注入。
         // 旧逻辑只在 delegate==PagerReaderView 时置位——非 Pager 入口（条漫/仿真）不消费，
@@ -412,6 +420,21 @@ fun NativeReaderScreen(
         pagerView.setPageDims(pageDims)
         curlDoublePageView.setSmartMerge(doubleMergeSmart)
         curlDoublePageView.setPageDims(pageDims)
+    }
+
+    // ★ 双页合并起始页实时通道（2026-10-06）：滑条拖动/单本配置切换即时生效，不走视图重建
+    LaunchedEffect(doublePageStart) {
+        if (!isVertical && pageLayout == 2) {
+            pagerView.setDoublePageStart(doublePageStart)
+            curlDoublePageView.setDoublePageStart(doublePageStart)
+        }
+    }
+
+    // ★ 单本单页豁免实时通道（2026-10-06）：目录面板长按切换/全重置 → 跨页表重排实时生效
+    //   （setSoloPages 幂等：过滤越界页后与现集合相等时零扰动）
+    LaunchedEffect(soloPages) {
+        pagerView.setSoloPages(soloPages)
+        curlDoublePageView.setSoloPages(soloPages)
     }
 
     // ★ 背面透出程度/阴影浓度走轻量同步：故意不进上面 DisposableEffect 的 key——滑块拖动

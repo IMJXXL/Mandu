@@ -36,7 +36,7 @@ class SpreadTableTest {
     @Test
     fun naiveShiftMatchesLegacyArithmetic() {
         for (n in 2..17) {
-            val t = SpreadTable.build(n, shift = true)
+            val t = SpreadTable.build(n, startOffset = 1)
             assertEquals(1 + n / 2, t.slotCount)
             assertEquals(0, t.firstPage(0))
             assertEquals(-1, t.secondPage(0))
@@ -54,7 +54,7 @@ class SpreadTableTest {
     @Test
     fun singlePageWithShiftIsIdentity() {
         // 旧门控 shift && size>1：单页书 shift 不生效
-        val t = SpreadTable.build(1, shift = true, smart = true)
+        val t = SpreadTable.build(1, startOffset = 1, smart = true)
         assertEquals(1, t.slotCount)
         assertEquals(0, t.firstPage(0))
         assertEquals(-1, t.secondPage(0))
@@ -125,7 +125,7 @@ class SpreadTableTest {
         // 首张单页 + [竖, 竖, 横, 竖] → 竖后邻横宽页不可配 → (0,solo) (1,solo) (2,solo) (3,solo)
         // （Koharia preservePairBoundaries 同语义：不配对不重排，各占一位）
         val d = dimsOf(800 to 1200, 800 to 1200, 2000 to 1000, 800 to 1200)
-        val t = SpreadTable.build(4, shift = true, smart = true, dims = d)
+        val t = SpreadTable.build(4, startOffset = 1, smart = true, dims = d)
         assertEquals(4, t.slotCount)
         assertEquals(0, t.firstPage(0)); assertEquals(-1, t.secondPage(0))
         assertEquals(1, t.firstPage(1)); assertEquals(-1, t.secondPage(1))
@@ -158,7 +158,7 @@ class SpreadTableTest {
 
     @Test
     fun emptyBookYieldsEmptyTable() {
-        val t = SpreadTable.build(0, shift = true, smart = true)
+        val t = SpreadTable.build(0, startOffset = 1, smart = true)
         assertEquals(0, t.slotCount)
     }
 
@@ -182,7 +182,7 @@ class SpreadTableTest {
     fun unitTableForSinglePageMode() {
         // 单页模式（double=false）：每页独占一位，映射恒等——getItemCount==页数的关键保证
         for (n in 1..9) {
-            val t = SpreadTable.build(n, double = false, shift = true, smart = true)
+            val t = SpreadTable.build(n, double = false, startOffset = 1, smart = true)
             assertEquals(n, t.slotCount)
             for (p in 0 until n) {
                 assertEquals(p, t.pageToSpread(p))
@@ -190,5 +190,49 @@ class SpreadTableTest {
                 assertEquals(-1, t.secondPage(p))
             }
         }
+    }
+
+    @Test
+    fun startOffsetGeneralizesShiftTo10() {
+        // ★ 2026-10-06 "从第几页开始双页"（2..10）：前 N-1 页 solo、第 N 页起两两合并。
+        //   8 页 startOffset=3：页 0/1/2 solo、3+4、5+6、7 尾单
+        val t = SpreadTable.build(8, startOffset = 3)
+        assertEquals(6, t.slotCount)
+        assertEquals(0, t.firstPage(0)); assertEquals(-1, t.secondPage(0))
+        assertEquals(1, t.firstPage(1)); assertEquals(-1, t.secondPage(1))
+        assertEquals(2, t.firstPage(2)); assertEquals(-1, t.secondPage(2))
+        assertEquals(3, t.firstPage(3)); assertEquals(4, t.secondPage(3))
+        assertEquals(5, t.firstPage(4)); assertEquals(6, t.secondPage(4))
+        assertEquals(7, t.firstPage(5)); assertEquals(-1, t.secondPage(5))
+        // 物理页 → 槽位往返一致（配对里的次页 firstPage≠p，命中任一半即归属正确）
+        for (p in 0 until 8) {
+            val slot = t.pageToSpread(p)
+            assertTrue(t.firstPage(slot) == p || t.secondPage(slot) == p)
+        }
+    }
+
+    @Test
+    fun soloPagesForceStandaloneAndReflow() {
+        // ★ 单本单页豁免：命中页强制 solo，其余页按顺序重新配对（无空洞）。
+        //   6 页 soloPages={2}：0+1、2 solo、3+4、5 尾单
+        val t = SpreadTable.build(6, soloPages = setOf(2))
+        assertEquals(4, t.slotCount)
+        assertEquals(0, t.firstPage(0)); assertEquals(1, t.secondPage(0))
+        assertEquals(2, t.firstPage(1)); assertEquals(-1, t.secondPage(1))
+        assertEquals(3, t.firstPage(2)); assertEquals(4, t.secondPage(2))
+        assertEquals(5, t.firstPage(3)); assertEquals(-1, t.secondPage(3))
+        // 多个豁免 + startOffset 叠加：8 页 startOffset=2（前 2 页 solo）、solo={4,5}：
+        //   slot=0、1、2+3、4、5、6+7 —— 豁免页 4/5 抽走后 5/6 不跨豁免强行配对（顺序重排）
+        val t2 = SpreadTable.build(8, startOffset = 2, soloPages = setOf(4, 5))
+        assertEquals(6, t2.slotCount)
+        assertEquals(0, t2.firstPage(0)); assertEquals(-1, t2.secondPage(0))
+        assertEquals(1, t2.firstPage(1)); assertEquals(-1, t2.secondPage(1))
+        assertEquals(2, t2.firstPage(2)); assertEquals(3, t2.secondPage(2))
+        assertEquals(4, t2.firstPage(3)); assertEquals(-1, t2.secondPage(3))
+        assertEquals(5, t2.firstPage(4)); assertEquals(-1, t2.secondPage(4))
+        assertEquals(6, t2.firstPage(5)); assertEquals(7, t2.secondPage(5))
+        // 单页模式豁免无意义：表仍为单位表
+        val t3 = SpreadTable.build(4, double = false, soloPages = setOf(1, 2))
+        assertEquals(4, t3.slotCount)
     }
 }

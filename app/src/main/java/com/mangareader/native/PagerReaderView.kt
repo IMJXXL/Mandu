@@ -1018,14 +1018,48 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         viewPager.post { viewPager.setCurrentItem(finalPos, false) }
     }
 
-    /** ★ 跨页表重算（唯一构建点）：单页=单位表每页一位；双页才启用 shift/智能配对 */
+    /** ★ 双页合并起始页（2026-10-06，"跳过首页"泛化）：第 N 页起两两合并，前 N-1 页单独显示。
+     *  仅 shiftDoublePage（"双页+起始页"档）生效；2=旧跳过首页行为。1..10，1 等价纯双页不在此档。 */
+    var doublePageStart: Int = 2
+        private set
+
+    fun setDoublePageStart(start: Int) {
+        val v = start.coerceIn(2, 10)
+        if (doublePageStart == v) return
+        doublePageStart = v
+        rebuildSpreadTable()
+        resetSplitHalf()
+        splitActivePositions.clear()
+        pagerAdapter?.notifyDataSetChanged()
+        val newPos = positionOf(currentPage)
+        val finalPos = newPos.coerceIn(0, pagerAdapter?.itemCount?.minus(1) ?: 0)
+        viewPager.post { viewPager.setCurrentItem(finalPos, false) }
+    }
+
+    /** ★ 单本单页豁免（2026-10-06）：当前章不参与双页合并的物理页集合（用户"不能影响别人"——
+     *  键按章隔离，本视图只持有当前章的集合并写入跨页表；DB 读写都在 Reader.kt） */
+    var soloPages: Set<Int> = emptySet()
+        private set
+
+    /** 豁免集合变化（目录面板长按切换/全重置）：表映射变了才重绑锚定，实时生效 */
+    fun setSoloPages(pages: Set<Int>) {
+        val fresh = pages.filter { it in pageList.indices }.toSet()
+        if (soloPages == fresh) return
+        val old = spreadTable
+        soloPages = fresh
+        rebuildSpreadTable()
+        if (!spreadTable.sameMapping(old)) rebindForNewTable()
+    }
+
+    /** ★ 跨页表重算（唯一构建点）：单页=单位表每页一位；双页才启用起始页豁免/智能配对/页豁免 */
     private fun rebuildSpreadTable() {
         spreadTable = SpreadTable.build(
             pageList.size,
             double = doublePageMode,
-            shift = doublePageMode && shiftDoublePage && pageList.size > 1,
+            startOffset = if (doublePageMode && shiftDoublePage && pageList.size > 1) doublePageStart - 1 else 0,
             smart = doublePageMode && smartMergeEnabled,
             dims = pageDims?.takeIf { it.size >= pageList.size * 2 },
+            soloPages = if (doublePageMode) soloPages else emptySet(),
         )
     }
 

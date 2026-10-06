@@ -215,8 +215,35 @@ data class Bookmark(
     val note: String? = null
 )
 
+/**
+ * ★ 双页页豁免（DB v27，2026-10-06"单本单页豁免"）：当前章某页不参与双页合并、单独显示。
+ *   主键 (chPath, pageIdx)——chPath 与 reading_progress.path/bookmarks.chapterPath 同源（a:/d:/z:/
+ *   smb:/webdav: 全路径），天然按书+章隔离：不同书、同书不同章互不可见（用户"不能影响别人"）。
+ *   无 FK：书删除后残留行不参与任何查询（按 chPath 取），量极小可忽略。
+ */
+@Entity(tableName = "page_solo_flags", primaryKeys = ["chPath", "pageIdx"])
+@Immutable
+data class PageSoloFlag(
+    val chPath: String,
+    val pageIdx: Int
+)
+
 @Dao
 interface MangaDao {
+    // ── 页豁免（双页合并单页豁免，按 chPath 隔离）──────────────────────────
+    @Query("SELECT pageIdx FROM page_solo_flags WHERE chPath = :chPath ORDER BY pageIdx")
+    suspend fun getSoloPages(chPath: String): List<Int>
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertSoloFlag(flag: PageSoloFlag)
+
+    @Query("DELETE FROM page_solo_flags WHERE chPath = :chPath AND pageIdx = :pageIdx")
+    suspend fun deleteSoloFlag(chPath: String, pageIdx: Int)
+
+    /** 全重置：只清当前章的豁免，其他书/章不受影响 */
+    @Query("DELETE FROM page_solo_flags WHERE chPath = :chPath")
+    suspend fun clearSoloFlags(chPath: String)
+
     @Query("SELECT * FROM manga_books ORDER BY lastReadAt DESC")
     fun getAllBooks(): Flow<List<Book>>
 
@@ -1444,8 +1471,8 @@ data class KomgaProgressSyncQueueEntity(
 )
 
 @Database(
-    entities = [Book::class, Folder::class, ReadingHistory::class, Bookshelf::class, BookshelfItem::class, Tag::class, TagLink::class, ReadingProgress::class, Bookmark::class, com.ehviewer.core.database.model.SmbSourceEntity::class, com.ehviewer.core.database.model.LibraryRootEntity::class, com.ehviewer.core.database.model.LocalGalleryEntity::class, com.ehviewer.core.database.model.WebDavSourceEntity::class, DownloadTaskEntity::class, KomgaSeriesCacheEntity::class, KomgaBookMemoEntity::class, KomgaProgressSyncQueueEntity::class],
-    version = 26,
+    entities = [Book::class, Folder::class, ReadingHistory::class, Bookshelf::class, BookshelfItem::class, Tag::class, TagLink::class, ReadingProgress::class, Bookmark::class, com.ehviewer.core.database.model.SmbSourceEntity::class, com.ehviewer.core.database.model.LibraryRootEntity::class, com.ehviewer.core.database.model.LocalGalleryEntity::class, com.ehviewer.core.database.model.WebDavSourceEntity::class, DownloadTaskEntity::class, KomgaSeriesCacheEntity::class, KomgaBookMemoEntity::class, KomgaProgressSyncQueueEntity::class, PageSoloFlag::class],
+    version = 27,
     exportSchema = false
 )
 abstract class MangaDatabase : com.ehviewer.core.database.LocalLibraryDatabase() {
@@ -1738,6 +1765,15 @@ abstract class MangaDatabase : com.ehviewer.core.database.LocalLibraryDatabase()
             }
         }
 
+        private val MIGRATION_26_27 = object : androidx.room.migration.Migration(26, 27) {
+            override fun migrate(database: androidx.sqlite.db.SupportSQLiteDatabase) {
+                // 双页页豁免（单本单页，不参与合并）：按 chPath 隔离，存量零感知
+                database.execSQL(
+                    "CREATE TABLE IF NOT EXISTS page_solo_flags (chPath TEXT NOT NULL, pageIdx INTEGER NOT NULL, PRIMARY KEY(chPath, pageIdx))"
+                )
+            }
+        }
+
         private val MIGRATION_23_24 = object : androidx.room.migration.Migration(23, 24) {
             override fun migrate(database: androidx.sqlite.db.SupportSQLiteDatabase) {
                 database.execSQL("ALTER TABLE tags ADD COLUMN sortOrder INTEGER NOT NULL DEFAULT 0")
@@ -1769,7 +1805,7 @@ abstract class MangaDatabase : com.ehviewer.core.database.LocalLibraryDatabase()
                     context.applicationContext,
                     MangaDatabase::class.java,
                     "manga_reader_db"
-                ).addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26)
+                ).addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27)
                 .fallbackToDestructiveMigrationOnDowngrade()
                 .build()
                 INSTANCE = instance

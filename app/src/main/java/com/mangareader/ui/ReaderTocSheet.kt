@@ -9,6 +9,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -232,6 +233,12 @@ fun ReaderTocSheet(
     currentPage: Int = 0,
     onPageClick: (Int) -> Unit = {},
     thumbLoader: (suspend (Int) -> Bitmap?)? = null,
+    // ★ 单本单页豁免（2026-10-06）：soloCapable=双页相关布局开启（单页模式长按不触发）；
+    //   soloPages=当前章已豁免页集合（键按章隔离，切换/重置回调由 Reader.kt 落库+实时生效）
+    soloPages: Set<Int> = emptySet(),
+    soloCapable: Boolean = false,
+    onToggleSoloPage: (Int) -> Unit = {},
+    onClearSoloPages: () -> Unit = {},
     subVolCovers: Map<String, Pair<String, Long>> = emptyMap(),
     onItemLongPress: (ArchiveEngine.Item) -> Unit = {},
 ) {
@@ -432,6 +439,23 @@ fun ReaderTocSheet(
             } else {
                 // ─── 浏览页签 ───
                 if (pageCount > 0 && thumbLoader != null) {
+                    // ★ 单本单页豁免：长按格子切换"此页单独显示"；有豁免时给全重置入口。
+                    //   单页布局 soloCapable=false：长按不触发（无合并可言），零 UI 噪音
+                    var soloDialogFor by remember { mutableStateOf(-1) }
+                    if (soloCapable) {
+                        Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "长按页面可标记「单独显示」（不参与双页合并）",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            if (soloPages.isNotEmpty()) {
+                                TextButton(onClick = onClearSoloPages, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
+                                    Text("重置豁免(${soloPages.size})", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+                                }
+                            }
+                        }
+                    }
                     LazyVerticalGrid(
                         columns = gridCols,
                         modifier = Modifier.weight(1f),
@@ -449,7 +473,10 @@ fun ReaderTocSheet(
                             }
                             Column(
                                 Modifier.clip(RoundedCornerShape(8.dp))
-                                    .clickable { onPageClick(idx); onDismiss() },
+                                    .combinedClickable(
+                                        onClick = { onPageClick(idx); onDismiss() },
+                                        onLongClick = { if (soloCapable) soloDialogFor = idx },
+                                    ),
                                 horizontalAlignment = Alignment.CenterHorizontally
                             ) {
                                 Box(
@@ -471,10 +498,43 @@ fun ReaderTocSheet(
                                     if (idx == currentPage) {
                                         Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)))
                                     }
+                                    if (idx in soloPages) {
+                                        Surface(
+                                            Modifier.align(Alignment.TopEnd).padding(2.dp),
+                                            shape = RoundedCornerShape(6.dp),
+                                            color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.95f)
+                                        ) {
+                                            Text("独", modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp), fontSize = 8.sp, color = Color.White)
+                                        }
+                                    }
                                 }
                                 Text("${idx + 1}", Modifier.padding(2.dp), fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
+                    }
+                    // ★ 豁免切换对话框（长按弹出）：按当前态给反向动作文案
+                    if (soloDialogFor >= 0) {
+                        val pageDisp = soloDialogFor + 1
+                        val alreadySolo = soloDialogFor in soloPages
+                        AlertDialog(
+                            onDismissRequest = { soloDialogFor = -1 },
+                            title = { Text("第 $pageDisp 页", fontSize = 18.sp) },
+                            text = {
+                                Text(
+                                    if (alreadySolo) "此页当前为「单独显示」，不参与双页合并。恢复后将与相邻页重新配对。"
+                                    else "将此页标记为「单独显示」？标记后该页不参与双页合并，跨页表实时重排（仅本书当前章生效）。",
+                                    fontSize = 14.sp
+                                )
+                            },
+                            confirmButton = {
+                                TextButton(onClick = { onToggleSoloPage(soloDialogFor); soloDialogFor = -1 }) {
+                                    Text(if (alreadySolo) "恢复合并" else "单独显示", color = MaterialTheme.colorScheme.primary)
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { soloDialogFor = -1 }) { Text("取消") }
+                            }
+                        )
                     }
                 } else {
                     Text("还没有可浏览的页面", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)

@@ -55,6 +55,10 @@ class CurlDoublePageView(context: Context) : FrameLayout(context), ReaderViewDel
     private var spreadTable: SpreadTable = SpreadTable.build(0)
     private var pageDims: IntArray? = null
     private var smartMergeEnabled = true
+    // ★ 双页合并起始页（2026-10-06 与 PagerReaderView 同口径）：仅 doublePageShift 档生效
+    private var doublePageStart = 2
+    // ★ 单本单页豁免（当前章，Reader.kt 按 chPath 读写 DB，本视图只持集合并入表）
+    private var soloPages: Set<Int> = emptySet()
     // ★ 跨页表版本号（Compose state）：renderCompose 根作用域读它——表重排后根作用域重组
     //   才会把新表实例作为参数传进 CurlDoublePageContent（普通字段变化不可观察，只 bump
     //   reloadTrigger 时 content 收到的还是 setup 时的旧表，参数一次性 capture 陷阱）
@@ -65,10 +69,30 @@ class CurlDoublePageView(context: Context) : FrameLayout(context), ReaderViewDel
         spreadTable = SpreadTable.build(
             pageList.size,
             double = true,
-            shift = doublePageShift && pageList.size > 1,
+            startOffset = if (doublePageShift && pageList.size > 1) doublePageStart - 1 else 0,
             smart = smartMergeEnabled,
             dims = pageDims?.takeIf { it.size >= pageList.size * 2 },
+            soloPages = soloPages,
         )
+    }
+
+    /** 起始页变化（设置滑条）：表重排 + 根作用域重组锚定 */
+    fun setDoublePageStart(start: Int) {
+        val v = start.coerceIn(2, 10)
+        if (doublePageStart == v) return
+        doublePageStart = v
+        rebuildSpreadTable()
+        tableVersion.intValue++
+    }
+
+    /** 页豁免变化（目录面板长按切换/全重置）：表映射变了才 bump 触发重组锚定 */
+    fun setSoloPages(pages: Set<Int>) {
+        val fresh = pages.filter { it in pageList.indices }.toSet()
+        if (soloPages == fresh) return
+        val old = spreadTable
+        soloPages = fresh
+        rebuildSpreadTable()
+        if (!spreadTable.sameMapping(old)) tableVersion.intValue++
     }
 
     /** ★ 尺寸表回填：重排后触发根作用域重组（新表实例传进 content，

@@ -74,6 +74,10 @@ data class ReaderConfig(
     val doublePageShift: Int = 0,
     val doublePageSplit: Boolean = false,
     val doublePageReverse: Boolean = false,
+    /** ★ 双页合并起始页（2026-10-06，"双页跳过首页"泛化，用户拍板 2..10）：仅
+     *  pageLayout=DOUBLE_SHIFTED 生效——前 N-1 页各显一页、第 N 页起两两合并。
+     *  2=旧"跳过首页"行为（默认，存量零迁移）；配置中心范围钳 2..10 */
+    val doublePageStart: Int = 2,
 
     val autoWebtoon: Boolean = true,
     val chapterTransition: Boolean = true,
@@ -190,6 +194,7 @@ data class ReaderConfig(
             putInt("${prefix}doublePageShift", doublePageShift)
             putBoolean("${prefix}doublePageSplit", doublePageSplit)
             putBoolean("${prefix}doublePageReverse", doublePageReverse)
+            putInt("${prefix}doublePageStart", doublePageStart)
 
             putBoolean("autoWebtoon", autoWebtoon)
             putBoolean("chapterTransition", chapterTransition)
@@ -292,6 +297,7 @@ data class ReaderConfig(
                 doublePageShift = rInt("doublePageShift", 0),
                 doublePageSplit = rBoolean("doublePageSplit", false),
                 doublePageReverse = rBoolean("doublePageReverse", false),
+                doublePageStart = rInt("doublePageStart", 2).let { if (it in 2..10) it else 2 },
 
                 autoWebtoon = rBoolean("autoWebtoon", true),
                 chapterTransition = rBoolean("chapterTransition", true),
@@ -366,6 +372,7 @@ data class ReaderConfig(
                 "panNavigation" -> cfg.copy(panNavigation = v as Boolean)
                 "doublePageShift" -> cfg.copy(doublePageShift = v as Int)
                 "doublePageSplit" -> cfg.copy(doublePageSplit = v as Boolean)
+                "doublePageStart" -> cfg.copy(doublePageStart = (v as Int).let { if (it in 2..10) it else 2 })
                 "doublePageReverse" -> cfg.copy(doublePageReverse = v as Boolean)
                 "centerGapType" -> cfg.copy(centerGapType = v as Int)
                 "brightness" -> cfg.copy(brightness = v as Int)
@@ -428,6 +435,7 @@ data class ReaderConfig(
             "panNavigation" to { it.panNavigation },
             "doublePageShift" to { it.doublePageShift },
             "doublePageSplit" to { it.doublePageSplit },
+            "doublePageStart" to { it.doublePageStart },
             "doublePageReverse" to { it.doublePageReverse },
             "centerGapType" to { it.centerGapType },
             "brightness" to { it.brightness },

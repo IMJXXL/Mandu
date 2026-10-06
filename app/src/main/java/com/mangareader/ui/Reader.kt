@@ -171,7 +171,10 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         }
     }
     var pageList by remember { mutableStateOf(listOf<ArchiveEngine.PageMeta>()) }
-    var cur by remember { mutableIntStateOf(0) }
+    // ★ bookId key（2026-10-06，1005-223719 日志实锤）：无 key 时换书复用上一本的页码——
+    //   978 页新书打开瞬间 setup(startPage=上一本的43) 闪现错页内容，1.5s 后 enterReader
+    //   恢复正确进度才跳回。key 后换书归 0，由 enterReader 覆盖为恢复值
+    var cur by remember(bookId) { mutableIntStateOf(0) }
     var expandedPageCount by remember { mutableIntStateOf(0) }
     // ★ 双页智能配对的页尺寸表（2026-10-05）：2*页数，[2i]=宽 [2i+1]=高，0=未知。
     //   后台扫描（scanPageDimsForDoubleMerge）渐进推送 → NES → 视图 setPageDims 重排跨页表
@@ -196,6 +199,11 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         }
     }
     var mode by remember { mutableStateOf(resolveInitialMode(bookId)) }
+
+    // ★ 单本单页豁免（2026-10-06）：当前章不参与双页合并的物理页集合。DB page_solo_flags
+    //   主键 (chPath, pageIdx)，chPath 与阅读进度同源（navStack 尾/书路径）——按书+章隔离，
+    //   其他书/其他章互不可见（用户"不能影响别人"）；全重置只清当前章
+    var soloPages by remember { mutableStateOf(setOf<Int>()) }
 
     // Reload mode when bookId or config changes
     LaunchedEffect(bookId, configVersion) {
@@ -2486,14 +2494,21 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                             panNavigation = config.panNavigation,
                             clickFlip = config.clickFlipType.ordinal,
                             clickFlipInvert = config.clickFlipInvertH,
-                            pageLayout = when (config.pageLayout) {
-                                com.mangareader.data.ReaderConfig.PageLayout.SINGLE ->
-                                    // ★ 横屏自动双页：单页布局 + 开关开 + 当前横屏 → 双页。
-                                    //   2026-10-05 工单：手机横屏也要生效，移除原 600dp 平板门槛
-                                    if (config.autoDoubleLandscape && (LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE)) 1 else 0
-                                com.mangareader.data.ReaderConfig.PageLayout.DOUBLE -> 1
-                                com.mangareader.data.ReaderConfig.PageLayout.DOUBLE_SHIFTED -> 2
+                            pageLayout = run {
+                                // ★ 横屏自动双页：单页布局 + 开关开 + 当前横屏 → 双页。
+                                //   2026-10-05 工单：手机横屏也要生效，移除原 600dp 平板门槛
+                                if (config.pageLayout == com.mangareader.data.ReaderConfig.PageLayout.SINGLE &&
+                                    config.autoDoubleLandscape &&
+                                    (LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE)
+                                ) 1
+                                else when (config.pageLayout) {
+                                    com.mangareader.data.ReaderConfig.PageLayout.SINGLE -> 0
+                                    com.mangareader.data.ReaderConfig.PageLayout.DOUBLE -> 1
+                                    com.mangareader.data.ReaderConfig.PageLayout.DOUBLE_SHIFTED -> 2
+                                }
                             },
+                            doublePageStart = config.doublePageStart,
+                            soloPages = soloPages,
                             pageBgColor = bgColor.toArgb(),
                             doublePageReverse = config.doublePageReverse,
                             doublePageSplit = config.doublePageSplit,
@@ -3348,6 +3363,15 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
 
     if (showToc) {
         val displayItems = if (viewing && tocItems.isNotEmpty()) tocItems else items
+        // ★ 页豁免随章加载/持久化（双页合并单页豁免，2026-10-06）：chPath 与阅读进度同键，
+        //   切章即换集合；切换/重置落库后更新状态 → NativeReaderScreen 轻量通道实时重排跨页表
+        LaunchedEffect(navStack.lastOrNull(), book?.filePath) {
+            val ch = navStack.lastOrNull() ?: book?.filePath
+            if (ch == null) { soloPages = emptySet(); return@LaunchedEffect }
+            soloPages = withContext(Dispatchers.IO) {
+                runCatching { dao.getSoloPages(ch).toSet() }.getOrDefault(emptySet())
+            }
+        }
         ReaderTocSheet(
             displayItems = displayItems,
             currentNavStack = navStack,
@@ -3355,6 +3379,47 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             progress = progressForToc,
             bookId = book?.id ?: 0L,
             bookmarks = bookmarks,
+            soloPages = soloPages,
+            soloCapable = viewing && !isVerticalMode && run {
+                // 与 NativeReaderScreen.pageLayout 同口径：双页/起始页档（含横屏自动双页）才可长按
+                val layout = if (config.pageLayout == com.mangareader.data.ReaderConfig.PageLayout.SINGLE &&
+                    config.autoDoubleLandscape &&
+                    LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+                ) 1 else when (config.pageLayout) {
+                    com.mangareader.data.ReaderConfig.PageLayout.SINGLE -> 0
+                    com.mangareader.data.ReaderConfig.PageLayout.DOUBLE -> 1
+                    com.mangareader.data.ReaderConfig.PageLayout.DOUBLE_SHIFTED -> 2
+                }
+                layout != 0
+            },
+            onToggleSoloPage = { idx ->
+                val ch = navStack.lastOrNull() ?: book?.filePath
+                if (ch != null) {
+                    val adding = idx !in soloPages
+                    scope.launch {
+                        withContext(Dispatchers.IO) {
+                            if (adding) dao.insertSoloFlag(com.mangareader.data.PageSoloFlag(ch, idx))
+                            else dao.deleteSoloFlag(ch, idx)
+                        }
+                        soloPages = if (adding) soloPages + idx else soloPages - idx
+                        android.widget.Toast.makeText(
+                            ctx,
+                            if (adding) "第 ${idx + 1} 页已单独显示" else "第 ${idx + 1} 页已恢复合并",
+                            android.widget.Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }
+            },
+            onClearSoloPages = {
+                val ch = navStack.lastOrNull() ?: book?.filePath
+                if (ch != null) {
+                    scope.launch {
+                        withContext(Dispatchers.IO) { dao.clearSoloFlags(ch) }
+                        soloPages = emptySet()
+                        android.widget.Toast.makeText(ctx, "已重置全部页豁免（仅本书本章）", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                }
+            },
             onDismiss = { showToc = false },
             onPageBookmarkClick = { bm -> showToc = false; jumpToBookmark(bm) },
             onPageBookmarkDelete = { bm ->
