@@ -168,11 +168,11 @@ fun CurlReaderContent(
     val rightHalf = Rect(0.5f, 0f, 1f, 1f)
     val leftHalf = Rect(0f, 0f, 0.5f, 1f)
 
-    val dragInteraction = PageCurlConfig.StartEndDragInteraction(
-        pointerBehavior = PageCurlConfig.DragInteraction.PointerBehavior.PageEdge,
-        forward = PageCurlConfig.StartEndDragInteraction.Config(start = rightHalf, end = leftHalf),
-        backward = PageCurlConfig.StartEndDragInteraction.Config(start = leftHalf, end = rightHalf),
-    )
+    // ★ 2026-10-06 "卷页模式只能点击翻页"修复：StartEndDragInteraction(PageEdge) 的拖拽
+    //   交互在实机表现为滑动无效（172100 日志 17:03-17:05 卷页书全程 0 次 swipe 标记，
+    //   只有点击翻页）。换 GestureDragInteraction：全屏任意位置按拖拽方向判定翻页，
+    //   翻页线锚定手指（Default），松手 settle——与主流漫画阅读器的卷页交互一致。
+    val dragInteraction: PageCurlConfig.DragInteraction = PageCurlConfig.GestureDragInteraction()
 
     val tapInteraction = PageCurlConfig.TargetTapInteraction(
         forward = PageCurlConfig.TargetTapInteraction.Config(target = rightHalf),

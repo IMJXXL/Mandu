@@ -229,7 +229,15 @@ class PagerSSIV @JvmOverloads constructor(
                             }
                         }
                         markSwipe(context, "zoom-pan-edge")
-                        return true
+                        consumedDown = true
+                        // ★ 2026-10-06 三修（165615 日志实锤）：交还后消费本帧（return true）会让
+                        //   fork 停摆、画面钳死在边上，用户体感"放大拖图到边继续滑没反应"
+                        //   （56.174/01.718 两次交还后均 0 次 pagerScroll=dragging，被迫改点击翻页）。
+                        //   对齐 mihon handoff：disallow(false) 之后【本帧继续交给 fork 平移】——
+                        //   贴边方向被 fitToBounds 钳住（画面顶边跟手），正交轴仍可拖看；
+                        //   VP2 在 touchSlop 处拦截接力翻页，拦截前 fork 每帧重复本判定维持
+                        //   disallow=false；用户反向拖时落回下方 hold-zoomedPan（panActive 门）恢复拖图。
+                        return super.onTouchEvent(event)
                     }
                     // 已在拖图（panActive）贴边 → fork 继续平移，fitToBounds 原地钳住（mihon 同款）；
                     // 松手后下一手势 panActive 复位，首帧即命中边缘交还 → 翻页

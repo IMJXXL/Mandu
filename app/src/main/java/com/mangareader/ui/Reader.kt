@@ -239,8 +239,12 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
 
     var navStack by remember { mutableStateOf(listOf<String>()) }
     // ★ 条漫展开前的原始页表备份（章节路径配对防串章）：段页只有条漫视图能渲染，
-    //   切回 pager 族时必须还原原始表（否则每个段=整页重复显示 N 遍）
+    //   切回 pager 族时必须还原原始表（否则每个段=整页重复显示 N 段）
     var preExpandPages by remember { mutableStateOf<Pair<String, List<ArchiveEngine.PageMeta>>?>(null) }
+    // ★ 当前远程会话的卷路径（2026-10-06 probe save 错键修复）：onProbedSizes 在解码协程
+    //   回调，退出阅读器瞬间 navStack 可能已弹栈——用会话锚定 path，探测永远落到当前卷的
+    //   缓存键（165819 日志：退出瞬间 probe save 写到 0ef61a=书根键，src=pageList 垃圾落盘）
+    var currentRemoteSessionPath by remember { mutableStateOf("") }
     var effectiveRootPath by remember { mutableStateOf("") }
     var items by remember { mutableStateOf(listOf<ArchiveEngine.Item>()) }
     var tocItems by remember { mutableStateOf(listOf<ArchiveEngine.Item>()) }
@@ -663,6 +667,9 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         //   localIdx/originalPageIdx=原始页号——supply 纯索引制，视图解码经 originalPageIdx 还原
         //   原始页，展开后流位≠原始页不再错位
         val remoteSrc = path.substringAfterLast('.', "").lowercase().let { if (it == "cbz") "zip" else it }
+        // ★ 会话锚定 path：onProbedSizes 的落盘键必须与本会话 expand 的读取键一致——
+        //   退出阅读器瞬间 navStack 已弹栈，回调里读 navStack.last() 会写到别的键
+        currentRemoteSessionPath = path
         // ★ 2026-10-06 身份取证：id=裸path指纹→归一指纹，len/segs 看形式差异。同一卷两次进书
         //   id 相同=身份统一（归一生效）；不同=仍有第二种身份在流转（下轮日志一锤定音）
         try {
@@ -2755,7 +2762,12 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                                     //   用【原始表】(preExpandPages，未展开) 的 stamp 合并落盘——expand 读取端
                                     //   才能命中。原始表缺失（未展开）时 pageList 本身即原始表
                                     wv.onProbedSizes = { batch ->
-                                        val path = navStack.lastOrNull() ?: book?.filePath ?: ""
+                                        // ★ 会话锚定 path（2026-10-06）：navStack 在退出瞬间会弹栈，
+                                        //   回调读到书根→probe save 落到错误键（0ef61a 实锤）；优先用
+                                        //   attachRemoteSession 锚定的本会话 path
+                                        val path = currentRemoteSessionPath.ifEmpty {
+                                            navStack.lastOrNull() ?: book?.filePath ?: ""
+                                        }
                                         // ★ 原始表匹配兼容归一键：切卷瞬间 navStack.last() 形式变化时，
                                         //   attach 写入的 key（归一前后任一形式）都能命中
                                         val nk0 = com.mangareader.data.RemotePaths.normalizeBookKey(path)
