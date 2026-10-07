@@ -472,6 +472,7 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
         val w = bmp.width
         val h = bmp.height
         val halfW = w / 2
+        val rightStart = w - halfW
         return try {
             val result = Bitmap.createBitmap(halfW, h * 2, Bitmap.Config.ARGB_8888)
             val canvas = Canvas(result)
@@ -479,9 +480,9 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
             val lowerSrc: Rect
             if (doublePageReverseEnabled) {
                 upperSrc = Rect(0, 0, halfW, h)
-                lowerSrc = Rect(halfW, 0, w, h)
+                lowerSrc = Rect(rightStart, 0, w, h)
             } else {
-                upperSrc = Rect(halfW, 0, w, h)
+                upperSrc = Rect(rightStart, 0, w, h)
                 lowerSrc = Rect(0, 0, halfW, h)
             }
             val upperDst = Rect(0, 0, halfW, h)
