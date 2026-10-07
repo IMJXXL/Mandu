@@ -76,6 +76,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 
 enum class SortMode(val label: String) { LAST("最近阅读"), NAME("名称"), DATE("添加时间"), PROGRESS("阅读进度") }
 enum class FilterMode(val label: String) { ALL("全部"), READING("阅读中"), UNREAD("未读"), FINISHED("已读完"), FAV("收藏") }
@@ -318,6 +319,43 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                 var totalNew = 0
                 foldersList.forEach { f -> totalNew += scanner.rescan(f) }
                 if (totalNew > 0) Toast.makeText(ctx, "发现 $totalNew 本新漫画", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    // ★ 远程书架启动自动刷新（2026-10-07 方案 A）：对齐本地 auto_refresh——设置开关打开时
+    //   进书架自动扫一次 SMB/WebDAV（每进程每源一次，扫描器内部守卫）；无网静默跳过；
+    //   只在有新书时 toast（对齐本地语义），失败完全静默
+    LaunchedEffect(Unit) {
+        val prefs = ctx.getSharedPreferences("manga_reader", Context.MODE_PRIVATE)
+        val wantDav = prefs.getBoolean("auto_refresh_webdav", false)
+        val wantSmb = prefs.getBoolean("auto_refresh_smb", false)
+        if (!wantDav && !wantSmb) return@LaunchedEffect
+        val cm = ctx.getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
+        if (cm?.activeNetwork == null) return@LaunchedEffect
+        // ★ P1：点火即走（扫描器自有 scope），书架组合销毁不影响扫描；toast 汇总经回调
+        var pending = if (wantDav) 1 else 0
+        pending += if (wantSmb) 1 else 0
+        var totalNew = 0
+        val onNew: (Int) -> Unit = { n ->
+            totalNew += n
+            pending -= 1
+            if (pending <= 0 && totalNew > 0) {
+                Toast.makeText(ctx, "自动刷新：新增 $totalNew 本", Toast.LENGTH_SHORT).show()
+            }
+        }
+        runCatching {
+            if (wantDav) com.mangareader.webdavbridge.WebDavScanner.onAutoScanNew = onNew
+            if (wantSmb) com.mangareader.smbbridge.SmbScanner.onAutoScanNew = onNew
+        }
+        kotlinx.coroutines.withContext(Dispatchers.IO) {
+            runCatching {
+                if (wantDav) com.hippo.ehviewer.webdav.WebDavRepository.sourcesFlow().first().forEach { src ->
+                    com.mangareader.webdavbridge.WebDavScanner.autoScanAsync(src.id)
+                }
+                if (wantSmb) com.hippo.ehviewer.smb.SmbRepository.sourcesFlow().first().forEach { src ->
+                    com.mangareader.smbbridge.SmbScanner.autoScanAsync(src.id)
+                }
             }
         }
     }

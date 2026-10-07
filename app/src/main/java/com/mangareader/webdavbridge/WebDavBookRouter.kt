@@ -221,6 +221,7 @@ object WebDavBookRouter {
             return
         }
 
+        android.util.Log.i("WebDavRoute", "stream archive path: remote=$remote ext=${ref.ext}")
         val byteSource = WebDavArchiveByteSource(
             source,
             password,

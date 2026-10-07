@@ -486,6 +486,22 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         override fun sizeOf(key: String, value: Bitmap) = value.byteCount
     }
 
+    /** ★ 半页实体化缓存（2026-10-07 Komiho 真对齐）：宽页裁出的半页位图（共享源像素，
+     *  零拷贝）按 "idx:L/R" 缓存——同 slot 重绑拿到同对象，setImage 同图短路防闪；
+     *  半页自此走全普通管线（ScalePlan/手势/旋转/双击零特判），"视口取半"模拟层退役 */
+    private val halfCache = object : androidx.collection.LruCache<String, Bitmap>(8) {}
+    private fun halfBitmap(idx: Int, right: Boolean, src: Bitmap): Bitmap? {
+        if (src.isRecycled || src.width < 4) return null
+        val key = "$idx:${if (right) "R" else "L"}"
+        halfCache.get(key)?.let { if (!it.isRecycled) return it }
+        return try {
+            val b = android.graphics.Bitmap.createBitmap(
+                src, if (right) src.width / 2 else 0, 0, src.width / 2, src.height)
+            halfCache.put(key, b)
+            b
+        } catch (_: Throwable) { null }
+    }
+
     // ★ ⑧ 最小修复辅助：clear 缓存。
     //   ★ v102 关键修复：不再 recycle——v101 起 SMB 图片 decode 到 bitmapCache 的 Bitmap 会通过
     //   SSIV.setImage(ImageSource.bitmap(bmp)) 交给 SSIV 渲染，SSIV/RenderThread 异步持有该 Bitmap
@@ -1062,9 +1078,18 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     fun setDoublePageSplit(split: Boolean) {
         if (this.doublePageSplitEnabled == split) return
         this.doublePageSplitEnabled = split
+        // ★ 先收割再重建：首表就带全已解码页的双 slot（旧版不重建只 notify，表与开关脱节，
+        //   靠 NES 配置效应链补 rebuild——时序靠运气）
+        val old = spreadTable
+        if (split) harvestCachedDims()
         resetSplitHalf()
         splitActivePositions.clear()
-        pagerAdapter?.notifyDataSetChanged()
+        rebuildSpreadTable()
+        // ★ v1.384 锚定修正（"关开关跳页"实锤 14:08:10：page7 关开关落 page10）：slot 塌缩/
+        //   膨胀平移位置，notify 后必须按旧表当前位(页,半页)锚回新位——与其他改表 setter 同款。
+        //   映射未变也要走 rebind 的 notify：bind 侧 fallback/锁定随开关翻转需要重绑生效
+        rebindForNewTable(old)
+        runCatching { com.mangareader.DiagTracer.markStatic("splitFlag v=$split") }
     }
 
     fun setShiftDoublePage(enabled: Boolean) {
@@ -1110,7 +1135,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         val old = spreadTable
         soloPages = fresh
         rebuildSpreadTable()
-        if (!spreadTable.sameMapping(old)) rebindForNewTable()
+        if (!spreadTable.sameMapping(old)) rebindForNewTable(old)
     }
 
     /** ★ 远程书渐进尺寸收集（2026-10-06 用户工单"不同尺寸匹配到一起"）：远程书被
@@ -1125,9 +1150,74 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         if (w <= 0 || h <= 0) return
         scannedDims[idx]?.let { if (it[0] == w && it[1] == h) return }
         scannedDims[idx] = intArrayOf(w, h)
+        // ★ Komiho 同步插入语义（2026-10-07 zip 实锤"1直接到3"）：当前±1 页的尺寸立即落表——
+        //   当前横宽页整页位升级双 slot 内容等价（渲染兜底显示的半页与首位同侧）位置不动，
+        //   用户在页上就能滑进第二半页；翻页中挂脏由 IDLE 补排（flushScannedDims 自守）。
+        //   远端页维持 1.5s 节流防重排风暴
+        if (kotlin.math.abs(idx - currentPage) <= 1 && !isScrolling) {
+            flushScannedDims()
+            return
+        }
         val now = android.os.SystemClock.uptimeMillis()
         if (now - scannedDimsFlushAt < 1500L) return
         flushScannedDims()
+    }
+
+    /** 页尺寸补记统一入口（解码/渲染兜底/开关收割共用）：段页/半页元数据不收（尺寸≠整页） */
+    private fun collectPageDim(idx: Int, w: Int, h: Int) {
+        if (!doublePageMode && !doublePageSplitEnabled) return
+        if (pageList.getOrNull(idx)?.let { it.segmentIndex == 0 && it.splitSide == 0 } != true) return
+        observePageDim(idx, w, h)
+    }
+
+    /** ★ 持久化尺寸表回读（2026-10-07"只拆了一部分，后边的就没拆"根修）：flushScannedDims
+     *  逐次落盘 PageSizeCacheStore，但只有 Reader 全量扫描会读回——远程书扫描被跳过、
+     *  拆分-only 的本地书（pageLayout=SINGLE 且无横屏自动双页）扫描也不跑 → 每次进书
+     *  从零收集，双 slot 前沿跟着解码爬，快速翻页永远跑在前面（13:33:35-48 实锤
+     *  cur=10→s10、cur=12→s13 前沿滞后）。进书/换章时后台读回合并进 scannedDims，
+     *  重进书整本立即全拆。identity 守卫防同页表重复读；与 decode/渲染自报同表无冲突 */
+    private var persistedDimsFor: List<com.mangareader.viewer.ArchiveEngine.PageMeta>? = null
+    private fun loadPersistedDims() {
+        val pages = pageList
+        val eng = engine
+        val tree = treePath
+        if (pages.isEmpty() || eng == null || tree.isEmpty()) return
+        if (!(doublePageMode || doublePageSplitEnabled)) return
+        if (persistedDimsFor === pages) return
+        persistedDimsFor = pages
+        loadScope.launch(Dispatchers.IO) {
+            runCatching {
+                val stamp = com.mangareader.engine.pdf.VirtualPageExpander.sizeStamp(pages)
+                val store = eng.loadPageSizeCache(tree, stamp) ?: return@runCatching
+                var any = false
+                for ((i, meta) in pages.withIndex()) {
+                    if (meta.segmentIndex != 0 || meta.splitSide != 0) continue
+                    val wh = store[com.mangareader.engine.pdf.VirtualPageExpander.pageSizeKey(meta)] ?: continue
+                    if (wh.size < 2 || wh[0] <= 0 || wh[1] <= 0) continue
+                    val old = scannedDims[i]
+                    if (old != null && old[0] == wh[0] && old[1] == wh[1]) continue
+                    scannedDims[i] = intArrayOf(wh[0], wh[1])
+                    any = true
+                }
+                if (any) post {
+                    // 换章窗口防串：页表已变身份就丢弃本轮合并
+                    if (pageList === pages) flushScannedDims()
+                }
+            }
+        }
+    }
+
+    /** ★ Komiho 语义补洞（2026-10-07 zip 实锤"切了不能拆/1直接到3"）：开关打开瞬间收割所有
+     *  已解码页——旧实现只等"下一次解码"，开关打开前解码的页（缓存命中永不重解码）成为
+     *  永久尺寸洞：p2 永不拆、右半永不显示。位图宽高即真相，与渲染兜底同源 */
+    private fun harvestCachedDims() {
+        var n = 0
+        for ((idx, bmp) in bitmapCache.snapshot()) {
+            if (bmp.isRecycled) continue
+            collectPageDim(idx, bmp.width, bmp.height)
+            n++
+        }
+        if (n > 0) runCatching { com.mangareader.DiagTracer.markStatic("splitHarvest n=$n") }
     }
 
     /** 渐进尺寸落表（节流出口+IDLE 补做共用）：表变了才重排锚定。
@@ -1137,9 +1227,14 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         if (isScrolling) { scannedDirty = true; return }
         scannedDirty = false
         scannedDimsFlushAt = android.os.SystemClock.uptimeMillis()
-        val old = spreadTable
-        rebuildSpreadTable(freezeCurrent = true)
-        if (!spreadTable.sameMapping(old)) rebindForNewTable()
+        // ★ 表交换+重绑统一挪主线程消息队列（2026-10-07）：解码协程后台触发时主线程可能正在
+        //   RV layout——半路换表=当帧部分 bind 用新表、计数假设还是旧表（内容错帧/不一致风险）。
+        //   post 后与 rebindForNewTable 的 notify 严格同序
+        post {
+            val old = spreadTable
+            rebuildSpreadTable(freezeCurrent = true)
+            if (!spreadTable.sameMapping(old)) rebindForNewTable(old)
+        }
         // ★ v1.383（猫之眼 rar"半页跳页"工单）：rar 进书时卷未就绪、expand 逐页探测大面积
         //   失败 → 横宽页整页透传不拆（loaded 全 2200 未裁实锤），翻页观感=每张对开的右半
         //   从未单独出现（"1 滑到 3"）。显示解码已拿到真实尺寸 → 顺带落 PageSizeCacheStore，
@@ -1184,6 +1279,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
      *  试探合并→伙伴解码→拆开的翻转只发生在屏外位，可见构图绝不中途改变。
      *  用户主动动作（模式切换/页豁免/智能开关）不冻结——那是用户要求的重排 */
     private fun rebuildSpreadTable(freezeCurrent: Boolean = false) {
+        loadPersistedDims()
         val prev = spreadTable
         var freezeThrough = -1
         if (freezeCurrent && prev != null && doublePageMode && pageList.isNotEmpty()) {
@@ -1205,6 +1301,8 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             // ★ v1.384 Komiho 跟进：宽图二分从引擎层展开上移到表——横宽页双 slot（半页位），
             //   引擎不拆（页表身份恒原页 1:1，rar 探测失败透传不再造成页数漂移），渲染按
             //   slotHalf 定位半页视口；rtl 时右半位在前（右开本读序）
+            // ★ v1.385 设计定则（用户拍板）：拆不拆只由开关决定，与视口方向无关；半页
+            //   按用户缩放档显示（ScalePlan）——怎么显示是用户的事（Komiho 同语义）
             wideSplit = doublePageSplitEnabled,
             rtl = isRtl,
         )
@@ -1225,18 +1323,41 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
      *  ★ 翻页中的闪烁由 setImage/setImageSplit 同图短路根治（重绑不再重置 SSIV）——
      *  曾试过"翻页中延迟重排"，但挂旗路径在 notify 之前 return 会让表与 RV 的 itemCount
      *  短暂不一致（inconsistency 崩溃风险），二轮审查回退，闪烁只治显示层 */
-    private fun rebindForNewTable() {
+    private fun rebindForNewTable(old: SpreadTable? = null) {
         // ★ v1.383 闪退根修（堆栈实锤）：loadPageAsync 后台协程（Dispatchers.Default）解码完成
         //   → observePageDim → flushScannedDims → 本函数 notifyDataSetChanged——RV 正在 layout
         //   且非主线程，IllegalStateException 崩溃。整体 post 主线程；主线程调用方（setPageDims/
         //   setSoloPages/setSmartMerge）多一帧延迟无语义差异
+        //   ★ v1.384 锚定保内容（"乱跳"根修二）：notify 后 VP2 弹回旧"位置"，但表重排后同一
+        //   位置的页/半页态都可能变（尺寸洞补齐插入、整页位升级双 slot）——旧锚定恒指
+        //   currentPage 首位，把站在第二半页位的用户拽回前一半。捕获旧表当前位承载的
+        //   (页,半页)，notify 后落到新表中同一内容的位，用户视角零移动。old 缺省退回
+        //   currentPage 锚定（旧行为）
         post {
             layoutSwitchPending = true
+            val oldPos = viewPager.currentItem
+            var anchorPage = currentPage
+            var anchorHalf = 0
+            if (old != null && old.slotCount > 0) {
+                val oldSlot = (if (isRtl) old.slotCount - 1 - oldPos else oldPos).coerceIn(0, old.slotCount - 1)
+                anchorPage = old.firstPage(oldSlot)
+                anchorHalf = old.slotHalf(oldSlot)
+            }
             pagerAdapter?.notifyDataSetChanged()
             val count = pagerAdapter?.itemCount ?: 0
-            val finalPos = if (count > 0) positionOf(currentPage).coerceIn(0, count - 1) else 0
+            val safePage = anchorPage.coerceIn(0, (pageList.size - 1).coerceAtLeast(0))
+            val baseSlot = if (spreadTable.containsPage(safePage)) spreadTable.pageToSpread(safePage) else -1
+            val targetSlot = when {
+                baseSlot < 0 -> spreadTable.pageToSpread(currentPage.coerceIn(0, (pageList.size - 1).coerceAtLeast(0)))
+                anchorHalf == 2 && spreadTable.slotHalf(baseSlot) == 2 -> baseSlot + 1
+                else -> baseSlot
+            }
+            val finalPos = if (count > 0) {
+                (if (isRtl) spreadTable.slotCount - 1 - targetSlot else targetSlot).coerceIn(0, count - 1)
+            } else 0
             viewPager.post {
-                viewPager.setCurrentItem(finalPos, false)
+                // 翻页手势进行中不抢位置（onPageSelected 落位后自然归一）
+                if (!isScrolling) viewPager.setCurrentItem(finalPos, false)
                 viewPager.post { layoutSwitchPending = false }
             }
         }
@@ -1253,7 +1374,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         if (!doublePageMode) return
         val old = spreadTable
         rebuildSpreadTable(freezeCurrent = true)
-        if (!spreadTable.sameMapping(old)) rebindForNewTable()
+        if (!spreadTable.sameMapping(old)) rebindForNewTable(old)
     }
 
     /** ★ 智能配对开关（config.doubleMergeSmart）：即时重排跨页表 */
@@ -1263,7 +1384,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         if (!doublePageMode) return
         val old = spreadTable
         rebuildSpreadTable()
-        if (!spreadTable.sameMapping(old)) rebindForNewTable()
+        if (!spreadTable.sameMapping(old)) rebindForNewTable(old)
     }
 
     /** ★ P0-2 模式切换位图交接：把活着的位图从缓存里"取走"（移除后 release() 不再回收它们），
@@ -1696,10 +1817,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 //   段页/半页（宽图二分）的位图尺寸≠整页尺寸，写进表会把整页误判
                 //   ★ v1.383：宽图二分开启的单页模式（rar 探测失败透传场景）也收集——
                 //   显示解码的尺寸落表，重进书 expand 全命中、横宽页正确二分
-                if ((doublePageMode || doublePageSplitEnabled) &&
-                    pageList.getOrNull(idx)?.let { it.segmentIndex == 0 && it.splitSide == 0 } == true) {
-                    observePageDim(idx, bmp.width, bmp.height)
-                }
+                collectPageDim(idx, bmp.width, bmp.height)
                 if (fixedCropActive && bmp.width > 10 && bmp.height > 10) {
                     try {
                         val segTall = pageList[idx].segmentTotal > 1
@@ -1884,7 +2002,8 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             val container = android.widget.FrameLayout(parent.context).apply {
                 layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
                 com.mangareader.filter.PaperBgDrawable.apply(this, parent.context.applicationContext, pageBgColor, com.mangareader.filter.PaperPageTexture.overlayMode, com.mangareader.filter.PaperPageTexture.presetId, com.mangareader.filter.PaperPageTexture.concentration)
-                val marginPx = (imageMarginH * parent.context.resources.displayMetrics.density).toInt()
+                // ★ v1.385 语义：imageMarginH=屏宽百分比 0..50（原 dp），分辨率无关
+                val marginPx = (imageMarginH.coerceAtLeast(0) * parent.context.resources.displayMetrics.widthPixels / 100)
                 setPadding(marginPx, 0, marginPx, 0)
             }
             val iv = ImageView(parent.context).apply {
@@ -1946,7 +2065,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         override fun onBindViewHolder(holder: PagerViewHolder, position: Int) {
             // Apply margin and background color immediately so settings take effect
             val container = holder.itemView as android.widget.FrameLayout
-            val marginPx = (imageMarginH * container.context.resources.displayMetrics.density).toInt()
+            val marginPx = (imageMarginH.coerceAtLeast(0) * container.context.resources.displayMetrics.widthPixels / 100)
             container.setPadding(marginPx, 0, marginPx, 0)
             com.mangareader.filter.PaperBgDrawable.apply(container, container.context.applicationContext, pageBgColor, com.mangareader.filter.PaperPageTexture.overlayMode, com.mangareader.filter.PaperPageTexture.presetId, com.mangareader.filter.PaperPageTexture.concentration)
 
@@ -1985,13 +2104,24 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 //   状态机（splitHalfRight）随引擎层展开退役——每个 slot 恒显示固定半页
                 if (doublePageSplitEnabled) {
                     val half = spreadTable.slotHalf(slotPos)
+                    val splitBmp = bitmapCache[firstIdx]
                     if (half != 0) {
-                        val leftBmp = bitmapCache[firstIdx]
-                        if (leftBmp != null && !leftBmp.isRecycled && leftBmp.width > leftBmp.height) {
+                        if (splitBmp != null && !splitBmp.isRecycled && splitBmp.width > splitBmp.height) {
                             splitActivePositions.add(position)
-                            holder.setImageSplit(leftBmp, showRight = half == 2, useSSIV, landscapeZoomEnabled)
+                            // ★ v1.385 半页实体化（同单页分支）：走全普通管线
+                            val halfBmp = halfBitmap(firstIdx, half == 2, splitBmp)
+                            if (halfBmp != null) {
+                                holder.setImage(halfBmp, useSSIV, landscapeZoomEnabled, forward = bindForwardFor(position))
+                                return
+                            }
+                            holder.setImageSplit(splitBmp, showRight = half == 2, useSSIV, landscapeZoomEnabled)
                             return
                         }
+                    } else if (splitBmp != null && !splitBmp.isRecycled && splitBmp.width > splitBmp.height) {
+                        // ★ Komiho onPageSplit 语义（2026-10-07"切了不能拆"）：渲染即自报——双页中
+                        //   表 half 未升级（尺寸洞）但位图已证明横宽 → 补记尺寸，下一拍升级双 slot，
+                        //   不再被两两硬拼挤压。post 出 layout 窗口（同上）
+                        post { collectPageDim(firstIdx, splitBmp.width, splitBmp.height) }
                     }
                 }
 
@@ -2057,9 +2187,27 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 val bmp = bitmapCache[realIdx]
                 if (bmp != null && !bmp.isRecycled) {
                     val pageUseSsiv = useSSIV
-                    if (half != 0 && bmp.width > bmp.height) {
+                    // ★ v1.384 渲染层兜底（Komiho isWideImage 语义）：表 half 未升级（首进尺寸
+                    //   未收集）时，位图横宽即半页显示——拆分开关开启就立即生效，不等渐进回填
+                    if ((half != 0 || doublePageSplitEnabled) && bmp.width > bmp.height) {
                         splitActivePositions.add(realIdx)
-                        holder.setImageSplit(bmp, showRight = half == 2, pageUseSsiv, landscapeZoomEnabled)
+                        runCatching { com.mangareader.DiagTracer.markStatic(
+                            "splitBind pos=$position slot=$slotPos half=$half bmp=${bmp.width}x${bmp.height}") }
+                        // ★ Komiho onPageSplit 语义（2026-10-07"1直接到3"）：渲染即自报——缓存命中页
+                        //   （开关打开前已解码、永不重解码）的尺寸在这里进表，近页即时落表升级双 slot。
+                        //   post 出 layout 窗口：bind 在 RV layout 途中，半路换表=当帧新表旧计数
+                        if (half == 0) post { collectPageDim(realIdx, bmp.width, bmp.height) }
+                        val showRight = if (half != 0) half == 2
+                        else (isRtl != doublePageReverseEnabled) xor
+                            (splitHalfRight && realIdx == currentPage)
+                        // ★ v1.385 Komiho 真对齐：半页实体化（裁成真实位图）走全普通管线——
+                        //   缩放/手势/旋转/双击全是普通页行为，"整图+视口取半"模拟层退役
+                        val halfBmp = halfBitmap(realIdx, showRight, bmp)
+                        if (halfBmp != null) {
+                            holder.setImage(halfBmp, pageUseSsiv, landscapeZoomEnabled, forward = bindForwardFor(position))
+                            return
+                        }
+                        holder.setImageSplit(bmp, showRight, pageUseSsiv, landscapeZoomEnabled)
                     } else {
                         holder.setImage(bmp, pageUseSsiv, landscapeZoomEnabled, forward = bindForwardFor(position))
                     }
@@ -2153,7 +2301,9 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         }
 
         fun setImage(bmp: Bitmap, useSsiv: Boolean, landscapeZoom: Boolean = true, forward: Boolean = true) {
+            val wasSplit = isSplitPage
             isSplitPage = false
+            try { ssiv?.splitViewportLocked = false } catch (_: Exception) {}
             if (bmp.isRecycled) return
             // ★ 同图重绑短路（2026-10-06 海贼王闪烁工单"内部机制打架"）：表重排/设置同步触发的
             //   notify 会让可见槽重新走 setImage——SSIV.setImage 会重置 decoder/tile 状态（可见帧
@@ -2162,9 +2312,12 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             //   ★ 刀3（2026-10-06 乱闪根修）：位图与显示配置全同的重绑零动作——applyScale 会把
             //   landscapeZoom 已放大的画面打回 contain 再等 500ms 弹回（重绑风暴下=可见弹跳循环）。
             //   只有显示配置代数变了（applyLivePrefs bump）才需要重设基准
+            //   ★ v1.384 补 wasSplit 守卫（"关掉开关前边的还拆着"实锤 13:34:06）：拆分→普通换轨
+            //   时 SSIV 停在拆分视口（scale/center 是半页定位），短路跳过 applyScale=整页开关
+            //   关了画面还拆着——换轨帧必须重定位
             if (useSsiv) ssiv?.let { ssv ->
                 if (ssv.visibility == View.VISIBLE && ssv.isReady && heldBitmap === bmp) {
-                    if (boundCfgVer == displayCfgVer) return
+                    if (!wasSplit && boundCfgVer == displayCfgVer) return
                     applyScale(ssv, bmp, landscapeZoom, forward)
                     boundCfgVer = displayCfgVer
                     return
@@ -2262,14 +2415,19 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
          * 用户可以通过navigateToPan平移到另一半。
          */
         fun setImageSplit(bmp: Bitmap, showRight: Boolean, useSsiv: Boolean, landscapeZoom: Boolean) {
+            val wasSplit = isSplitPage
+            val prevShowRight = lastShowRight
             isSplitPage = true
             lastShowRight = showRight
             if (bmp.isRecycled) return
             // ★ 同图重绑短路（同 setImage）：showRight 翻转也只需 applySplitScale 重定位视口，不必重置 SSIV
             //   ★ 刀3：位图与显示配置全同的重绑零动作（同 setImage，防 landscapeZoom 弹跳）
+            //   ★ v1.384 修正（"点击翻页始终不跳"实锤）：短路必须比较半页侧且要求此前已是拆分页——
+            //   旧条件 !showRight 把"右半位→左半位"的重绑也短路掉，视口钉死在右半，半页间回翻
+            //   画面零变化；且 setImage(same bmp)→setImageSplit 的 normal→split 换轨也被旧条件吞掉
             if (useSsiv) ssiv?.let { ssv ->
                 if (ssv.visibility == View.VISIBLE && ssv.isReady && heldBitmap === bmp) {
-                    if (boundCfgVer == displayCfgVer && !showRight) return
+                    if (wasSplit && boundCfgVer == displayCfgVer && prevShowRight == showRight) return
                     applySplitScale(ssv, bmp, showRight)
                     boundCfgVer = displayCfgVer
                     return
@@ -2280,6 +2438,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             if (useSsiv) {
                 val container = itemView as android.widget.FrameLayout
                 val ssv = ssiv ?: createSsiv().also { container.addView(it); ssiv = it }
+                ssv.splitViewportLocked = true
                 ssv.visibility = View.VISIBLE
                 iv?.visibility = View.GONE
                 // ★ 2026-09-08：bitmap 已解码完成，直接隐藏 loadingBar
@@ -2321,8 +2480,8 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 ssiv.post { applySplitScale(ssiv, bmp, showRight) }
                 return
             }
-            // ★ 拆分视口显示半页：以半页宽为"位图宽"走 ScalePlan 统一公式（完整显示=contain、
-            //   铺满=贴宽带平板防糊封顶、贴高/原尺寸/智能照档位语义）；
+            // ★ 拆分视口显示半页：以半页宽为"位图宽"走 ScalePlan 统一公式（2026-10-07 定则：
+            //   半页与普通页同档位语义——适应屏幕/适应宽度/铺满…由用户档位决定，不替用户做主）
             //   视口定位钉在半页（showRight），zoomStart 对齐不参与——视口本身就是"页"
             val halfW = (bmp.width / 2f).coerceAtLeast(1f)
             val isTablet = ssiv.resources.configuration.smallestScreenWidthDp >= 600
@@ -2333,6 +2492,9 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             //   纵拖看图，双击缩放以此为中心
             ssiv.viewportBaseScale = targetScale
             ssiv.setScaleAndCenter(targetScale, android.graphics.PointF(centerX, centerY))
+            // ★ 拆分视口取证：定位比例与视口尺寸（横屏"不拆"=scale 没到位或视口全宽）
+            runCatching { com.mangareader.DiagTracer.markStatic(
+                "splitView vw=${ssiv.width}x${ssiv.height} scale=${"%.2f".format(targetScale)} right=$showRight") }
         }
 
 
@@ -2402,6 +2564,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         }
         fun clear() {
             isSplitPage = false
+            try { ssiv?.splitViewportLocked = false } catch (_: Exception) {}
             scaleGen++ // ★ 作废在途的 applyPlanScale 重试与延时 landscapeZoom
             disposeAnimDrawable()
             heldBitmap = null
@@ -2416,6 +2579,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
          *   ★ Coil 路线后 drawable 是 Animatable（系统 AnimatedDrawable），不强制是 FrameAnimationDrawable */
         fun setAnimDrawable(idx: Int, drawable: Drawable) {
             isSplitPage = false
+            try { ssiv?.splitViewportLocked = false } catch (_: Exception) {}
             // ★ Bug B 修复 2：若是同一 idx 的同一 drawable 实例，跳过 dispose+再设，
             //   避免 ImageView.setImageDrawable(null) → setImageDrawable(same) 这瞬空白 → 画面闪一下。
             if (heldIdx == idx && heldAnimDrawable === drawable) {

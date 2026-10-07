@@ -17,8 +17,8 @@ android {
         applicationId = "com.mangareader"
         minSdk = 24
         targetSdk = 37
-versionCode = 45
-versionName = "1.383"
+versionCode = 47
+versionName = "1.385"
 
         externalNativeBuild {
             cmake {
@@ -87,7 +87,6 @@ versionName = "1.383"
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             signingConfig = signingConfigs.getByName("release")
             // ★ 调试期临时:run-as 直拉私有诊断文件(diag_stages/page_sizes),交付前必须移除
-            isDebuggable = true
         }
     }
 

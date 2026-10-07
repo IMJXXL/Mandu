@@ -688,19 +688,16 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         val pages = (0 until supply.pageCount.coerceAtLeast(0)).map {
             com.mangareader.viewer.ArchiveEngine.PageMeta(it, remoteSrc, "", localIdx = it, originalPageIdx = it, name = "")
         }
-        // ★ 远程书接入与本地一致的展开管线（2026-10-06 123751 日志实锤）：远程 zip 条漫书
-        //   "seg expand" 从未出现——attachRemoteSession 恒不展开（旧注释"远程页表恒不展开"），
-        //   宽图二分/长图竖切整链路失效，此前修的探测缓存写了没人读。此处按同一套 config 门槛
-        //   跑 expand：合成元表 source="" 不在 SPLIT_SOURCES → 头部探测天然跳过（零额外 IO），
-        //   只读尺寸表；首读无表→未知页透传（阅读中解码探测经 onProbedSizes→mergeProbedSizesWithStamp
-        //   落表，键/戳与本表同源）；重进→命中缓存→拆分生效。与本地首读行为完全同构。
+        // ★ 远程书展开管线退役宽图二分（2026-10-07 横屏拆分工单根修）：onPageCountGrow 在页数
+        //   增长时把 pageList 整表替换为未展开原始表——展开过的表瞬间回退（位置错位=翻不动/
+        //   卡顿、拆分全丢），此路必死。宽图二分统一走视图表层方案（SpreadTable 双 slot：
+        //   解码自报尺寸+PageSizeCacheStore 持久化回读+开关收割，远程/本地同构），引擎层只留
+        //   条漫竖切（段页在 onPageCountGrow 场景同样回退，属既有问题不在本单范围）
         val isWebtoonFamily = mode == Mode.VERT || mode == Mode.WEBTOON_GAP
-        val wideSplitOn = config.doublePageSplit &&
-            (isWebtoonFamily || config.pageLayout == com.mangareader.data.ReaderConfig.PageLayout.SINGLE)
         // ★ zip 门控：rar/7z/tar 是 solid 顺流介质，页数随抽取增长（onPageCountGrow），展开表与
         //   增长索引互相踩——顺流族保持整表透传（与旧行为一致）；zip 计数开局即知，展开安全
         val expandable = remoteSrc == "zip"
-        val wantExpand = expandable && ((config.tallSplitEnabled && isWebtoonFamily) || wideSplitOn)
+        val wantExpand = expandable && config.tallSplitEnabled && isWebtoonFamily
         var expandedPages = pages
         var expandedStamp: String? = null
         if (wantExpand) {
@@ -711,7 +708,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                 withContext(Dispatchers.IO) {
                     com.mangareader.engine.pdf.VirtualPageExpander.expand(
                         pages, config.tallSplitEnabled, isWebtoonFamily, sm, sw, engine, path,
-                        allowProbe = true, wideSplitEnabled = wideSplitOn, splitLeftFirst = leftFirst,
+                        allowProbe = true, wideSplitEnabled = false, splitLeftFirst = leftFirst,
                         tallRatioThreshold = com.mangareader.engine.pdf.PdfTallSplitCalculator.ratioThreshold(config.tallSplitSensitivity))
                 }.also { expandedStamp = com.mangareader.engine.pdf.VirtualPageExpander.lastStoreStamp }
             } catch (_: Exception) { pages }
@@ -2682,10 +2679,12 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                             pageLayout = run {
                                 // ★ 横屏自动双页：单页布局 + 开关开 + 当前横屏 → 双页。
                                 //   2026-10-05 工单：手机横屏也要生效，移除原 600dp 平板门槛
+                                //   ★ 2026-10-07 三态互斥（用户定则）：拆分双页开启 ⇒ 合并不触发；
+                                //   档位按书记忆（autoDoubleLayout：0=双页 1=双页+起始页），竖屏不受影响
                                 if (config.pageLayout == com.mangareader.data.ReaderConfig.PageLayout.SINGLE &&
-                                    config.autoDoubleLandscape &&
+                                    config.autoDoubleLandscape && !config.doublePageSplit &&
                                     (LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE)
-                                ) 1
+                                ) if (config.autoDoubleLayout == 1) 2 else 1
                                 else when (config.pageLayout) {
                                     com.mangareader.data.ReaderConfig.PageLayout.SINGLE -> 0
                                     com.mangareader.data.ReaderConfig.PageLayout.DOUBLE -> 1
@@ -3247,7 +3246,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                 val expanded = try {
                     com.mangareader.engine.pdf.VirtualPageExpander.expand(
                         pageList, true, true, sm, sw, engine, curTree, allowProbe = false,
-                        wideSplitEnabled = config.doublePageSplit,
+                        wideSplitEnabled = false, // ★ 宽图二分退役到表层（横屏拆分工单）
                         splitLeftFirst = !(isRtl != config.doublePageReverse),
                         tallRatioThreshold = com.mangareader.engine.pdf.PdfTallSplitCalculator.ratioThreshold(config.tallSplitSensitivity)
                     )
@@ -3264,22 +3263,11 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             //   宽图二分在翻页模式同样成立：还原后重跑宽图展开（只读尺寸缓存不探测），半页序保持
             val raw = preExpandPages!!.second
             val back = pageList.getOrNull(cur)?.originalPageIdx ?: -1
-            val reSplit = if (config.doublePageSplit &&
-                config.pageLayout == com.mangareader.data.ReaderConfig.PageLayout.SINGLE) {
-                val sm = maxOf(ctx.resources.displayMetrics.widthPixels, ctx.resources.displayMetrics.heightPixels)
-                val sw = ctx.resources.displayMetrics.widthPixels
-                try {
-                    com.mangareader.engine.pdf.VirtualPageExpander.expand(
-                        raw, false, false, sm, sw, engine, curTree, allowProbe = false,
-                        wideSplitEnabled = true, splitLeftFirst = !(isRtl != config.doublePageReverse)
-                    )
-                } catch (_: Exception) { raw }
-            } else raw
-            pageList = reSplit
-            cur = if (back in raw.indices) {
-                reSplit.indexOfFirst { it.originalPageIdx == back }
-                    .takeIf { it >= 0 } ?: back.coerceIn(0, reSplit.lastIndex)
-            } else cur.coerceIn(0, reSplit.lastIndex.coerceAtLeast(0))
+            // ★ 宽图二分退役到表层（横屏拆分工单）：切回 pager 族只还原原始页表，
+            //   半页序由 SpreadTable 双 slot 承接（宽图二分引擎层展开与 onPageCountGrow
+            //   整表替换互相踩，远程书已实证回退丢拆分）
+            pageList = raw
+            cur = back.coerceIn(0, raw.lastIndex.coerceAtLeast(0))
             preExpandPages = null
         }
         mode = newMode

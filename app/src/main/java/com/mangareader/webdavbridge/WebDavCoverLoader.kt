@@ -1,5 +1,8 @@
 package com.mangareader.webdavbridge
 
+import com.hippo.ehviewer.library.BrowseEntryRemote
+import com.hippo.ehviewer.library.IMAGE_EXTENSIONS
+import com.hippo.ehviewer.webdav.WebDavGateway
 import com.hippo.ehviewer.library.ArchiveCoverCache
 import com.hippo.ehviewer.library.CoverEnsureResult
 import com.hippo.ehviewer.library.ReadAheadArchiveByteSource
@@ -41,6 +44,10 @@ object WebDavCoverLoader {
 
     private val dedup = java.util.concurrent.ConcurrentHashMap<String, Mutex>()
 
+    // ★ 封面失败冷却（10 分钟）：书架重组不再反复打服务器
+    private val failedAt = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    private const val COVER_RETRY_COOLDOWN_MS = 10L * 60_000L
+
     @Volatile
     private var scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -67,8 +74,30 @@ object WebDavCoverLoader {
     }
 
     private suspend fun loadCoverRawWebDavInternal(coverPath: String, wantRaw: Boolean = false): Pair<ByteArray, String>? = withContext(Dispatchers.IO) {
+        // ★ 失败冷却（2026-10-07 工单"封面失败反复打服务器"）：10 分钟内不再重试同路径
+        failedAt[coverPath]?.let { ts ->
+            if (System.currentTimeMillis() - ts < COVER_RETRY_COOLDOWN_MS) return@withContext null
+        }
+        try {
+            loadCoverRawWebDavInner(coverPath, wantRaw)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (t: Throwable) {
+            failedAt[coverPath] = System.currentTimeMillis()
+            throw t
+        }
+    }
+
+    private suspend fun loadCoverRawWebDavInner(coverPath: String, wantRaw: Boolean): Pair<ByteArray, String>? = withContext(Dispatchers.IO) {
         val ref = WebDavPaths.parseCoverPath(coverPath) ?: return@withContext null
         if (WebDavUnsupportedFormatHandler.isUnsupported(ref.ext)) return@withContext null
+        // ★ 目录封面递归（2026-10-07 工单"TOC 中间层目录占位"）：目录 ref 不再直撞文件夹
+        //   分支的"无直连图"check——先列目录，直连图→直连包→递归子目录（深度 5，对齐本地
+        //   findFirstCoverInSubDirs），结果由上层磁盘缓存兜住只付一次
+        if (ref.ext.isEmpty()) {
+            return@withContext dirCoverRecursive(ref, 0)?.also { failedAt.remove(coverPath) }
+                ?: null.also { failedAt[coverPath] = System.currentTimeMillis() }
+        }
 
         val mutex = dedup.getOrPut(coverPath) { Mutex() }
         try {
@@ -82,6 +111,46 @@ object WebDavCoverLoader {
             null
         }
     }
+
+    /** ★ 目录封面递归（深度 5）：直连图 → 直连可扫包 → 子目录自然序递归；全空返回 null 占位 */
+    private suspend fun dirCoverRecursive(ref: WebDavBookRef, depth: Int): Pair<ByteArray, String>? {
+        if (depth > 5) return null
+        // ★ P5：目录路径 dedup 互斥（原 mutex 只护文件封面路径），并发同目录不重复列目录
+        val dirMutex = dedup.getOrPut("dir:${ref.remotePath}") { Mutex() }
+        dirMutex.withLock {
+        val source = WebDavRepository.load(ref.serverId) ?: return null
+        val password = try { WebDavPasswordStore.get(source.id) } catch (_: Throwable) { "" }
+        val entries = try {
+            WebDavGateway.listDirectory(source, password, ref.remotePath)
+        } catch (_: Throwable) { return null }
+        val children = entries.filter { !it.virtual && !it.hidden }
+        val fileNameExt: (String) -> String = { it.substringAfterLast('.', "").lowercase() }
+        // ① 直连图片（自然序第一个）
+        val img = children.filterIsInstance<BrowseEntryRemote.RegularFile>()
+            .firstOrNull { fileNameExt(it.name) in IMAGE_EXTENSIONS }
+        if (img != null) {
+            val sub = WebDavBookRef(ref.serverId, joinRemoteDir(ref.remotePath, img.fileName), fileNameExt(img.name))
+            return runCatching { loadCoverByArchiveCache(sub, false) ?: loadCoverByTransientSession(sub, false) }.getOrNull()
+        }
+        // ② 直连可扫文件
+        val arch = children.filterIsInstance<BrowseEntryRemote.RegularFile>()
+            .firstOrNull { fileNameExt(it.name) in WebDavScanner.SCANNABLE_FORMATS }
+        if (arch != null) {
+            val sub = WebDavBookRef(ref.serverId, joinRemoteDir(ref.remotePath, arch.fileName), fileNameExt(arch.name))
+            return runCatching { loadCoverByArchiveCache(sub, false) ?: loadCoverByTransientSession(sub, false) }.getOrNull()
+        }
+        // ③ 子目录递归
+        for (d in children.filterIsInstance<BrowseEntryRemote.Directory>().sortedBy { it.name.lowercase() }) {
+            if (d.unreachable) continue
+            val sub = WebDavBookRef(ref.serverId, joinRemoteDir(ref.remotePath, d.relativeName), "")
+            dirCoverRecursive(sub, depth + 1)?.let { return it }
+        }
+        return null
+        }
+    }
+
+    private fun joinRemoteDir(dir: String, name: String): String =
+        if (dir.endsWith('/')) dir + name else "$dir/$name"
 
     private suspend fun loadCoverByArchiveCache(ref: WebDavBookRef, wantRaw: Boolean): Pair<ByteArray, String>? {
         if (ref.ext.isEmpty()) return null

@@ -33,6 +33,7 @@ data class ReaderConfig(
     val trimThreshold: Int = 220,
     /** 一行/列中超过阈值的像素占比达到此值才算"白边"，越小越容易判定为白边，越大越保守 */
     val trimWhiteRatio: Float = 0.90f,
+    // ★ v1.385 语义变更：侧边留白=屏宽百分比 0..50（原 dp 可负），三视图统一 width*pct/100
     val imageMarginH: Int = 0,
     val readBackground: ReadBackground = ReadBackground.WHITE,
     val isEinkMode: Boolean = false,
@@ -80,6 +81,11 @@ data class ReaderConfig(
      *  pageLayout=DOUBLE_SHIFTED 生效——前 N-1 页各显一页、第 N 页起两两合并。
      *  2=旧"跳过首页"行为（默认，存量零迁移）；配置中心范围钳 2..10 */
     val doublePageStart: Int = 2,
+
+    // ★ 横屏自动双页的档位记忆（2026-10-07 用户定则）：横屏触发时面板显示该档位，用户改成
+    //  "双页+起始页"后按书记住，下次横屏触发直接用；竖屏布局不受影响（横屏影响双页，
+    //  双页不影响横屏）。0=双页 1=双页+起始页
+    val autoDoubleLayout: Int = 0,
 
     val autoWebtoon: Boolean = true,
     val chapterTransition: Boolean = true,
@@ -138,7 +144,7 @@ data class ReaderConfig(
 
     fun save(context: Context, bookId: Long = -1) {
         val prefs = context.getSharedPreferences("manga_reader", Context.MODE_PRIVATE)
-        val prefix = if (bookId >= 0) "book_${bookId}_" else ""
+        val prefix = if (bookId != 0L) "book_${bookId}_" else ""
         prefs.edit().apply {
             putString("${prefix}scrollMode", scrollMode.name)
             // ★ 点击区域全局回退不固化：单本键未手动写过且值与全局一致时不落单本键，
@@ -197,6 +203,7 @@ data class ReaderConfig(
             putBoolean("${prefix}doublePageSplit", doublePageSplit)
             putBoolean("${prefix}doublePageReverse", doublePageReverse)
             putInt("${prefix}doublePageStart", doublePageStart)
+            putInt("${prefix}autoDoubleLayout", autoDoubleLayout)
 
             putBoolean("autoWebtoon", autoWebtoon)
             putBoolean("chapterTransition", chapterTransition)
@@ -236,7 +243,7 @@ data class ReaderConfig(
             load(context.getSharedPreferences("manga_reader", Context.MODE_PRIVATE), bookId)
 
         fun load(prefs: SharedPreferences, bookId: Long = -1): ReaderConfig {
-            val prefix = if (bookId >= 0) "book_${bookId}_" else ""
+            val prefix = if (bookId != 0L) "book_${bookId}_" else ""
             // ★ 读取分屋（2026-10-04 终版）：书里调过的永远最高优先；
             //   "本书"作用域的项与全局键彻底脱钩——只认这本书自己的覆盖，
             //   没调过=出厂初始值（全局键的历史改动影响不到它们）；
@@ -245,8 +252,14 @@ data class ReaderConfig(
             val scopeReg = ReaderScope.parseScopeReg(prefs)
             fun rawFor(key: String): Any? = when {
                 key in ReaderScope.GLOBAL_LOCKED_KEYS -> prefs.all[key] // 固定全局：无视残留作用域记录
-                bookId >= 0 && (scopeReg[key] ?: ReaderScope.presetScope(key)) == ReaderScope.SCOPE_BOOK ->
-                    prefs.all["${prefix}$key"]
+                bookId != 0L && (scopeReg[key] ?: ReaderScope.presetScope(key)) == ReaderScope.SCOPE_BOOK -> {
+                    val bk = prefs.all["${prefix}$key"]
+                    // ★ 负ID（路径哈希）书迁移回退：v1.384 前 resolveLayer 把负ID书的书级写入
+                    //   落到全局键（bookId<=0→GLOBAL）——书键缺失时回读全局键，老开关不丢
+                    if (bk != null) bk
+                    else if (bookId < 0) prefs.all[key]
+                    else null
+                }
                 else -> prefs.all[key]
             }
             fun rBoolean(key: String, def: Boolean): Boolean = (rawFor(key) as? Boolean) ?: def
@@ -300,6 +313,7 @@ data class ReaderConfig(
                 doublePageSplit = rBoolean("doublePageSplit", false),
                 doublePageReverse = rBoolean("doublePageReverse", false),
                 doublePageStart = rInt("doublePageStart", 2).let { if (it in 2..10) it else 2 },
+                autoDoubleLayout = rInt("autoDoubleLayout", 0).let { if (it in 0..1) it else 0 },
 
                 autoWebtoon = rBoolean("autoWebtoon", true),
                 chapterTransition = rBoolean("chapterTransition", true),
@@ -346,7 +360,7 @@ data class ReaderConfig(
                 }
             )
             // ★ 会话临时层覆盖（最高优先）：总开关关时的书内改动只存内存，退出阅读清空
-            if (bookId > 0) {
+            if (bookId != 0L) {
                 ReaderSessionStore.get(bookId)?.forEach { (k, v) -> cfg = applySessionOverride(cfg, k, v) }
             }
             return cfg
@@ -375,6 +389,7 @@ data class ReaderConfig(
                 "doublePageShift" -> cfg.copy(doublePageShift = v as Int)
                 "doublePageSplit" -> cfg.copy(doublePageSplit = v as Boolean)
                 "doublePageStart" -> cfg.copy(doublePageStart = (v as Int).let { if (it in 2..10) it else 2 })
+                "autoDoubleLayout" -> cfg.copy(autoDoubleLayout = (v as Int).let { if (it in 0..1) it else 0 })
                 "doublePageReverse" -> cfg.copy(doublePageReverse = v as Boolean)
                 "centerGapType" -> cfg.copy(centerGapType = v as Int)
                 "brightness" -> cfg.copy(brightness = v as Int)
@@ -438,6 +453,7 @@ data class ReaderConfig(
             "doublePageShift" to { it.doublePageShift },
             "doublePageSplit" to { it.doublePageSplit },
             "doublePageStart" to { it.doublePageStart },
+            "autoDoubleLayout" to { it.autoDoubleLayout },
             "doublePageReverse" to { it.doublePageReverse },
             "centerGapType" to { it.centerGapType },
             "brightness" to { it.brightness },

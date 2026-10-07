@@ -42,7 +42,11 @@ object WebDavPaths {
         } else {
             pathBeforeMember.substringAfterLast('/')
         }
+        // ★ ext 白名单（2026-10-07 工单"带点目录名整本废掉"）：目录名如 `2. 商业志` 会推出
+        //   垃圾 ext → 路由要求文件夹书 ext 为空 → 被当流式归档打开 → size unknown 双坏。
+        //   白名单=可扫格式+图片，目录名垃圾后缀一律归空（parse 纯函数，旧库下次加载即愈）
         val ext = fileName.substringAfterLast('.', "").lowercase()
+            .takeIf { it in WebDavScanner.SCANNABLE_FORMATS || it in com.hippo.ehviewer.library.IMAGE_EXTENSIONS } ?: ""
         return WebDavBookRef(serverId = idPart, remotePath = rel, ext = ext)
     }
 }

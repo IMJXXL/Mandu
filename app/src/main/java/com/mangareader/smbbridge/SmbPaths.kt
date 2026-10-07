@@ -70,7 +70,9 @@ object SmbPaths {
         } else {
             pathBeforeMember.substringAfterLast('/')
         }
+        // ★ ext 白名单（同 WebDavPaths）：带点目录名垃圾后缀归空，防误路由成流式归档
         val ext = outerName.substringAfterLast('.', "").lowercase()
+            .takeIf { it in SmbScanner.SCANNABLE_FORMATS || it in com.hippo.ehviewer.library.IMAGE_EXTENSIONS } ?: ""
         return SmbBookRef(serverId = idPart, share = share, rel = rel, fullRel = fullRel, ext = ext)
     }
 }

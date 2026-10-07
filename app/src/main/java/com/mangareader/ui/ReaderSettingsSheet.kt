@@ -196,13 +196,19 @@ private fun GroupTitle(title: String) {
 }
 
 @Composable
-private fun CheckboxItem(label: String, checked: Boolean, enabled: Boolean = true, info: String? = null, onCheckedChange: (Boolean) -> Unit) {
+private fun CheckboxItem(label: String, checked: Boolean, enabled: Boolean = true, info: String? = null, blockedHint: String? = null, onCheckedChange: (Boolean) -> Unit) {
     val ctx = androidx.compose.ui.platform.LocalContext.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .alpha(if (enabled) 1f else 0.38f)
-            .clickable(enabled = enabled) { onCheckedChange(!checked) }
+            // ★ blockedHint（2026-10-07 三态互斥）：灰显但可点——点击弹提示说明当前为什么不能开
+            .clickable(enabled = enabled || blockedHint != null) {
+                if (enabled) onCheckedChange(!checked)
+                else blockedHint?.let {
+                    android.widget.Toast.makeText(ctx, it, android.widget.Toast.LENGTH_SHORT).show()
+                }
+            }
             .padding(horizontal = HORIZONTAL_PAD, vertical = VERTICAL_PAD),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(24.dp)
@@ -284,45 +290,71 @@ private fun ReadingModeTab(config: ReaderConfig, mode: Mode, bookId: Long, onCon
             )
         }
     }
+    // ★ 三态互斥（2026-10-07 用户定则）：拆分双页 与 双页合并（手动/横屏触发）互斥。
+    //   拆分开 → 双页档位/横屏自动双页灰显，点击提示为什么不能开；合并态 → 拆分灰显。
+    //   横屏自动双页触发时布局选择器显示"双页"勾选（档位=本书 autoDoubleLayout 记忆），
+    //   用户改档位按书记住、竖屏不受影响——横屏影响双页，双页不影响横屏
+    val isLandscapeNow = androidx.compose.ui.platform.LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+    val autoDoubleActive = config.pageLayout == ReaderConfig.PageLayout.SINGLE &&
+        config.autoDoubleLandscape && isLandscapeNow && !config.doublePageSplit
+    val effectiveLayout = if (autoDoubleActive)
+        (if (config.autoDoubleLayout == 1) ReaderConfig.PageLayout.DOUBLE_SHIFTED else ReaderConfig.PageLayout.DOUBLE)
+    else config.pageLayout
+    val sheetCtx = androidx.compose.ui.platform.LocalContext.current
+    fun blockedToast(msg: String) =
+        android.widget.Toast.makeText(sheetCtx, msg, android.widget.Toast.LENGTH_SHORT).show()
     SettingsChipRow("页面布局") {
-        // ★ 2026-10-05 工单：横屏自动双页生效时面板要显示实际所见——存储值仍是"单页"
-        //   （回竖屏恢复），选中态按有效布局派生；点击仍写存储值
-        val isLandscapeNow = androidx.compose.ui.platform.LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
-        val autoDoubleActive = config.pageLayout == ReaderConfig.PageLayout.SINGLE &&
-            config.autoDoubleLandscape && isLandscapeNow
-        val effectiveLayout = if (autoDoubleActive) ReaderConfig.PageLayout.DOUBLE else config.pageLayout
             listOf("单页" to ReaderConfig.PageLayout.SINGLE, "双页" to ReaderConfig.PageLayout.DOUBLE,
                 "双页+起始页" to ReaderConfig.PageLayout.DOUBLE_SHIFTED).forEach { (label, value) ->
+                // 拆分开启时双页档位灰显（单页恒可用）；横屏自动双页生效中选双页档位=改本书记忆
+                val blockedBySplit = config.doublePageSplit && value != ReaderConfig.PageLayout.SINGLE
                 FilterChip(
                     selected = value == effectiveLayout,
+                    modifier = Modifier.alpha(if (blockedBySplit) 0.38f else 1f),
                     onClick = {
-                        if (value == ReaderConfig.PageLayout.SINGLE && autoDoubleActive) {
-                            // 横屏自动双页生效中点"单页"=此刻就要单页：不同时关掉自动开关，
-                            // 点击等于没点（布局派生立刻又变回双页）
-                            onConfigChange(config.copy(pageLayout = ReaderConfig.PageLayout.SINGLE, autoDoubleLandscape = false))
-                        } else {
-                            onConfigChange(config.copy(pageLayout = value))
+                        when {
+                            blockedBySplit ->
+                                blockedToast("拆分双页开启时不能使用双页合并，请先关闭拆分双页")
+                            value == ReaderConfig.PageLayout.SINGLE && autoDoubleActive -> {
+                                // 横屏自动双页生效中点"单页"=此刻就要单页：不同时关掉自动开关，
+                                // 点击等于没点（布局派生立刻又变回双页）
+                                onConfigChange(config.copy(pageLayout = ReaderConfig.PageLayout.SINGLE, autoDoubleLandscape = false))
+                            }
+                            autoDoubleActive -> {
+                                // ★ 触发中改档位：写入本书"自动双页档位"记忆（下次横屏触发用该档位），
+                                //   竖屏仍单页；同时落实互斥——合并状态下不能拆分
+                                onConfigChange(config.copy(
+                                    autoDoubleLayout = if (value == ReaderConfig.PageLayout.DOUBLE_SHIFTED) 1 else 0,
+                                    doublePageSplit = false))
+                            }
+                            else -> {
+                                // 单独开双页：不动横屏自动双页（双页不影响横屏）；互斥关拆分
+                                onConfigChange(config.copy(pageLayout = value, doublePageSplit = false))
+                            }
                         }
                     },
                     label = { Text(label, fontSize = 13.sp) },
                 )
             }
         }
-        if (config.pageLayout == ReaderConfig.PageLayout.SINGLE && config.autoDoubleLandscape) {
+        if (config.pageLayout == ReaderConfig.PageLayout.SINGLE && config.autoDoubleLandscape && !config.doublePageSplit) {
             Text(
-                "横屏时这本会自动以双页显示（回竖屏恢复单页）；开关对没单独调过的书全局生效",
+                "横屏时这本会自动以双页显示（回竖屏恢复单页）；开关对没单独调过的书全局生效" +
+                    if (config.autoDoubleLayout == 1) "；当前档位：双页+起始页" else "",
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f), fontSize = 11.sp, modifier = Modifier.padding(start = 4.dp, bottom = 4.dp),
             )
         }
         Text("切换双页模式时可能会短暂卡顿，滑动一下即可恢复", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f), fontSize = 11.sp, modifier = Modifier.padding(start = 4.dp, bottom = 4.dp))
         // ★ 2026-10-06 工单：起始页 2..10 可配（"跳过首页"泛化）；反转双页挪到页面布局区
-        if (config.pageLayout == ReaderConfig.PageLayout.DOUBLE_SHIFTED) {
+        if (config.pageLayout == ReaderConfig.PageLayout.DOUBLE_SHIFTED ||
+            (autoDoubleActive && config.autoDoubleLayout == 1)
+        ) {
             SliderItem(
                 "合并起始页", config.doublePageStart.toFloat(), 2f..10f, 8,
                 "第 ${config.doublePageStart} 页起合并（前 ${config.doublePageStart - 1} 页单独显示）",
             ) { onConfigChange(config.copy(doublePageStart = it.toInt())) }
         }
-        if (config.pageLayout != ReaderConfig.PageLayout.SINGLE) {
+        if (config.pageLayout != ReaderConfig.PageLayout.SINGLE || autoDoubleActive) {
             // ★ 2026-10-06 工单：反转双页归位页面布局区（原在画面区深处，与拆分无关）
             CheckboxItem(
                 "反转双页（每对页面左右顺序镜像）", config.doublePageReverse,
@@ -350,7 +382,8 @@ private fun ReadingModeTab(config: ReaderConfig, mode: Mode, bookId: Long, onCon
 
         // ★ 固定裁剪（仅本书功能 2026-10-04）：给这本书记四边裁剪比例，解码时裁掉再铺满——
         //   裁后画面无"放大态"，翻页手势照常。bookId<=0（未入库临时打开）不显示也不持久化。
-        if (bookId > 0) {
+        // ★ stableBookId 哈希可负：负 id 也是入库/可定位书（仅 0=无身份），恒可配
+        if (bookId != 0L) {
             CheckboxItem("固定裁剪（本书）", fixedCrop.active) { on ->
                 onCropChange(if (on) BookCrop(0.05f, 0.05f, 0.05f, 0.05f) else BookCrop.OFF)
             }
@@ -445,10 +478,21 @@ private fun ReadingModeTab(config: ReaderConfig, mode: Mode, bookId: Long, onCon
             fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(start = 4.dp, bottom = 4.dp),
         )
-        CheckboxItem("拆分双页（跨页图拆成左右两页，翻页/条漫均生效）", config.doublePageSplit) { onConfigChange(config.copy(doublePageSplit = it)) }
+        // ★ 三态互斥（2026-10-07 用户定则）：拆分优先——开启拆分=退出合并态（回单页布局、
+        //   关横屏自动双页），合并状态下不能拆分；关闭拆分无副作用。拆分开关自身恒可点
+        //   （若灰显会与横屏自动双页的灰显互相锁死，旧数据两态并存时谁也关不掉）
+        CheckboxItem("拆分双页（跨页图拆成左右两页，翻页/条漫均生效）", config.doublePageSplit) {
+            onConfigChange(
+                if (it) config.copy(
+                    doublePageSplit = true,
+                    pageLayout = ReaderConfig.PageLayout.SINGLE,
+                    autoDoubleLandscape = false,
+                ) else config.copy(doublePageSplit = false)
+            )
+        }
         if (config.pageLayout != ReaderConfig.PageLayout.SINGLE) {
         }
-        SliderItem("侧边留白", config.imageMarginH.toFloat(), -20f..50f, 70, "${config.imageMarginH}dp") {
+        SliderItem("侧边留白（屏宽百分比，上限50%）", config.imageMarginH.coerceIn(0, 50).toFloat(), 0f..50f, 50, "${config.imageMarginH.coerceIn(0, 50)}%") {
             onConfigChange(config.copy(imageMarginH = it.toInt()))
         }
         SettingsChipRow("双页中缝") {
@@ -518,8 +562,12 @@ private fun GeneralTab(config: ReaderConfig, onConfigChange: (ReaderConfig) -> U
         }
     }
     CheckboxItem("自动进入条漫模式", config.autoWebtoon) { onConfigChange(config.copy(autoWebtoon = it)) }
-    // ★ 横屏自动双页：始终显示（隐藏条件曾让双页布局用户找不到开关）；全局语义
-    CheckboxItem("横屏时自动使用双页（仅页面布局为单页时生效）", config.autoDoubleLandscape) { onConfigChange(config.copy(autoDoubleLandscape = it)) }
+    // ★ 横屏自动双页：始终显示（隐藏条件曾让双页布局用户找不到开关）；全局语义。
+    //   ★ 互斥（2026-10-07）：拆分双页开启时灰显，点击提示
+    CheckboxItem("横屏时自动使用双页（仅页面布局为单页时生效）", config.autoDoubleLandscape,
+        enabled = !config.doublePageSplit,
+        blockedHint = "拆分双页开启时不能启用横屏自动双页，请先关闭拆分双页",
+    ) { onConfigChange(config.copy(autoDoubleLandscape = it)) }
     // ★ 2026-10-05 横屏自动条漫：与横屏自动双页互斥的另一半（工单：横屏铺满该有整本连续滚动）
     if (!config.autoDoubleLandscape) {
         CheckboxItem("横屏时自动使用条漫（翻页模式连续滚动）", config.landscapeAutoWebtoon) { onConfigChange(config.copy(landscapeAutoWebtoon = it)) }

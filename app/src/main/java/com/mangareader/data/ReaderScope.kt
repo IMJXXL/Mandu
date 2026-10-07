@@ -55,6 +55,7 @@ object ReaderScope {
         "isTrimWhiteBorder", "trimFactor", "trimThreshold", "trimWhiteRatio", "imageMarginH",
         "isGrayscale", "isInvertColors",
         "doublePageShift", "doublePageSplit", "doublePageReverse", "centerGapType",
+        "autoDoubleLayout", // ★ 横屏自动双页档位记忆：按书（2026-10-07 这本下次横屏触发用改过的档位）
         "brightness", "screenBrightness", "contrast", "gamma",
         "brightnessEnabled", "screenBrightnessEnabled", "contrastEnabled", "gammaEnabled",
         "textureEnabled", "texturePresetId", "textureAlpha", "textureConcentration", "textureScope",
@@ -126,7 +127,9 @@ object ReaderScope {
         // 注意：总开关只影响"新调整"的写入，已存在的本书覆盖在读取侧永远生效。
         return when {
             key in GLOBAL_LOCKED_KEYS -> Layer.GLOBAL // 阅读设置纳管的项：恒全局
-            bookId <= 0 -> Layer.GLOBAL
+            // ★ bookId!=0 即有稳定身份（stableBookId 路径哈希可正可负，Long 符号位与
+            //   入库无关）——仅 0（无路由参数/临时打开）才恒全局
+            bookId == 0L -> Layer.GLOBAL
             userScope(prefs, key) == SCOPE_GLOBAL -> Layer.GLOBAL
             masterOn(prefs) -> Layer.BOOK
             else -> Layer.SESSION

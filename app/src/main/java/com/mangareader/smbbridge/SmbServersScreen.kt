@@ -151,7 +151,15 @@ fun SmbServersScreen(onBack: () -> Unit, onOpenBook: (Long, Int) -> Unit = { _, 
                                                 busyId = s.id
                                                 try {
                                                     val n = SmbScanner.scanSmbServer(s.id)
-                                                    val msg = if (n == 0) "扫描完成，书架无变化" else "扫描成功：新增 $n 本，封面后台加载中"
+                                                    val pruned = SmbScanner.lastScanPruned(s.id)
+                                                    val msg0 = when {
+                                                        n > 0 && pruned > 0 -> "扫描成功：新增 $n 本、清理 $pruned 本失效书"
+                                                        n > 0 -> "扫描成功：新增 $n 本，封面后台加载中"
+                                                        pruned > 0 -> "扫描完成：清理 $pruned 本服务器已删除的书"
+                                                        else -> "扫描完成，书架无变化"
+                                                    }
+                                                    // ★ 护栏披露（方案 B）：有目录未列出 → 本轮放弃清理
+                                                    val msg = if (SmbScanner.lastScanSkippedDirs(s.id) > 0) "$msg0（有目录未能列出，本次未清理）" else msg0
                                                     Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show()
                                                 } catch (t: Throwable) {
                                                     Toast.makeText(ctx, SmbErrors.humanizeSmb(t), Toast.LENGTH_LONG).show()

@@ -31,7 +31,7 @@ object PageSizeCacheStore {
             val f = java.io.File(ctx.filesDir, "page_sizes/$key.json")
             if (!f.exists()) return null
             val obj = JSONObject(f.readText())
-            if (obj.optString("stamp") != stamp) return null
+            val fileStamp = obj.optString("stamp")
             val sizesObj = obj.optJSONObject("sizes") ?: return null
             val out = HashMap<String, IntArray>(sizesObj.length())
             for (k in sizesObj.keys()) {
@@ -39,7 +39,17 @@ object PageSizeCacheStore {
                 out[k] = intArrayOf(arr.getInt(0), arr.getInt(1))
             }
             val frozen = java.util.Collections.unmodifiableMap(out)
-            mem[key] = stamp to frozen
+            if (fileStamp != stamp && frozen.isEmpty()) return null
+            // ★ v1.384 stamp 迁移（宽图二分退役过渡）：pageList 从展开表(196)回归原页表(98)
+            //   时 stamp 随页数变化，旧尺寸表键=localIdx|source 与原页键完全兼容——直接迁移
+            //   而非整体作废重探（rar 全量解压探测 60s）。误配风险（同路径换内容）由渲染器
+            //   侧尺寸复核+渐进 observePageDim 修正兜底
+            if (fileStamp != stamp) {
+                mem[key] = stamp to frozen
+                save(ctx, bookPath, stamp, frozen)
+            } else {
+                mem[key] = stamp to frozen
+            }
             frozen
         } catch (_: Exception) { null }
     }

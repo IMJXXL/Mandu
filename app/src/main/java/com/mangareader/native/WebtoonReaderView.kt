@@ -393,8 +393,7 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
     var imageMarginH: Int = 0
         set(value) {
             field = value
-            val marginPx = (value * context.resources.displayMetrics.density).toInt()
-            webtoonFrame.setPadding(marginPx, 0, marginPx, 0)
+            webtoonFrame.marginPct = value
         }
     var trimWhiteBorder: Boolean = false
         set(value) {
@@ -1600,6 +1599,26 @@ internal open class GestureDetectorWithLongTap(
 
 /** 手势检测在未缩放父容器上（TSY WebtoonFrame） */
 private class WebtoonFrame(context: Context) : android.widget.FrameLayout(context) {
+    // ★ 侧边留白跟帧宽（2026-10-07 工单"按现在的显示状态"）：百分比以"当前帧宽"为基，
+    //  onSizeChanged 挂钩——旋转/任何宽度变化自动重算，不再用活动屏宽一次定死
+    var marginPct = 0
+        set(value) { field = value; applyMargin() }
+    fun applyMargin() {
+        val w = width.takeIf { it > 0 } ?: context.resources.displayMetrics.widthPixels
+        val m = marginPct.coerceAtLeast(0) * w / 100
+        setPadding(m, 0, m, 0)
+        // ★ 留白取证（"幅度不对"工单）：帧宽/RV宽/RV缩放态一次看清
+        runCatching {
+            val rv = getChildAt(0)
+            com.mangareader.DiagTracer.mark(context,
+                "wtMargin pct=$marginPct px=$m frameW=$w rvW=${rv?.width ?: -1}" +
+                    " scale=${(rv as? WebtoonRv)?.diagScale() ?: -1f}")
+        }
+    }
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        applyMargin()
+    }
     private val scaleDetector = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
         override fun onScaleBegin(d: ScaleGestureDetector): Boolean { (getChildAt(0) as? WebtoonRv)?.onScaleBegin(); return true }
         override fun onScale(d: ScaleGestureDetector): Boolean { (getChildAt(0) as? WebtoonRv)?.onScale(d.scaleFactor); return true }
@@ -1638,6 +1657,8 @@ class WebtoonRv(ctx: Context) : RecyclerView(ctx) {
     var doubleTapZoom = true
 
     private var currentScale = DEFAULT_RATE
+    /** ★ 诊断：当前整体缩放态（留白"幅度不对"取证——放大态下留白被同步放大） */
+    fun diagScale(): Float = currentScale
     private var isZooming = false
     private var halfWidth = 0; private var halfHeight = 0
     var originalHeight = 0; private set

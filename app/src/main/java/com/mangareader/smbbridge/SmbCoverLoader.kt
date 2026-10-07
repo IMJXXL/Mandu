@@ -1,5 +1,8 @@
 package com.mangareader.smbbridge
 
+import com.hippo.ehviewer.library.BrowseEntryRemote
+import com.hippo.ehviewer.library.IMAGE_EXTENSIONS
+import com.hippo.ehviewer.smb.SmbGateway
 import com.hippo.ehviewer.library.ArchiveCoverCache
 import com.hippo.ehviewer.library.CoverEnsureResult
 import com.hippo.ehviewer.library.ReadAheadArchiveByteSource
@@ -42,6 +45,10 @@ object SmbCoverLoader {
 
     private val dedup = java.util.concurrent.ConcurrentHashMap<String, Mutex>()
 
+    // ★ 封面失败冷却（10 分钟）：书架重组不再反复打服务器
+    private val failedAt = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    private const val COVER_RETRY_COOLDOWN_MS = 10L * 60_000L
+
     @Volatile
     private var scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -68,8 +75,28 @@ object SmbCoverLoader {
     }
 
     private suspend fun loadCoverRawSmbInternal(coverPath: String, wantRaw: Boolean = false): Pair<ByteArray, String>? = withContext(Dispatchers.IO) {
+        // ★ 失败冷却：10 分钟内不重试同路径
+        failedAt[coverPath]?.let { ts ->
+            if (System.currentTimeMillis() - ts < COVER_RETRY_COOLDOWN_MS) return@withContext null
+        }
+        try {
+            loadCoverRawSmbInner(coverPath, wantRaw)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (t: Throwable) {
+            failedAt[coverPath] = System.currentTimeMillis()
+            throw t
+        }
+    }
+
+    private suspend fun loadCoverRawSmbInner(coverPath: String, wantRaw: Boolean): Pair<ByteArray, String>? = withContext(Dispatchers.IO) {
         val ref = SmbPaths.parseCoverPath(coverPath) ?: return@withContext null
         if (SmbUnsupportedFormatHandler.isUnsupported(ref.ext)) return@withContext null
+        // ★ 目录封面递归（深度 5，对齐本地算法与 WebDAV 侧）：无直连图向下抓
+        if (ref.ext.isEmpty()) {
+            return@withContext dirCoverRecursive(ref, 0)?.also { failedAt.remove(coverPath) }
+                ?: null.also { failedAt[coverPath] = System.currentTimeMillis() }
+        }
 
         val mutex = dedup.getOrPut(coverPath) { Mutex() }
         try {
@@ -83,6 +110,50 @@ object SmbCoverLoader {
             null
         }
     }
+
+    /** ★ 目录封面递归（深度 5）：直连图 → 直连可扫包 → 子目录自然序递归；全空 null 占位 */
+    private suspend fun dirCoverRecursive(ref: SmbBookRef, depth: Int): Pair<ByteArray, String>? {
+        if (depth > 5) return null
+        // ★ P5：目录路径 dedup 互斥（原 mutex 只护文件封面路径），并发同目录不重复列目录
+        val dirMutex = dedup.getOrPut("dir:${ref.fullRel}") { Mutex() }
+        dirMutex.withLock {
+        val source = SmbRepository.load(ref.serverId) ?: return null
+        val password = try { SmbPasswordStore.get(source.id) } catch (_: Throwable) { "" }
+        val baseDir = if (source.share.isBlank()) ref.fullRel else ref.rel
+        val entries = try {
+            SmbGateway.listDirectory(source, password, baseDir)
+        } catch (_: Throwable) { return null }
+        val children = entries.filter { !it.virtual && !it.hidden }
+        val fileNameExt: (String) -> String = { it.substringAfterLast('.', "").lowercase() }
+        fun subRef(name: String, ext: String): SmbBookRef {
+            val joined = joinRemoteDir(baseDir, name)
+            return if (source.share.isBlank())
+                SmbBookRef(ref.serverId, "", joined.substringAfter('/'), joined, ext)
+            else SmbBookRef(ref.serverId, ref.share, joined, "${ref.share}/$joined", ext)
+        }
+        // ① 直连图片
+        children.filterIsInstance<BrowseEntryRemote.RegularFile>()
+            .firstOrNull { fileNameExt(it.name) in IMAGE_EXTENSIONS }?.let { img ->
+                return runCatching { loadCoverByArchiveCache(subRef(img.fileName, fileNameExt(img.name)), false)
+                    ?: loadCoverByTransientSession(subRef(img.fileName, fileNameExt(img.name)), false) }.getOrNull()
+            }
+        // ② 直连可扫文件
+        children.filterIsInstance<BrowseEntryRemote.RegularFile>()
+            .firstOrNull { fileNameExt(it.name) in SmbScanner.SCANNABLE_FORMATS }?.let { arch ->
+                return runCatching { loadCoverByArchiveCache(subRef(arch.fileName, fileNameExt(arch.name)), false)
+                    ?: loadCoverByTransientSession(subRef(arch.fileName, fileNameExt(arch.name)), false) }.getOrNull()
+            }
+        // ③ 子目录递归
+        for (d in children.filterIsInstance<BrowseEntryRemote.Directory>().sortedBy { it.name.lowercase() }) {
+            if (d.unreachable) continue
+            dirCoverRecursive(subRef(d.relativeName, ""), depth + 1)?.let { return it }
+        }
+        return null
+        }
+    }
+
+    private fun joinRemoteDir(dir: String, name: String): String =
+        if (dir.endsWith('/')) dir + name else "$dir/$name"
 
     /**
      * 归档/文档封面：[ArchiveCoverCache] 轻量路径。文件夹书返回 null（由 transient session 兜底）。

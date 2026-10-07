@@ -32,7 +32,8 @@ object BookCropStore {
     private const val PREFS = "manga_reader"
 
     fun load(prefs: SharedPreferences, bookId: Long): BookCrop {
-        if (bookId <= 0) return BookCrop.OFF
+        // ★ stableBookId 路径哈希可正可负（Long 符号位与入库无关），仅 0=无身份
+        if (bookId == 0L) return BookCrop.OFF
         fun f(suffix: String): Float =
             try { prefs.getFloat("book_${bookId}_$suffix", 0f) } catch (_: Exception) { 0f }
         val c = BookCrop(f("cropL"), f("cropT"), f("cropR"), f("cropB"))
@@ -43,7 +44,7 @@ object BookCropStore {
         load(ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE), bookId)
 
     fun save(ctx: Context, bookId: Long, crop: BookCrop) {
-        if (bookId <= 0) return
+        if (bookId == 0L) return
         val e = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
         val p = "book_${bookId}_"
         e.putFloat("${p}cropL", crop.left.coerceIn(0f, BookCrop.MAX))

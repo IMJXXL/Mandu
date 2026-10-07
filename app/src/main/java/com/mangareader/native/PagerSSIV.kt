@@ -48,6 +48,12 @@ class PagerSSIV @JvmOverloads constructor(
             }
         }
 
+    // ★ v1.384 拆分视口锁（2026-10-07"画面卡住像滑到45°"根修）：拆分页 SSIV 装整张宽图、
+    //  视口只显示一半——另一半永远在视口外 = hasXXPanRoom 恒真 = 未放大拖动被 hold-pan
+    //  吃进图内平移，钳边即视觉"卡住"（13:04:49 日志 scale==base 1.22 仍 hold-pan 实锤）。
+    //  锁定时未放大态两轴均无 pan 余量 → 拖动全部放行翻页；双击放大后照常拖图
+    var splitViewportLocked = false
+
     /** ★ 手势分流主轴：true=横向滑动放行翻页（横向 pager）、纵向拖动看图（铺满屏幕划着看）；
      *  false=反向（竖向翻页 pager）。由 PagerReaderView 按 verticalPager 接线。 */
     var axisPassthroughHorizontal = true
@@ -115,11 +121,13 @@ class PagerSSIV @JvmOverloads constructor(
     //   沿轴滑动被误判 hold-pan，捏小态翻页失效（捏小恰是铺满/贴宽用户看全貌后的下一步）。
     //   改比"图当前显示尺寸是否真溢出视口"：溢出才有拖图意义；捏小/贴边一律放行翻页。
     private fun hasVerticalPanRoom(): Boolean = try {
-        sHeight * scale > height + 1f
+        if (splitViewportLocked && scale <= gestureBaseScale() + 0.01f) false
+        else sHeight * scale > height + 1f
     } catch (_: Exception) { false }
 
     private fun hasHorizontalPanRoom(): Boolean = try {
-        sWidth * scale > width + 1f
+        if (splitViewportLocked && scale <= gestureBaseScale() + 0.01f) false
+        else sWidth * scale > width + 1f
     } catch (_: Exception) { false }
 
     private val touchSlopPx by lazy { android.view.ViewConfiguration.get(context).scaledTouchSlop }

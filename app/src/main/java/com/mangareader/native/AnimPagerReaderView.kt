@@ -347,7 +347,7 @@ class AnimPagerReaderView(context: Context) : FrameLayout(context), ReaderViewDe
             val container = FrameLayout(parent.context).apply {
                 layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
                 setBackgroundColor(pageBgColor)
-                val marginPx = (imageMarginH * parent.context.resources.displayMetrics.density).toInt()
+                val marginPx = (imageMarginH.coerceAtLeast(0) * parent.context.resources.displayMetrics.widthPixels / 100)
                 setPadding(marginPx, 0, marginPx, 0)
             }
             val iv = ImageView(parent.context).apply {
@@ -368,7 +368,7 @@ class AnimPagerReaderView(context: Context) : FrameLayout(context), ReaderViewDe
         override fun onBindViewHolder(holder: AnimViewHolder, position: Int) {
             val realIdx = if (isRtl) pageList.size - 1 - position else position
             val container = holder.itemView as FrameLayout
-            val marginPx = (imageMarginH * container.context.resources.displayMetrics.density).toInt()
+            val marginPx = (imageMarginH.coerceAtLeast(0) * container.context.resources.displayMetrics.widthPixels / 100)
             container.setPadding(marginPx, 0, marginPx, 0)
             container.setBackgroundColor(pageBgColor)
 

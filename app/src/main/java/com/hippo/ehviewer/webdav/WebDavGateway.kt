@@ -310,6 +310,17 @@ object WebDavGateway {
         val zipInteriors: Map<String, List<BrowseEntryRemote>> = emptyMap(),
     )
 
+    /** ★ 扫描专用裸列表（2026-10-07"服务器已删书仍被发现"）：绕过进程级 rawChildren RAM
+     *  缓存与会话合并，直接 PROPFIND+分类——扫描语义对齐本地（只见服务器实时状态） */
+    suspend fun listDirectoryForScan(
+        source: WebDavSourceEntity,
+        password: String,
+        relativeDir: String,
+    ): List<BrowseEntryRemote> = withIOContext {
+        val children = WebDavClient.listChildren(source, password, relativeDir)
+        classifyDirectoryChildren(source, password, relativeDir, children)
+    }
+
     private suspend fun listDirectoryUncached(
         source: WebDavSourceEntity,
         password: String,

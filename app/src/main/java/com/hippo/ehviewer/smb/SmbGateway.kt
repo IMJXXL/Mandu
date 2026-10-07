@@ -2349,6 +2349,22 @@ object SmbGateway {
         val zipInteriors: Map<String, List<BrowseEntryRemote>> = emptyMap(),
     )
 
+    /** ★ 扫描专用裸列表（同 WebDavGateway）：绕过 rawChildren RAM 缓存，直接 QUERY_DIRECTORY+分类 */
+    suspend fun listDirectoryForScan(
+        source: SmbSourceEntity,
+        password: String,
+        relativeDir: String,
+    ): List<BrowseEntryRemote> {
+        if (isServerRootSource(source) && relativeDir.isBlank()) {
+            return listShareRootEntries(source, password)
+        }
+        val loc = resolveLocation(source, relativeDir)
+        val children = withShare(source, password, ShareOp.List, loc.share) { share ->
+            listChildrenLenient(share, loc.pathInShare)
+        }
+        return classifyDirectoryChildren(source, password, relativeDir, children)
+    }
+
     private suspend fun listDirectoryUncached(
         source: SmbSourceEntity,
         password: String,

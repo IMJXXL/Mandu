@@ -126,6 +126,19 @@ fun WebDavSettingsScreen(onBack: () -> Unit, onOpenDownloadQueue: () -> Unit = {
 
             item {
             SectionCard("目录索引与扫描") {
+                // ★ 启动自动刷新（方案 A）：每源一次设置，进书架自动扫描一次
+                val ctx2 = LocalContext.current
+                var autoRefreshDav by remember { mutableStateOf(runCatching { ctx2.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE).getBoolean("auto_refresh_webdav", false) }.getOrDefault(false)) }
+                Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("启动自动刷新", fontSize = 16.sp)
+                        Text("打开应用进入书架时自动扫描本源：发现新书、清理服务器上已删除的书。完整网络遍历，书库大时较慢", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(checked = autoRefreshDav, onCheckedChange = { v ->
+                        autoRefreshDav = v
+                        ctx2.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE).edit().putBoolean("auto_refresh_webdav", v).apply()
+                    })
+                }
                 SwitchRow("目录索引缓存", "缓存目录列表与页数信息，二次进入/扫描更快", Settings.networkFolderIndexCache)
                 SwitchRow("快速扫描", "增量扫描时跳过深度 peek，更快但新目录信息可能不全", Settings.networkFolderIndexQuickScan)
                 SwitchRow("保存文件标记", "在共享目录写入标记文件辅助识别", Settings.saveFileMarkers)
