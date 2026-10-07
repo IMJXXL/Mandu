@@ -531,6 +531,8 @@ private fun ReadingModeTab(config: ReaderConfig, mode: Mode, bookId: Long, onCon
             )
         }
     }
+
+    TapZoneSection(config = config, onConfigChange = onConfigChange)
 }
 
 // ===== Tab 1 =====
@@ -953,5 +955,67 @@ private fun TapZoneVisualPreview(type: ReaderConfig.ClickFlipType, invertH: Bool
                 }
             }
         }
+    }
+}
+@Composable
+private fun TapZoneSection(config: ReaderConfig, onConfigChange: (ReaderConfig) -> Unit) {
+    GroupTitle("点击翻页区域")
+    Text(
+        "翻页画面时点哪一块做什么（翻页/条漫/仿真翻页均适用；条漫中上一页=上滚一屏、下一页=下滚一屏）",
+        fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(horizontal = HORIZONTAL_PAD),
+    )
+    Spacer(Modifier.height(10.dp))
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = HORIZONTAL_PAD),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        listOf(
+            "关闭" to ReaderConfig.ClickFlipType.NO,
+            "左右分区" to ReaderConfig.ClickFlipType.LEFT_RIGHT,
+            "L型" to ReaderConfig.ClickFlipType.L_SHAPE,
+            "边沿" to ReaderConfig.ClickFlipType.EDGE,
+            "Kindlish" to ReaderConfig.ClickFlipType.KINDLISH,
+        ).forEach { (label, value) ->
+            Surface(
+                modifier = Modifier.weight(1f).clickable { onConfigChange(config.copy(clickFlipType = value)) },
+                shape = MaterialTheme.shapes.medium,
+                color = if (config.clickFlipType == value) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                tonalElevation = if (config.clickFlipType == value) 4.dp else 0.dp,
+            ) {
+                Text(
+                    label, fontSize = 13.sp, modifier = Modifier.padding(10.dp),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    color = if (config.clickFlipType == value) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                )
+            }
+        }
+    }
+    Spacer(Modifier.height(8.dp))
+    ClickZonePreview(config.clickFlipType, config.clickFlipInvertH)
+    Text(
+        "深色区=上一页 · 浅色区=下一页 · 空白=唤出菜单",
+        fontSize = 10.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(top = 4.dp),
+    )
+    Spacer(Modifier.height(8.dp))
+    TapZoneVisualPreview(config.clickFlipType, config.clickFlipInvertH)
+    Spacer(Modifier.height(8.dp))
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = HORIZONTAL_PAD),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text("对调左右（左手模式）", fontSize = 14.sp)
+            Text(
+                if (config.clickFlipInvertH) "开启后：点右侧=上一页、点左侧=下一页" else "关闭时：点左侧=上一页、点右侧=下一页",
+                fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Switch(
+            checked = config.clickFlipInvertH,
+            onCheckedChange = { on -> onConfigChange(config.copy(clickFlipInvertH = on)) },
+            enabled = config.clickFlipType != ReaderConfig.ClickFlipType.NO,
+        )
     }
 }
