@@ -146,6 +146,15 @@ object WebDavCoverLoader {
             val sub = WebDavBookRef(ref.serverId, joinRemoteDir(ref.remotePath, archGallery.fileName), fileNameExt(archGallery.name))
             return runCatching { loadCoverByArchiveCache(sub, false) ?: loadCoverByTransientSession(sub, false) }.getOrNull()
         }
+        // ②.6 子目录画廊（FolderGallery，子目录含图片被提升为画廊，imageFileNames 即图片列表）
+        val folderGallery = children.filterIsInstance<BrowseEntryRemote.FolderGallery>()
+            .firstOrNull { it.relativeName.isNotEmpty() && it.imageFileNames.isNotEmpty() }
+        if (folderGallery != null) {
+            val imgName = folderGallery.imageFileNames.first()
+            val imgPath = joinRemoteDir(joinRemoteDir(ref.remotePath, folderGallery.relativeName), imgName)
+            val sub = WebDavBookRef(ref.serverId, imgPath, fileNameExt(imgName))
+            return runCatching { loadCoverByArchiveCache(sub, false) ?: loadCoverByTransientSession(sub, false) }.getOrNull()
+        }
         // ③ 子目录递归
         for (d in children.filterIsInstance<BrowseEntryRemote.Directory>().sortedBy { it.name.lowercase() }) {
             if (d.unreachable) continue

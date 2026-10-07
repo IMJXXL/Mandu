@@ -149,6 +149,13 @@ object SmbCoverLoader {
                 return runCatching { loadCoverByArchiveCache(subRef(arch.fileName, fileNameExt(arch.name)), false)
                     ?: loadCoverByTransientSession(subRef(arch.fileName, fileNameExt(arch.name)), false) }.getOrNull()
             }
+        // ②.6 子目录画廊（FolderGallery，子目录含图片被提升为画廊，imageFileNames 即图片列表）
+        children.filterIsInstance<BrowseEntryRemote.FolderGallery>()
+            .firstOrNull { it.relativeName.isNotEmpty() && it.imageFileNames.isNotEmpty() }?.let { gallery ->
+                val imgName = gallery.imageFileNames.first()
+                return runCatching { loadCoverByArchiveCache(subRef(joinRemoteDir(gallery.relativeName, imgName), fileNameExt(imgName)), false)
+                    ?: loadCoverByTransientSession(subRef(joinRemoteDir(gallery.relativeName, imgName), fileNameExt(imgName)), false) }.getOrNull()
+            }
         // ③ 子目录递归
         for (d in children.filterIsInstance<BrowseEntryRemote.Directory>().sortedBy { it.name.lowercase() }) {
             if (d.unreachable) continue
