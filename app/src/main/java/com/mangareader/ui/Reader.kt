@@ -1166,15 +1166,13 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                 }
             }
         }
-        // ★ 宽图二分（2026-10-02）：拆分双页开启时跨页拼合图（宽>高×1.2）拆成左右半页（splitSide）。
-        //   条漫族=竖切+宽图同轮；翻页族=仅宽图（竖切段页翻页视图不渲染，isWebtoonMode 把守）。
-        //   双页布局不展开（双页并排自带跨页完整显示）；翻页族展开后每个半页=独立翻页位，
-        //   滑动/点击/进度条全走 ViewPager2 原生路径（修拆分后滑动翻页失效）。
+        // ★ 宽图二分（2026-10-02→v1.384 退役）：宽图二分从引擎层展开上移到 SpreadTable slot
+        //   （Komiho dualPageSplit 跟进）——横宽页由表层占两个半页 slot、渲染层视口定位，
+        //   引擎页表恒原页 1:1。此前"进书逐页探测→探测失败整页透传→页数漂移"（rar 首开
+        //   慢 60s+半页跳页工单）随探测需求一并消失。竖切（长图分段）仍在此展开：条漫族专用
         val isWebtoonFamily = mode == Mode.VERT || mode == Mode.WEBTOON_GAP
-        val wideSplitOn = config.doublePageSplit &&
-            (isWebtoonFamily || config.pageLayout == com.mangareader.data.ReaderConfig.PageLayout.SINGLE)
         var expandedStampLocal: String? = null
-        val expandedPages = if ((config.tallSplitEnabled && isWebtoonFamily) || wideSplitOn) {
+        val expandedPages = if (config.tallSplitEnabled && isWebtoonFamily) {
             val sm = maxOf(ctx.resources.displayMetrics.widthPixels, ctx.resources.displayMetrics.heightPixels)
             val sw = ctx.resources.displayMetrics.widthPixels
             // ★ 长图分割：入口放宽到全部本地书（PDF + 图片族），白名单在 expander 内把守；
@@ -1183,7 +1181,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             val leftFirst = !(isRtl != config.doublePageReverse)
             try { withContext(Dispatchers.IO) { com.mangareader.engine.pdf.VirtualPageExpander.expand(
                 pages, config.tallSplitEnabled, isWebtoonFamily, sm, sw, engine, path,
-                allowProbe = true, wideSplitEnabled = wideSplitOn, splitLeftFirst = leftFirst,
+                allowProbe = true, wideSplitEnabled = false, splitLeftFirst = leftFirst,
                 tallRatioThreshold = com.mangareader.engine.pdf.PdfTallSplitCalculator.ratioThreshold(config.tallSplitSensitivity)) }
                 .also { expandedStampLocal = com.mangareader.engine.pdf.VirtualPageExpander.lastStoreStamp } }
             catch (_: Exception) { pages }
@@ -2381,8 +2379,17 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     // ★ 双页智能配对尺寸扫描（2026-10-05）：双页布局（或横屏自动双页）+ 本地书时后台扫全本
     //   页尺寸喂跨页表（SpreadTable）。键挂 pageList——切章/模式切换页表变身份即重扫
     //   （PageSizeCacheStore 命中近零成本）；扫描前置空防同长度页表换书时的旧尺寸错配
+    // ★ v1.383 用户工单"横屏自动双页对、手动双页错"：旧写法无条件 pageDimsState=空——手动
+    //   切双页把已扫尺寸清掉，SpreadTable 拿 dims=空退化朴素硬拼（横宽页两两拼、"乱组合"），
+    //   再等渐进收敛闪 N 次；横屏自动双页在进书时生效、扫描早已落盘完成故"对"。改为仅页表
+    //   身份变化（换书/切章/拆分展开，lastScannedPageList 引用比对）时前置清空，模式/开关
+    //   切换保留已扫尺寸——手动切双页立刻用全量 dims 出智能表，零退化零渐进
+    var lastScannedPageList by remember { mutableStateOf<List<com.mangareader.viewer.ArchiveEngine.PageMeta>?>(null) }
     LaunchedEffect(pageList, config.doubleMergeSmart, config.pageLayout, config.autoDoubleLandscape) {
-        pageDimsState = IntArray(0)
+        if (lastScannedPageList !== pageList) {
+            pageDimsState = IntArray(0)
+            lastScannedPageList = pageList
+        }
         val tree = navStack.lastOrNull() ?: book?.filePath ?: ""
         if (pageList.isEmpty() || tree.isEmpty()) return@LaunchedEffect
         // 远程书不探测（ArchiveEngine 探测入口 requireNotRemote 拒收）——视图收到空表回退朴素配对

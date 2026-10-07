@@ -86,6 +86,8 @@ versionName = "1.383"
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             signingConfig = signingConfigs.getByName("release")
+            // ★ 调试期临时:run-as 直拉私有诊断文件(diag_stages/page_sizes),交付前必须移除
+            isDebuggable = true
         }
     }
 

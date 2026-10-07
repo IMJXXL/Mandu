@@ -351,6 +351,13 @@ fun NativeReaderScreen(
             //   此前 setup/运行时两处都没接线 → 仿真双页下双击放大开关改了没反应
             delegate.doubleTapZoom = doubleTapZoom
 
+            // ★ v1.383 用户工单"横宽图上开双页→这张被合并、一张错全错"根修：
+            //   切双页走本 effect 时 PagerReaderView.pageDims 尚为空（新实例字段未推送），
+            //   setDoublePageModeAndShift→rebuildSpreadTable 拿 dims=空退化朴素两两硬拼
+            //   （横宽页被并排、错位随顺序配对传播）；随后 setPageDims(全量) 的
+            //   freezeCurrent 又把当前位的错误配对冻住。先喂尺寸再切表——首表即 smart，
+            //   其后 LaunchedEffect(pageDims) 的 setPageDims 同内容幂等早退，零 freeze
+            if (delegate is PagerReaderView) delegate.setPageDims(pageDims)
             delegate.setDoublePageModeAndShift(pageLayout == 1 || pageLayout == 2, pageLayout == 2)
             // ★ 起始页（与 PagerReaderView 同口径）：modeAndShift 幂等早退时起始页变化仍需重建
             if (pageLayout == 2) delegate.setDoublePageStart(doublePageStart)
@@ -366,6 +373,8 @@ fun NativeReaderScreen(
         //   故并入本 effect 且必须先于注入；该 LaunchedEffect 已删——其 key 集是本 effect 的
         //   子集，且外层 key() 五元组含这三项，变化时本 effect 必随新实例重跑，行为全覆盖。
         if (!isVertical && delegate is PagerReaderView) {
+            // ★ v1.383 同 354 前的修复：新实例路径首表即 smart（pageDims 先行，同内容幂等）
+            delegate.setPageDims(pageDims)
             delegate.setDoublePageModeAndShift(pageLayout == 1 || pageLayout == 2, pageLayout == 2)
             // ★ 双页合并起始页（"双页+起始页"档）：modeAndShift 同值早退时起始页变化仍需重建
             if (pageLayout == 2) delegate.setDoublePageStart(doublePageStart)

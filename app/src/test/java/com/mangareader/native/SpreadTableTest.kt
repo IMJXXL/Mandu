@@ -243,17 +243,24 @@ class SpreadTableTest {
         //   场景：6 页双页全配对 [0+1][2+3][4+5]；用户在第 2 页（slot 1=[2,3]）；
         //   新尺寸说 2 是横宽跨页该 solo（smart 下会拆），冻结边界=当前位末页 3：
         //   slot0/slot1 照抄，slot2 起重排。
-        val prev = SpreadTable.build(6, smart = true)
-        assertEquals(3, prev.slotCount)
-        assertEquals(0, prev.firstPage(0)); assertEquals(1, prev.secondPage(0))
-        assertEquals(2, prev.firstPage(1)); assertEquals(3, prev.secondPage(1))
-        assertEquals(4, prev.firstPage(2)); assertEquals(5, prev.secondPage(2))
-        // dims：页 2 是横宽跨页（w>h → 不可配），其余正常竖页
+        //   ★ v1.383：prev 必须是真 smart 表（带有效 dims，builtSmart=true）——朴素旧表的
+        //   错误配对会被翻案修正（见 plainPrevFrozenErrorsGetCorrected），不再冻结固化
         val dims = dimsOf(
             800 to 1200, 800 to 1200,
             1600 to 800, 800 to 1200,
             800 to 1200, 800 to 1200,
         )
+        val allPlainDims = dimsOf(
+            800 to 1200, 800 to 1200,
+            800 to 1200, 800 to 1200,
+            800 to 1200, 800 to 1200,
+        )
+        val prev = SpreadTable.build(6, smart = true, dims = allPlainDims)
+        assertEquals(3, prev.slotCount)
+        assertTrue(prev.builtSmart)
+        assertEquals(0, prev.firstPage(0)); assertEquals(1, prev.secondPage(0))
+        assertEquals(2, prev.firstPage(1)); assertEquals(3, prev.secondPage(1))
+        assertEquals(4, prev.firstPage(2)); assertEquals(5, prev.secondPage(2))
         // 无冻结：smart 会拆出 [2] solo → [0+1][2][3+4][5]（4 位）
         val fresh = SpreadTable.build(6, smart = true, dims = dims)
         assertEquals(4, fresh.slotCount)
@@ -277,5 +284,89 @@ class SpreadTableTest {
         // 越界边界（≥总页数）：整表照抄
         val frozenAll = SpreadTable.build(6, smart = true, dims = dims, prev = prev, freezeThroughPage = 5)
         assertTrue(frozenAll.sameMapping(prev))
+    }
+
+    @Test
+    fun plainPrevFrozenErrorsGetCorrected() {
+        // ★ v1.383（用户工单"一张错全错"）：进书首帧 pageDims 异步空 → 朴素两两硬拼表
+        //   （横宽页被错误并排）；全量尺寸到达的渐进回填 freeze 不得固化该错误。
+        //   朴素旧表（builtSmart=false）的冻结位含横宽/长条页 → 翻案拆开重排修正。
+        //   场景：6 页朴素表 [0+1][2+3][4+5]；用户在第 2 页；新 dims 说页 2 是横宽该 solo。
+        val plainPrev = SpreadTable.build(6, smart = true) // 无 dims → builtSmart=false 朴素产物
+        assertFalse(plainPrev.builtSmart)
+        val dims = dimsOf(
+            800 to 1200, 800 to 1200,
+            1600 to 800, 800 to 1200,
+            800 to 1200, 800 to 1200,
+        )
+        val corrected = SpreadTable.build(6, smart = true, dims = dims, prev = plainPrev, freezeThroughPage = 3)
+        // 页 2 不再与 3 拼（错误配对被修正）：[0+1][2][3+4][5]
+        assertEquals(2, corrected.firstPage(1)); assertEquals(-1, corrected.secondPage(1))
+        assertEquals(-1, corrected.secondPage(corrected.pageToSpread(2)))
+        // 冻结边界前的 slot0（正确配对）保持稳定
+        assertEquals(0, corrected.firstPage(0)); assertEquals(1, corrected.secondPage(0))
+        // 边界错位不跳页：修正位后顺序走位，每页都有归属
+        assertEquals(0, corrected.pageToSpread(0)); assertEquals(0, corrected.pageToSpread(1))
+        assertEquals(1, corrected.pageToSpread(2)); assertEquals(2, corrected.pageToSpread(3))
+        assertEquals(2, corrected.pageToSpread(4)); assertEquals(3, corrected.pageToSpread(5))
+    }
+
+    @Test
+    fun wideSplitDualSlotsFollowKomihoSemantics() {
+        // ★ v1.384 Komiho 跟进：宽图二分在表层——横宽页（dims 已知 w>h×1.2）占两个连续
+        //   half slot（LTR 左先/RTL 右先），dims 未知页 1 slot 整页（页表身份不漂移）。
+        //   场景：3 页——页 0 横宽 2200x1700、页 1 竖页 800x1200、页 2 尺寸未知。
+        val dims = dimsOf(
+            2200 to 1700, 800 to 1200, 0 to 0,
+        )
+        // LTR：[0L][0R][1][2(整页,未知)] = 4 slot
+        val ltr = SpreadTable.build(3, double = false, wideSplit = true, dims = dims, rtl = false)
+        assertEquals(4, ltr.slotCount)
+        assertEquals(0, ltr.firstPage(0)); assertEquals(-1, ltr.secondPage(0)); assertEquals(1, ltr.slotHalf(0))
+        assertEquals(0, ltr.firstPage(1)); assertEquals(-1, ltr.secondPage(1)); assertEquals(2, ltr.slotHalf(1))
+        assertEquals(1, ltr.firstPage(2)); assertEquals(0, ltr.slotHalf(2))
+        assertEquals(2, ltr.firstPage(3)); assertEquals(0, ltr.slotHalf(3))
+        // 页号→slot 恒指首个（先读的）半页位
+        assertEquals(0, ltr.pageToSpread(0))
+        // RTL：右半位在前 [0R][0L][1][2]
+        val rtlt = SpreadTable.build(3, double = false, wideSplit = true, dims = dims, rtl = true)
+        assertEquals(4, rtlt.slotCount)
+        assertEquals(2, rtlt.slotHalf(0)); assertEquals(1, rtlt.slotHalf(1))
+        // 全未知 dims：整表 1:1 单位（页表身份不漂移——rar 探测失败场景）
+        val unknown = SpreadTable.build(3, double = false, wideSplit = true, dims = null, rtl = false)
+        assertEquals(3, unknown.slotCount)
+        assertEquals(0, unknown.slotHalf(0)); assertEquals(0, unknown.slotHalf(1)); assertEquals(0, unknown.slotHalf(2))
+        // 双页+wideSplit：非横宽页仍两两配对（双页并排），横宽页双 slot
+        val dual = SpreadTable.build(3, double = true, smart = false, wideSplit = true, dims = dims, rtl = false)
+        // 页0 双slot、页1+2 配对（页2未知容忍配对）→ [0L][0R][1+2] = 3 slot
+        assertEquals(3, dual.slotCount)
+        assertEquals(1, dual.slotHalf(0)); assertEquals(2, dual.slotHalf(1))
+        assertEquals(1, dual.firstPage(2)); assertEquals(2, dual.secondPage(2))
+    }
+
+    @Test
+    fun wideSplitFreezeKeepsBothHalves() {
+        // ★ v1.384 冻结×双 slot 组合：渐进重排照抄时，双 slot 的两个半页位 half 逐位保留。
+        //   场景：3 页（0 横宽、1 竖、2 未知），先建全拆表，再以 freezeThroughPage=2 整表照抄
+        val dims = dimsOf(
+            2200 to 1700, 800 to 1200, 0 to 0,
+        )
+        val prev = SpreadTable.build(3, double = false, wideSplit = true, dims = dims, rtl = false)
+        assertEquals(4, prev.slotCount)
+        val frozen = SpreadTable.build(3, double = false, wideSplit = true, dims = dims,
+            prev = prev, freezeThroughPage = 2, rtl = false)
+        assertTrue(frozen.sameMapping(prev))
+        // 渐进升级：旧表页 0 未拆（整页），新 dims 到达 → 翻案成双 slot，页 1/2 不动
+        val plainPrev = SpreadTable.build(3, double = false, wideSplit = true, dims = null, rtl = false)
+        assertEquals(3, plainPrev.slotCount)
+        val upgraded = SpreadTable.build(3, double = false, wideSplit = true, dims = dims,
+            prev = plainPrev, freezeThroughPage = 0, rtl = false)
+        assertEquals(4, upgraded.slotCount)
+        assertEquals(1, upgraded.slotHalf(0)); assertEquals(2, upgraded.slotHalf(1))
+        assertEquals(0, upgraded.firstPage(0)); assertEquals(0, upgraded.firstPage(1))
+        assertEquals(1, upgraded.firstPage(2)); assertEquals(0, upgraded.slotHalf(2))
+        assertEquals(2, upgraded.firstPage(3)); assertEquals(0, upgraded.slotHalf(3))
+        // 未知页 1/2 恒 1 slot，无重复无跳页（页 1→slot2、页 2→slot3）
+        assertEquals(2, upgraded.pageToSpread(1)); assertEquals(3, upgraded.pageToSpread(2))
     }
 }
