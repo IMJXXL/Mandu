@@ -60,3 +60,7 @@ tools/__pycache__/
 tools/cugan_app.py
 tools/_patch_*.py
 .tmp_*.py
+tmp_*.txt
+tmp_*.bin
+ui_dump.xml
+ud.xml

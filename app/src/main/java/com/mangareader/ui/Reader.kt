@@ -3887,7 +3887,11 @@ private suspend fun scanPageDimsForDoubleMerge(
             dims[2 * i] = w
             dims[2 * i + 1] = h
         }
-        if (i % 24 == 23) onProgress(dims.copyOf())
+        // ★ v1.383：渐进回调 24→96——每批新尺寸都可能重排跨页表（映射真变才 rebind，已有
+        //   sameMapping 守卫），映射变的批次可见合并页真重拼=闪一帧；总集篇页型杂，24/批
+        //   实测"乱闪很多次"（用户工单）。96/批把闪次降 ~5 倍，收敛时长不变（IO 不变），
+        //   首次扫描落盘后 PageSizeCacheStore 命中，二次打开零渐进
+        if (i % 96 == 95) onProgress(dims.copyOf())
     }
     if (dirty) runCatching {
         withContext(Dispatchers.IO) { engine.savePageSizeCache(treeStr, stamp, store + fresh) }

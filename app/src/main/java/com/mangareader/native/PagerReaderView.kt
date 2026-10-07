@@ -52,6 +52,18 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         // ★ 尺寸变更=显示配置代数递增（2026-10-06 刀3配套）：旋转后 (cur-1..cur+1) 的重绑
         //   走同图短路时必须重算适配（新视口 base/定位），cfgVer 守卫据此放行
         displayCfgVer++
+        // ★ v1.383 根修（海贼王横屏"划不动+乱跳"）：loadPageAsync 缓存命中零动作，载重空转；
+        //   布局落定后（post 时 SSIV 已是新尺寸）对存活 holder 强制重算 base/scale/定位。
+        //   applyPlanScale/applySplitScale 全量路径幂等，瓦片/超分 miss 页由 loadPageAsync 照常补。
+        viewPager.post {
+            try {
+                val rv = viewPager.getChildAt(0) as? androidx.recyclerview.widget.RecyclerView
+                    ?: return@post
+                for (i in 0 until rv.childCount) {
+                    (rv.getChildViewHolder(rv.getChildAt(i)) as? PagerViewHolder)?.recalcForViewport()
+                }
+            } catch (_: Exception) {}
+        }
         val cur = currentPage
         (cur - 1..cur + 1).forEach { if (it in pageList.indices) loadPageAsync(it) }
     }
@@ -2088,6 +2100,21 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         private var scaleGen = 0
         /** ★ 绑定时的显示配置代数（2026-10-06 乱闪根修刀3）：同图短路用它判"零动作还是重设基准" */
         internal var boundCfgVer = -1
+        /** ★ v1.383 旋转重算：拆分页记住半页侧（recalcForViewport 复用 applySplitScale 需要） */
+        private var lastShowRight = false
+
+        /** ★ v1.383 旋转/分屏重算兜底（海贼王横屏"划不动+乱跳上一页"根修）：
+         *  onSizeChanged 的载重走 loadPageAsync，而缓存命中路径零动作直接 return（不触发重绑），
+         *  displayCfgVer++ 没有任何消费者——旋转后可见页 SSIV 的 viewportBaseScale/scale 残留旧
+         *  屏向值（实锤：竖 0.51→横 0.81，base 停 0.51）→ 未放大被误判放大 → 手势全落
+         *  hold-zoomedPan 吞滑 + 贴边 fake drag 起拖后 fling 乱跳页（pos 3→0 复现实锤）。
+         *  布局完成后按新视口强制重算基准与定位（applyPlanScale/applySplitScale 全量路径幂等）。 */
+        fun recalcForViewport() {
+            val bmp = heldBitmap ?: return
+            if (bmp.isRecycled) return
+            if (isSplitPage) ssiv?.let { applySplitScale(it, bmp, lastShowRight) }
+            else ssiv?.let { applyScale(it, bmp, landscapeZoomEnabled, forward = false) }
+        }
 
         private fun createSsiv(): PagerSSIV {
             return PagerSSIV(itemView.context).apply {
@@ -2221,6 +2248,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
          */
         fun setImageSplit(bmp: Bitmap, showRight: Boolean, useSsiv: Boolean, landscapeZoom: Boolean) {
             isSplitPage = true
+            lastShowRight = showRight
             if (bmp.isRecycled) return
             // ★ 同图重绑短路（同 setImage）：showRight 翻转也只需 applySplitScale 重定位视口，不必重置 SSIV
             //   ★ 刀3：位图与显示配置全同的重绑零动作（同 setImage，防 landscapeZoom 弹跳）
