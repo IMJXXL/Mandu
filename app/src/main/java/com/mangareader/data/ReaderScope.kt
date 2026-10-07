@@ -46,7 +46,7 @@ object ReaderScope {
         "einkEndpointPassthrough", "einkDecodeSize", "einkUiHideDelay",
         "pdfQuality", "forceFullDecode", "tileModeEnabled", "downsampleTier", "tallSplitEnabled", "tallSplitSensitivity",
         "isFlipFlashEnabled", "flipFlashDuration", "flipFlashInterval", "flipFlashColor",
-        "autoFlipInterval", "clickFlipType", "clickFlipInvertH", "readBackground",
+
     )
 
     /** 预设"本书单独"项（= 引入前 save 带前缀写的全集）：书内改动只记本书 */
@@ -76,7 +76,7 @@ object ReaderScope {
         "isEinkMode", "isEinkDither", "einkDitherAlgorithm", "einkDitherLevels",
         "einkEndpointPassthrough", "einkDecodeSize", "einkUiHideDelay",
         "isFlipFlashEnabled", "flipFlashDuration", "flipFlashInterval", "flipFlashColor",
-        "clickFlipType", "clickFlipInvertH", "readBackground",
+        "readBackground",
     )
 
     fun masterOn(prefs: SharedPreferences): Boolean = prefs.safeGetBoolean(MASTER_KEY, true)
