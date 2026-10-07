@@ -761,6 +761,7 @@ private fun SrPanelContent(
                             onCheckedChange = { v ->
                                 moireOn.value = v
                                 com.mangareader.sr.SrCore.settings.setAreaDownscale(v)
+                                SrPipeline.onSettingsChanged()
                             },
                         )
                     }
@@ -775,6 +776,7 @@ private fun SrPanelContent(
                             valueRange = 50f..200f,
                             onValueChangeFinished = {
                                 com.mangareader.sr.SrCore.settings.setAreaDownscaleStrength(moireStrength.value)
+                                SrPipeline.onSettingsChanged()
                             },
                         )
                     }

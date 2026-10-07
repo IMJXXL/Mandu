@@ -19,6 +19,8 @@ object SrMoireDownscale {
 
     private const val TRIGGER = 0.85f
 
+    init { runCatching { System.loadLibrary("lanczos_engine") } }
+
     fun apply(bitmap: Bitmap, viewW: Int, viewH: Int, tallStrip: Boolean): Bitmap {
         // SrSettings 是类（SrCore.settings 实例），未初始化时视为关闭
         val enabled = try { SrCore.settings.areaDownscale() } catch (_: Throwable) { false }

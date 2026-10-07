@@ -463,8 +463,7 @@ Java_com_mangareader_sr_SrMoireDownscale_nativeAreaDownscaleTo(
   const int sh = static_cast<int>(info.height);
   const int dw = std::max(1, std::min(sw, static_cast<int>(dstWidth)));
   const int dh = std::max(1, std::min(sh, static_cast<int>(dstHeight)));
-  if (sw <= 0 || sh <= 0 || dw == sw) return bitmap;
-  if (dw == sw && dh == sh) return bitmap;
+  if (sw <= 0 || sh <= 0 || (dw == sw && dh == sh)) return bitmap;
 
   const float sigmaOut = 0.5f * std::max(0.5f, std::min(3.0f, strength));
   const float scale = sw / static_cast<float>(dw);

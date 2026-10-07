@@ -518,7 +518,7 @@ object SrPipeline {
         if (SrCore.diskCache.hasArtifact(sessionBookId, artifactChapterKey(), fp, p)) {
             scope.launch(Dispatchers.IO) {
                 SrCore.diskCache.getArtifact(sessionBookId, artifactChapterKey(), fp, p)?.let {
-                    SrCore.emitReady(sessionChapterId, p, it)
+                    SrCore.emitReady(sessionChapterId, p, SrMoireDownscale.apply(it, viewportW, viewportH, viewportTall))
                 }
             }
             return
