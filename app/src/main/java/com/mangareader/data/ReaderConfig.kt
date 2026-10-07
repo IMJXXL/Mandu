@@ -282,7 +282,7 @@ data class ReaderConfig(
                 trimFactor = rFloat("trimFactor", 0.02f),
                 trimThreshold = rInt("trimThreshold", 220),
                 trimWhiteRatio = rFloat("trimWhiteRatio", 0.90f),
-                imageMarginH = rInt("imageMarginH", 0),
+                imageMarginH = rInt("imageMarginH", 0).coerceIn(0, 49),
                 readBackground = try { ReadBackground.valueOf(rString("readBackground", "WHITE")) } catch (_: Exception) { ReadBackground.WHITE },
                 isEinkMode = rBoolean("isEinkMode", false),
                 isEinkDither = rBoolean("isEinkDither", false),

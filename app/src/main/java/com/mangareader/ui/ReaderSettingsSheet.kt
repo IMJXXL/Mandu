@@ -492,7 +492,9 @@ private fun ReadingModeTab(config: ReaderConfig, mode: Mode, bookId: Long, onCon
         }
         if (config.pageLayout != ReaderConfig.PageLayout.SINGLE) {
         }
-        SliderItem("侧边留白（屏宽百分比，上限50%）", config.imageMarginH.coerceIn(0, 50).toFloat(), 0f..50f, 50, "${config.imageMarginH.coerceIn(0, 50)}%") {
+        // ★ 上限 49：50% 每侧=两侧合计 100% 画面归零（用户 10-07 实测"50就没了"）；
+        //   无负值——负留白是旧 dp 版语义，百分比版 0=贴边
+        SliderItem("侧边留白（屏宽百分比，上限49%）", config.imageMarginH.coerceIn(0, 49).toFloat(), 0f..49f, 49, "${config.imageMarginH.coerceIn(0, 49)}%") {
             onConfigChange(config.copy(imageMarginH = it.toInt()))
         }
         SettingsChipRow("双页中缝") {
