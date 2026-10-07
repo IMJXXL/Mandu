@@ -190,11 +190,11 @@ class ReaderScopeModelTest {
     }
 
     @Test
-    fun `global locked ignores explicit book scope`() {
+    fun `clickFlipType book scope writes to book key`() {
         ReaderScope.setScope(prefs, "clickFlipType", ReaderScope.SCOPE_BOOK)
         ReaderScope.write(prefs, 1L, "clickFlipType", "NO")
-        assertEquals("NO", prefs.getString("clickFlipType", null))
-        assertFalse(prefs.contains("book_1_clickFlipType"))
+        assertEquals("NO", prefs.getString("book_1_clickFlipType", null))
+        assertFalse(prefs.contains("clickFlipType"))
     }
 
     @Test

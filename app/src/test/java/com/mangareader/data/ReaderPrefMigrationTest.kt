@@ -120,4 +120,41 @@ class ReaderPrefMigrationTest {
     private fun putKeys() {
         prefs.edit().putInt("book_1_brightness", 30).putBoolean("book_1_isGrayscale", true).apply()
     }
+
+    // ── 点击翻页区域迁移（tap_zone_relocate_v1）──
+
+    @Test
+    fun `tapZoneRelocate cleans global book and scope reg keys`() {
+        prefs.edit()
+            .putString("clickFlipType", "L_SHAPE")
+            .putBoolean("clickFlipInvertH", true)
+            .putString("book_1_clickFlipType", "EDGE")
+            .putBoolean("book_2_clickFlipInvertH", true)
+            .putString("pref_center_scope_reg", "clickFlipType=global;clickFlipInvertH=global;brightness=book")
+            .putInt("brightness", 50)
+            .apply()
+        ReaderPrefMigration.tapZoneRelocateIfNeeded(prefs)
+        assertFalse(prefs.contains("clickFlipType"))
+        assertFalse(prefs.contains("clickFlipInvertH"))
+        assertFalse(prefs.contains("book_1_clickFlipType"))
+        assertFalse(prefs.contains("book_2_clickFlipInvertH"))
+        assertTrue(prefs.getBoolean("tap_zone_relocate_v1_done", false))
+        assertEquals(50, prefs.getInt("brightness", -1))
+        val reg = ReaderScope.parseScopeReg(prefs)
+        assertFalse(reg.containsKey("clickFlipType"))
+        assertFalse(reg.containsKey("clickFlipInvertH"))
+        assertEquals("book", reg["brightness"])
+    }
+
+    @Test
+    fun `tapZoneRelocate idempotent`() {
+        prefs.edit()
+            .putString("clickFlipType", "L_SHAPE")
+            .putString("book_1_clickFlipType", "EDGE")
+            .apply()
+        ReaderPrefMigration.tapZoneRelocateIfNeeded(prefs)
+        val after1 = prefs.all.toMap()
+        ReaderPrefMigration.tapZoneRelocateIfNeeded(prefs)
+        assertEquals(after1, prefs.all)
+    }
 }
