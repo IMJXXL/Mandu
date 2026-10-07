@@ -814,3 +814,75 @@ private fun FilterTab(config: ReaderConfig, onConfigChange: (ReaderConfig) -> Un
         }
     }
 }
+/**
+ * 点击翻页区域染色预览（对调后水平镜像）：上一页=主色、菜单=灰、下一页=主色深。
+ * 仅示意当前预设的分区形态，与 ViewerNavigation 区域表一致。
+ */
+@Composable
+private fun ClickZonePreview(type: ReaderConfig.ClickFlipType, invertH: Boolean) {
+    val prevC = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
+    val nextC = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
+    val menuC = MaterialTheme.colorScheme.surfaceVariant
+    val bg = MaterialTheme.colorScheme.surface
+    androidx.compose.foundation.Canvas(
+        Modifier
+            .fillMaxWidth()
+            .height(64.dp)
+            .clip(MaterialTheme.shapes.medium)
+    ) {
+        drawRect(bg)
+        val w = size.width
+        val h = size.height
+        fun mirrorX(x: Float) = if (invertH) 1f - x else x
+        when (type) {
+            ReaderConfig.ClickFlipType.NO -> {
+                drawRect(menuC)
+            }
+            ReaderConfig.ClickFlipType.L_SHAPE -> {
+                fun rect(x0: Float, y0: Float, x1: Float, y1: Float, color: androidx.compose.ui.graphics.Color) {
+                    val mx0 = mirrorX(x0); val mx1 = mirrorX(x1)
+                    drawRect(color, topLeft = androidx.compose.ui.geometry.Offset(minOf(mx0, mx1) * w, y0 * h),
+                        size = androidx.compose.ui.geometry.Size(kotlin.math.abs(mx1 - mx0) * w, (y1 - y0) * h))
+                }
+                drawRect(menuC)
+                rect(0f, 0.05f, 1f, 0.33f, prevC)
+                rect(0f, 0.33f, 0.33f, 0.67f, prevC)
+                rect(0.67f, 0.33f, 1f, 0.67f, nextC)
+                rect(0f, 0.67f, 1f, 1f, nextC)
+                rect(0.33f, 0.33f, 0.67f, 0.67f, menuC)
+            }
+            ReaderConfig.ClickFlipType.EDGE -> {
+                fun rect(x0: Float, y0: Float, x1: Float, y1: Float, color: androidx.compose.ui.graphics.Color) {
+                    val mx0 = mirrorX(x0); val mx1 = mirrorX(x1)
+                    drawRect(color, topLeft = androidx.compose.ui.geometry.Offset(minOf(mx0, mx1) * w, y0 * h),
+                        size = androidx.compose.ui.geometry.Size(kotlin.math.abs(mx1 - mx0) * w, (y1 - y0) * h))
+                }
+                drawRect(menuC)
+                rect(0f, 0.05f, 0.33f, 1f, nextC)
+                rect(0.67f, 0.05f, 1f, 1f, nextC)
+                rect(0.33f, 0.66f, 0.67f, 1f, prevC)
+            }
+            ReaderConfig.ClickFlipType.KINDLISH -> {
+                fun rect(x0: Float, x1: Float, color: androidx.compose.ui.graphics.Color) {
+                    val mx0 = mirrorX(x0); val mx1 = mirrorX(x1)
+                    drawRect(color, topLeft = androidx.compose.ui.geometry.Offset(minOf(mx0, mx1) * w, 0.05f * h),
+                        size = androidx.compose.ui.geometry.Size(kotlin.math.abs(mx1 - mx0) * w, 0.95f * h))
+                }
+                drawRect(menuC)
+                rect(0f, 0.33f, prevC)
+                rect(0.33f, 1f, nextC)
+            }
+            else -> {
+                fun rect(x0: Float, x1: Float, color: androidx.compose.ui.graphics.Color, y0: Float = 0.05f) {
+                    val mx0 = mirrorX(x0); val mx1 = mirrorX(x1)
+                    drawRect(color, topLeft = androidx.compose.ui.geometry.Offset(minOf(mx0, mx1) * w, y0 * h),
+                        size = androidx.compose.ui.geometry.Size(kotlin.math.abs(mx1 - mx0) * w, (1f - y0) * h))
+                }
+                drawRect(menuC)
+                rect(0f, 0.33f, prevC)
+                rect(0.33f, 0.67f, menuC)
+                rect(0.67f, 1f, nextC)
+            }
+        }
+    }
+}
