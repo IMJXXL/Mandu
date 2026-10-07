@@ -101,6 +101,12 @@ class SrSettings(context: Context) {
 
     // ── 单作品覆盖 ──
 
+    // ★ 降低摩尔纹（Komiho 对齐 2026-10-07）：sr_ 前缀自动进"恢复默认"纳管
+    fun areaDownscale(): Boolean = prefs.getBoolean("sr_area_downscale", false)
+    fun setAreaDownscale(v: Boolean) = prefs.edit().putBoolean("sr_area_downscale", v).apply()
+    fun areaDownscaleStrength(): Int = prefs.getInt("sr_area_downscale_strength", 100)
+    fun setAreaDownscaleStrength(v: Int) = prefs.edit().putInt("sr_area_downscale_strength", v).apply()
+
     fun useBookOverride(bookId: Long): Boolean = prefs.getBoolean("sr_book_${bookId}_use", false)
     fun setUseBookOverride(bookId: Long, v: Boolean) = prefs.edit().putBoolean("sr_book_${bookId}_use", v).apply()
 

@@ -58,9 +58,10 @@ class SRPreloadDispatcher(
         return manager.getCachedResult(cacheKey) ?: diskCache.get(cacheKey)
     }
 
-    fun putSrResult(chapterId: Long, pageIndex: Int, bitmap: Bitmap) {
+    fun putSrResult(chapterId: Long, pageIndex: Int, bitmap: Bitmap, displayBitmap: Bitmap = bitmap) {
         val cacheKey = buildCacheKey(chapterId, pageIndex)
-        manager.putCachedResult(cacheKey, bitmap)
+        // ★ 降低摩尔纹：内存缓存/显示走回缩副本（displayBitmap），磁盘产物保持全尺寸 bitmap
+        manager.putCachedResult(cacheKey, displayBitmap)
         // ★ F1.1：同步完成磁盘编码再返回（唯一调用方 SrPipeline.scheduleInternal 在 IO 协程），
         //   emitReady 交给视图时写盘已结束——堵死"异步编码期间位图被视图 recycle"的第三属主窗口
         if (!bitmap.isRecycled) diskCache.put(cacheKey, bitmap)

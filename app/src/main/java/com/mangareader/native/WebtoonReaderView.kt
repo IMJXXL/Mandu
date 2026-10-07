@@ -911,6 +911,7 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
             // 缓存自愈：注入事件可能丢失导致一直存的是原图；若超分结果已就绪，趁本次绑定直接换超分图
             try {
                 // ★ F4.6：UI 绑定走 Fast 入口——磁盘命中不解码，交给 pollForResult 异步回填
+                com.mangareader.sr.SrPipeline.noteViewport(recycler?.width ?: 0, 0, true)
                 val srHit = com.mangareader.sr.SrPipeline.attachOrScheduleFast(idx, cached)
                 if (srHit != null && !srHit.isRecycled && srHit !== cached) {
                     synchronized(bitmapCache) { bitmapCache.put(idx, com.mangareader.filter.PaperPageTexture.apply(srHit)) }
@@ -1002,6 +1003,7 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
                 // 超分：命中缓存直接换成超分图；未命中先显示原图、后台异步超分
                 // （完成走订阅→injectUpscaledBitmap；另有 pollForResult 轮询兜底防事件丢失）
                 try {
+                    com.mangareader.sr.SrPipeline.noteViewport(recycler?.width ?: 0, 0, true)
                     val srHit = com.mangareader.sr.SrPipeline.attachOrSchedule(idx, processed)
                     if (srHit != null && !srHit.isRecycled) {
                         processed = srHit

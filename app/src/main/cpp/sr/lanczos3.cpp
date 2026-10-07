@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstdint>
 #include <array>
+#include <functional>
 #include <thread>
 #include <vector>
 
@@ -26,7 +27,7 @@ inline float lanczosKernel(float x) {
   return (LANCZOS_A * std::sin(pix) * std::sin(pix / LANCZOS_A)) / (pix * pix);
 }
 
-using KernelFn = float (*)(float);
+using KernelFn = std::function<float(float)>;
 
 struct KernelLUT {
   std::vector<int16_t> tbl;
@@ -432,6 +433,106 @@ static jobject nativeResampleImpl(JNIEnv *env, jobject bitmap, jfloat scale) {
       std::copy_n(packedDst.data() + static_cast<size_t>(y) * dw * 4,
                   static_cast<size_t>(dw) * 4,
                   dstPixels + static_cast<size_t>(y) * dstStride);
+    }
+  }
+
+  AndroidBitmap_unlockPixels(env, bitmap);
+  AndroidBitmap_unlockPixels(env, outBitmap);
+  return outBitmap;
+}
+
+// ★ 降低摩尔纹（Komiho 对齐 2026-10-07）：AI 2x 超分输出的高频网点晶格（6~16px 周期）
+// 被 SSIV 双线性整图缩小（每屏像素仅 2×2 tap、无低通）时与屏幕像素网格拍频出摩尔纹。
+// 本入口用高斯低通把超分图压回显示尺寸再交显示层：σ = 0.5×strength（显示空间），
+// 源空间 σ 随缩小比放大（积分窗 ≈ 3σ×scale 源像素，强度 1.0、2x 输出时 ≈6px，
+// 盖住网点晶格周期才能积成均匀灰；高斯滚降平滑无振铃，线稿由 AI 预先锐化、适度模糊可接受）。
+// 绝不放大（目标大于源时原样返回）；失败/不支持格式一律原样返回，绝不阻断出图。
+extern "C" JNIEXPORT jobject JNICALL
+Java_com_mangareader_sr_SrMoireDownscale_nativeAreaDownscaleTo(
+    JNIEnv *env, jobject thiz, jobject bitmap, jint dstWidth, jint dstHeight, jfloat strength) {
+  AndroidBitmapInfo info;
+  if (AndroidBitmap_getInfo(env, bitmap, &info) != ANDROID_BITMAP_RESULT_SUCCESS) {
+    LOGE("areaDownscale: getInfo failed");
+    return bitmap;
+  }
+  if (info.format != ANDROID_BITMAP_FORMAT_RGBA_8888) {
+    LOGE("areaDownscale: unsupported format %d", info.format);
+    return bitmap;
+  }
+  const int sw = static_cast<int>(info.width);
+  const int sh = static_cast<int>(info.height);
+  const int dw = std::max(1, std::min(sw, static_cast<int>(dstWidth)));
+  const int dh = std::max(1, std::min(sh, static_cast<int>(dstHeight)));
+  if (sw <= 0 || sh <= 0 || dw == sw) return bitmap;
+  if (dw == sw && dh == sh) return bitmap;
+
+  const float sigmaOut = 0.5f * std::max(0.5f, std::min(3.0f, strength));
+  const float scale = sw / static_cast<float>(dw);
+  const float sigmaSrc = sigmaOut * scale;
+  const int radius = std::min(20, static_cast<int>(std::ceil(3.0f * sigmaSrc)));
+  const float inv2s2 = 1.0f / (2.0f * sigmaSrc * sigmaSrc);
+  KernelFn gaussian = [inv2s2](float x) { return std::exp(-(x * x) * inv2s2); };
+
+  jclass bitmapClass = env->FindClass("android/graphics/Bitmap");
+  if (!bitmapClass) return bitmap;
+  jmethodID createBitmapMethod = env->GetStaticMethodID(
+      bitmapClass, "createBitmap",
+      "(IILandroid/graphics/Bitmap$Config;)Landroid/graphics/Bitmap;");
+  jclass configClass = env->FindClass("android/graphics/Bitmap$Config");
+  if (!createBitmapMethod || !configClass) return bitmap;
+  jfieldID configField =
+      env->GetStaticFieldID(configClass, "ARGB_8888", "Landroid/graphics/Bitmap$Config;");
+  if (!configField) return bitmap;
+  jobject config = env->GetStaticObjectField(configClass, configField);
+  jobject outBitmap =
+      env->CallStaticObjectMethod(bitmapClass, createBitmapMethod, dw, dh, config);
+  if (env->ExceptionCheck() || !outBitmap) {
+    env->ExceptionClear();
+    LOGE("areaDownscale: createBitmap failed");
+    return bitmap;
+  }
+
+  void *pixels = nullptr;
+  void *outPixels = nullptr;
+  if (AndroidBitmap_lockPixels(env, bitmap, &pixels) != ANDROID_BITMAP_RESULT_SUCCESS) {
+    LOGE("areaDownscale: lock src failed");
+    return bitmap;
+  }
+  if (AndroidBitmap_lockPixels(env, outBitmap, &outPixels) != ANDROID_BITMAP_RESULT_SUCCESS) {
+    AndroidBitmap_unlockPixels(env, bitmap);
+    LOGE("areaDownscale: lock dst failed");
+    return bitmap;
+  }
+
+  const unsigned char *srcPixels = static_cast<const unsigned char *>(pixels);
+  unsigned char *dstPixels = static_cast<unsigned char *>(outPixels);
+  std::vector<unsigned char> packedSrc;
+  if (info.stride != static_cast<size_t>(sw) * 4) {
+    packedSrc.resize(static_cast<size_t>(sw) * sh * 4);
+    for (int y = 0; y < sh; ++y) {
+      std::copy_n(srcPixels + static_cast<size_t>(y) * info.stride,
+                  static_cast<size_t>(sw) * 4,
+                  packedSrc.data() + static_cast<size_t>(y) * sw * 4);
+    }
+    srcPixels = packedSrc.data();
+  }
+  std::vector<unsigned char> packedDst;
+  unsigned char *resampleDst = dstPixels;
+  AndroidBitmapInfo outInfo;
+  if (AndroidBitmap_getInfo(env, outBitmap, &outInfo) == ANDROID_BITMAP_RESULT_SUCCESS &&
+      outInfo.stride != static_cast<size_t>(dw) * 4) {
+    packedDst.resize(static_cast<size_t>(dw) * dh * 4);
+    resampleDst = packedDst.data();
+  }
+
+  resizeGeneric(srcPixels, sw, sh, resampleDst, dw, dh, gaussian, radius,
+                isFullyOpaque(srcPixels, sw, sh));
+
+  if (resampleDst != dstPixels) {
+    for (int y = 0; y < dh; ++y) {
+      std::copy_n(resampleDst + static_cast<size_t>(y) * dw * 4,
+                  static_cast<size_t>(dw) * 4,
+                  dstPixels + static_cast<size_t>(y) * outInfo.stride);
     }
   }
 

@@ -349,6 +349,19 @@ object SrPipeline {
     @Volatile
     var lastRealtimeRequestAt: Long = 0L
 
+    // ★ 降低摩尔纹（Komiho 对齐 2026-10-07）：视图在 bind/attach 时登记视口（宽/高/是否
+    //   条漫宽导向）。SR 结果入内存缓存与显示前按它高斯回缩（见 SrMoireDownscale，0.85 门）；
+    //   未登记（=0）自动跳过。磁盘产物恒全尺寸
+    @Volatile var viewportW: Int = 0
+    @Volatile var viewportH: Int = 0
+    @Volatile var viewportTall: Boolean = false
+
+    fun noteViewport(w: Int, h: Int, tall: Boolean) {
+        viewportW = w
+        viewportH = h
+        viewportTall = tall
+    }
+
     /** 阅读实时超分是否活跃（批量礼让判定用）：开着作用域且最近有实时请求。
      *  看完一页停下 15 秒后即不活跃——批量继续跑，不饥饿 */
     fun realtimeActiveRecently(): Boolean =
@@ -363,31 +376,39 @@ object SrPipeline {
         val fp = artifactFingerprint()
         SrCore.diskCache.getArtifact(sessionBookId, artifactChapterKey(), fp, pageIndex)?.let { bmp ->
             Log.i(TAG, "pc r hit p$pageIndex fp=$fp")
-            // 回填内存结果缓存（同批量回填：状态指示/前后对比可见）
+            // 回填内存结果缓存（同批量回填：状态指示/前后对比可见）；★摩尔纹：回缩副本进内存
+            val disp = SrMoireDownscale.apply(bmp, viewportW, viewportH, viewportTall)
             try {
-                SrCore.manager.putCachedResult(SrCore.manager.buildCacheKey(sessionChapterId, pageIndex), bmp)
+                SrCore.manager.putCachedResult(SrCore.manager.buildCacheKey(sessionChapterId, pageIndex), disp)
             } catch (_: Throwable) {}
-            return bmp
+            return disp
         }
         if (SrUiState.scope.intValue > SrUiState.SCOPE_OFF) {
-            SrCore.dispatcher.getSrBitmap(sessionChapterId, pageIndex)?.let { return it }
+            SrCore.dispatcher.getSrBitmap(sessionChapterId, pageIndex)?.let {
+                return SrMoireDownscale.apply(it, viewportW, viewportH, viewportTall)
+            }
             // "仅黑白优化"产物的独立缓存键
             if (!SrCore.settings.upscaleEnabled && SrCore.settings.bwEnabled) {
                 val key = "bwonly_${sessionChapterId}_${pageIndex}_${SrCore.settings.bwGrayLevels}_${if (SrCore.settings.bwDensityCorrection) 1 else 0}"
                 SrCore.manager.getCachedResult(key)?.let { return it }
-                return SrCore.diskCache.get(key)
+                SrCore.diskCache.get(key)?.let {
+                    return SrMoireDownscale.apply(it, viewportW, viewportH, viewportTall)
+                }
+                return null
             }
         }
         if (batchChapterOnDisk()) {
             SrCore.diskCache.getBatchPage(sessionBookTitle, SRQueueItem.chapterKey(sessionBookId, sessionTreeStr), batchPageIdx(pageIndex))?.let { bmp ->
                 // 同步回填内存结果缓存（只进内存，不写实时磁盘区——批量产物有自己的领地，不重复占用配额）。
                 // 回填后状态指示/前后对比也能看到批量产物，不再出现"已显示超分却提示未启动"。
+                // ★摩尔纹：内存/显示走回缩副本，磁盘批量产物保持全尺寸
+                val disp = SrMoireDownscale.apply(bmp, viewportW, viewportH, viewportTall)
                 try {
                     SrCore.manager.putCachedResult(
-                        SrCore.manager.buildCacheKey(sessionChapterId, pageIndex), bmp,
+                        SrCore.manager.buildCacheKey(sessionChapterId, pageIndex), disp,
                     )
                 } catch (_: Throwable) {}
-                return bmp
+                return disp
             }
         }
         return null
@@ -643,8 +664,11 @@ object SrPipeline {
                         result = capped
                     }
 
-                    SrCore.dispatcher.putSrResult(cid, pageIndex, result)
-                    SrCore.emitReady(cid, pageIndex, result)
+                    // ★摩尔纹：内存缓存与注入事件用回缩副本（ IO 线程内完成，无主线程开销），
+                    //   磁盘实时缓存与页级持久产物（下方 putArtifact）保持全尺寸 result
+                    val display = SrMoireDownscale.apply(result, viewportW, viewportH, viewportTall)
+                    SrCore.dispatcher.putSrResult(cid, pageIndex, result, display)
+                    SrCore.emitReady(cid, pageIndex, display)
                     // ★ 页级持久产物（2026-10-03）：实时结果永久落盘（IO 线程）。
                     //   键含完整指纹——同键覆盖，改设置自动走新键；超总量上限自动清最旧。
                     //   批量章节不落这里（batchChapterOnDisk 时 scheduleInternal 不会跑到这）。

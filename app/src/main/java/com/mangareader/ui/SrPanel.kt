@@ -738,6 +738,47 @@ private fun SrPanelContent(
                         }
                     }
 
+
+                    // ★ 降低摩尔纹（Komiho 对齐 2026-10-07）：AI 2x 高频网点被显示层双线性
+                    //   缩小拍频出摩尔纹；开启后 SR 结果按屏幕高斯回缩再显示（磁盘产物保持
+                    //   全尺寸）。默认关——只影响 AI 增强输出，不开零变化
+                    val moireOn = androidx.compose.runtime.remember {
+                        androidx.compose.runtime.mutableStateOf(com.mangareader.sr.SrCore.settings.areaDownscale())
+                    }
+                    val moireStrength = androidx.compose.runtime.remember {
+                        androidx.compose.runtime.mutableStateOf(com.mangareader.sr.SrCore.settings.areaDownscaleStrength())
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.weight(1f)) {
+                            Text("降低摩尔纹（网点漫画推荐）", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                            Text(
+                                "按屏幕尺寸回缩超分图，消除黑白网点闪纹/波纹；放大细看会略软；默认关",
+                                fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        androidx.compose.material3.Switch(
+                            checked = moireOn.value,
+                            onCheckedChange = { v ->
+                                moireOn.value = v
+                                com.mangareader.sr.SrCore.settings.setAreaDownscale(v)
+                            },
+                        )
+                    }
+                    if (moireOn.value) {
+                        Text(
+                            "回缩强度 ${moireStrength.value}%（50=轻 100=中 200=强）",
+                            fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        androidx.compose.material3.Slider(
+                            value = moireStrength.value.toFloat(),
+                            onValueChange = { moireStrength.value = it.toInt().coerceIn(50, 200) },
+                            valueRange = 50f..200f,
+                            onValueChangeFinished = {
+                                com.mangareader.sr.SrCore.settings.setAreaDownscaleStrength(moireStrength.value)
+                            },
+                        )
+                    }
+
                     // ★ 黑白增强（原"黑白漫画优化"并入为子项，用户拍板 2026-10-03）
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.weight(1f)) {

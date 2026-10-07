@@ -1621,6 +1621,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         val cached = bitmapCache[idx]
         if (cached != null && !cached.isRecycled) {
             try {
+                com.mangareader.sr.SrPipeline.noteViewport(width, height, false)
                 val srHit = com.mangareader.sr.SrPipeline.attachOrScheduleFast(idx, cached)
                 if (srHit != null && !srHit.isRecycled && srHit !== cached) {
                     bitmapCache.put(idx, com.mangareader.filter.PaperPageTexture.apply(srHit))
@@ -1745,6 +1746,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                     } catch (_: Exception) {}
                 }
                 try {
+                    com.mangareader.sr.SrPipeline.noteViewport(width, height, false)
                     val srHit = com.mangareader.sr.SrPipeline.attachOrSchedule(idx, bmp)
                     if (srHit != null && !srHit.isRecycled) {
                         bmp = srHit
@@ -1836,6 +1838,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                     }
                 }
                 try {
+                    com.mangareader.sr.SrPipeline.noteViewport(width, height, false)
                     val srHit = com.mangareader.sr.SrPipeline.attachOrSchedule(idx, bmp)
                     if (srHit != null && !srHit.isRecycled) {
                         bmp = srHit
