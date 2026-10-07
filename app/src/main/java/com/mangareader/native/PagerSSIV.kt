@@ -24,7 +24,10 @@ class PagerSSIV @JvmOverloads constructor(
         if (swipeDiagMarked) return
         swipeDiagMarked = true
         try {
-            com.mangareader.DiagTracer.mark(context, "swipe $tag scale=${"%.2f".format(scale)} base=${"%.2f".format(gestureBaseScale())}")
+            // ★ v1.383 手势起点坐标：弹回/幽灵翻页取证——起点在屏幕边缘(<5% 视口)=系统合成
+            //   手势(全面屏返回/握持误触)或贴边拖拽，中部=用户真实滑动
+            com.mangareader.DiagTracer.mark(context, "swipe $tag d=${downX.toInt()}x${downY.toInt()}" +
+                " scale=${"%.2f".format(scale)} base=${"%.2f".format(gestureBaseScale())}")
         } catch (_: Throwable) {}
     }
 
