@@ -992,14 +992,18 @@ private fun TapZoneSection(config: ReaderConfig, onConfigChange: (ReaderConfig) 
         }
     }
     Spacer(Modifier.height(8.dp))
-    ClickZonePreview(config.clickFlipType, config.clickFlipInvertH)
+    Box(Modifier.padding(horizontal = HORIZONTAL_PAD)) {
+        ClickZonePreview(config.clickFlipType, config.clickFlipInvertH)
+    }
     Text(
         "深色区=上一页 · 浅色区=下一页 · 空白=唤出菜单",
         fontSize = 10.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(top = 4.dp),
+        modifier = Modifier.padding(start = HORIZONTAL_PAD, end = HORIZONTAL_PAD, top = 4.dp),
     )
     Spacer(Modifier.height(8.dp))
-    TapZoneVisualPreview(config.clickFlipType, config.clickFlipInvertH)
+    Box(Modifier.padding(horizontal = HORIZONTAL_PAD)) {
+        TapZoneVisualPreview(config.clickFlipType, config.clickFlipInvertH)
+    }
     Spacer(Modifier.height(8.dp))
     Row(
         Modifier.fillMaxWidth().padding(horizontal = HORIZONTAL_PAD),
