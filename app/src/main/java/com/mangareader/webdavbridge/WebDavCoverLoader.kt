@@ -139,6 +139,13 @@ object WebDavCoverLoader {
             val sub = WebDavBookRef(ref.serverId, joinRemoteDir(ref.remotePath, arch.fileName), fileNameExt(arch.name))
             return runCatching { loadCoverByArchiveCache(sub, false) ?: loadCoverByTransientSession(sub, false) }.getOrNull()
         }
+        // ②.5 直连归档（ArchiveGallery 类型，DirectoryListing 把 zip/cbz/rar 等分类为此类型而非 RegularFile）
+        val archGallery = children.filterIsInstance<BrowseEntryRemote.ArchiveGallery>()
+            .firstOrNull { fileNameExt(it.name) in WebDavScanner.SCANNABLE_FORMATS }
+        if (archGallery != null) {
+            val sub = WebDavBookRef(ref.serverId, joinRemoteDir(ref.remotePath, archGallery.fileName), fileNameExt(archGallery.name))
+            return runCatching { loadCoverByArchiveCache(sub, false) ?: loadCoverByTransientSession(sub, false) }.getOrNull()
+        }
         // ③ 子目录递归
         for (d in children.filterIsInstance<BrowseEntryRemote.Directory>().sortedBy { it.name.lowercase() }) {
             if (d.unreachable) continue

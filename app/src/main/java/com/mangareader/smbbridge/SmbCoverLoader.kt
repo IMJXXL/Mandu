@@ -143,6 +143,12 @@ object SmbCoverLoader {
                 return runCatching { loadCoverByArchiveCache(subRef(arch.fileName, fileNameExt(arch.name)), false)
                     ?: loadCoverByTransientSession(subRef(arch.fileName, fileNameExt(arch.name)), false) }.getOrNull()
             }
+        // ②.5 直连归档（ArchiveGallery 类型，DirectoryListing 把 zip/cbz/rar 等分类为此类型而非 RegularFile）
+        children.filterIsInstance<BrowseEntryRemote.ArchiveGallery>()
+            .firstOrNull { fileNameExt(it.name) in SmbScanner.SCANNABLE_FORMATS }?.let { arch ->
+                return runCatching { loadCoverByArchiveCache(subRef(arch.fileName, fileNameExt(arch.name)), false)
+                    ?: loadCoverByTransientSession(subRef(arch.fileName, fileNameExt(arch.name)), false) }.getOrNull()
+            }
         // ③ 子目录递归
         for (d in children.filterIsInstance<BrowseEntryRemote.Directory>().sortedBy { it.name.lowercase() }) {
             if (d.unreachable) continue
