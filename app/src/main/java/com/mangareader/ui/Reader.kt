@@ -199,6 +199,14 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         }
     }
     var mode by remember { mutableStateOf(resolveInitialMode(bookId)) }
+    // ★ 2026-10-07 修"条漫下拖任何设置滑条画面跳回单页"（1007-183400 日志 40.917
+    //   wtMargin pct=11 → 40.920 readerView mode=FLIP 实锤）：autoWebtoon 的 mode=VERT
+    //   是运行时覆盖（故意不落盘，保"用户没手动设过模式"语义），而 configVersion 因
+    //   任意 prefs 变更（防抖 300ms）重跑下方重载 effect——mode 若被 resolveInitialMode
+    //   拍回持久值，条漫阅读中拖 侧边留白/亮度/... 就把整个阅读器重建为单页，画面跳回
+    //   智能适应不放大的 ~100dp 两侧留白基础（用户描述"在100的基础上开始动/打架"；
+    //   重进正常=enterReader 重判 autoWebtoon 又切回条漫）。覆盖期间 mode/scrollMode 均不动
+    var autoWebtoonOverride by remember(bookId) { mutableStateOf(false) }
 
     // ★ 单本单页豁免（2026-10-06）：当前章不参与双页合并的物理页集合。DB page_solo_flags
     //   主键 (chPath, pageIdx)，chPath 与阅读进度同源（navStack 尾/书路径）——按书+章隔离，
@@ -210,16 +218,20 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         // 二次签名校验（与 MainActivity 互补，任一被移除则崩溃）
         com.mangareader.SignatureVerifier.verify(ctx, "F6D95465BE7D17C1B3BE2B0C59969C22")
         config = com.mangareader.data.ReaderConfig.load(ctx, bookId)
-        mode = resolveInitialMode(bookId)
-        // 同步：确保 scrollMode 和 read_mode 一致
-        val expectedScrollMode = when (mode) {
-            Mode.VERT, Mode.WEBTOON_GAP -> com.mangareader.data.ReaderConfig.ScrollMode.VERTICAL
-            Mode.RTL -> com.mangareader.data.ReaderConfig.ScrollMode.HORIZONTAL_RIGHT
-            else -> com.mangareader.data.ReaderConfig.ScrollMode.HORIZONTAL_LEFT
-        }
-        if (config.scrollMode != expectedScrollMode) {
-            config = config.copy(scrollMode = expectedScrollMode)
-            com.mangareader.data.ReaderScope.write(ctx, bookId, "scrollMode", expectedScrollMode.name)
+        // ★ autoWebtoonOverride 期间不重解析模式、不同步 scrollMode（sync 会把 VERTICAL
+        //   落盘=把"静默自动切"变成持久决定，破坏下次进书回全局默认的语义）
+        if (!autoWebtoonOverride) {
+            mode = resolveInitialMode(bookId)
+            // 同步：确保 scrollMode 和 read_mode 一致
+            val expectedScrollMode = when (mode) {
+                Mode.VERT, Mode.WEBTOON_GAP -> com.mangareader.data.ReaderConfig.ScrollMode.VERTICAL
+                Mode.RTL -> com.mangareader.data.ReaderConfig.ScrollMode.HORIZONTAL_RIGHT
+                else -> com.mangareader.data.ReaderConfig.ScrollMode.HORIZONTAL_LEFT
+            }
+            if (config.scrollMode != expectedScrollMode) {
+                config = config.copy(scrollMode = expectedScrollMode)
+                com.mangareader.data.ReaderScope.write(ctx, bookId, "scrollMode", expectedScrollMode.name)
+            }
         }
     }
     LaunchedEffect(config.isEinkMode) {
@@ -1155,6 +1167,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                 }
                 if (count > 0 && totalRatio / count < 0.55f) {
                     mode = Mode.VERT
+                    autoWebtoonOverride = true
                     // ★ 用户报告"zip/图片文件夹单页不能滑动翻页"的最可能根因（2026-10-05）：
                     //   自动条漫检测按前3页平均宽高比<0.55 把整本静默切成条漫——条漫横滑本就
                     //   不翻页，用户视角=滑动坏了且"偏偏只有 zip/文件夹这样"（长图集中）。
@@ -3270,6 +3283,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             cur = back.coerceIn(0, raw.lastIndex.coerceAtLeast(0))
             preExpandPages = null
         }
+        autoWebtoonOverride = false
         mode = newMode
         // ★ 模式记忆走作用域路由（2026-10-04）：预设单本（只记这本书），偏好页可改全局
         //   ——全局层写 default_read_mode 并清本书 read_mode 残留，对所有书生效
