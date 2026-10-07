@@ -15,7 +15,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -882,6 +885,72 @@ private fun ClickZonePreview(type: ReaderConfig.ClickFlipType, invertH: Boolean)
                 rect(0f, 0.33f, prevC)
                 rect(0.33f, 0.67f, menuC)
                 rect(0.67f, 1f, nextC)
+            }
+        }
+    }
+}
+/**
+ * 可视化区域预览：调 buildNavigation().regions 作为单一数据源，用 BoxWithConstraints
+ * 叠加绘制每个 region 的边框 + 动作图标 + 动作文字。纯展示组件，不响应点击。
+ * 关闭态（type==NO）regions 为空，整体标注「点击翻页已关闭」。
+ */
+@Composable
+private fun TapZoneVisualPreview(type: ReaderConfig.ClickFlipType, invertH: Boolean) {
+    val primary = MaterialTheme.colorScheme.primary
+    val surface = MaterialTheme.colorScheme.surface
+    val regions = remember(type, invertH) {
+        com.mangareader.native.buildNavigation(type.ordinal, invertH, false).regions
+    }
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(120.dp)
+            .clip(MaterialTheme.shapes.medium)
+            .background(surface)
+    ) {
+        if (regions.isEmpty()) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text("点击翻页已关闭", color = primary, fontSize = 13.sp)
+            }
+        } else {
+            val W = maxWidth.value
+            val H = maxHeight.value
+            regions.forEach { region ->
+                val r = region.rect
+                val x = r.left * W
+                val y = r.top * H
+                val w = (r.right - r.left) * W
+                val h = (r.bottom - r.top) * H
+                Box(
+                    modifier = Modifier
+                        .offset(x = x.dp, y = y.dp)
+                        .size(width = w.dp, height = h.dp)
+                        .border(1.dp, primary)
+                        .background(primary.copy(alpha = 0.08f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(
+                            imageVector = when (region.action) {
+                                com.mangareader.native.NavigationAction.PREV -> Icons.AutoMirrored.Filled.ArrowBack
+                                com.mangareader.native.NavigationAction.NEXT -> Icons.AutoMirrored.Filled.ArrowForward
+                                com.mangareader.native.NavigationAction.MENU -> Icons.Filled.Menu
+                            },
+                            contentDescription = null,
+                            tint = primary,
+                            modifier = Modifier.size(20.dp),
+                        )
+                        Text(
+                            text = when (region.action) {
+                                com.mangareader.native.NavigationAction.PREV -> "上一页"
+                                com.mangareader.native.NavigationAction.NEXT -> "下一页"
+                                com.mangareader.native.NavigationAction.MENU -> "菜单"
+                            },
+                            color = primary,
+                            fontSize = 11.sp,
+                        )
+                    }
+                }
             }
         }
     }
