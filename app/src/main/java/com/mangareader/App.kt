@@ -125,6 +125,9 @@ class App : Application(), SingletonImageLoader.Factory {
                 ReaderPrefMigration.scaleModeFromLegacyFitScreenIfNeeded(
                     getSharedPreferences("manga_reader", MODE_PRIVATE)
                 )
+                ReaderPrefMigration.tapZoneRelocateIfNeeded(
+                    getSharedPreferences("manga_reader", MODE_PRIVATE)
+                )
             }
         }
         try { System.loadLibrary("archive_stream") } catch (_: Throwable) {}

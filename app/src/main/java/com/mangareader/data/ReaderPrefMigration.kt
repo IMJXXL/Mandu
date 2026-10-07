@@ -159,6 +159,28 @@ object ReaderPrefMigration {
         }
     }
 
+    /** ★ 点击翻页区域设置迁移（tap_zone_relocate_v1，2026-10-07）：
+     *  设置从外部阅读设置页迁入阅读器内，作用域从全局锁定改为本书单独（默认）。
+     *  一次性清存量全局键与本书覆盖键及作用域注册表显式记录，不沿用旧值（用户拍板不考虑老用户兼容）。 */
+    fun tapZoneRelocateIfNeeded(prefs: SharedPreferences) {
+        if (prefs.getBoolean("tap_zone_relocate_v1_done", false)) return
+        synchronized(ReaderPrefMigration) {
+            if (prefs.getBoolean("tap_zone_relocate_v1_done", false)) return
+            runCatching {
+                val ed = prefs.edit()
+                ed.remove("clickFlipType").remove("clickFlipInvertH")
+                prefs.all.keys.forEach { k ->
+                    if (k.startsWith("book_") && (k.endsWith("_clickFlipType") || k.endsWith("_clickFlipInvertH"))) ed.remove(k)
+                }
+                val reg = ReaderScope.parseScopeReg(prefs).toMutableMap()
+                reg.remove("clickFlipType"); reg.remove("clickFlipInvertH")
+                ed.putString("pref_center_scope_reg", reg.entries.joinToString(";") { "${it.key}=${it.value}" })
+                ed.putBoolean("tap_zone_relocate_v1_done", true)
+                ed.apply()
+            }
+        }
+    }
+
     /** 回滚：从最近一份快照恢复 book_* 键（当前不在快照内的 book_ 键删除） */
     fun restoreLatestSnapshot(context: Context): Boolean {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
