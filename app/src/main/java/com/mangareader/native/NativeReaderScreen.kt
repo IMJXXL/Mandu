@@ -323,6 +323,8 @@ fun NativeReaderScreen(
             delegate.trimWhiteRatio = trimWhiteRatio
             delegate.setFixedCropLR(fixedCropL, fixedCropR)
             delegate.setEinkDither(einkDither, einkDitherAlgorithm, einkDitherLevels, einkEndpointPassthrough)
+            delegate.setDoublePageSplit(doublePageSplit)
+            delegate.setDoublePageReverse(doublePageReverse)
         }
         if (delegate is com.mangareader.native.curl.CurlReaderView) {
             delegate.pageBgColor = pageBgColor

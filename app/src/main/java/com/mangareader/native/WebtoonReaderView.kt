@@ -4,7 +4,9 @@ import android.animation.AnimatorSet
 import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Rect
 import android.util.Log
 import android.view.GestureDetector
 import android.view.MotionEvent
@@ -32,6 +34,10 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlin.math.abs
+
+internal fun shouldSplitWebtoonPage(doublePageSplitEnabled: Boolean, splitSide: Int, width: Int, height: Int): Boolean {
+    return doublePageSplitEnabled && splitSide == 0 && width > height
+}
 
 class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDelegate {
 
@@ -445,10 +451,59 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
     /** §24 二代 hook：检测到 ≥3 张动图卷时回调 Reader.kt 弹"条漫下只能静态看，是否切翻页"对话框 */
     var onAnimDetected: ((animatedCount: Int) -> Unit)? = null
 
+    private var doublePageSplitEnabled = false
+    private var doublePageReverseEnabled = false
+
+    fun setDoublePageSplit(split: Boolean) {
+        if (doublePageSplitEnabled == split) return
+        doublePageSplitEnabled = split
+        synchronized(bitmapCache) { bitmapCache.evictAll() }
+        adapter?.notifyDataSetChanged()
+    }
+
+    fun setDoublePageReverse(reverse: Boolean) {
+        if (doublePageReverseEnabled == reverse) return
+        doublePageReverseEnabled = reverse
+        synchronized(bitmapCache) { bitmapCache.evictAll() }
+        adapter?.notifyDataSetChanged()
+    }
+
+    private fun splitAndMerge(bmp: Bitmap): Bitmap {
+        val w = bmp.width
+        val h = bmp.height
+        val halfW = w / 2
+        return try {
+            val result = Bitmap.createBitmap(halfW, h * 2, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(result)
+            val upperSrc: Rect
+            val lowerSrc: Rect
+            if (doublePageReverseEnabled) {
+                upperSrc = Rect(0, 0, halfW, h)
+                lowerSrc = Rect(halfW, 0, w, h)
+            } else {
+                upperSrc = Rect(halfW, 0, w, h)
+                lowerSrc = Rect(0, 0, halfW, h)
+            }
+            val upperDst = Rect(0, 0, halfW, h)
+            val lowerDst = Rect(0, h, halfW, h * 2)
+            canvas.drawBitmap(bmp, upperSrc, upperDst, null)
+            canvas.drawBitmap(bmp, lowerSrc, lowerDst, null)
+            result
+        } catch (_: OutOfMemoryError) {
+            bmp
+        } catch (_: Exception) {
+            bmp
+        }
+    }
+
     /** 应用裁剪白边和旋转适应处理 */
-    private fun processBitmap(bmp: Bitmap?): Bitmap? {
+    private fun processBitmap(bmp: Bitmap?, idx: Int = -1): Bitmap? {
         if (bmp == null || bmp.isRecycled || bmp.width <= 10 || bmp.height <= 10) return bmp
-        var result = bmp
+        var result: Bitmap? = bmp
+        val meta = if (idx >= 0) pageList.getOrNull(idx) else null
+        if (meta != null && shouldSplitWebtoonPage(doublePageSplitEnabled, meta.splitSide, result!!.width, result.height)) {
+            result = splitAndMerge(result!!)
+        }
         if (cropLeftPct > 0.001f || cropRightPct > 0.001f) {
             try {
                 result = com.mangareader.viewer.ImageTrimmer.applyFixedCrop(result!!, cropLeftPct, 0f, cropRightPct, 0f)
@@ -995,7 +1050,7 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
             }
             // ★ 渐进尺寸收集：用原始 bmp（processBitmap 会裁白边，尺寸会变）
             if (bmp != null && !bmp.isRecycled) observeProbedSize(idx, bmp.width, bmp.height)
-            var processed = processBitmap(bmp)
+            var processed = processBitmap(bmp, idx)
             if (processed == null) {
                 ArchiveEngine.w("WebtoonRV", "loadPage FAIL idx=$idx bmpNull=${bmp == null} tile=$tileModeEnabled src=${meta.source}")
             }
@@ -1121,7 +1176,7 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
             result
         }
         if (bmp != null) {
-            val processed = processBitmap(bmp)
+            val processed = processBitmap(bmp, idx)
             synchronized(bitmapCache) { bitmapCache.put(idx, processed ?: bmp) }
             recycler.post { adapter?.notifyItemChanged(idx, "ld") }
             val cost = android.os.SystemClock.uptimeMillis() - startMs
