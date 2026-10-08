@@ -64,3 +64,6 @@ tmp_*.txt
 tmp_*.bin
 ui_dump.xml
 ud.xml
+tmp_ui_dump.xml
+tmp_*.json
+tmp_*.xml
