@@ -327,7 +327,12 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
         } else if (fp.startsWith("smb:") || fp.startsWith("webdav:")) {
             randomLoading = true
             scope.launch {
-                val leaf = withTimeoutOrNull(1000L) { withContext(Dispatchers.IO) { randomDescend(fp, 0) } }
+                val hasLocalFallback = directFiles.isNotEmpty()
+                val leaf = if (hasLocalFallback) {
+                    withTimeoutOrNull(1000L) { withContext(Dispatchers.IO) { randomDescend(fp, 0) } }
+                } else {
+                    withContext(Dispatchers.IO) { randomDescend(fp, 0) }
+                }
                 randomLoading = false
                 if (leaf != null) {
                     openBookThrottled(b.id, leaf)
