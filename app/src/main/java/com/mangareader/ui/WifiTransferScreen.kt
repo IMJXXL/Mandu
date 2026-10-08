@@ -2,6 +2,7 @@ package com.mangareader.ui
 
 import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
@@ -25,6 +26,7 @@ import com.mangareader.App
 import com.mangareader.data.Folder
 import com.mangareader.wifitransfer.WifiTransferService
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -42,6 +44,21 @@ fun WifiTransferScreen(onBack: () -> Unit) {
 
     LaunchedEffect(Unit) {
         folders = withContext(Dispatchers.IO) { db.mangaDao().getAllFoldersList() }
+    }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            val running = WifiTransferService.isRunning
+            val url = WifiTransferService.serverUrl
+            if (running != isRunning || url != serverUrl) {
+                isRunning = running
+                serverUrl = url
+                if (running && url != null) {
+                    Toast.makeText(ctx, "服务已启动：$url", Toast.LENGTH_LONG).show()
+                }
+            }
+            delay(500)
+        }
     }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
@@ -122,7 +139,7 @@ fun WifiTransferScreen(onBack: () -> Unit) {
                             Spacer(Modifier.width(12.dp))
                             Column(Modifier.weight(1f)) {
                                 Text(folder.displayName.ifEmpty { folder.treeUri }, fontSize = 15.sp)
-                                Text(folder.treeUri.takeLast(40), fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(Uri.decode(folder.treeUri).substringAfter("/tree/", folder.treeUri), fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
                             }
                             if (selected) Icon(Icons.Default.Check, null)
                         }

@@ -48,6 +48,7 @@ import io.ktor.utils.io.ByteWriteChannel
 import io.ktor.utils.io.jvm.javaio.toInputStream
 import io.ktor.utils.io.writeFully
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
@@ -67,7 +68,12 @@ import java.util.Date
 
 class WifiTransferService : Service() {
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val exceptionHandler = CoroutineExceptionHandler { _, e ->
+        Log.e(TAG, "uncaught in scope", e)
+        isRunning = false
+        serverUrl = null
+    }
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + exceptionHandler)
     private var server: EmbeddedServer<CIOApplicationEngine, CIOApplicationEngine.Configuration>? = null
     private var folderUri: Uri? = null
 
@@ -112,7 +118,7 @@ class WifiTransferService : Service() {
                 val baseDir = DocumentFile.fromTreeUri(this@WifiTransferService, treeUri) ?: return@launch
                 val ctx = applicationContext
 
-                server = embeddedServer(CIO, port = PORT, host = "0.0.0.0") {
+                val srv = embeddedServer(CIO, port = PORT, host = "0.0.0.0") {
                     install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
                     routing {
                         get("/") {
@@ -235,13 +241,19 @@ class WifiTransferService : Service() {
                             }
                         }
                     }
-                }.start(wait = false)
+                }
+                server = srv
 
                 isRunning = true
                 val ip = getIpAddress()
                 serverUrl = "http://$ip:$PORT"
                 startForegroundSafe(buildNotification("服务运行中 · $serverUrl"))
                 Log.i(TAG, "server started at $serverUrl")
+
+                srv.start(wait = true)
+
+                isRunning = false
+                serverUrl = null
             } catch (e: Exception) {
                 Log.e(TAG, "startServer failed", e)
                 isRunning = false
