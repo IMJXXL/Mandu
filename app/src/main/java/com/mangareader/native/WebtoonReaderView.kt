@@ -465,8 +465,10 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
 
     fun setDoublePageReverse(reverse: Boolean) {
         if (doublePageReverseEnabled == reverse) return
+        ArchiveEngine.d("WebtoonRV", "setDoublePageReverse $reverse (was $doublePageReverseEnabled) adapter=${adapter != null}")
         doublePageReverseEnabled = reverse
         synchronized(bitmapCache) { bitmapCache.evictAll() }
+        inflightLoads.clear()
         adapter?.notifyDataSetChanged()
     }
 
@@ -481,11 +483,11 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
             val upperSrc: Rect
             val lowerSrc: Rect
             if (doublePageReverseEnabled) {
-                upperSrc = Rect(0, 0, halfW, h)
-                lowerSrc = Rect(rightStart, 0, w, h)
-            } else {
                 upperSrc = Rect(rightStart, 0, w, h)
                 lowerSrc = Rect(0, 0, halfW, h)
+            } else {
+                upperSrc = Rect(0, 0, halfW, h)
+                lowerSrc = Rect(rightStart, 0, w, h)
             }
             val upperDst = Rect(0, 0, halfW, h)
             val lowerDst = Rect(0, h, halfW, h * 2)

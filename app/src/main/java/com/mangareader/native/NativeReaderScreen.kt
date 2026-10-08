@@ -48,7 +48,7 @@ interface ReaderViewDelegate {
 /** ★ C4 交接所有权令牌（白屏工单 v2.4）：adopt 过的批次归新视图缓存管；
  *  从未被 adopt 的批次才允许兜底回收，且必须超时（2s）——
  *  Reader.kt 用 key() 包裹 NES，切模式=子树重建，正常移交窗口只有几十毫秒。 */
-class BitmapHandoff(val bitmaps: Map<Int, android.graphics.Bitmap>, val treePath: String = "") {
+class BitmapHandoff(val bitmaps: Map<Int, android.graphics.Bitmap>, val treePath: String = "", val splitEnabled: Boolean = false, val reverseEnabled: Boolean = false) {
     @Volatile var adopted: Boolean = false
     private val createdAt = android.os.SystemClock.uptimeMillis()
     fun isStale(): Boolean = android.os.SystemClock.uptimeMillis() - createdAt > 2000L
@@ -402,9 +402,7 @@ fun NativeReaderScreen(
         // ★ P0-2：切换交接——本次 setup 后立即从总线接管旧实例移交的位图（跨实例），首帧绑定直接命中缓存
         android.util.Log.w("NES", "setup delegate=${System.identityHashCode(delegate)} v=$isVertical vp=$verticalPager tree=$treePath")
         SrBitmapHandoffBus.take()?.let { h ->
-            // ★ F2.3 身份标签：批次归属与当前章不符（切章/换书时 key() 重建的竞态窗口）
-            //   不接管并立刻回收旧图防错配，新视图按未命中流程正常解码
-            if (h.treePath == treePath) {
+            if (h.treePath == treePath && !(delegate is WebtoonReaderView && (h.splitEnabled != doublePageSplit || h.reverseEnabled != doublePageReverse))) {
                 h.adopted = true
                 delegate.adoptBitmaps(h.bitmaps)
             } else {
@@ -412,10 +410,11 @@ fun NativeReaderScreen(
                 h.recycleIfUnadopted()
             }
         }
+
         onDispose {
             // 顺序关键：先 drain（位图从缓存挪走，归属权移交），再 release（残留位图统一回收）
             android.util.Log.w("NES", "dispose delegate=${System.identityHashCode(delegate)}")
-            SrBitmapHandoffBus.put(BitmapHandoff(delegate.drainLiveBitmaps(), treePath))
+            SrBitmapHandoffBus.put(BitmapHandoff(delegate.drainLiveBitmaps(), treePath, doublePageSplit, doublePageReverse))
             delegate.release()
             lastReleasedDelegate = null
         }
