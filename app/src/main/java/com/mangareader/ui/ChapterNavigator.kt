@@ -79,7 +79,7 @@ private fun HorizontalNavigator(
                         val newPage = if (isRtl) (totalPages - 1 - v.toInt()).coerceIn(0, (totalPages - 1).coerceAtLeast(0)) else v.toInt().coerceIn(0, (totalPages - 1).coerceAtLeast(0))
                         if (newPage != lastHapticPage) {
                             lastHapticPage = newPage
-                            if (hapticPrefs.getBoolean("progress_haptic_feedback", true)) {
+                            if (hapticPrefs.getBoolean("progress_haptic_feedback", false)) {
                                 val animatorScale = android.provider.Settings.Global.getFloat(hapticCtx.contentResolver, android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f)
                                 if (animatorScale != 0f) {
                                     val now = System.currentTimeMillis()

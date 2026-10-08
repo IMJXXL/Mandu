@@ -209,11 +209,11 @@ fun ReadingSettingsScreen(onBack: () -> Unit, onOpenKeyMap: (() -> Unit)? = null
                         }
                     }
 
-                    var hapticFeedback by remember(resetTrigger) { mutableStateOf(prefs.getBoolean("progress_haptic_feedback", true)) }
+                    var hapticFeedback by remember(resetTrigger) { mutableStateOf(prefs.getBoolean("progress_haptic_feedback", false)) }
                     Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text("进度条触感", fontSize = 16.sp)
-                            Text("拖动进度条时每经过一页振动反馈", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("拖动进度条时每经过一页振动反馈，需系统设置中开启振动", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         Switch(checked = hapticFeedback, onCheckedChange = { hapticFeedback = it; prefs.edit().putBoolean("progress_haptic_feedback", it).apply() })
                     }
