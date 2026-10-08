@@ -127,16 +127,13 @@ internal val PREF_ROWS: List<PrefRow> = listOf(
     PrefRow("doublePageStart", "双页合并起始页", 0, PrefEditor.Slider(
         2f, 10f, 8, { "第 ${it.toInt()} 页起合并（前 ${it.toInt() - 1} 页单独显示）" },
         info = "仅「双页+起始页」档生效，第 2 页=旧「跳过首页」。单页豁免：阅读中目录 → 浏览页签，长按页面标记「单独显示」（不参与合并，持续有效可多个，重置入口同页顶部；仅双页相关布局可长按）")),
-    PrefRow("clickFlipType", "点击翻页区域", 0, PrefEditor.Chips(
-        listOf("关闭" to "NO", "左右分区" to "LEFT_RIGHT", "L型" to "L_SHAPE", "边沿" to "EDGE", "Kindlish" to "KINDLISH"),
-        info = "mihon 同款五种：边沿=两侧前进中下后退；Kindlish=左1/3上一页右2/3下一页。条漫中上一页=上滚一屏、下一页=下滚一屏")),
-    PrefRow("clickFlipInvertH", "对调左右（左手模式）", 0, PrefEditor.Toggle(info = "点右侧=上一页、点左侧=下一页；点击翻页区域为关闭时无效")),
+
     PrefRow("isTrimWhiteBorder", "裁白边", 0, PrefEditor.Group(listOf(
         PrefEditor.Part("isTrimWhiteBorder", "裁白边", PrefEditor.Toggle()),
         PrefEditor.Part("trimThreshold", "检测阈值（默认 220）", PrefEditor.Slider(180f, 250f, 69, { "阈值 ${it.toInt()}" })),
         PrefEditor.Part("trimWhiteRatio", "白色比例（默认90%）", PrefEditor.Slider(0.5f, 0.95f, 45, pct)),
     )), subKeys = listOf("trimThreshold", "trimWhiteRatio", "trimFactor")),
-    PrefRow("landscapeZoom", "自动放大横向图片", 0, PrefEditor.Toggle(info = "宽图自动贴满高度（mihon 同款）；仅“适应屏幕”档生效；条漫模式不适用")),
+    PrefRow("landscapeZoom", "自动放大横向图片", 0, PrefEditor.Toggle(info = "宽图自动贴满高度；仅“适应屏幕”档生效；条漫模式不适用")),
     PrefRow("isDoubleTapZoom", "双击放大", 0, PrefEditor.Toggle(info = "关闭后双击不再缩放，快速连点按两次点击翻页计")),
     PrefRow("isFlipAnimation", "翻页动画", 0, PrefEditor.Group(listOf(
         PrefEditor.Part("isFlipAnimation", "翻页动画（点击翻页过渡）", PrefEditor.Toggle()),
@@ -149,13 +146,13 @@ internal val PREF_ROWS: List<PrefRow> = listOf(
         subKeys = listOf("isPageCurlAnimation", "isCurlContentAreaOnly", "curlBackContentAlpha", "curlShadowAlpha", "spineShadowAlpha")),
     PrefRow("imageScaleMode", "画面缩放", 0, PrefEditor.Chips(
         listOf("适应屏幕" to 0, "拉伸" to 5, "适应宽度" to 1, "适应高度" to 2, "原始尺寸" to 3, "智能适应" to 4),
-        info = "mihon 同款六档：智能适应=小图不放大；拉伸=填满屏幕溢出裁边。条漫恒适应宽度；仿真/静态视图自动收敛：溢出类→适应宽度"
+        info = "智能适应=小图不放大；拉伸=填满屏幕溢出裁边。条漫恒适应宽度；仿真/静态视图自动收敛：溢出类→适应宽度"
     ), section = "画面"),
     PrefRow("zoomStart", "缩放起始位置", 0, PrefEditor.Chips(
         listOf("自动" to 0, "左" to 1, "中" to 2, "右" to 3),
         info = "横向有留白/宽图放大后对齐哪一侧；“自动”跟随阅读方向（日漫右开→右缘）"
     ), section = "画面"),
-    PrefRow("useSSIV", "高清缩放", 0, PrefEditor.Toggle(), section = "画面"),
+
     PrefRow("doublePageSplit", "拆分双页", 0, PrefEditor.Group(listOf(
         PrefEditor.Part("doublePageSplit", "拆分双页（跨页图拆成左右两页）", PrefEditor.Toggle()),
         PrefEditor.Part("doublePageReverse", "反转双页", PrefEditor.Toggle()),
@@ -168,6 +165,10 @@ internal val PREF_ROWS: List<PrefRow> = listOf(
             "横屏" to ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE,
             "锁定竖屏" to ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT,
             "锁定横屏" to ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE))),
+    PrefRow("clickFlipType", "点击翻页区域", 0, PrefEditor.Chips(
+        listOf("关闭" to "NO", "左右" to "LEFT_RIGHT", "L型" to "L_SHAPE", "边沿" to "EDGE", "Kindle" to "KINDLISH"),
+        info = "五种：边沿=两侧前进中下后退；Kindle=左1/3上一页右2/3下一页。条漫中上一页=上滚一屏、下一页=下滚一屏")),
+    PrefRow("clickFlipInvertH", "对调左右（左手模式）", 0, PrefEditor.Toggle(info = "点右侧=上一页、点左侧=下一页；点击翻页区域为关闭时无效")),
     // ── Tab 1 常规（顺序=书内面板第二页）──
     PrefRow("isShowPageNum", "显示页码", 1, PrefEditor.Toggle()),
     PrefRow("isImmersiveMode", "沉浸模式", 1, PrefEditor.Toggle(info = "重进阅读后生效")),

@@ -21,9 +21,9 @@ sealed class ViewerNavigation {
 /** 默认：左33%=上一页，中33%=菜单，右33%=下一页 */
 object DefaultNavigation : ViewerNavigation() {
     override val regions = listOf(
-        NavigationRegion(RectF(0f, 0.05f, 0.33f, 1f), NavigationAction.PREV),
-        NavigationRegion(RectF(0.33f, 0.05f, 0.67f, 1f), NavigationAction.MENU),
-        NavigationRegion(RectF(0.67f, 0.05f, 1f, 1f), NavigationAction.NEXT)
+        NavigationRegion(RectF(0f, 0f, 0.33f, 1f), NavigationAction.PREV),
+        NavigationRegion(RectF(0.33f, 0f, 0.67f, 1f), NavigationAction.MENU),
+        NavigationRegion(RectF(0.67f, 0f, 1f, 1f), NavigationAction.NEXT)
     )
 }
 
@@ -36,7 +36,7 @@ object AllMenuNavigation : ViewerNavigation() {
  *  下 1/3 横条 + 右中 1/3 竖条 = 下一页，正中 = 菜单。拇指自然区在下方=翻页。 */
 object LNavigation : ViewerNavigation() {
     override val regions = listOf(
-        NavigationRegion(RectF(0f, 0.05f, 1f, 0.33f), NavigationAction.PREV),
+        NavigationRegion(RectF(0f, 0f, 1f, 0.33f), NavigationAction.PREV),
         NavigationRegion(RectF(0f, 0.33f, 0.33f, 0.67f), NavigationAction.PREV),
         NavigationRegion(RectF(0.67f, 0.33f, 1f, 0.67f), NavigationAction.NEXT),
         NavigationRegion(RectF(0f, 0.67f, 1f, 1f), NavigationAction.NEXT),
@@ -67,8 +67,8 @@ object VerticalPagerNavigation : ViewerNavigation() {
  *  阅读序语义（NEXT/PREV 随 RTL 翻转）——LTR 下与 mihon 完全一致，RTL 下方向正确。 */
 object EdgeNavigation : ViewerNavigation() {
     override val regions = listOf(
-        NavigationRegion(RectF(0f, 0.05f, 0.33f, 1f), NavigationAction.NEXT),
-        NavigationRegion(RectF(0.67f, 0.05f, 1f, 1f), NavigationAction.NEXT),
+        NavigationRegion(RectF(0f, 0f, 0.33f, 1f), NavigationAction.NEXT),
+        NavigationRegion(RectF(0.67f, 0f, 1f, 1f), NavigationAction.NEXT),
         NavigationRegion(RectF(0.33f, 0.66f, 0.67f, 1f), NavigationAction.PREV),
     )
 }
@@ -77,8 +77,8 @@ object EdgeNavigation : ViewerNavigation() {
  *  顶条与未覆盖区 = 菜单（mihon 顶部为死区，此处改良为菜单，菜单永远可达）。 */
 object KindlishNavigation : ViewerNavigation() {
     override val regions = listOf(
-        NavigationRegion(RectF(0f, 0.05f, 0.33f, 1f), NavigationAction.PREV),
-        NavigationRegion(RectF(0.33f, 0.05f, 1f, 1f), NavigationAction.NEXT),
+        NavigationRegion(RectF(0f, 0.33f, 0.33f, 1f), NavigationAction.PREV),
+        NavigationRegion(RectF(0.33f, 0.33f, 1f, 1f), NavigationAction.NEXT),
     )
 }
 

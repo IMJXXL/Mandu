@@ -30,6 +30,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalConfiguration
+
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
@@ -37,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mangareader.data.BookCrop
 import com.mangareader.data.ReaderConfig
+
 import kotlinx.coroutines.launch
 
 private const val ANIM_DURATION = 300
@@ -357,7 +359,7 @@ private fun ReadingModeTab(config: ReaderConfig, mode: Mode, bookId: Long, onCon
                 "第 ${config.doublePageStart} 页起合并（前 ${config.doublePageStart - 1} 页单独显示）",
             ) { onConfigChange(config.copy(doublePageStart = it.toInt())) }
         }
-        if (config.pageLayout != ReaderConfig.PageLayout.SINGLE || autoDoubleActive) {
+        if (config.pageLayout != ReaderConfig.PageLayout.SINGLE || autoDoubleActive || config.doublePageSplit) {
             // ★ 2026-10-06 工单：反转双页归位页面布局区（原在画面区深处，与拆分无关）
             CheckboxItem(
                 "反转双页（每对页面左右顺序镜像）", config.doublePageReverse,
@@ -850,7 +852,7 @@ private fun ClickZonePreview(type: ReaderConfig.ClickFlipType, invertH: Boolean)
                         size = androidx.compose.ui.geometry.Size(kotlin.math.abs(mx1 - mx0) * w, (y1 - y0) * h))
                 }
                 drawRect(menuC)
-                rect(0f, 0.05f, 1f, 0.33f, prevC)
+                rect(0f, 0f, 1f, 0.33f, prevC)
                 rect(0f, 0.33f, 0.33f, 0.67f, prevC)
                 rect(0.67f, 0.33f, 1f, 0.67f, nextC)
                 rect(0f, 0.67f, 1f, 1f, nextC)
@@ -863,22 +865,22 @@ private fun ClickZonePreview(type: ReaderConfig.ClickFlipType, invertH: Boolean)
                         size = androidx.compose.ui.geometry.Size(kotlin.math.abs(mx1 - mx0) * w, (y1 - y0) * h))
                 }
                 drawRect(menuC)
-                rect(0f, 0.05f, 0.33f, 1f, nextC)
-                rect(0.67f, 0.05f, 1f, 1f, nextC)
+                rect(0f, 0f, 0.33f, 1f, nextC)
+                rect(0.67f, 0f, 1f, 1f, nextC)
                 rect(0.33f, 0.66f, 0.67f, 1f, prevC)
             }
             ReaderConfig.ClickFlipType.KINDLISH -> {
                 fun rect(x0: Float, x1: Float, color: androidx.compose.ui.graphics.Color) {
                     val mx0 = mirrorX(x0); val mx1 = mirrorX(x1)
-                    drawRect(color, topLeft = androidx.compose.ui.geometry.Offset(minOf(mx0, mx1) * w, 0.05f * h),
-                        size = androidx.compose.ui.geometry.Size(kotlin.math.abs(mx1 - mx0) * w, 0.95f * h))
+                    drawRect(color, topLeft = androidx.compose.ui.geometry.Offset(minOf(mx0, mx1) * w, 0.33f * h),
+                        size = androidx.compose.ui.geometry.Size(kotlin.math.abs(mx1 - mx0) * w, 0.67f * h))
                 }
                 drawRect(menuC)
                 rect(0f, 0.33f, prevC)
                 rect(0.33f, 1f, nextC)
             }
             else -> {
-                fun rect(x0: Float, x1: Float, color: androidx.compose.ui.graphics.Color, y0: Float = 0.05f) {
+                fun rect(x0: Float, x1: Float, color: androidx.compose.ui.graphics.Color, y0: Float = 0f) {
                     val mx0 = mirrorX(x0); val mx1 = mirrorX(x1)
                     drawRect(color, topLeft = androidx.compose.ui.geometry.Offset(minOf(mx0, mx1) * w, y0 * h),
                         size = androidx.compose.ui.geometry.Size(kotlin.math.abs(mx1 - mx0) * w, (1f - y0) * h))
@@ -931,26 +933,28 @@ private fun TapZoneVisualPreview(type: ReaderConfig.ClickFlipType, invertH: Bool
                         .background(primary.copy(alpha = 0.08f)),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(
-                            imageVector = when (region.action) {
-                                com.mangareader.native.NavigationAction.PREV -> Icons.AutoMirrored.Filled.ArrowBack
-                                com.mangareader.native.NavigationAction.NEXT -> Icons.AutoMirrored.Filled.ArrowForward
-                                com.mangareader.native.NavigationAction.MENU -> Icons.Filled.Menu
-                            },
-                            contentDescription = null,
-                            tint = primary,
-                            modifier = Modifier.size(20.dp),
-                        )
-                        Text(
-                            text = when (region.action) {
-                                com.mangareader.native.NavigationAction.PREV -> "上一页"
-                                com.mangareader.native.NavigationAction.NEXT -> "下一页"
-                                com.mangareader.native.NavigationAction.MENU -> "菜单"
-                            },
-                            color = primary,
-                            fontSize = 11.sp,
-                        )
+                    if (region.action != com.mangareader.native.NavigationAction.MENU) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(
+                                imageVector = when (region.action) {
+                                    com.mangareader.native.NavigationAction.PREV -> Icons.AutoMirrored.Filled.ArrowBack
+                                    com.mangareader.native.NavigationAction.NEXT -> Icons.AutoMirrored.Filled.ArrowForward
+                                    com.mangareader.native.NavigationAction.MENU -> Icons.Filled.Menu
+                                },
+                                contentDescription = null,
+                                tint = primary,
+                                modifier = Modifier.size(20.dp),
+                            )
+                            Text(
+                                text = when (region.action) {
+                                    com.mangareader.native.NavigationAction.PREV -> "上一页"
+                                    com.mangareader.native.NavigationAction.NEXT -> "下一页"
+                                    com.mangareader.native.NavigationAction.MENU -> "菜单"
+                                },
+                                color = primary,
+                                fontSize = 11.sp,
+                            )
+                        }
                     }
                 }
             }
@@ -972,10 +976,10 @@ private fun TapZoneSection(config: ReaderConfig, onConfigChange: (ReaderConfig) 
     ) {
         listOf(
             "关闭" to ReaderConfig.ClickFlipType.NO,
-            "左右分区" to ReaderConfig.ClickFlipType.LEFT_RIGHT,
+            "左右" to ReaderConfig.ClickFlipType.LEFT_RIGHT,
             "L型" to ReaderConfig.ClickFlipType.L_SHAPE,
             "边沿" to ReaderConfig.ClickFlipType.EDGE,
-            "Kindlish" to ReaderConfig.ClickFlipType.KINDLISH,
+            "Kindle" to ReaderConfig.ClickFlipType.KINDLISH,
         ).forEach { (label, value) ->
             Surface(
                 modifier = Modifier.weight(1f).clickable { onConfigChange(config.copy(clickFlipType = value)) },

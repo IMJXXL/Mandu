@@ -46,12 +46,13 @@ object ReaderScope {
         "einkEndpointPassthrough", "einkDecodeSize", "einkUiHideDelay",
         "pdfQuality", "forceFullDecode", "tileModeEnabled", "downsampleTier", "tallSplitEnabled", "tallSplitSensitivity",
         "isFlipFlashEnabled", "flipFlashDuration", "flipFlashInterval", "flipFlashColor",
+        "clickFlipType", "clickFlipInvertH",
 
     )
 
     /** 预设"本书单独"项（= 引入前 save 带前缀写的全集）：书内改动只记本书 */
     val BOOK_KEYS: Set<String> = setOf(
-        "scrollMode", "clickFlipType", "clickFlipInvertH", "panNavigation",
+        "scrollMode", "panNavigation",
         "isTrimWhiteBorder", "trimFactor", "trimThreshold", "trimWhiteRatio", "imageMarginH",
         "isGrayscale", "isInvertColors",
         "doublePageShift", "doublePageSplit", "doublePageReverse", "centerGapType",
