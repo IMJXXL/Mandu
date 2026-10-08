@@ -303,8 +303,16 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
     fun onRandomOpen() {
         val list = books
         if (list.isNullOrEmpty()) return
-        val folders = list.filter { it.filePath.startsWith("d:") || it.filePath.startsWith("z:") || it.filePath.startsWith("smb:") || it.filePath.startsWith("webdav:") }
-        val directFiles = list.filter { !folders.contains(it) }
+        val unread = list.filter { it.readPages == 0 }
+        val reading = list.filter { it.readPages > 0 && (it.totalPages <= 0 || it.readPages < it.totalPages) }
+        val finished = list.filter { it.totalPages > 0 && it.readPages >= it.totalPages }
+        val pool = when {
+            unread.isNotEmpty() -> unread
+            reading.isNotEmpty() -> reading
+            else -> finished.ifEmpty { list }
+        }
+        val folders = pool.filter { it.filePath.startsWith("d:") || it.filePath.startsWith("z:") || it.filePath.startsWith("smb:") || it.filePath.startsWith("webdav:") }
+        val directFiles = pool.filter { !folders.contains(it) }
         val pickFolder = folders.isNotEmpty() && (directFiles.isEmpty() || kotlin.random.Random.nextBoolean())
         val b = if (pickFolder) folders.random() else directFiles.randomOrNull() ?: folders.random()
         val fp = b.filePath
@@ -333,6 +341,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
             openBookThrottled(b.id, null)
         }
     }
+
 
     // 标签筛选状态（design.md §三）：已选集合 + AND/OR + 最近5个，均持久化
     var selectedTagIds by remember { mutableStateOf(prefs.getString("library_tag_ids", "")?.split(",")?.mapNotNull { it.toLongOrNull() }?.toSet() ?: emptySet()) }

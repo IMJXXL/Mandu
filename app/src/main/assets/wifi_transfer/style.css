@@ -100,6 +100,8 @@ h2 { color: var(--primary); margin: 0 0 1rem; font-size: 1.2rem; }
 #files-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
 #files-table th, #files-table td { padding: 0.6rem 0.8rem; text-align: left; border-bottom: 1px solid var(--divider); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #files-table th { background: var(--primary-light); color: var(--primary); font-weight: 600; }
+#files-table th:last-child, #files-table td:last-child { position: sticky; right: 0; background: var(--card); z-index: 1; box-shadow: -2px 0 4px rgba(0,0,0,0.04); }
+#files-table tbody tr:hover td:last-child { background: var(--primary-light); }
 #files-table td:nth-child(2) { max-width: 50%; }
 #files-table tbody tr:hover { background: var(--primary-light); }
 .dir-row { cursor: pointer; }
