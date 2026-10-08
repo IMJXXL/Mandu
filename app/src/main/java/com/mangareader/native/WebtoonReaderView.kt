@@ -456,7 +456,7 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
 
     fun setDoublePageSplit(split: Boolean) {
         if (doublePageSplitEnabled == split) return
-        ArchiveEngine.d("WebtoonRV", "setDoublePageSplit $split (was $doublePageSplitEnabled) adapter=${adapter != null}")
+
         doublePageSplitEnabled = split
         synchronized(bitmapCache) { bitmapCache.evictAll() }
         inflightLoads.clear()
@@ -465,7 +465,7 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
 
     fun setDoublePageReverse(reverse: Boolean) {
         if (doublePageReverseEnabled == reverse) return
-        ArchiveEngine.d("WebtoonRV", "setDoublePageReverse $reverse (was $doublePageReverseEnabled) adapter=${adapter != null}")
+
         doublePageReverseEnabled = reverse
         synchronized(bitmapCache) { bitmapCache.evictAll() }
         inflightLoads.clear()
@@ -507,10 +507,7 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
         var result: Bitmap? = bmp
         val meta = if (idx >= 0) pageList.getOrNull(idx) else null
         if (meta != null && shouldSplitWebtoonPage(doublePageSplitEnabled, meta.splitSide, result!!.width, result.height)) {
-            ArchiveEngine.d("WebtoonRV", "processBitmap SPLIT idx=$idx w=${result!!.width} h=${result.height} splitEn=$doublePageSplitEnabled splitSide=${meta.splitSide}")
             result = splitAndMerge(result!!)
-        } else if (doublePageSplitEnabled && meta != null && result!!.width > result.height) {
-            ArchiveEngine.d("WebtoonRV", "processBitmap NOSPLIT idx=$idx w=${result.width} h=${result.height} splitEn=$doublePageSplitEnabled splitSide=${meta.splitSide}")
         }
         if (cropLeftPct > 0.001f || cropRightPct > 0.001f) {
             try {
@@ -937,14 +934,14 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
 
     /** ★ P0-2：接管旧视图移交的位图（首次绑定即命中，不再走解码回传链） */
     override fun adoptBitmaps(map: Map<Int, Bitmap>) {
-        Log.d("P02", "adopt size=${map.size} keys=${map.keys}")
+
         synchronized(bitmapCache) {
             for ((k, v) in map) {
                 if (v.isRecycled) continue
                 var bmp = v
                 val meta = pageList.getOrNull(k)
                 if (meta != null && shouldSplitWebtoonPage(doublePageSplitEnabled, meta.splitSide, bmp.width, bmp.height)) {
-                    ArchiveEngine.d("WebtoonRV", "adoptBitmaps SPLIT idx=$k w=${bmp.width} h=${bmp.height}")
+
                     bmp = splitAndMerge(bmp)
                 }
                 bitmapCache.put(k, bmp)
