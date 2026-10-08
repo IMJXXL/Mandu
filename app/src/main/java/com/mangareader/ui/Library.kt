@@ -303,7 +303,10 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
     fun onRandomOpen() {
         val list = books
         if (list.isNullOrEmpty()) return
-        val b = list.random()
+        val folders = list.filter { it.filePath.startsWith("d:") || it.filePath.startsWith("z:") || it.filePath.startsWith("smb:") || it.filePath.startsWith("webdav:") }
+        val directFiles = list.filter { !folders.contains(it) }
+        val pickFolder = folders.isNotEmpty() && (directFiles.isEmpty() || kotlin.random.Random.nextBoolean())
+        val b = if (pickFolder) folders.random() else directFiles.randomOrNull() ?: folders.random()
         val fp = b.filePath
         if (fp.startsWith("d:") || fp.startsWith("z:")) {
             randomLoading = true
@@ -321,7 +324,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                 if (leaf != null) {
                     openBookThrottled(b.id, leaf)
                 } else {
-                    val localBook = list.filter { !it.filePath.startsWith("smb:") && !it.filePath.startsWith("webdav:") }.randomOrNull()
+                    val localBook = directFiles.randomOrNull()
                     if (localBook != null) openBookThrottled(localBook.id, null)
                     else openBookThrottled(b.id, null)
                 }
@@ -1156,7 +1159,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                     IconButton(onClick = { showSearch = !showSearch }) { Icon(if (showSearch) Icons.Filled.Close else Icons.Default.Search, "搜索") }
                     // ★ F 历史记录页入口
                     IconButton(onClick = onOpenHistory) { Icon(Icons.Default.History, "阅读历史") }
-                    IconButton(onClick = { onRandomOpen() }, enabled = !books.isNullOrEmpty()) { Icon(Icons.Default.Shuffle, "随机打开") }
+                    IconButton(onClick = { onRandomOpen() }, enabled = !books.isNullOrEmpty()) { Icon(Icons.Default.Casino, "随机打开") }
                     IconButton(onClick = onSettings) { Icon(Icons.Default.Settings, "设置") }
                 }
             )
