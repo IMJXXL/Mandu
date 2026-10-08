@@ -74,6 +74,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
@@ -92,6 +93,61 @@ sealed interface ShelfItem {
         val volumeCount: Int,
         val books: List<Book>,
     ) : ShelfItem
+}
+
+private fun buildChildPath(path: String, item: ArchiveEngine.Item): String? {
+    if (path.startsWith("z:")) {
+        val inner = path.removePrefix("z:")
+        val sepIdx = inner.indexOf("//")
+        if (sepIdx < 0) return null
+        val archivePath = inner.substring(0, sepIdx)
+        val currentSubPath = inner.substring(sepIdx + 2)
+        val base = if (currentSubPath.isEmpty()) "" else if (currentSubPath.endsWith("/")) currentSubPath else "$currentSubPath/"
+        return "z:$archivePath//${base}${item.name}/"
+    }
+    return "d:${item.auth}|${item.tree}|${item.doc}"
+}
+
+private fun buildLeafPath(item: ArchiveEngine.Item): String {
+    return "a:${item.auth}|${item.tree}|${item.doc}|${item.name.substringAfterLast(".").lowercase()}"
+}
+
+private fun convertRemoteEntriesLib(
+    entries: List<com.hippo.ehviewer.library.BrowseEntryRemote>,
+    parentPath: String,
+    auth: String,
+): List<ArchiveEngine.Item>? {
+    fun realChild(rel: String): Boolean =
+        rel.replace('\\', '/').trim('/').isNotEmpty()
+    val subEntries = entries.filter {
+        when (it) {
+            is com.hippo.ehviewer.library.BrowseEntryRemote.ArchiveGallery -> true
+            is com.hippo.ehviewer.library.BrowseEntryRemote.Directory -> realChild(it.relativeName)
+            is com.hippo.ehviewer.library.BrowseEntryRemote.RegularFile -> true
+            is com.hippo.ehviewer.library.BrowseEntryRemote.VideoFile -> !it.virtual
+            else -> false
+        }
+    }
+    if (subEntries.isEmpty()) return null
+    return subEntries.map { entry ->
+        val isDir = entry is com.hippo.ehviewer.library.BrowseEntryRemote.Directory
+        val childName = when (entry) {
+            is com.hippo.ehviewer.library.BrowseEntryRemote.Directory -> entry.relativeName
+            is com.hippo.ehviewer.library.BrowseEntryRemote.ArchiveGallery -> entry.fileName
+            is com.hippo.ehviewer.library.BrowseEntryRemote.RegularFile -> entry.fileName
+            is com.hippo.ehviewer.library.BrowseEntryRemote.VideoFile -> entry.fileName
+            else -> entry.name
+        }
+        val childPath = if (parentPath.endsWith("/")) "$parentPath$childName" else "$parentPath/$childName"
+        ArchiveEngine.Item(
+            name = entry.name,
+            auth = auth,
+            tree = "",
+            doc = childPath,
+            dir = isDir,
+            subPath = "",
+        )
+    }
 }
 
 private fun komgaServerIdFromPath(filePath: String): String? {
@@ -181,12 +237,57 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
         openBook(id, jump)
     }
 
+
+    suspend fun listRemoteFolderChildren(path: String): List<ArchiveEngine.Item>? {
+        return withContext(Dispatchers.IO) {
+            try {
+                if (path.startsWith("smb:")) {
+                    val ref = com.mangareader.smbbridge.SmbPaths.parseBookPath(path) ?: return@withContext null
+                    val source = com.hippo.ehviewer.smb.SmbRepository.load(ref.serverId) ?: return@withContext null
+                    val password = com.hippo.ehviewer.smb.SmbPasswordStore.get(ref.serverId)
+                    val remoteDir = if (source.share.isBlank()) ref.fullRel else ref.rel
+                    val entries = com.hippo.ehviewer.smb.SmbGateway.listDirectory(source, password, remoteDir)
+                    convertRemoteEntriesLib(entries, path, "smb")
+                } else if (path.startsWith("webdav:")) {
+                    val ref = com.mangareader.webdavbridge.WebDavPaths.parseBookPath(path) ?: return@withContext null
+                    val source = com.hippo.ehviewer.webdav.WebDavRepository.load(ref.serverId) ?: return@withContext null
+                    val password = com.hippo.ehviewer.webdav.WebDavPasswordStore.get(ref.serverId)
+                    val entries = com.hippo.ehviewer.webdav.WebDavGateway.listDirectory(source, password, ref.remotePath)
+                    convertRemoteEntriesLib(entries, path, "webdav")
+                } else null
+            } catch (_: Exception) { null }
+        }
+    }
+
+    suspend fun randomDescend(path: String, depth: Int): String? {
+        if (depth > 10) return null
+        val children = try {
+            if (path.startsWith("smb:") || path.startsWith("webdav:")) {
+                listRemoteFolderChildren(path) ?: emptyList()
+            } else {
+                engine.children(path)
+            }
+        } catch (_: Exception) { emptyList() }
+        if (children.isEmpty()) return if (path.startsWith("z:")) path else null
+        val item = children.random()
+        return if (item.dir) {
+            val childPath = if (path.startsWith("smb:") || path.startsWith("webdav:")) item.doc else buildChildPath(path, item)
+            if (childPath == null) null else randomDescend(childPath, depth + 1)
+        } else {
+            if (path.startsWith("z:")) path
+            else if (path.startsWith("smb:") || path.startsWith("webdav:")) item.doc
+            else buildLeafPath(item)
+        }
+    }
+
+
     // ★ v1.11 排序记忆修复：sort/sortAsc 原为纯内存 remember（Library.kt:88-89），选完不落盘，
     //   进书返回（NavHost dispose→重组）或冷启动都会重置回 LAST。改为 SharedPreferences 持久化，
     //   与本项目 read_mode_$bookId / library prefs 同一套风格；valueOf 包 try-catch 防枚举变更崩溃。
     val prefs = remember { ctx.getSharedPreferences("manga_reader", Context.MODE_PRIVATE) }
 
     var books by remember { mutableStateOf<List<Book>?>(null) }
+    var randomLoading by remember { mutableStateOf(false) }
     var shelfItems by remember { mutableStateOf<List<ShelfItem>?>(null) }
     var bookshelves by remember { mutableStateOf(listOf<Bookshelf>()) }
     var sort by remember {
@@ -198,6 +299,38 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
     var filter by remember {
         mutableStateOf(try { FilterMode.valueOf(prefs.getString("library_filter", FilterMode.ALL.name)!!) } catch (_: Exception) { FilterMode.ALL })
     }
+
+    fun onRandomOpen() {
+        val list = books
+        if (list.isNullOrEmpty()) return
+        val b = list.random()
+        val fp = b.filePath
+        if (fp.startsWith("d:") || fp.startsWith("z:")) {
+            randomLoading = true
+            scope.launch {
+                val leaf = withContext(Dispatchers.IO) { randomDescend(fp, 0) }
+                randomLoading = false
+                if (leaf != null) openBookThrottled(b.id, leaf)
+                else Toast.makeText(ctx, "随机失败，请重试", Toast.LENGTH_SHORT).show()
+            }
+        } else if (fp.startsWith("smb:") || fp.startsWith("webdav:")) {
+            randomLoading = true
+            scope.launch {
+                val leaf = withTimeoutOrNull(1000L) { withContext(Dispatchers.IO) { randomDescend(fp, 0) } }
+                randomLoading = false
+                if (leaf != null) {
+                    openBookThrottled(b.id, leaf)
+                } else {
+                    val localBook = list.filter { !it.filePath.startsWith("smb:") && !it.filePath.startsWith("webdav:") }.randomOrNull()
+                    if (localBook != null) openBookThrottled(localBook.id, null)
+                    else openBookThrottled(b.id, null)
+                }
+            }
+        } else {
+            openBookThrottled(b.id, null)
+        }
+    }
+
     // 标签筛选状态（design.md §三）：已选集合 + AND/OR + 最近5个，均持久化
     var selectedTagIds by remember { mutableStateOf(prefs.getString("library_tag_ids", "")?.split(",")?.mapNotNull { it.toLongOrNull() }?.toSet() ?: emptySet()) }
     var tagLogicAnd by remember { mutableStateOf(prefs.getBoolean("tag_filter_and", true)) }
@@ -1023,6 +1156,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                     IconButton(onClick = { showSearch = !showSearch }) { Icon(if (showSearch) Icons.Filled.Close else Icons.Default.Search, "搜索") }
                     // ★ F 历史记录页入口
                     IconButton(onClick = onOpenHistory) { Icon(Icons.Default.History, "阅读历史") }
+                    IconButton(onClick = { onRandomOpen() }, enabled = !books.isNullOrEmpty()) { Icon(Icons.Default.Shuffle, "随机打开") }
                     IconButton(onClick = onSettings) { Icon(Icons.Default.Settings, "设置") }
                 }
             )
@@ -1285,6 +1419,14 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                     }
                 }
             }
+        }
+    }
+    if (randomLoading) {
+        Box(
+            Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.4f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
         }
     }
     if (showLayoutMenu) {
