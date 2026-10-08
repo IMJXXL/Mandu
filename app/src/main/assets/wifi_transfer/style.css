@@ -75,6 +75,10 @@ h2 { color: var(--primary); margin: 0 0 1rem; font-size: 1.2rem; }
 .btn-danger-text { color: var(--error); }
 
 #upload-progress-container { margin-top: 1rem; display: flex; flex-direction: column; gap: 0.6rem; }
+.progress-group { border: 1px solid var(--divider); border-radius: 8px; padding: 0.5rem 0.8rem; }
+.progress-group-header { font-size: 0.9rem; color: var(--primary); font-weight: 500; }
+.progress-group-toggle { font-size: 0.8rem; color: var(--text2); }
+.progress-group-details { margin-top: 0.5rem; display: flex; flex-direction: column; gap: 0.4rem; }
 .progress-item { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.85rem; }
 .progress-label { color: var(--text); word-break: break-all; }
 .progress-bar { width: 100%; background: var(--divider); border-radius: 4px; overflow: hidden; height: 6px; }

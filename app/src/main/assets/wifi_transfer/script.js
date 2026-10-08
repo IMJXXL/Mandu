@@ -166,19 +166,21 @@ document.addEventListener('DOMContentLoaded', () => {
             const actCell = row.insertCell();
             actCell.dataset.label = '操作';
             actCell.style.textAlign = 'right';
-            if (!file.isDirectory && !selectMode) {
-                const dl = document.createElement('a');
-                dl.href = '/api/download/' + encodeURIComponent((currentPath ? currentPath + '/' : '') + file.name);
-                dl.setAttribute('download', file.name);
-                dl.className = 'icon-btn';
-                dl.title = '下载';
-                dl.textContent = '⬇';
+            if (!selectMode) {
+                if (!file.isDirectory) {
+                    const dl = document.createElement('a');
+                    dl.href = '/api/download/' + encodeURIComponent((currentPath ? currentPath + '/' : '') + file.name);
+                    dl.setAttribute('download', file.name);
+                    dl.className = 'icon-btn';
+                    dl.title = '下载';
+                    dl.textContent = '⬇';
+                    actCell.appendChild(dl);
+                }
                 const del = document.createElement('button');
                 del.className = 'icon-btn btn-del';
                 del.title = '删除';
                 del.textContent = '🗑';
-                del.onclick = (e) => { e.stopPropagation(); confirmDelete(file.name); };
-                actCell.appendChild(dl);
+                del.onclick = (e) => { e.stopPropagation(); confirmDelete(file.name, file.isDirectory); };
                 actCell.appendChild(del);
             }
         });
@@ -195,8 +197,11 @@ document.addEventListener('DOMContentLoaded', () => {
     confirmNo.onclick = () => hideConfirm();
     confirmModal.addEventListener('click', (e) => { if (e.target === confirmModal) hideConfirm(); });
 
-    function confirmDelete(name) {
-        showConfirm('删除后手机里的源文件也会删除，确认删除 "' + name + '"？', () => deleteFile(name));
+    function confirmDelete(name, isDir) {
+        const msg = isDir
+            ? '删除文件夹 "' + name + '" 及其所有内容？手机里的源文件也会删除，确认删除？'
+            : '删除后手机里的源文件也会删除，确认删除 "' + name + '"？';
+        showConfirm(msg, () => deleteFile(name));
     }
 
     async function deleteFile(name) {
@@ -221,8 +226,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
     dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
     dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
-    dropZone.addEventListener('drop', (e) => {
+    dropZone.addEventListener('drop', async (e) => {
         e.preventDefault(); dropZone.classList.remove('dragover');
+        const items = e.dataTransfer?.items;
+        if (items && items.length > 0) {
+            const files = [];
+            for (const item of items) {
+                const entry = item.webkitGetAsEntry?.();
+                if (!entry) continue;
+                if (entry.isDirectory) {
+                    const dirFiles = await traverseDirectory(entry, entry.name + '/');
+                    files.push(...dirFiles);
+                } else if (entry.isFile) {
+                    const f = await new Promise((res) => entry.file(res));
+                    files.push(f);
+                }
+            }
+            if (files.length > 0) handleFiles(files);
+            return;
+        }
         const files = e.dataTransfer?.files;
         if (files && files.length > 0) handleFiles(files);
     });
@@ -245,8 +267,59 @@ document.addEventListener('DOMContentLoaded', () => {
     fileInput.addEventListener('change', (e) => { if (e.target.files.length > 0) handleFiles(e.target.files); e.target.value = ''; });
     folderInput.addEventListener('change', (e) => { if (e.target.files.length > 0) handleFiles(e.target.files); e.target.value = ''; });
 
+    async function traverseDirectory(entry, path) {
+        const files = [];
+        const reader = entry.createReader();
+        const readAll = () => new Promise((resolve) => {
+            const batch = [];
+            const readBatch = () => reader.readEntries((entries) => {
+                if (entries.length === 0) { resolve(batch); return; }
+                batch.push(...entries); readBatch();
+            });
+            readBatch();
+        });
+        const entries = await readAll();
+        for (const e of entries) {
+            if (e.isFile) {
+                const f = await new Promise((res) => e.file(res));
+                Object.defineProperty(f, 'webkitRelativePath', { value: path + e.name, writable: true });
+                files.push(f);
+            } else if (e.isDirectory) {
+                files.push(...await traverseDirectory(e, path + e.name + '/'));
+            }
+        }
+        return files;
+    }
+
     function handleFiles(files) {
         const arr = Array.from(files);
+        const isFolderUpload = arr.some(f => f.webkitRelativePath && f.webkitRelativePath.includes('/'));
+        let progressContainer = uploadProgress;
+        if (isFolderUpload) {
+            const group = document.createElement('div');
+            group.className = 'progress-group';
+            const header = document.createElement('div');
+            header.className = 'progress-group-header';
+            const folderName = arr[0].webkitRelativePath.split('/')[0];
+            header.textContent = '📁 ' + folderName + ' (' + arr.length + ' 个文件)';
+            const toggle = document.createElement('span');
+            toggle.className = 'progress-group-toggle';
+            toggle.textContent = ' 展开详情';
+            header.appendChild(toggle);
+            const details = document.createElement('div');
+            details.className = 'progress-group-details';
+            details.style.display = 'none';
+            header.onclick = () => {
+                const visible = details.style.display !== 'none';
+                details.style.display = visible ? 'none' : 'block';
+                toggle.textContent = visible ? ' 展开详情' : ' 收起';
+            };
+            header.style.cursor = 'pointer';
+            group.appendChild(header);
+            group.appendChild(details);
+            uploadProgress.prepend(group);
+            progressContainer = details;
+        }
         let imgCount = 0;
         arr.forEach(f => {
             const ext = f.name.split('.').pop().toLowerCase();
@@ -254,22 +327,22 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         if (imgCount > 20 && !localStorage.getItem('dismissWarning')) {
             showConfirm('检测到 ' + imgCount + ' 张散图，可能影响性能。建议压缩后传输。仍要继续？', () => {
-                arr.forEach(f => enqueueUpload(f));
+                arr.forEach(f => enqueueUpload(f, progressContainer));
             });
         } else {
-            arr.forEach(f => enqueueUpload(f));
+            arr.forEach(f => enqueueUpload(f, progressContainer));
         }
     }
 
-    function enqueueUpload(file) {
+    function enqueueUpload(file, container) {
         totalQueued++; updateSummary();
-        uploadQueue.push(file); processQueue();
+        uploadQueue.push({ file, container }); processQueue();
     }
 
     function processQueue() {
         while (activeUploads < MAX_CONCURRENT && uploadQueue.length > 0) {
-            const file = uploadQueue.shift();
-            activeUploads++; uploadFile(file);
+            const item = uploadQueue.shift();
+            activeUploads++; uploadFile(item.file, item.container);
         }
     }
 
@@ -285,7 +358,7 @@ document.addEventListener('DOMContentLoaded', () => {
         summaryText.textContent = parts.join(' · ') || '全部完成';
     }
 
-    function uploadFile(file) {
+    function uploadFile(file, container) {
         const formData = new FormData();
         const path = file.webkitRelativePath || file.name;
         formData.append('file', file, path);
@@ -302,7 +375,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const status = document.createElement('span');
         status.className = 'progress-status';
         bar.appendChild(fill); item.appendChild(label); item.appendChild(bar); item.appendChild(status);
-        uploadProgress.prepend(item);
+        (container || uploadProgress).prepend(item);
 
         xhr.upload.addEventListener('progress', (e) => {
             if (e.lengthComputable) {
@@ -340,6 +413,10 @@ document.addEventListener('DOMContentLoaded', () => {
         uploadProgress.querySelectorAll('.progress-item').forEach(item => {
             const status = item.querySelector('.progress-status');
             if (status && (status.textContent === '✓' || status.textContent === '网络错误')) item.remove();
+        });
+        uploadProgress.querySelectorAll('.progress-group').forEach(group => {
+            const details = group.querySelector('.progress-group-details');
+            if (details && details.children.length === 0) group.remove();
         });
         if (uploadProgress.children.length === 0) {
             totalQueued = 0; totalUploaded = 0; totalFailed = 0;
