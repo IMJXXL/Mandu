@@ -937,7 +937,16 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
     override fun adoptBitmaps(map: Map<Int, Bitmap>) {
         Log.d("P02", "adopt size=${map.size} keys=${map.keys}")
         synchronized(bitmapCache) {
-            for ((k, v) in map) if (!v.isRecycled) bitmapCache.put(k, v)
+            for ((k, v) in map) {
+                if (v.isRecycled) continue
+                var bmp = v
+                val meta = pageList.getOrNull(k)
+                if (meta != null && shouldSplitWebtoonPage(doublePageSplitEnabled, meta.splitSide, bmp.width, bmp.height)) {
+                    ArchiveEngine.d("WebtoonRV", "adoptBitmaps SPLIT idx=$k w=${bmp.width} h=${bmp.height}")
+                    bmp = splitAndMerge(bmp)
+                }
+                bitmapCache.put(k, bmp)
+            }
         }
     }
 
