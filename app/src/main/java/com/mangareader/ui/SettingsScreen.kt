@@ -68,6 +68,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?, Int) -> Unit
     var showWebDavServers by rememberSaveable { mutableStateOf(false) }
     var showKomgaServers by remember { mutableStateOf(false) }
     var showOpdsServers by remember { mutableStateOf(false) }
+    var showWifiTransfer by remember { mutableStateOf(false) }
 
 
     LaunchedEffect(Unit) {
@@ -314,6 +315,20 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?, Int) -> Unit
             }
 
             item {
+            Card(Modifier.fillMaxWidth().clickable { showWifiTransfer = true }) {
+                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Wifi, null, modifier = Modifier.size(24.dp))
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("WiFi 传书", fontSize = 16.sp)
+                        Text("通过局域网无线传输文件到手机", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Icon(Icons.Default.ChevronRight, null)
+                }
+            }
+            }
+
+            item {
 
 
             Spacer(Modifier.height(16.dp))
@@ -483,6 +498,9 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?, Int) -> Unit
     }
     if (showOpdsServers) {
         com.mangareader.opdsbridge.ui.OpdsServersScreen(onBack = { showOpdsServers = false }, onOpenBook = { id -> onOpenBook?.invoke(id, null, -1) })
+    }
+    if (showWifiTransfer) {
+        WifiTransferScreen(onBack = { showWifiTransfer = false })
     }
 
     if (showDonation) DonationDialog(onDismiss = { showDonation = false })

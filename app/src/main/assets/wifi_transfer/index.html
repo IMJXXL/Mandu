@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WiFi 传书</title>
+    <link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+    <div id="drag-overlay" class="drag-overlay">
+        <div class="drag-overlay-inner">
+            <div class="drag-overlay-icon">📥</div>
+            <p>松开以上传文件</p>
+        </div>
+    </div>
+
+    <header>
+        <div class="header-brand">
+            <img src="/icon" alt="logo" class="app-icon">
+            <h1>WiFi 传书</h1>
+        </div>
+        <p>将文件通过局域网发送到手机</p>
+        <span id="jin-badge" class="jin-badge" title="请作者喝杯咖啡">瑾</span>
+    </header>
+
+    <main>
+        <div id="warning-banner" class="warning-banner">
+            <strong>⚠️ 性能提示</strong>
+            <p>散图（单页 JPG/PNG）过多会严重影响扫描和阅读性能。建议使用 <strong>压缩包</strong>（zip/cbz/cbr/7z）或 <strong>EPUB</strong> 格式传输。</p>
+            <button id="dismiss-warning" class="dismiss-btn">知道了</button>
+        </div>
+
+        <section id="upload-section">
+            <h2>上传文件</h2>
+            <div id="mode-tabs" class="mode-tabs">
+                <button class="mode-tab active" data-mode="file">📄 文件</button>
+                <button class="mode-tab" data-mode="folder">📁 文件夹</button>
+            </div>
+            <div id="drop-zone">
+                <div class="drop-icon">☁️</div>
+                <p id="drop-text">拖放文件到此处，或点击选择</p>
+                <p class="drop-hint">支持多文件同时上传</p>
+                <input type="file" id="file-input" multiple>
+                <input type="file" id="folder-input" webkitdirectory multiple style="display:none">
+            </div>
+            <div id="upload-summary" class="upload-summary" style="display:none;">
+                <span id="summary-text"></span>
+                <button id="clear-completed" class="text-btn">清除已完成</button>
+            </div>
+            <div id="upload-progress-container"></div>
+        </section>
+
+        <section id="files-section">
+            <div class="header-row">
+                <h2>已传文件</h2>
+                <button id="refresh-btn" class="icon-btn" title="刷新">🔄</button>
+            </div>
+            <div class="table-container">
+                <table id="files-table">
+                    <thead>
+                        <tr>
+                            <th>名称</th>
+                            <th>大小</th>
+                            <th>时间</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+            <div id="no-files" class="no-files" style="display:none;">
+                <div class="no-files-icon">📂</div>
+                <p>暂无文件</p>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <p>WiFi 传书 · 同一局域网下可用</p>
+    </footer>
+
+    <div id="donation-modal" class="modal-overlay">
+        <div class="modal-content donation-modal-content">
+            <h3>请作者喝杯咖啡</h3>
+            <p class="donation-desc">漫读始终免费、无广告、没有任何商业收益。如果它陪你度过了一段愉快的阅读时光，欢迎扫码请瑾轩小狼喝杯咖啡。</p>
+            <img src="/donation-qr" alt="捐赠收款码" class="donation-qr-img">
+            <p class="donation-hint">随心就好，金额随意。用得开心就是最好的支持。</p>
+            <button id="donation-close" class="btn-close">关闭</button>
+        </div>
+    </div>
+
+    <div id="confirm-modal" class="modal-overlay">
+        <div class="modal-content">
+            <p id="confirm-message"></p>
+            <div class="modal-buttons">
+                <button id="confirm-yes" class="btn-danger">删除</button>
+                <button id="confirm-no">取消</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/assets/script.js"></script>
+</body>
+</html>

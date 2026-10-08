@@ -143,6 +143,7 @@ dependencies {
     implementation(composeBom)
 
     implementation("androidx.core:core-ktx:1.13.1")
+    implementation("androidx.documentfile:documentfile:1.0.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.4")
     implementation("androidx.activity:activity-compose:1.9.1")
     // 书架拖动排序（mihon 同款方案，sh.calvin.reorderable）：拖动时其余项实时动画让位+边缘自动滚
@@ -243,6 +244,14 @@ dependencies {
     implementation("io.ktor:ktor-client-okhttp:3.5.0")
     implementation("io.ktor:ktor-client-content-negotiation:3.5.0")
     implementation("io.ktor:ktor-serialization-kotlinx-json:3.5.0")
+
+    // ktor server (WiFi 传书)
+    implementation("io.ktor:ktor-server-core-jvm:3.5.0")
+    implementation("io.ktor:ktor-server-cio-jvm:3.5.0")
+    implementation("io.ktor:ktor-server-content-negotiation-jvm:3.5.0")
+    implementation("io.ktor:ktor-server-auth-jvm:3.5.0")
+    implementation("io.ktor:ktor-server-cors-jvm:3.5.0")
+    implementation("io.ktor:ktor-server-status-pages-jvm:3.5.0")
 
     // Arrow-kt (reference project autoCloseScope/Either/bracketCase)
     implementation(platform("io.arrow-kt:arrow-stack:2.2.2.1"))
