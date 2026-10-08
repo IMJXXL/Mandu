@@ -4,13 +4,11 @@
     --success: #4CAF50; --error: #F44336; --shadow: rgba(0,0,0,0.06);
     --radius: 12px;
 }
-
 * { box-sizing: border-box; }
 body {
     margin: 0; padding: 0; background: var(--bg); color: var(--text);
     font-family: -apple-system, 'Segoe UI', 'Noto Sans SC', sans-serif;
     display: flex; flex-direction: column; min-height: 100vh;
-    transition: background 0.3s, color 0.3s;
 }
 
 header {
@@ -23,27 +21,23 @@ header {
 header h1 { margin: 0; font-size: 1.8rem; }
 header p { margin: 0.3rem 0 0; opacity: 0.9; font-size: 0.9rem; }
 .jin-badge {
-    position: absolute; top: 0.8rem; right: 0.8rem;
-    font-size: 1.4rem; cursor: pointer; color: #fff;
-    font-weight: 700; opacity: 0.85; transition: opacity 0.2s, transform 0.2s;
-    user-select: none;
+    position: absolute; top: 0.8rem; left: 0.8rem;
+    font-size: 0.85rem; cursor: pointer; color: #fff;
+    opacity: 0.85; transition: opacity 0.2s; user-select: none;
+    background: rgba(255,255,255,0.15); padding: 0.2rem 0.6rem; border-radius: 12px;
 }
-.jin-badge:hover { opacity: 1; transform: scale(1.15); }
+.jin-badge:hover { opacity: 1; background: rgba(255,255,255,0.25); }
 main { flex: 1; max-width: 800px; margin: 1.5rem auto; padding: 0 1rem; width: 100%; }
 
 .warning-banner {
     background: #fff3cd; border: 1px solid #ffc107; border-radius: var(--radius);
-    padding: 1rem 1.2rem; margin-bottom: 1.5rem; color: #856404;
-    position: relative;
+    padding: 0.8rem 1.2rem; margin-bottom: 1.5rem; color: #856404;
 }
-.warning-banner strong { display: block; margin-bottom: 0.3rem; }
-.warning-banner p { margin: 0; font-size: 0.9rem; line-height: 1.5; }
-.dismiss-btn {
-    position: absolute; top: 0.5rem; right: 0.5rem;
-    background: transparent; border: none; color: #856404; cursor: pointer;
-    font-size: 0.85rem; padding: 0.2rem 0.5rem;
-}
-
+.warning-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.3rem; }
+.warning-header strong { font-size: 0.95rem; }
+.warning-banner p { margin: 0; font-size: 0.85rem; line-height: 1.5; }
+.dismiss-btn { background: transparent; border: none; color: #856404; cursor: pointer; font-size: 0.85rem; padding: 0.1rem 0.4rem; }
+.dismiss-btn:hover { text-decoration: underline; }
 
 section {
     background: var(--card); padding: 1.2rem; border-radius: var(--radius);
@@ -51,6 +45,7 @@ section {
 }
 h2 { color: var(--primary); margin: 0 0 1rem; font-size: 1.2rem; }
 .header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+.header-actions { display: flex; gap: 0.5rem; align-items: center; }
 
 .mode-tabs { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
 .mode-tab {
@@ -69,15 +64,15 @@ h2 { color: var(--primary); margin: 0 0 1rem; font-size: 1.2rem; }
 #drop-zone.dragover { border-color: var(--primary); background: var(--primary-light); transform: scale(1.01); }
 .drop-icon { font-size: 2.5rem; margin-bottom: 0.5rem; }
 .drop-hint { font-size: 0.8rem; opacity: 0.6; margin-top: 0.3rem; }
-#drop-zone input[type="file"] { position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
 
 .upload-summary {
     display: flex; justify-content: space-between; align-items: center;
     margin-top: 0.8rem; padding: 0.5rem 0.8rem; background: var(--primary-light);
     border-radius: 8px; font-size: 0.85rem; color: var(--primary);
 }
-.text-btn { background: none; border: none; color: var(--primary); cursor: pointer; font-size: 0.8rem; padding: 0.2rem 0.5rem; text-decoration: underline; }
-.text-btn:hover { background: none; opacity: 0.7; }
+.text-btn { background: none; border: none; color: var(--primary); cursor: pointer; font-size: 0.8rem; padding: 0.2rem 0.5rem; }
+.text-btn:hover { opacity: 0.7; }
+.btn-danger-text { color: var(--error); }
 
 #upload-progress-container { margin-top: 1rem; display: flex; flex-direction: column; gap: 0.6rem; }
 .progress-item { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.85rem; }
@@ -86,12 +81,25 @@ h2 { color: var(--primary); margin: 0 0 1rem; font-size: 1.2rem; }
 .progress-fill { height: 100%; width: 0%; background: var(--primary); border-radius: 4px; transition: width 0.3s; }
 .progress-status { text-align: right; color: var(--text2); font-size: 0.8rem; }
 
+.breadcrumb { margin-bottom: 0.8rem; font-size: 0.85rem; color: var(--text2); }
+.crumb { cursor: pointer; color: var(--primary); }
+.crumb:hover { text-decoration: underline; }
+.crumb-sep { color: var(--text2); margin: 0 0.2rem; }
+
+.multi-select-bar {
+    display: flex; align-items: center; gap: 0.8rem; margin-bottom: 0.8rem;
+    padding: 0.5rem 0.8rem; background: var(--primary-light); border-radius: 8px; font-size: 0.85rem;
+}
+.select-all-label { display: flex; align-items: center; gap: 0.3rem; cursor: pointer; }
+
 .table-container { overflow-x: auto; border-radius: 8px; border: 1px solid var(--divider); }
 #files-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
 #files-table th, #files-table td { padding: 0.6rem 0.8rem; text-align: left; border-bottom: 1px solid var(--divider); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #files-table th { background: var(--primary-light); color: var(--primary); font-weight: 600; }
-#files-table td:nth-child(1) { max-width: 50%; }
+#files-table td:nth-child(2) { max-width: 50%; }
 #files-table tbody tr:hover { background: var(--primary-light); }
+.dir-row { cursor: pointer; }
+.col-check { width: 32px; text-align: center; }
 .err { color: var(--error); text-align: center; }
 
 .no-files { display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--text2); padding: 2rem; }
@@ -115,23 +123,23 @@ footer { text-align: center; padding: 1rem; color: var(--text2); font-size: 0.85
 
 .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center; }
 .modal-overlay.active { display: flex; }
-.modal-content { background: var(--card); padding: 1.5rem; border-radius: var(--radius); max-width: 320px; width: 90%; text-align: center; box-shadow: 0 8px 24px rgba(0,0,0,0.2); }
+.modal-content { background: var(--card); padding: 1.5rem; border-radius: var(--radius); max-width: 360px; width: 90%; text-align: center; box-shadow: 0 8px 24px rgba(0,0,0,0.2); }
 .modal-content p { margin: 0 0 1rem; }
 .modal-buttons { display: flex; justify-content: center; gap: 0.8rem; }
+
+.donation-modal-content { max-width: 360px; }
+.donation-modal-content h3 { margin: 0 0 0.8rem; color: var(--text); }
+.donation-desc { font-size: 0.85rem; line-height: 1.5; color: var(--text2); margin: 0 0 1rem; }
+.donation-qr-img { width: 220px; height: 220px; object-fit: contain; border-radius: 8px; }
+.donation-hint { font-size: 0.8rem; color: var(--text2); margin: 0.8rem 0; }
+.btn-close { background: var(--primary); color: #fff; padding: 0.5rem 1.5rem; }
+.btn-close:hover { opacity: 0.9; }
 
 .drag-overlay { display: none; position: fixed; inset: 0; z-index: 2000; background: rgba(103, 80, 164, 0.2); backdrop-filter: blur(4px); pointer-events: none; }
 .drag-overlay.active { display: flex; align-items: center; justify-content: center; }
 .drag-overlay-inner { text-align: center; color: var(--primary); }
 .drag-overlay-icon { font-size: 4rem; margin-bottom: 1rem; }
 .drag-overlay-inner p { font-size: 1.5rem; font-weight: 600; margin: 0; }
-
-.donation-modal-content { max-width: 360px; }
-.donation-modal-content h3 { margin: 0 0 0.8rem; color: var(--text); }
-.donation-desc { font-size: 0.85rem; line-height: 1.5; color: var(--text2); margin: 0 0 1rem; }
-.donation-qr-img { width: 220px; height: 220px; object-fit: contain; border-radius: 8px; }
-.donation-hint { font-size: 0.8rem; color: var(--text2); margin: 0.8rem 0 1rem; }
-.btn-close { background: var(--primary); color: #fff; padding: 0.5rem 1.5rem; }
-.btn-close:hover { background: var(--primary); opacity: 0.9; }
 
 @media (max-width: 600px) {
     header h1 { font-size: 1.4rem; }
@@ -142,4 +150,5 @@ footer { text-align: center; padding: 1rem; color: var(--text2); font-size: 0.85
     #files-table tr { display: block; border: 1px solid var(--divider); border-radius: 8px; margin-bottom: 0.5rem; padding: 0.4rem; }
     #files-table td { display: flex; justify-content: space-between; padding: 0.3rem 0.5rem; border: none; }
     #files-table td:before { content: attr(data-label); font-weight: 600; color: var(--primary); margin-right: 1rem; }
+    .col-check { display: none; }
 }

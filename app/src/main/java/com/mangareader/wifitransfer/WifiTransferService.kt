@@ -157,17 +157,20 @@ class WifiTransferService : Service() {
                         }
                         route("/api") {
                             get("/files") {
+                                val path = call.request.queryParameters["path"] ?: ""
                                 val fmt = SimpleDateFormat("yyyy-MM-dd HH:mm")
-                                val files = baseDir.listFiles()
-                                    .filter { it.isFile && it.canRead() }
-                                    .sortedByDescending { it.lastModified() }
+                                val dir = navigateToPath(baseDir, path) ?: return@get call.respond(HttpStatusCode.NotFound)
+                                val files = dir.listFiles()
+                                    .filter { it.canRead() }
+                                    .sortedWith(compareByDescending<DocumentFile> { it.isDirectory }.thenBy { it.name })
                                     .map { f ->
                                         FileInfo(
                                             name = f.name ?: "unknown",
-                                            size = f.length(),
-                                            formattedSize = formatBytes(f.length()),
+                                            size = if (f.isDirectory) 0 else f.length(),
+                                            formattedSize = if (f.isDirectory) "-" else formatBytes(f.length()),
                                             lastModified = fmt.format(Date(f.lastModified())),
-                                            type = f.type ?: "application/octet-stream"
+                                            type = f.type ?: "application/octet-stream",
+                                            isDirectory = f.isDirectory
                                         )
                                     }
                                 call.respond(FileListResponse(files))
@@ -175,7 +178,10 @@ class WifiTransferService : Service() {
                             get("/download/{name}") {
                                 val rawName = call.parameters["name"] ?: return@get call.respond(HttpStatusCode.BadRequest)
                                 val fileName = URLDecoder.decode(rawName, "UTF-8")
-                                val target = baseDir.findFile(fileName) ?: return@get call.respond(HttpStatusCode.NotFound)
+                                val parts = fileName.split("/")
+                                val parentPath = parts.dropLast(1).joinToString("/")
+                                val parentDir = navigateToPath(baseDir, parentPath) ?: return@get call.respond(HttpStatusCode.NotFound)
+                                val target = parentDir.findFile(parts.last()) ?: return@get call.respond(HttpStatusCode.NotFound)
                                 val input = ctx.contentResolver.openInputStream(target.uri) ?: return@get call.respond(HttpStatusCode.NotFound)
                                 val mime = ContentType.parse(target.type ?: "application/octet-stream")
                                 call.respond(object : OutgoingContent.WriteChannelContent() {
@@ -208,6 +214,7 @@ class WifiTransferService : Service() {
                                         val originalName = part.originalFileName ?: "uploaded_file"
                                         val safeName = sanitizeFileName(originalName)
                                         try {
+                                            Log.i(TAG, "upload start: $safeName")
                                             val input = part.provider().toInputStream()
                                             writeToDocumentTree(baseDir, safeName) { out ->
                                                 input.use { i ->
@@ -220,6 +227,7 @@ class WifiTransferService : Service() {
                                                 }
                                             }
                                             uploaded++
+                                            Log.i(TAG, "upload done: $safeName")
                                         } catch (e: Exception) {
                                             Log.e(TAG, "upload failed: $safeName", e)
                                             failed++
@@ -232,7 +240,10 @@ class WifiTransferService : Service() {
                             post("/delete") {
                                 val body = call.receiveText()
                                 val parsed = Json { ignoreUnknownKeys = true }.decodeFromString(DeleteRequest.serializer(), body)
-                                val target = baseDir.findFile(parsed.filename)
+                                val parts = parsed.filename.split("/")
+                                val parentPath = parts.dropLast(1).joinToString("/")
+                                val parentDir = navigateToPath(baseDir, parentPath)
+                                val target = parentDir?.findFile(parts.last())
                                 if (target != null && target.delete()) {
                                     call.respond(DeleteResponse(true))
                                 } else {
@@ -275,7 +286,7 @@ class WifiTransferService : Service() {
     }
 
     @Serializable
-    data class FileInfo(val name: String, val size: Long, val formattedSize: String, val lastModified: String, val type: String)
+    data class FileInfo(val name: String, val size: Long, val formattedSize: String, val lastModified: String, val type: String, val isDirectory: Boolean = false)
 
     @Serializable
     data class FileListResponse(val files: List<FileInfo>)
@@ -291,6 +302,16 @@ class WifiTransferService : Service() {
             .filter { it.isNotBlank() && it != "." && it != ".." }
             .joinToString("/")
             .ifEmpty { "unnamed_file" }
+
+    private fun navigateToPath(base: DocumentFile, path: String): DocumentFile? {
+        if (path.isEmpty()) return base
+        var current = base
+        for (part in path.split("/")) {
+            if (part.isBlank()) continue
+            current = current.findFile(part) ?: return null
+        }
+        return current
+    }
 
     private fun writeToDocumentTree(baseDir: DocumentFile, path: String, write: (OutputStream) -> Unit) {
         val parts = path.split("/")

@@ -23,6 +23,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mangareader.App
+import com.mangareader.Scanner
 import com.mangareader.data.Folder
 import com.mangareader.wifitransfer.WifiTransferService
 import kotlinx.coroutines.Dispatchers
@@ -100,7 +101,7 @@ fun WifiTransferScreen(onBack: () -> Unit) {
                             "1. 选择一个目标文件夹\n" +
                             "2. 点击「启动服务」\n" +
                             "3. 在电脑浏览器打开显示的网址\n" +
-                            "4. 上传文件后到文件夹管理页手动扫描入库\n\n" +
+                            "4. 上传完成后停止服务，已管理文件夹自动刷新\n\n" +
                             "建议使用压缩包（zip/cbz/cbr）或 EPUB 格式，散图过多影响性能",
                             fontSize = 13.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -166,6 +167,14 @@ fun WifiTransferScreen(onBack: () -> Unit) {
                             ctx.startService(Intent(ctx, WifiTransferService::class.java).setAction(WifiTransferService.ACTION_STOP))
                             isRunning = false
                             serverUrl = null
+                            val managed = folders.find { it.treeUri == selectedFolder?.treeUri }
+                            if (managed != null) {
+                                Toast.makeText(ctx, "正在刷新文件夹…", Toast.LENGTH_SHORT).show()
+                                scope.launch {
+                                    val (added, _) = Scanner(ctx, db.mangaDao()).rescanAndCommit(managed)
+                                    Toast.makeText(ctx, "刷新完成，新增 $added 本", Toast.LENGTH_SHORT).show()
+                                }
+                            }
                         } else {
                             ctx.startService(
                                 Intent(ctx, WifiTransferService::class.java)

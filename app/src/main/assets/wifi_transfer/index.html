@@ -15,19 +15,21 @@
     </div>
 
     <header>
+        <span id="jin-badge" class="jin-badge" title="请作者喝杯咖啡">瑾(捐赠入口)</span>
         <div class="header-brand">
             <img src="/icon" alt="logo" class="app-icon">
             <h1>WiFi 传书</h1>
         </div>
         <p>将文件通过局域网发送到手机</p>
-        <span id="jin-badge" class="jin-badge" title="请作者喝杯咖啡">瑾</span>
     </header>
 
     <main>
         <div id="warning-banner" class="warning-banner">
-            <strong>⚠️ 性能提示</strong>
-            <p>散图（单页 JPG/PNG）过多会严重影响扫描和阅读性能。建议使用 <strong>压缩包</strong>（zip/cbz/cbr/7z）或 <strong>EPUB</strong> 格式传输。</p>
-            <button id="dismiss-warning" class="dismiss-btn">知道了</button>
+            <div class="warning-header">
+                <strong>⚠️ 性能提示</strong>
+                <button id="dismiss-warning" class="dismiss-btn">知道了</button>
+            </div>
+            <p>散图（单页 JPG/PNG）过多会严重影响性能。建议使用 <strong>压缩包</strong>（zip/cbz/cbr/7z）或 <strong>EPUB</strong> 格式传输。</p>
         </div>
 
         <section id="upload-section">
@@ -40,7 +42,7 @@
                 <div class="drop-icon">☁️</div>
                 <p id="drop-text">拖放文件到此处，或点击选择</p>
                 <p class="drop-hint">支持多文件同时上传</p>
-                <input type="file" id="file-input" multiple>
+                <input type="file" id="file-input" multiple style="display:none">
                 <input type="file" id="folder-input" webkitdirectory multiple style="display:none">
             </div>
             <div id="upload-summary" class="upload-summary" style="display:none;">
@@ -52,13 +54,25 @@
 
         <section id="files-section">
             <div class="header-row">
-                <h2>已传文件</h2>
-                <button id="refresh-btn" class="icon-btn" title="刷新">🔄</button>
+                <h2>文件浏览</h2>
+                <div class="header-actions">
+                    <button id="select-mode-btn" class="text-btn">多选</button>
+                    <button id="refresh-btn" class="icon-btn" title="刷新">🔄</button>
+                </div>
+            </div>
+            <div id="breadcrumb" class="breadcrumb"></div>
+            <div id="multi-select-bar" class="multi-select-bar" style="display:none;">
+                <label class="select-all-label"><input type="checkbox" id="select-all">全选</label>
+                <span id="selected-count">已选 0 项</span>
+                <button id="batch-download" class="text-btn">下载</button>
+                <button id="batch-delete" class="text-btn btn-danger-text">删除</button>
+                <button id="cancel-select" class="text-btn">取消</button>
             </div>
             <div class="table-container">
                 <table id="files-table">
                     <thead>
                         <tr>
+                            <th class="col-check"></th>
                             <th>名称</th>
                             <th>大小</th>
                             <th>时间</th>
@@ -93,7 +107,7 @@
         <div class="modal-content">
             <p id="confirm-message"></p>
             <div class="modal-buttons">
-                <button id="confirm-yes" class="btn-danger">删除</button>
+                <button id="confirm-yes" class="btn-danger">确认删除</button>
                 <button id="confirm-no">取消</button>
             </div>
         </div>

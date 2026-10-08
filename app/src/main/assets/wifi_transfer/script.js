@@ -10,7 +10,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const clearCompletedBtn = document.getElementById('clear-completed');
     const noFilesMsg = document.getElementById('no-files');
     const refreshBtn = document.getElementById('refresh-btn');
-
     const warningBanner = document.getElementById('warning-banner');
     const dismissWarning = document.getElementById('dismiss-warning');
     const modeTabs = document.querySelectorAll('.mode-tab');
@@ -22,9 +21,20 @@ document.addEventListener('DOMContentLoaded', () => {
     const jinBadge = document.getElementById('jin-badge');
     const donationModal = document.getElementById('donation-modal');
     const donationClose = document.getElementById('donation-close');
+    const breadcrumb = document.getElementById('breadcrumb');
+    const selectModeBtn = document.getElementById('select-mode-btn');
+    const multiSelectBar = document.getElementById('multi-select-bar');
+    const selectAllCb = document.getElementById('select-all');
+    const selectedCountSpan = document.getElementById('selected-count');
+    const batchDownloadBtn = document.getElementById('batch-download');
+    const batchDeleteBtn = document.getElementById('batch-delete');
+    const cancelSelectBtn = document.getElementById('cancel-select');
 
     let uploadMode = 'file';
     let dragCounter = 0;
+    let currentPath = '';
+    let selectMode = false;
+    let selectedFiles = new Set();
 
     const uploadQueue = [];
     let activeUploads = 0;
@@ -33,15 +43,15 @@ document.addEventListener('DOMContentLoaded', () => {
     let totalFailed = 0;
     let totalQueued = 0;
 
-    jinBadge.addEventListener('click', () => donationModal.classList.add('active'));
-    donationClose.addEventListener('click', () => donationModal.classList.remove('active'));
-    donationModal.addEventListener('click', (e) => { if (e.target === donationModal) donationModal.classList.remove('active'); });
-
     if (localStorage.getItem('dismissWarning') === 'true') warningBanner.style.display = 'none';
     dismissWarning.addEventListener('click', () => {
         warningBanner.style.display = 'none';
         localStorage.setItem('dismissWarning', 'true');
     });
+
+    jinBadge.addEventListener('click', () => donationModal.classList.add('active'));
+    donationClose.addEventListener('click', () => donationModal.classList.remove('active'));
+    donationModal.addEventListener('click', (e) => { if (e.target === donationModal) donationModal.classList.remove('active'); });
 
     modeTabs.forEach(tab => {
         tab.addEventListener('click', () => {
@@ -54,40 +64,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    async function fetchFiles() {
-        try {
-            const res = await fetch('/api/files');
-            if (!res.ok) { filesTableBody.innerHTML = `<tr><td colspan="4" class="err">加载失败</td></tr>`; return; }
-            const data = await res.json();
-            renderFiles(data.files);
-        } catch (e) {
-            filesTableBody.innerHTML = `<tr><td colspan="4" class="err">无法连接服务器</td></tr>`;
-        }
-    }
-
-    function renderFiles(files) {
-        filesTableBody.innerHTML = '';
-        if (!files || files.length === 0) { noFilesMsg.style.display = 'flex'; return; }
-        noFilesMsg.style.display = 'none';
-        files.forEach(file => {
-            const row = filesTableBody.insertRow();
-            row.dataset.name = file.name;
-            const nameCell = row.insertCell(); nameCell.textContent = file.name; nameCell.dataset.label = '名称';
-            const sizeCell = row.insertCell(); sizeCell.textContent = file.formattedSize || formatBytes(file.size); sizeCell.dataset.label = '大小';
-            const timeCell = row.insertCell(); timeCell.textContent = file.lastModified; timeCell.dataset.label = '时间';
-            const actCell = row.insertCell(); actCell.dataset.label = '操作'; actCell.style.textAlign = 'right';
-            const dl = document.createElement('a');
-            dl.href = '/api/download/' + encodeURIComponent(file.name);
-            dl.setAttribute('download', file.name);
-            dl.className = 'icon-btn'; dl.title = '下载';
-            dl.textContent = '⬇';
-            const del = document.createElement('button');
-            del.className = 'icon-btn btn-del'; del.title = '删除'; del.textContent = '🗑';
-            del.onclick = (e) => { e.stopPropagation(); confirmDelete(file.name); };
-            actCell.appendChild(dl); actCell.appendChild(del);
-        });
-    }
-
     function formatBytes(b, d = 1) {
         if (b <= 0) return '0 B';
         const k = 1024, u = ['B','KB','MB','GB','TB'];
@@ -95,9 +71,123 @@ document.addEventListener('DOMContentLoaded', () => {
         return (b / Math.pow(k, i)).toFixed(d) + ' ' + u[i];
     }
 
+    async function fetchFiles(path = '') {
+        currentPath = path;
+        selectedFiles.clear();
+        updateSelectedCount();
+        try {
+            const url = '/api/files' + (path ? '?path=' + encodeURIComponent(path) : '');
+            const res = await fetch(url);
+            if (!res.ok) { filesTableBody.innerHTML = `<tr><td colspan="5" class="err">加载失败</td></tr>`; return; }
+            const data = await res.json();
+            renderFiles(data.files);
+            renderBreadcrumb(path);
+        } catch (e) {
+            filesTableBody.innerHTML = `<tr><td colspan="5" class="err">无法连接服务器</td></tr>`;
+        }
+    }
+
+    function renderBreadcrumb(path) {
+        breadcrumb.innerHTML = '';
+        const root = document.createElement('span');
+        root.className = 'crumb';
+        root.textContent = '根目录';
+        root.onclick = () => fetchFiles('');
+        breadcrumb.appendChild(root);
+        if (path) {
+            const parts = path.split('/');
+            let acc = '';
+            parts.forEach((part, i) => {
+                acc = acc ? acc + '/' + part : part;
+                const sep = document.createElement('span');
+                sep.className = 'crumb-sep';
+                sep.textContent = ' / ';
+                breadcrumb.appendChild(sep);
+                const crumb = document.createElement('span');
+                crumb.className = 'crumb';
+                crumb.textContent = part;
+                const p = acc;
+                crumb.onclick = () => fetchFiles(p);
+                breadcrumb.appendChild(crumb);
+            });
+        }
+    }
+
+    function renderFiles(files) {
+        filesTableBody.innerHTML = '';
+        if (!files || files.length === 0) { noFilesMsg.style.display = 'flex'; return; }
+        noFilesMsg.style.display = 'none';
+        files.sort((a, b) => {
+            if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
+            return a.name.localeCompare(b.name);
+        });
+        files.forEach(file => {
+            const row = filesTableBody.insertRow();
+            row.dataset.name = file.name;
+            row.dataset.dir = file.isDirectory ? '1' : '0';
+
+            const checkCell = row.insertCell();
+            checkCell.className = 'col-check';
+            if (selectMode) {
+                const cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.className = 'row-check';
+                cb.checked = selectedFiles.has(file.name);
+                cb.onchange = () => {
+                    if (cb.checked) selectedFiles.add(file.name);
+                    else selectedFiles.delete(file.name);
+                    updateSelectedCount();
+                };
+                checkCell.appendChild(cb);
+            }
+
+            const nameCell = row.insertCell();
+            nameCell.dataset.label = '名称';
+            if (file.isDirectory) {
+                nameCell.innerHTML = '📁 ' + file.name;
+                row.className = 'dir-row';
+                row.onclick = (e) => {
+                    if (selectMode) return;
+                    if (e.target.tagName === 'INPUT' || e.target.tagName === 'A' || e.target.tagName === 'BUTTON') return;
+                    fetchFiles(currentPath ? currentPath + '/' + file.name : file.name);
+                };
+            } else {
+                nameCell.textContent = file.name;
+            }
+
+            const sizeCell = row.insertCell();
+            sizeCell.textContent = file.isDirectory ? '-' : (file.formattedSize || formatBytes(file.size));
+            sizeCell.dataset.label = '大小';
+
+            const timeCell = row.insertCell();
+            timeCell.textContent = file.lastModified;
+            timeCell.dataset.label = '时间';
+
+            const actCell = row.insertCell();
+            actCell.dataset.label = '操作';
+            actCell.style.textAlign = 'right';
+            if (!file.isDirectory && !selectMode) {
+                const dl = document.createElement('a');
+                dl.href = '/api/download/' + encodeURIComponent((currentPath ? currentPath + '/' : '') + file.name);
+                dl.setAttribute('download', file.name);
+                dl.className = 'icon-btn';
+                dl.title = '下载';
+                dl.textContent = '⬇';
+                const del = document.createElement('button');
+                del.className = 'icon-btn btn-del';
+                del.title = '删除';
+                del.textContent = '🗑';
+                del.onclick = (e) => { e.stopPropagation(); confirmDelete(file.name); };
+                actCell.appendChild(dl);
+                actCell.appendChild(del);
+            }
+        });
+    }
+
     let confirmCb = null;
     function showConfirm(msg, cb) {
-        confirmMessage.textContent = msg; confirmCb = cb;
+        confirmMessage.textContent = msg;
+        confirmCb = cb;
         confirmModal.classList.add('active');
     }
     function hideConfirm() { confirmModal.classList.remove('active'); confirmCb = null; }
@@ -106,12 +196,13 @@ document.addEventListener('DOMContentLoaded', () => {
     confirmModal.addEventListener('click', (e) => { if (e.target === confirmModal) hideConfirm(); });
 
     function confirmDelete(name) {
-        showConfirm(`删除 "${name}"？`, () => deleteFile(name));
+        showConfirm('删除后手机里的源文件也会删除，确认删除 "' + name + '"？', () => deleteFile(name));
     }
 
     async function deleteFile(name) {
         try {
-            const res = await fetch('/api/delete', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({filename: name}) });
+            const fullPath = currentPath ? currentPath + '/' + name : name;
+            const res = await fetch('/api/delete', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({filename: fullPath}) });
             if (res.ok) {
                 for (const row of filesTableBody.rows) {
                     if (row.dataset.name === name) { row.remove(); break; }
@@ -138,9 +229,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     window.addEventListener('dragenter', (e) => {
         if (!e.dataTransfer || !e.dataTransfer.types.includes('Files')) return;
-        e.preventDefault();
-        dragCounter++;
-        dragOverlay.classList.add('active');
+        e.preventDefault(); dragCounter++; dragOverlay.classList.add('active');
     });
     window.addEventListener('dragover', (e) => {
         if (!e.dataTransfer || !e.dataTransfer.types.includes('Files')) return;
@@ -148,15 +237,10 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     window.addEventListener('dragleave', (e) => {
         if (!e.dataTransfer || !e.dataTransfer.types.includes('Files')) return;
-        e.preventDefault();
-        dragCounter--;
+        e.preventDefault(); dragCounter--;
         if (dragCounter <= 0) { dragCounter = 0; dragOverlay.classList.remove('active'); }
     });
-    window.addEventListener('drop', (e) => {
-        e.preventDefault();
-        dragCounter = 0;
-        dragOverlay.classList.remove('active');
-    });
+    window.addEventListener('drop', (e) => { e.preventDefault(); dragCounter = 0; dragOverlay.classList.remove('active'); });
 
     fileInput.addEventListener('change', (e) => { if (e.target.files.length > 0) handleFiles(e.target.files); e.target.value = ''; });
     folderInput.addEventListener('change', (e) => { if (e.target.files.length > 0) handleFiles(e.target.files); e.target.value = ''; });
@@ -169,7 +253,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (['jpg','jpeg','png','gif','webp','bmp'].includes(ext)) imgCount++;
         });
         if (imgCount > 20 && !localStorage.getItem('dismissWarning')) {
-            showConfirm(`检测到 ${imgCount} 张散图，可能影响性能。建议压缩后传输。仍要继续？`, () => {
+            showConfirm('检测到 ' + imgCount + ' 张散图，可能影响性能。建议压缩后传输。仍要继续？', () => {
                 arr.forEach(f => enqueueUpload(f));
             });
         } else {
@@ -178,30 +262,26 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function enqueueUpload(file) {
-        totalQueued++;
-        updateSummary();
-        uploadQueue.push(file);
-        processQueue();
+        totalQueued++; updateSummary();
+        uploadQueue.push(file); processQueue();
     }
 
     function processQueue() {
         while (activeUploads < MAX_CONCURRENT && uploadQueue.length > 0) {
             const file = uploadQueue.shift();
-            activeUploads++;
-            uploadFile(file);
+            activeUploads++; uploadFile(file);
         }
     }
 
     function updateSummary() {
-        const pending = uploadQueue.length;
-        const active = activeUploads;
+        const pending = uploadQueue.length, active = activeUploads;
         if (totalQueued === 0) { uploadSummary.style.display = 'none'; return; }
         uploadSummary.style.display = 'flex';
         const parts = [];
-        if (active > 0) parts.push(`${active} 上传中`);
-        if (pending > 0) parts.push(`${pending} 排队`);
-        if (totalUploaded > 0) parts.push(`${totalUploaded} 成功`);
-        if (totalFailed > 0) parts.push(`${totalFailed} 失败`);
+        if (active > 0) parts.push(active + ' 上传中');
+        if (pending > 0) parts.push(pending + ' 排队');
+        if (totalUploaded > 0) parts.push(totalUploaded + ' 成功');
+        if (totalFailed > 0) parts.push(totalFailed + ' 失败');
         summaryText.textContent = parts.join(' · ') || '全部完成';
     }
 
@@ -214,7 +294,7 @@ document.addEventListener('DOMContentLoaded', () => {
         item.className = 'progress-item';
         const label = document.createElement('div');
         label.className = 'progress-label';
-        label.textContent = `${path} (${formatBytes(file.size)})`;
+        label.textContent = path + ' (' + formatBytes(file.size) + ')';
         const bar = document.createElement('div');
         bar.className = 'progress-bar';
         const fill = document.createElement('div');
@@ -238,22 +318,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 fill.style.backgroundColor = 'var(--success)';
                 status.textContent = '✓';
                 setTimeout(() => item.remove(), 2000);
-                fetchFiles();
+                fetchFiles(currentPath);
             } else {
                 totalFailed++;
                 fill.style.backgroundColor = 'var(--error)';
-                status.textContent = '失败';
+                status.textContent = '网络错误';
             }
-            updateSummary();
-            processQueue();
+            updateSummary(); processQueue();
         });
         xhr.addEventListener('error', () => {
-            activeUploads--;
-            totalFailed++;
+            activeUploads--; totalFailed++;
             fill.style.backgroundColor = 'var(--error)';
             status.textContent = '网络错误';
-            updateSummary();
-            processQueue();
+            updateSummary(); processQueue();
         });
         xhr.open('POST', '/api/upload', true);
         xhr.send(formData);
@@ -262,9 +339,7 @@ document.addEventListener('DOMContentLoaded', () => {
     clearCompletedBtn.addEventListener('click', () => {
         uploadProgress.querySelectorAll('.progress-item').forEach(item => {
             const status = item.querySelector('.progress-status');
-            if (status && (status.textContent === '✓' || status.textContent === '失败' || status.textContent === '网络错误')) {
-                item.remove();
-            }
+            if (status && (status.textContent === '✓' || status.textContent === '网络错误')) item.remove();
         });
         if (uploadProgress.children.length === 0) {
             totalQueued = 0; totalUploaded = 0; totalFailed = 0;
@@ -272,6 +347,65 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    refreshBtn.addEventListener('click', fetchFiles);
-    fetchFiles();
+    selectModeBtn.addEventListener('click', () => {
+        selectMode = !selectMode;
+        selectedFiles.clear();
+        if (selectMode) {
+            selectModeBtn.textContent = '退出多选';
+            multiSelectBar.style.display = 'flex';
+        } else {
+            selectModeBtn.textContent = '多选';
+            multiSelectBar.style.display = 'none';
+        }
+        fetchFiles(currentPath);
+    });
+
+    function updateSelectedCount() {
+        selectedCountSpan.textContent = '已选 ' + selectedFiles.size + ' 项';
+    }
+
+    selectAllCb.addEventListener('change', () => {
+        const checks = filesTableBody.querySelectorAll('.row-check');
+        checks.forEach(cb => {
+            cb.checked = selectAllCb.checked;
+            const name = cb.closest('tr').dataset.name;
+            if (cb.checked) selectedFiles.add(name);
+            else selectedFiles.delete(name);
+        });
+        updateSelectedCount();
+    });
+
+    batchDownloadBtn.addEventListener('click', () => {
+        selectedFiles.forEach(name => {
+            const fullPath = currentPath ? currentPath + '/' + name : name;
+            const a = document.createElement('a');
+            a.href = '/api/download/' + encodeURIComponent(fullPath);
+            a.download = name;
+            a.click();
+        });
+    });
+
+    batchDeleteBtn.addEventListener('click', () => {
+        if (selectedFiles.size === 0) return;
+        const count = selectedFiles.size;
+        showConfirm('确认删除选中的 ' + count + ' 个文件？手机里的源文件也会删除。', async () => {
+            for (const name of [...selectedFiles]) {
+                await deleteFile(name);
+            }
+            selectedFiles.clear();
+            updateSelectedCount();
+            fetchFiles(currentPath);
+        });
+    });
+
+    cancelSelectBtn.addEventListener('click', () => {
+        selectMode = false;
+        selectedFiles.clear();
+        selectModeBtn.textContent = '多选';
+        multiSelectBar.style.display = 'none';
+        fetchFiles(currentPath);
+    });
+
+    refreshBtn.addEventListener('click', () => fetchFiles(currentPath));
+    fetchFiles('');
 });
