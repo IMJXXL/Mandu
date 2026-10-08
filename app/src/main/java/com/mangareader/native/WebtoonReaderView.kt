@@ -595,15 +595,17 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
         recycler.layoutManager = LinearLayoutManager(context).apply { isItemPrefetchEnabled = false }
         recycler.itemAnimator = null
         recycler.adapter = adapter
+        recycler.setItemViewCacheSize(if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) 4 else 2)
         recycler.tapListener = { onToggleUi?.invoke() }
         recycler.tapZoneScroll = { ratio -> scrollViewport(ratio) }
         // ★ R4：点击区按导航模式分发（PREV=上滚/NEXT=下滚/MENU=菜单），随设置即时生效
         recycler.tapActionRouter = { ev ->
             val fx = ev.x / recycler.width.coerceAtLeast(1)
             val fy = ev.y / recycler.height.coerceAtLeast(1)
+            val ratio = context.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE).getFloat("webtoon_tap_scroll_ratio", 0.8f)
             when (navigation.getAction(fx, fy)) {
-                NavigationAction.PREV -> recycler.tapZoneScroll?.invoke(-0.8f)
-                NavigationAction.NEXT -> recycler.tapZoneScroll?.invoke(0.8f)
+                NavigationAction.PREV -> recycler.tapZoneScroll?.invoke(-ratio)
+                NavigationAction.NEXT -> recycler.tapZoneScroll?.invoke(ratio)
                 NavigationAction.MENU -> recycler.tapListener?.invoke(ev)
             }
         }
@@ -711,6 +713,7 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
         val screenWidth = context.resources.displayMetrics.widthPixels
         val cfg = com.mangareader.data.ReaderConfig.load(context)
         tabletWebtoonWidthPct = context.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE).getInt("webtoon_tablet_cap_pct", 100).coerceIn(50, 100)
+        recycler.tapScrollRatio = context.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE).getFloat("webtoon_tap_scroll_ratio", 0.8f)
         setupPages = pages
         this.pageList = com.mangareader.engine.pdf.VirtualPageExpander.expand(pages, cfg.tallSplitEnabled, true, screenMax, screenWidth, engine, treePath,
             tallRatioThreshold = com.mangareader.engine.pdf.PdfTallSplitCalculator.ratioThreshold(cfg.tallSplitSensitivity))
@@ -1723,6 +1726,7 @@ class WebtoonRv(ctx: Context) : RecyclerView(ctx) {
     // ★ 条漫左右点击翻屏回调：由 WebtoonReaderView 接到 scrollViewport（WebtoonRv 是
     //   独立顶级类拿不到外层阅读器，直接调 scrollViewport 恒 Unresolved——上一轮未编译漏网）
     var tapZoneScroll: ((Float) -> Unit)? = null
+    var tapScrollRatio: Float = 0.8f
     /** ★ R4：点击分区路由（外层 WebtoonReaderView 按 ViewerNavigation 分发）；null=旧硬编码三分 */
     var tapActionRouter: ((MotionEvent) -> Unit)? = null
     var doubleTapZoom = true
@@ -1835,8 +1839,8 @@ class WebtoonRv(ctx: Context) : RecyclerView(ctx) {
             val router = tapActionRouter
             if (router != null) router(ev)
             else when {
-                fx < 0.30f -> tapZoneScroll?.invoke(-0.8f)
-                fx > 0.70f -> tapZoneScroll?.invoke(0.8f)
+                fx < 0.30f -> tapZoneScroll?.invoke(-tapScrollRatio)
+                fx > 0.70f -> tapZoneScroll?.invoke(tapScrollRatio)
                 else -> tapListener?.invoke(ev)
             }
             return false

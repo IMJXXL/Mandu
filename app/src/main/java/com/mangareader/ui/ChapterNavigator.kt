@@ -67,11 +67,29 @@ private fun HorizontalNavigator(
                 color = textColor, fontSize = 13.sp, modifier = Modifier.width(36.dp)
             )
             val sliderValue = if (isRtl) ((totalPages - 1 - currentPage).coerceAtLeast(0)).toFloat() else currentPage.toFloat()
+            val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+            val hapticCtx = androidx.compose.ui.platform.LocalContext.current
+            val hapticPrefs = remember { hapticCtx.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE) }
+            var lastHapticPage by remember { mutableIntStateOf(currentPage) }
+            var lastHapticTime by remember { mutableLongStateOf(0L) }
             Box(Modifier.weight(1f)) {
                 Slider(
                     value = sliderValue,
                     onValueChange = { v ->
                         val newPage = if (isRtl) (totalPages - 1 - v.toInt()).coerceIn(0, (totalPages - 1).coerceAtLeast(0)) else v.toInt().coerceIn(0, (totalPages - 1).coerceAtLeast(0))
+                        if (newPage != lastHapticPage) {
+                            lastHapticPage = newPage
+                            if (hapticPrefs.getBoolean("progress_haptic_feedback", true)) {
+                                val animatorScale = android.provider.Settings.Global.getFloat(hapticCtx.contentResolver, android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f)
+                                if (animatorScale != 0f) {
+                                    val now = System.currentTimeMillis()
+                                    if (now - lastHapticTime >= 50L) {
+                                        lastHapticTime = now
+                                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
+                                    }
+                                }
+                            }
+                        }
                         pendingRef[0] = newPage
                         onPageChange(newPage)
                     },
