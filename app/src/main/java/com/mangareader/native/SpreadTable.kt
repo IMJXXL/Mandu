@@ -194,7 +194,10 @@ class SpreadTable private constructor(
                 // 非智能=全配对（与旧 2s/2s+1 算术逐位一致）；智能=按尺寸判定；
                 // ★ v1.384 单页+wideSplit：不配对（横宽页双 slot、其余单 slot，见上）
                 val canPairNext = if (double) {
-                    if (smart) (i + 1 < n && canPair(i, i + 1, dims)) else (i + 1 < n)
+                    if (smart) {
+                        if (wideSplit && !hasKnownDims(i, dims)) false
+                        else (i + 1 < n && canPair(i, i + 1, dims))
+                    } else (i + 1 < n)
                 } else false
                 if (canPairNext) {
                     first[s] = i; second[s] = i + 1
@@ -228,6 +231,11 @@ class SpreadTable private constructor(
             val w = dims[idx * 2]
             val h = dims[idx * 2 + 1]
             return w > 0 && h > 0 && w > h * 1.2f
+        }
+
+        private fun hasKnownDims(idx: Int, dims: IntArray?): Boolean {
+            if (dims == null || idx * 2 + 1 >= dims.size) return false
+            return dims[idx * 2] > 0 && dims[idx * 2 + 1] > 0
         }
 
         private fun canPair(a: Int, b: Int, dims: IntArray?): Boolean {

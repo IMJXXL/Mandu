@@ -1145,21 +1145,21 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     private val scannedDims = java.util.concurrent.ConcurrentHashMap<Int, IntArray>()
     private var scannedDimsFlushAt = 0L
     private var scannedDirty = false
+    private var flushPending = false
 
     private fun observePageDim(idx: Int, w: Int, h: Int) {
         if (w <= 0 || h <= 0) return
         scannedDims[idx]?.let { if (it[0] == w && it[1] == h) return }
         scannedDims[idx] = intArrayOf(w, h)
-        // ★ Komiho 同步插入语义（2026-10-07 zip 实锤"1直接到3"）：当前±1 页的尺寸立即落表——
-        //   当前横宽页整页位升级双 slot 内容等价（渲染兜底显示的半页与首位同侧）位置不动，
-        //   用户在页上就能滑进第二半页；翻页中挂脏由 IDLE 补排（flushScannedDims 自守）。
-        //   远端页维持 1.5s 节流防重排风暴
-        if (kotlin.math.abs(idx - currentPage) <= 1 && !isScrolling) {
-            flushScannedDims()
+        if (isScrolling) { scannedDirty = true; return }
+        val now = android.os.SystemClock.uptimeMillis()
+        if (now - scannedDimsFlushAt < 300L) {
+            if (!flushPending) {
+                flushPending = true
+                postDelayed({ flushPending = false; flushScannedDims() }, 300L)
+            }
             return
         }
-        val now = android.os.SystemClock.uptimeMillis()
-        if (now - scannedDimsFlushAt < 1500L) return
         flushScannedDims()
     }
 
