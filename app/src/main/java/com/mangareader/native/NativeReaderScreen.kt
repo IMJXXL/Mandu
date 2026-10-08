@@ -295,6 +295,14 @@ fun NativeReaderScreen(
         // ★ 纸张纹理：全局烘焙设置必须在 setup 前同步——setup 内 preloadAround 立刻开始解码，
         //   晚了首页就会以无纹理位图入缓存（appliedTexture SideEffect 只管运行时变化）
         com.mangareader.filter.PaperPageTexture.sync(ctx, textureEnabled, texturePresetId, textureConcentration, textureScope != 0)
+        if (delegate is PagerReaderView) {
+            delegate.setDoublePageSplit(doublePageSplit)
+            delegate.setDoublePageReverse(doublePageReverse)
+        }
+        if (delegate is WebtoonReaderView) {
+            delegate.setDoublePageSplit(doublePageSplit)
+            delegate.setDoublePageReverse(doublePageReverse)
+        }
         // ★ §34.3：verticalPager 传给 pagerView.setup（webtoon 走默认 false 无影响）
         // ★ 点击翻页区域接线（此前硬编码 0=关闭，区域设置从未生效——2026-09-29 修复）
         delegate.setup(engine, treePath, pages, savedPage, isVertical, clickFlip, isRtl, verticalPager)
