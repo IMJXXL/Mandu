@@ -75,6 +75,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+
+import kotlinx.coroutines.yield
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
@@ -280,6 +282,27 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
         }
     }
 
+    suspend fun enumerateLeaves(path: String, bookId: Long, depth: Int): List<Pair<Long, String>> {
+        if (depth > 10) return emptyList()
+        val children = try { engine.children(path) } catch (_: Exception) { emptyList() }
+        val result = mutableListOf<Pair<Long, String>>()
+        for (item in children) {
+            if (item.dir) {
+                val childPath = buildChildPath(path, item) ?: continue
+                result.addAll(enumerateLeaves(childPath, bookId, depth + 1))
+                yield()
+            } else {
+                val leaf = if (path.startsWith("z:")) path else buildLeafPath(item)
+                result.add(Pair(bookId, leaf))
+            }
+        }
+        return result
+    }
+
+    fun makeOpenedKey(bookId: Long, leafPath: String?): String {
+        return if (leafPath.isNullOrEmpty()) bookId.toString() else "$bookId:$leafPath"
+    }
+
 
     // ★ v1.11 排序记忆修复：sort/sortAsc 原为纯内存 remember（Library.kt:88-89），选完不落盘，
     //   进书返回（NavHost dispose→重组）或冷启动都会重置回 LAST。改为 SharedPreferences 持久化，
@@ -288,6 +311,8 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
 
     var books by remember { mutableStateOf<List<Book>?>(null) }
     var randomLoading by remember { mutableStateOf(false) }
+    var randomLeafPool by remember { mutableStateOf<List<Pair<Long, String>>?>(null) }
+    val randomOpenedSet = remember { mutableSetOf<String>() }
     var shelfItems by remember { mutableStateOf<List<ShelfItem>?>(null) }
     var bookshelves by remember { mutableStateOf(listOf<Bookshelf>()) }
     var sort by remember {
@@ -303,16 +328,26 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
     fun onRandomOpen() {
         val list = books
         if (list.isNullOrEmpty()) return
+        val pool = randomLeafPool
+        if (pool != null && pool.isNotEmpty()) {
+            val available = pool.filter { makeOpenedKey(it.first, it.second) !in randomOpenedSet }
+            val candidates = if (available.isNotEmpty()) available else { randomOpenedSet.clear(); pool }
+            val (bookId, leafPath) = candidates.random()
+            randomOpenedSet.add(makeOpenedKey(bookId, leafPath))
+            if (leafPath.isEmpty()) openBookThrottled(bookId, null)
+            else openBookThrottled(bookId, leafPath)
+            return
+        }
         val unread = list.filter { it.readPages == 0 }
         val reading = list.filter { it.readPages > 0 && (it.totalPages <= 0 || it.readPages < it.totalPages) }
         val finished = list.filter { it.totalPages > 0 && it.readPages >= it.totalPages }
-        val pool = when {
+        val priorityPool = when {
             unread.isNotEmpty() -> unread
             reading.isNotEmpty() -> reading
             else -> finished.ifEmpty { list }
         }
-        val folders = pool.filter { it.filePath.startsWith("d:") || it.filePath.startsWith("z:") || it.filePath.startsWith("smb:") || it.filePath.startsWith("webdav:") }
-        val directFiles = pool.filter { !folders.contains(it) }
+        val folders = priorityPool.filter { it.filePath.startsWith("d:") || it.filePath.startsWith("z:") || it.filePath.startsWith("smb:") || it.filePath.startsWith("webdav:") }
+        val directFiles = priorityPool.filter { !folders.contains(it) }
         val pickFolder = folders.isNotEmpty() && (directFiles.isEmpty() || kotlin.random.Random.nextBoolean())
         val b = if (pickFolder) folders.random() else directFiles.randomOrNull() ?: folders.random()
         val fp = b.filePath
@@ -321,7 +356,10 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
             scope.launch {
                 val leaf = withContext(Dispatchers.IO) { randomDescend(fp, 0) }
                 randomLoading = false
-                if (leaf != null) openBookThrottled(b.id, leaf)
+                if (leaf != null) {
+                    randomOpenedSet.add(makeOpenedKey(b.id, leaf))
+                    openBookThrottled(b.id, leaf)
+                }
                 else Toast.makeText(ctx, "随机失败，请重试", Toast.LENGTH_SHORT).show()
             }
         } else if (fp.startsWith("smb:") || fp.startsWith("webdav:")) {
@@ -335,14 +373,22 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                 }
                 randomLoading = false
                 if (leaf != null) {
+                    randomOpenedSet.add(makeOpenedKey(b.id, leaf))
                     openBookThrottled(b.id, leaf)
                 } else {
                     val localBook = directFiles.randomOrNull()
-                    if (localBook != null) openBookThrottled(localBook.id, null)
-                    else openBookThrottled(b.id, null)
+                    if (localBook != null) {
+                        randomOpenedSet.add(makeOpenedKey(localBook.id, null))
+                        openBookThrottled(localBook.id, null)
+                    }
+                    else {
+                        randomOpenedSet.add(makeOpenedKey(b.id, null))
+                        openBookThrottled(b.id, null)
+                    }
                 }
             }
         } else {
+            randomOpenedSet.add(makeOpenedKey(b.id, null))
             openBookThrottled(b.id, null)
         }
     }
@@ -543,6 +589,33 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
             }
             jobs.forEach { it.join() }
         }
+    }
+
+    LaunchedEffect(books?.map { it.id } ?: emptyList<Long>()) {
+        if (books.isNullOrEmpty()) { randomLeafPool = null; return@LaunchedEffect }
+        val leafPool = withContext(Dispatchers.IO) {
+            val list = books!!
+            val unread = list.filter { it.readPages == 0 }
+            val reading = list.filter { it.readPages > 0 && (it.totalPages <= 0 || it.readPages < it.totalPages) }
+            val finished = list.filter { it.totalPages > 0 && it.readPages >= it.totalPages }
+            val pool = when {
+                unread.isNotEmpty() -> unread
+                reading.isNotEmpty() -> reading
+                else -> finished.ifEmpty { list }
+            }
+            val result = mutableListOf<Pair<Long, String>>()
+            for (b in pool) {
+                val fp = b.filePath
+                if (fp.startsWith("d:") || fp.startsWith("z:")) {
+                    result.addAll(enumerateLeaves(fp, b.id, 0))
+                } else if (!fp.startsWith("smb:") && !fp.startsWith("webdav:")) {
+                    result.add(Pair(b.id, ""))
+                }
+                yield()
+            }
+            result
+        }
+        randomLeafPool = leafPool
     }
 
     // 自定义封面孤儿自愈：covers 被清（签名降级/清数据）→ 置回默认封面，不留死指针
