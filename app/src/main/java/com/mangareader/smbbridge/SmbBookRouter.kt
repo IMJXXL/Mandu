@@ -23,6 +23,7 @@ import com.hippo.ehviewer.library.isTarArchiveFileName
 import com.hippo.ehviewer.library.isZipArchiveFileName
 import com.hippo.ehviewer.library.naturalCompare
 import com.hippo.ehviewer.library.ZipAsDirListing
+import com.hippo.ehviewer.library.NetworkFolderIndexCache
 import com.hippo.ehviewer.smb.SmbArchiveByteSource
 import com.hippo.ehviewer.smb.SmbGateway
 import com.hippo.ehviewer.smb.SmbPasswordStore
@@ -177,7 +178,10 @@ object SmbBookRouter {
         //   必须按 zip 档案流式打开（否则列目录会把同一个 zip 再列出来，无限循环）
         val remoteIsZip = isZipArchiveFileName(remote)
         if (ref.ext.isEmpty() && !remote.contains(':') && !remoteIsZip) {
-            val entries = SmbGateway.listDirectory(source, password, remote)
+            val entries = runCatching { SmbGateway.listDirectory(source, password, remote) }.getOrElse { e ->
+                val configKey = SmbGateway.sourceConfigKey(source)
+                NetworkFolderIndexCache.loadSmb(source.id, configKey, remote)?.let { it } ?: throw e
+            }
             val imageNames = entries
                 .filter { it !is BrowseEntryRemote.Directory && it !is BrowseEntryRemote.FolderGallery }
                 .filter { it.name.substringAfterLast('.', "").lowercase() in IMAGE_EXTENSIONS }

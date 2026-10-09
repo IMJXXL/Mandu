@@ -25,6 +25,7 @@ import com.hippo.ehviewer.library.isSolidArchiveFileName
 import com.hippo.ehviewer.library.isTarArchiveFileName
 import com.hippo.ehviewer.library.naturalCompare
 import com.hippo.ehviewer.library.ZipAsDirListing
+import com.hippo.ehviewer.library.NetworkFolderIndexCache
 import com.hippo.ehviewer.webdav.WebDavArchiveByteSource
 import com.hippo.ehviewer.webdav.WebDavGateway
 import com.hippo.ehviewer.webdav.WebDavPasswordStore
@@ -206,7 +207,10 @@ object WebDavBookRouter {
         // 含图片目录（文件夹书，spec 5.9 → WebDavFolderPageLoader）
         val remoteIsZip = isZipArchiveFileName(remote)
         if (ref.ext.isEmpty() && !remote.contains(':') && !remoteIsZip) {
-            val entries = WebDavGateway.listDirectory(source, password, remote)
+            val entries = runCatching { WebDavGateway.listDirectory(source, password, remote) }.getOrElse { e ->
+                val configKey = WebDavGateway.sourceConfigKey(source)
+                NetworkFolderIndexCache.loadWebDav(source.id, configKey, remote)?.let { it } ?: throw e
+            }
             val imageNames = entries
                 .filter { it !is BrowseEntryRemote.Directory && it !is BrowseEntryRemote.FolderGallery }
                 .filter { it.name.substringAfterLast('.', "").lowercase() in IMAGE_EXTENSIONS }
