@@ -85,7 +85,7 @@ private fun HorizontalNavigator(
                                     val now = System.currentTimeMillis()
                                     if (now - lastHapticTime >= 50L) {
                                         lastHapticTime = now
-                                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
+                                        HapticIntensityController.performHaptic(hapticCtx, haptic, hapticPrefs.getInt("haptic_intensity", 0))
                                     }
                                 }
                             }

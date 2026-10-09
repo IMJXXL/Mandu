@@ -178,36 +178,6 @@ fun ReadingSettingsScreen(onBack: () -> Unit, onOpenKeyMap: (() -> Unit)? = null
                         Switch(checked = bookmarkNote, onCheckedChange = { bookmarkNote = it; prefs.edit().putBoolean("bookmark_note_enabled", it).apply() })
                     }
 
-                    Text("自动翻页间隔", fontSize = 16.sp, modifier = Modifier.padding(top = 8.dp))
-                    Text(if (config.autoFlipInterval == 0) "当前: 关闭" else "当前: ${config.autoFlipInterval / 1000.0}秒", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.primary)
-                    Slider(
-                        value = config.autoFlipInterval.toFloat(),
-                        onValueChange = { config = config.copy(autoFlipInterval = Math.round(it).toInt()) },
-                        onValueChangeFinished = { config.save(ctx) },
-                        valueRange = 0f..30000f, steps = 29, modifier = Modifier.fillMaxWidth()
-                    )
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("关闭", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text("30秒", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-
-                    Spacer(Modifier.height(12.dp))
-                    Text("点击翻页距离", fontSize = 16.sp)
-                    Text("条漫模式下点击屏幕翻页的滚动距离", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(Modifier.height(8.dp))
-                    var tapScrollRatio by remember(resetTrigger) { mutableStateOf(prefs.getFloat("webtoon_tap_scroll_ratio", 0.8f)) }
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf("半屏" to 0.5f, "3/4屏" to 0.75f, "默认" to 0.8f, "整屏" to 1.0f).forEach { (label, value) ->
-                            Surface(
-                                modifier = Modifier.weight(1f).clickable { tapScrollRatio = value; prefs.edit().putFloat("webtoon_tap_scroll_ratio", value).apply() },
-                                shape = MaterialTheme.shapes.medium,
-                                color = if (tapScrollRatio == value) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                                tonalElevation = if (tapScrollRatio == value) 4.dp else 0.dp,
-                            ) {
-                                Text(label, fontSize = 13.sp, modifier = Modifier.padding(12.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center, color = if (tapScrollRatio == value) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface)
-                            }
-                        }
-                    }
 
                     var hapticFeedback by remember(resetTrigger) { mutableStateOf(prefs.getBoolean("progress_haptic_feedback", false)) }
                     Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -217,6 +187,23 @@ fun ReadingSettingsScreen(onBack: () -> Unit, onOpenKeyMap: (() -> Unit)? = null
                         }
                         Switch(checked = hapticFeedback, onCheckedChange = { hapticFeedback = it; prefs.edit().putBoolean("progress_haptic_feedback", it).apply() })
                     }
+
+                    var hapticIntensity by remember(resetTrigger) { mutableStateOf(prefs.getInt("haptic_intensity", 0).coerceIn(0, 10)) }
+                    Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("震动强度", fontSize = 16.sp)
+                            Text("0=系统默认，1-10=增益振动（需设备支持）", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Text(if (hapticIntensity == 0) "默认" else "$hapticIntensity", fontSize = 14.sp, color = MaterialTheme.colorScheme.primary)
+                    }
+                    Slider(
+                        value = hapticIntensity.toFloat(),
+                        onValueChange = { hapticIntensity = Math.round(it).toInt().coerceIn(0, 10) },
+                        onValueChangeFinished = { prefs.edit().putInt("haptic_intensity", hapticIntensity).apply() },
+                        valueRange = 0f..10f,
+                        steps = 9,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp)
+                    )
                 }
             }
 
@@ -464,6 +451,7 @@ fun ReadingSettingsScreen(onBack: () -> Unit, onOpenKeyMap: (() -> Unit)? = null
                         remove("inbook_continue_read")
                         remove("webtoon_tap_scroll_ratio")
                         remove("progress_haptic_feedback")
+                        remove("haptic_intensity")
                         // 画质增强（sr 模块）全套：全局键 + sr_book_<id>_* 单作品覆盖 + 引擎/降噪/黑白等
                         // （超分设置此前一直游离在恢复默认之外，2026-10 NPU 引入时一并纳管）
                         prefs.all.keys.filter { it.startsWith("sr_") }.forEach { remove(it) }
