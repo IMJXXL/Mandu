@@ -30,6 +30,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -61,6 +62,9 @@ fun ReaderSettingsSheet(
     /** ★ 固定四边裁剪（仅本书功能）：值由 Reader.kt 持有并持久化到 BookCropStore */
     fixedCrop: BookCrop = BookCrop.OFF,
     onCropChange: (BookCrop) -> Unit = {},
+    /** ★ 书架长按设置面板用：非 null 时底部显示「应用」「清除单本覆盖」操作栏 */
+    onApply: (() -> Unit)? = null,
+    onClearOverrides: (() -> Unit)? = null,
     onDismiss: () -> Unit,
 ) {
     var visible by remember { mutableStateOf(false) }
@@ -104,7 +108,7 @@ fun ReaderSettingsSheet(
                 shape = if (landscape) SIDE_PANEL_SHAPE else SHEET_SHAPE,
                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
                 content = {
-                    ReaderSettingsContent(config, mode, bookId, onConfigChange, onModeChange, onOrientationChange, fixedCrop, onCropChange)
+                    ReaderSettingsContent(config, mode, bookId, onConfigChange, onModeChange, onOrientationChange, fixedCrop, onCropChange, onApply, onClearOverrides)
                 }
             )
         }
@@ -123,6 +127,8 @@ private fun ReaderSettingsContent(
     onOrientationChange: (Int) -> Unit,
     fixedCrop: BookCrop,
     onCropChange: (BookCrop) -> Unit,
+    onApply: (() -> Unit)? = null,
+    onClearOverrides: (() -> Unit)? = null,
 ) {
     val pagerState = rememberPagerState { 3 }
     val tabs = listOf("阅读模式", "常规", "滤镜")
@@ -161,6 +167,26 @@ private fun ReaderSettingsContent(
                     0 -> ReadingModeTab(config, mode, bookId, onConfigChange, onModeChange, onOrientationChange, fixedCrop, onCropChange)
                     1 -> GeneralTab(config, onConfigChange)
                     2 -> FilterTab(config, onConfigChange)
+                }
+            }
+        }
+        if (onApply != null || onClearOverrides != null) {
+            HorizontalDivider()
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = HORIZONTAL_PAD, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                if (onClearOverrides != null) {
+                    TextButton(
+                        onClick = onClearOverrides,
+                        modifier = Modifier.weight(1f),
+                    ) { Text("清除单本覆盖") }
+                }
+                if (onApply != null) {
+                    Button(
+                        onClick = onApply,
+                        modifier = Modifier.weight(1f),
+                    ) { Text("应用") }
                 }
             }
         }
@@ -568,6 +594,25 @@ private fun GeneralTab(config: ReaderConfig, onConfigChange: (ReaderConfig) -> U
                     label = { Text(label, fontSize = 13.sp) },
                 )
             }
+        }
+    }
+    SliderItem("自动翻页间隔", config.autoFlipInterval.toFloat(), 0f..30000f, 29,
+        if (config.autoFlipInterval == 0) "关闭" else "${config.autoFlipInterval / 1000.0}秒") {
+        onConfigChange(config.copy(autoFlipInterval = Math.round(it).toInt()))
+    }
+    val tapCtx = LocalContext.current
+    val tapPrefs = remember { tapCtx.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE) }
+    var tapScrollRatio by remember { mutableStateOf(tapPrefs.getFloat("webtoon_tap_scroll_ratio", 0.8f)) }
+    SettingsChipRow("点击翻页距离") {
+        listOf("半屏" to 0.5f, "3/4屏" to 0.75f, "默认" to 0.8f, "整屏" to 1.0f).forEach { (label, value) ->
+            FilterChip(
+                selected = tapScrollRatio == value,
+                onClick = {
+                    tapScrollRatio = value
+                    tapPrefs.edit().putFloat("webtoon_tap_scroll_ratio", value).apply()
+                },
+                label = { Text(label, fontSize = 13.sp) },
+            )
         }
     }
     CheckboxItem("自动进入条漫模式", config.autoWebtoon) { onConfigChange(config.copy(autoWebtoon = it)) }
