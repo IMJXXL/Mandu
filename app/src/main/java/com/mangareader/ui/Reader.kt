@@ -1879,9 +1879,10 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     }
 
     suspend fun buildContinueContext(bookFilePath: String, jumpPath: String): ContinueContext {
+        val fallbackToc = withContext(Dispatchers.IO) { try { engine.children(bookFilePath) } catch (_: Exception) { emptyList() } }
+        if (jumpPath == bookFilePath) return ContinueContext(listOf(bookFilePath), fallbackToc, true)
         val parentPath = engine.resolveParentPath(jumpPath)
         val fallbackNav = listOf(bookFilePath, jumpPath)
-        val fallbackToc = withContext(Dispatchers.IO) { try { engine.children(bookFilePath) } catch (_: Exception) { emptyList() } }
         if (parentPath == null) return ContinueContext(fallbackNav, fallbackToc, true)
         if (!isParentUnderBookRoot(parentPath, bookFilePath)) return ContinueContext(fallbackNav, fallbackToc, true)
         val siblings = withContext(Dispatchers.IO) { try { engine.children(parentPath) } catch (_: Exception) { emptyList() } }

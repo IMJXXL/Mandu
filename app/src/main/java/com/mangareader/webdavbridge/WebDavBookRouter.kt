@@ -211,6 +211,10 @@ object WebDavBookRouter {
                 val configKey = WebDavGateway.sourceConfigKey(source)
                 NetworkFolderIndexCache.loadWebDav(source.id, configKey, remote)?.let { it } ?: throw e
             }
+            runCatching {
+                val configKey = WebDavGateway.sourceConfigKey(source)
+                NetworkFolderIndexCache.saveWebDav(source.id, configKey, remote, entries)
+            }
             val imageNames = entries
                 .filter { it !is BrowseEntryRemote.Directory && it !is BrowseEntryRemote.FolderGallery }
                 .filter { it.name.substringAfterLast('.', "").lowercase() in IMAGE_EXTENSIONS }

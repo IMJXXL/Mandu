@@ -239,7 +239,7 @@ object ArchiveStreamPageCache {
         val idx = loadIndex(cacheKey) ?: return null
         if (idx.members.isEmpty()) return null
         if (idx.format == "tar" && !idx.structureComplete) return null
-        if (idx.format == "stream" && !idx.structureComplete) return null
+
         val cachedPages = listCachedPages(cacheKey)
         if (cachedPages.isEmpty()) return null
         if (cachedPages.size >= idx.members.size) return null

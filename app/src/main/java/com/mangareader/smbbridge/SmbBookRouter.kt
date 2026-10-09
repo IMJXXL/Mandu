@@ -182,6 +182,10 @@ object SmbBookRouter {
                 val configKey = SmbGateway.sourceConfigKey(source)
                 NetworkFolderIndexCache.loadSmb(source.id, configKey, remote)?.let { it } ?: throw e
             }
+            runCatching {
+                val configKey = SmbGateway.sourceConfigKey(source)
+                NetworkFolderIndexCache.saveSmb(source.id, configKey, remote, entries)
+            }
             val imageNames = entries
                 .filter { it !is BrowseEntryRemote.Directory && it !is BrowseEntryRemote.FolderGallery }
                 .filter { it.name.substringAfterLast('.', "").lowercase() in IMAGE_EXTENSIONS }
