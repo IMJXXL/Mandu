@@ -104,10 +104,26 @@ suspend inline fun <T> useStreamArchivePageLoader(
             return@coroutineScope block(loader)
         }
 
-        // Soft-fail remote size (WebDAV restart): IOException ‚Ü?open fails cleanly, no process crash.
+        // Soft-fail remote size (WebDAV restart): IOException ÔøΩ?open fails cleanly, no process crash.
         val archiveSizeBytes = runCatching { source.size }.getOrDefault(-1L)
-        check(archiveSizeBytes > 0L) {
-            "Cannot open stream archive (size unknown): $cacheKey"
+        if (archiveSizeBytes <= 0L) {
+            val partial = ArchiveStreamPageCache.isPartialReady(cacheKey)
+            if (partial != null) {
+                ArchiveStreamPageCache.touchAsync(cacheKey)
+                val loader = install(
+                    partialCachedStreamLoader(
+                        scope = this,
+                        cacheKey = cacheKey,
+                        partial = partial,
+                        titleHint = titleHint,
+                        info = info,
+                        startPage = startPage,
+                        hasAds = hasAds,
+                    ),
+                )
+                return@coroutineScope block(loader)
+            }
+            check(false) { "Cannot open stream archive offline (no complete or partial cache): $cacheKey" }
         }
         ArchiveStreamPageCache.invalidateIfRemoteSizeMismatch(cacheKey, archiveSizeBytes)
         // Re-check after size match (index may have been purged on mismatch).
@@ -200,7 +216,7 @@ suspend inline fun <T> useStreamArchivePageLoader(
             val streamMembersRef = AtomicReference(
                 buildStreamMembers(listedCount, prior = diskIndex),
             )
-            // Persist seek offsets (no local fun ‚Ä?not allowed inside inline).
+            // Persist seek offsets (no local fun ÔøΩ?not allowed inside inline).
             val persistMembers: (Boolean) -> Unit = persist@{ _completeHint ->
                 val members = streamMembersRef.get()
                 val rebuilt = if (format == "tar" && isStreamIndexComplete()) {
@@ -366,11 +382,11 @@ suspend inline fun <T> useStreamArchivePageLoader(
                     override fun close() {
                         // Drop in-flight extracts so ArchiveAccess can hand off (exit / prev-next).
                         // Snapshot: cancel handlers remove from extractJobs concurrently
-                        // (live CHM.values iter on main ‚Ü?NoSuchElementException).
+                        // (live CHM.values iter on main ÔøΩ?NoSuchElementException).
                         tarIndexJob.getAndSet(null)?.cancel()
                         extractJobs.cancelAll()
                         readyWaiters.clear()
-                        // Prefer pagePaths (memory only ‚Ä?close runs on main via Compose dispose).
+                        // Prefer pagePaths (memory only ÔøΩ?close runs on main via Compose dispose).
                         // Disk readdir for "all pages present" is deferred to IO so StrictMode
                         // does not fire on File.list during onDispose.
                         val n = size
@@ -405,7 +421,7 @@ suspend inline fun <T> useStreamArchivePageLoader(
                         ramPages.keys.toList().forEach { idx ->
                             if (idx !in sourcePages && idx !in decodedPages) ramPages.remove(idx)
                         }
-                        // ConcurrentHashMap.forEach ‚Ä?avoid entries.toList() iterator race on Android.
+                        // ConcurrentHashMap.forEach ÔøΩ?avoid entries.toList() iterator race on Android.
                         extractJobs.cancelOutside(sourcePages)
                     }
 
@@ -433,8 +449,8 @@ suspend inline fun <T> useStreamArchivePageLoader(
 
                     /**
                      * Start or join an extract for [index].
-                     * Disk probes run only on [Dispatchers.IO] ‚Ä?onRequest/retryPage are main-thread.
-                     * - In-flight job ‚Ü?only register waiter
+                     * Disk probes run only on [Dispatchers.IO] ÔøΩ?onRequest/retryPage are main-thread.
+                     * - In-flight job ÔøΩ?only register waiter
                      * - Else launch IO job; extracts take [extractMutex] one at a time
                      */
                     private fun ensureExtract(
@@ -480,7 +496,7 @@ suspend inline fun <T> useStreamArchivePageLoader(
                                 }
                             } catch (e: CancellationException) {
                                 // Re-queue only for in-session job races. On reader exit /
-                                // ArchiveAccess preempt, scope is cancelled ‚Ä?do not restart.
+                                // ArchiveAccess preempt, scope is cancelled ÔøΩ?do not restart.
                                 val runningJob = coroutineContext[Job]
                                 val owns = extractJobs.owns(index, runningJob)
                                 if (scope.isActive && owns) {
@@ -548,7 +564,7 @@ suspend inline fun <T> useStreamArchivePageLoader(
                         }
                     }
 
-                    /** Single-flight extract ‚Ü?page image cache. */
+                    /** Single-flight extract ÔøΩ?page image cache. */
                     private suspend fun extractToCache(index: Int): Path? {
                         fun cachedPath(): Path {
                             val hit = pagePaths[index]
@@ -567,13 +583,13 @@ suspend inline fun <T> useStreamArchivePageLoader(
                                 extractToByteBuffer(index)
                             } ?: return@withLock null
                             try {
-                                // Reader exit may cancel while native extract was finishing ‚Ä?                                // do not publish a buffer we no longer own the session for.
+                                // Reader exit may cancel while native extract was finishing ÔøΩ?                                // do not publish a buffer we no longer own the session for.
                                 ensureActive()
                                 check(buffer.isDirect)
                                 val written = ArchiveStreamPageCache.writePage(cacheKey, index, ext, buffer)
                                 pagePaths[index] = written
                                 // Promote to offline-capable as soon as every page is mapped
-                                // (don't wait for close ‚Ä?close often only saw a subset in pagePaths).
+                                // (don't wait for close ÔøΩ?close often only saw a subset in pagePaths).
                                 markCompleteIfReady()
                                 // No warm(next): readahead extend-tail + pipeline continue the
                                 // sequential high-water without re-GETting overlapping ranges.
@@ -630,7 +646,7 @@ internal fun openFromSeekIndex(
         val ext = members[i].ext.ifBlank { "bin" }
         members[i].name.ifBlank { "%06d.%s".format(members[i].i, ext) }
     }
-    // Only trust explicit format ‚Ä?ZIP store also uses method 0.
+    // Only trust explicit format ÔøΩ?ZIP store also uses method 0.
     val isTar = idx.format == "tar"
     return runCatching {
         bridge.checkedNative {
@@ -677,7 +693,7 @@ internal fun buildStreamMembers(
 
 /**
  * Encode cover from reader-published page 0 only (session map or stream page cache).
- * Never acquires [extractMutex] / native extract ‚Ä?covers must not block interactive pages.
+ * Never acquires [extractMutex] / native extract ÔøΩ?covers must not block interactive pages.
  * Remote keys use mtime/size 0 (shared with browse).
  */
 fun scheduleStreamArchiveCoverFromPage0(
@@ -692,7 +708,7 @@ fun scheduleStreamArchiveCoverFromPage0(
             ArchiveStreamPageCache.pagePath(cacheKey, 0, it)
         }
     if (cachedPath == null) {
-        // Reader has not published/listed page 0 yet ‚Ä?do not extract solely for cover.
+        // Reader has not published/listed page 0 yet ÔøΩ?do not extract solely for cover.
         coverScheduled.set(false)
         return
     }
@@ -715,7 +731,7 @@ internal fun cachedStreamLoader(
 ): PageLoader {
     val pageCount = streamIndex.members.size
     val exts = streamIndex.members.associate { it.i to it.ext }
-    // Offline complete path never hits onRequest extract ‚Ä?regenerate cover from page 0 file.
+    // Offline complete path never hits onRequest extract ÔøΩ?regenerate cover from page 0 file.
     val page0 = streamIndex.members.firstOrNull { it.i == 0 }?.let {
         ArchiveStreamPageCache.pagePath(cacheKey, 0, it.ext)
     }
@@ -746,7 +762,7 @@ internal fun cachedStreamLoader(
         }.getOrDefault(false)
 
         override fun openSource(index: Int): ImageSource {
-            // Complete index already verified ‚Ä?no open-time File.stat of every page.
+            // Complete index already verified ÔøΩ?no open-time File.stat of every page.
             val ext = exts[index] ?: "bin"
             val path = ArchiveStreamPageCache.pagePath(cacheKey, index, ext)
             return object : PathSource {
@@ -760,6 +776,59 @@ internal fun cachedStreamLoader(
 
         override fun onRequest(index: Int, force: Boolean, orgImg: Boolean) {
             notifySourceReady(index, orgImg)
+        }
+    }
+}
+@PublishedApi
+internal fun partialCachedStreamLoader(
+    scope: CoroutineScope,
+    cacheKey: String,
+    partial: ArchiveStreamPageCache.PartialIndex,
+    titleHint: String,
+    info: GalleryInfo?,
+    startPage: Int,
+    hasAds: Boolean,
+): PageLoader {
+    val pageCount = partial.totalPages
+    val exts = partial.exts
+    val availableSet = partial.availablePages.toSet()
+    return object : PageLoader(
+        scope,
+        info,
+        startPage.coerceIn(0, (pageCount - 1).coerceAtLeast(0)),
+        pageCount,
+        hasAds,
+        decodeImages = false,
+    ) {
+        override val title by lazy { info?.title ?: titleHint }
+
+        override fun getImageExtension(index: Int) = exts[index]
+
+        override fun savePage(index: Int, file: Path): Boolean = runCatching {
+            val ext = exts[index] ?: return@runCatching false
+            val path = ArchiveStreamPageCache.pagePath(cacheKey, index, ext)
+            java.io.File(path.toString()).copyTo(java.io.File(file.toString()), overwrite = true)
+            true
+        }.getOrDefault(false)
+
+        override fun openSource(index: Int): ImageSource {
+            val ext = exts[index] ?: "bin"
+            val path = ArchiveStreamPageCache.pagePath(cacheKey, index, ext)
+            return object : PathSource {
+                override val source: Path = path
+                override val type: String = ext
+                override fun close() = Unit
+            }
+        }
+
+        override fun prefetchPages(pages: List<Int>, bounds: IntRange) = Unit
+
+        override fun onRequest(index: Int, force: Boolean, orgImg: Boolean) {
+            if (index in availableSet) {
+                notifySourceReady(index, orgImg)
+            } else {
+                notifyPageFailed(index, "Á¶ªÁ∫ø‰∏çÂèØÁî®ÔºàÊú™ÁºìÂ≠òÔºâ")
+            }
         }
     }
 }

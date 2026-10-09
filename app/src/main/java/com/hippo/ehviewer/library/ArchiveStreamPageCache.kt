@@ -233,6 +233,21 @@ object ArchiveStreamPageCache {
         return index.members.all { m -> isPageCached(cacheKey, m.i, m.ext) }
     }
 
+    data class PartialIndex(val availablePages: List<Int>, val totalPages: Int, val exts: Map<Int, String>)
+
+    fun isPartialReady(cacheKey: String): PartialIndex? {
+        val idx = loadIndex(cacheKey) ?: return null
+        if (idx.members.isEmpty()) return null
+        if (idx.format == "tar" && !idx.structureComplete) return null
+        if (idx.format == "stream" && !idx.structureComplete) return null
+        val cachedPages = listCachedPages(cacheKey)
+        if (cachedPages.isEmpty()) return null
+        if (cachedPages.size >= idx.members.size) return null
+        val availablePages = idx.members.filter { m -> cachedPages.containsKey(m.i) }.map { it.i }
+        val exts = idx.members.associate { it.i to it.ext }
+        return PartialIndex(availablePages, idx.members.size, exts)
+    }
+
     /**
      * Full offline open — **O(1) disk checks** (complete + first page + readdir count).
      * Per-page [File.length] on open made fully-cached reopen slower than cold network.
