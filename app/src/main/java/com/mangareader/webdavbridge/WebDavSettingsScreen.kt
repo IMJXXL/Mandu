@@ -56,7 +56,9 @@ private val WEBDAV_CACHE_ENTRIES = listOf(
     CacheEntry("归档封面缩略图", "归档第一页封面（本地/SMB/WebDAV 共享）", "cache/archive_thumb"),
     CacheEntry("RAR/7z 提取缓存", "RAR/CBR/7z 归档提取的页文件", "cache/solid_extract"),
     CacheEntry("PDF/EPUB 提取缓存", "PDF/EPUB 文档提取的页文件", "cache/document_extract"),
-
+    CacheEntry("ZIP 文件夹页缓存", "Zip-as-dir 解出的成员页文件", "cache/zip_folder_pages"),
+    CacheEntry("HDR/UltraHDR 缓存", "本地 HDR 转 Ultra HDR 派生文件", "cache/hdr_ultrahdr"),
+    CacheEntry("视频缩略图缓存", "视频文件缩略图", "cache/video_thumb_cache"),
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
