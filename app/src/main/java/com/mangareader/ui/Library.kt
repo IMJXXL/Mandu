@@ -477,7 +477,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
     var isDark by remember { mutableStateOf(false) }
     var deleteTarget by remember { mutableStateOf<Book?>(null) }
     var showBookInfo by remember { mutableStateOf<Book?>(null) }
-    var showBookMenu by remember { mutableStateOf<Book?>(null) }
+
     var showBookSettings by remember { mutableStateOf<Book?>(null) }
     var showComicInfo by remember { mutableStateOf<Book?>(null) }
     var comicInfoData by remember { mutableStateOf<com.mangareader.metadata.ComicInfo?>(null) }
@@ -1072,6 +1072,8 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                                     comicInfoLoading = false
                                 }
                             }) { Text("详情") }
+                            TextButton(onClick = { showBookSettings = b; showBookInfo = null }) { Text("阅读设置") }
+                            Text("设置应用后对该书所有子卷生效", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                     Spacer(Modifier.height(10.dp))
@@ -1167,34 +1169,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
         )
     }
 
-    showBookMenu?.let { b ->
-        AlertDialog(
-            onDismissRequest = { showBookMenu = null },
-            title = { Text(b.title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
-            text = {
-                Column {
-                    TextButton(
-                        onClick = { showBookInfo = b; showBookMenu = null },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) { Text("书籍信息") }
-                    TextButton(
-                        onClick = { showBookSettings = b; showBookMenu = null },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) { Text("阅读设置") }
-                }
-            },
-            confirmButton = {},
-            dismissButton = { TextButton(onClick = { showBookMenu = null }) { Text("取消") } },
-        )
-    }
 
-    showBookSettings?.let { b ->
-        BookSettingsSheetHost(
-            book = b,
-            engine = engine,
-            onDismiss = { showBookSettings = null },
-        )
-    }
 
 
     coverEditBook?.let { b ->
@@ -1501,7 +1476,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                                     val b = item.book
                                     val onToggleSelect = remember(b.id, isMultiSelect) { { selectedBooks = if (b.id in selectedBooks) selectedBooks - b.id else selectedBooks + b.id } }
                                     val onTap = remember(b.id, isMultiSelect) { { if (isMultiSelect) { selectedBooks = if (b.id in selectedBooks) selectedBooks - b.id else selectedBooks + b.id } else openBookThrottled(b.id, null) } }
-                                    val onLongClick = remember(b.id) { { showBookMenu = b } }
+                                    val onLongClick = remember(b.id) { { showBookInfo = b } }
                                     val onDelete = remember(b.id) { { deleteTarget = b } }
                                     BookListRow(b, engine, isMultiSelect, b.id in selectedBooks, thumbDecodePx, hideAllBadges,
                                         onToggleSelect = onToggleSelect,
@@ -1524,7 +1499,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                                     val b = item.book
                                     val onToggleSelect = remember(b.id, isMultiSelect) { { selectedBooks = if (b.id in selectedBooks) selectedBooks - b.id else selectedBooks + b.id } }
                                     val onTap = remember(b.id, isMultiSelect) { { if (isMultiSelect) { selectedBooks = if (b.id in selectedBooks) selectedBooks - b.id else selectedBooks + b.id } else openBookThrottled(b.id, null) } }
-                                    val onLongClick = remember(b.id) { { showBookMenu = b } }
+                                    val onLongClick = remember(b.id) { { showBookInfo = b } }
                                     val onDelete = remember(b.id) { { deleteTarget = b } }
                                     BookCard(b, engine, isMultiSelect, b.id in selectedBooks, thumbDecodePx, layoutMode, hideAllBadges, titleMarquee,
                                         onToggleSelect = onToggleSelect,
@@ -1716,6 +1691,14 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
 
     // ★ "需全量下载"对话框统一宿主（原内联块移入 RemoteDownloadDialogHost，浏览页同挂）
     com.mangareader.smbbridge.RemoteDownloadDialogHost()
+
+    showBookSettings?.let { b ->
+        BookSettingsSheetHost(
+            book = b,
+            engine = engine,
+            onDismiss = { showBookSettings = null },
+        )
+    }
 }
 
 @OptIn(ExperimentalFoundationApi::class)

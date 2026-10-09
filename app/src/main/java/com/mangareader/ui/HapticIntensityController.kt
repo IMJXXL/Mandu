@@ -32,11 +32,14 @@ object HapticIntensityController {
             return
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val vibrator = context.getSystemService(Vibrator::class.java)
-            if (vibrator != null && vibrator.hasAmplitudeControl()) {
-                val amplitude = amplitudeForLevel(level)
-                vibrator.vibrate(VibrationEffect.createOneShot(30, amplitude))
-                return
+            try {
+                val vibrator = context.getSystemService(Vibrator::class.java)
+                if (vibrator != null && vibrator.hasAmplitudeControl()) {
+                    val amplitude = amplitudeForLevel(level)
+                    vibrator.vibrate(VibrationEffect.createOneShot(30, amplitude))
+                    return
+                }
+            } catch (_: SecurityException) {
             }
         }
         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)

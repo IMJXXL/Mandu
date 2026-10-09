@@ -402,12 +402,12 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     }
 
 
-    fun hideUi() { hideSystemBars(act, config.isImmersiveMode, config.isKeepScreenOn) }
-    fun showUi() { showSystemBars(act, config.isKeepScreenOn) }
+    fun hideUi() { hideSystemBars(act, config.isImmersiveMode, config.isKeepScreenOn, config.hideNavBarInReader) }
+    fun showUi() { showSystemBars(act, config.isKeepScreenOn, config.hideNavBarInReader) }
     fun restoreUi() { restoreSystemBarsSync(act) }
 
-    LaunchedEffect(viewing) {
-        if (viewing) { delay(100); hideUi() } else { restoreUi() }
+    LaunchedEffect(viewing, config.isImmersiveMode, config.hideNavBarInReader) {
+        if (viewing) { delay(100); hideUi() } else { if (config.hideNavBarInReader) hideUi() else restoreUi() }
     }
 
     /**
@@ -2130,7 +2130,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         }
         ui = !ui
         if (ui && viewing) {
-            showSystemBars(act, config.isKeepScreenOn)
+            showSystemBars(act, config.isKeepScreenOn, config.hideNavBarInReader)
             val delayMs = if (config.isEinkMode) config.einkUiHideDelay else 10000L
             uiJob?.cancel()
             uiJob = if (delayMs > 0L) scope.launch { delay(delayMs); if (ui) { ui = false; hideUi() } } else null

@@ -191,10 +191,10 @@ fun ReadingSettingsScreen(onBack: () -> Unit, onOpenKeyMap: (() -> Unit)? = null
                     var hapticIntensity by remember(resetTrigger) { mutableStateOf(prefs.getInt("haptic_intensity", 0).coerceIn(0, 10)) }
                     Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Text("震动强度", fontSize = 16.sp)
-                            Text("0=系统默认，1-10=增益振动（需设备支持）", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("震动强度", fontSize = 16.sp, color = if (hapticFeedback) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f))
+                            Text("0=系统默认，1-10=增益振动（需设备支持）", fontSize = 12.sp, color = if (hapticFeedback) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f))
                         }
-                        Text(if (hapticIntensity == 0) "默认" else "$hapticIntensity", fontSize = 14.sp, color = MaterialTheme.colorScheme.primary)
+                        Text(if (hapticIntensity == 0) "默认" else "$hapticIntensity", fontSize = 14.sp, color = if (hapticFeedback) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f))
                     }
                     Slider(
                         value = hapticIntensity.toFloat(),
@@ -202,6 +202,7 @@ fun ReadingSettingsScreen(onBack: () -> Unit, onOpenKeyMap: (() -> Unit)? = null
                         onValueChangeFinished = { prefs.edit().putInt("haptic_intensity", hapticIntensity).apply() },
                         valueRange = 0f..10f,
                         steps = 9,
+                        enabled = hapticFeedback,
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp)
                     )
                 }

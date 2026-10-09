@@ -94,7 +94,7 @@ internal fun prefGlobalValue(prefs: SharedPreferences, key: String): Any? {
 internal val PREF_DEFAULTS: Map<String, Any> = mapOf(
     "isFlipAnimation" to true, "isPageCurlAnimation" to false, "isCurlContentAreaOnly" to true,
     "curlBackContentAlpha" to 0.1f, "curlShadowAlpha" to 0.2f, "spineShadowAlpha" to 0.09f,
-    "isShowPageNum" to true, "isKeepScreenOn" to true, "isImmersiveMode" to true,
+    "isShowPageNum" to true, "isKeepScreenOn" to true,     "isImmersiveMode" to true, "hideNavBarInReader" to false,
     "isTrimWhiteBorder" to false, "trimFactor" to 0.02f, "trimThreshold" to 220, "trimWhiteRatio" to 0.90f,
     "imageMarginH" to 0, "readBackground" to "WHITE",
     "isEinkMode" to false, "isEinkDither" to false, "einkDitherAlgorithm" to 0, "einkDitherLevels" to 16,
@@ -113,6 +113,7 @@ internal val PREF_DEFAULTS: Map<String, Any> = mapOf(
     "imageScaleMode" to 0, "zoomStart" to 0, "seamlessNextVolume" to true, "tileModeEnabled" to false,
     "tallSplitEnabled" to false, "tallSplitSensitivity" to 0, "downsampleTier" to "STANDARD", "clickFlipType" to "LEFT_RIGHT",
     "scrollMode" to "HORIZONTAL_LEFT",
+    "webtoon_tap_scroll_ratio" to 0.8f,
 )
 
 // ── 行注册表（顺序 = 页面展示顺序）─────────────────────────────────────────
@@ -171,7 +172,8 @@ internal val PREF_ROWS: List<PrefRow> = listOf(
     PrefRow("clickFlipInvertH", "对调左右（左手模式）", 0, PrefEditor.Toggle(info = "点右侧=上一页、点左侧=下一页；点击翻页区域为关闭时无效")),
     // ── Tab 1 常规（顺序=书内面板第二页）──
     PrefRow("isShowPageNum", "显示页码", 1, PrefEditor.Toggle()),
-    PrefRow("isImmersiveMode", "沉浸模式", 1, PrefEditor.Toggle(info = "重进阅读后生效")),
+    PrefRow("isImmersiveMode", "沉浸模式", 1, PrefEditor.Toggle()),
+    PrefRow("hideNavBarInReader", "非全面屏阅读时隐藏底部导航栏", 1, PrefEditor.Toggle(info = "仅隐藏底部系统导航栏，保留状态栏；适合非全面屏手势设备")),
     PrefRow("isKeepScreenOn", "保持亮屏", 1, PrefEditor.Toggle()),
     PrefRow("seamlessNextVolume", "无缝续读下一卷", 1, PrefEditor.Toggle(info = "读到卷末自动进入同书下一卷，无过渡页")),
     PrefRow("autoWebtoon", "自动进入条漫模式", 1, PrefEditor.Toggle(info = "新书首开按图片宽高比智能判定")),
@@ -180,6 +182,14 @@ internal val PREF_ROWS: List<PrefRow> = listOf(
     PrefRow("doubleMergeSmart", "双页智能配对", 1, PrefEditor.Toggle(info = "横宽跨页图（宽>高）与超长条图不参与两两合并、单独占一屏；两页宽高比差过大也不配。远程书尺寸未知时回退全部合并")),
     PrefRow("ambienceSound", "氛围音", 1, PrefEditor.AmbienceSound),
     PrefRow("ambienceVolume", "氛围音音量", 1, PrefEditor.Slider(0f, 100f, 19, { "${it.toInt()}%" })),
+    PrefRow("autoFlipInterval", "自动翻页间隔", 1, PrefEditor.Slider(
+        0f, 30000f, 29, { if (it.toInt() == 0) "关闭" else "${it.toInt() / 1000.0}秒" },
+        info = "0=关闭；自动翻页的间隔时间"
+    )),
+    PrefRow("webtoon_tap_scroll_ratio", "条漫点击翻页距离", 1, PrefEditor.Chips(
+        listOf("半屏" to 0.5f, "3/4屏" to 0.75f, "默认" to 0.8f, "整屏" to 1.0f),
+        info = "条漫模式下点击翻页的滚动距离"
+    )),
     // ── Tab 2 滤镜（顺序=书内面板第三页）──
     PrefRow("isGrayscale", "灰度模式", 2, PrefEditor.Toggle()),
     PrefRow("isInvertColors", "反色", 2, PrefEditor.Toggle()),

@@ -49,6 +49,7 @@ data class ReaderConfig(
     val einkUiHideDelay: Long = 6000L,
     val pdfQuality: Float = 3.0f,
     val isImmersiveMode: Boolean = true,
+    val hideNavBarInReader: Boolean = false,
     val orientation: Int = -1,
     val autoFlipInterval: Int = 0,
     val isGrayscale: Boolean = false,
@@ -181,6 +182,7 @@ data class ReaderConfig(
             putLong("einkUiHideDelay", einkUiHideDelay)
             putFloat("pdfQuality", pdfQuality)
             putBoolean("isImmersiveMode", isImmersiveMode)
+            putBoolean("hideNavBarInReader", hideNavBarInReader)
             putInt("orientation", orientation)
             putInt("autoFlipInterval", autoFlipInterval)
             putBoolean("${prefix}isGrayscale", isGrayscale)
@@ -293,6 +295,7 @@ data class ReaderConfig(
                 einkUiHideDelay = rLong("einkUiHideDelay", 6000L),
                 pdfQuality = rFloat("pdfQuality", 3.0f),
                 isImmersiveMode = rBoolean("isImmersiveMode", true),
+                hideNavBarInReader = rBoolean("hideNavBarInReader", false),
                 orientation = rInt("orientation", -1),
                 autoFlipInterval = rInt("autoFlipInterval", 0),
                 isGrayscale = rBoolean("isGrayscale", false),
@@ -490,6 +493,7 @@ data class ReaderConfig(
             "einkUiHideDelay" to { it.einkUiHideDelay },
             "pdfQuality" to { it.pdfQuality },
             "isImmersiveMode" to { it.isImmersiveMode },
+            "hideNavBarInReader" to { it.hideNavBarInReader },
             "orientation" to { it.orientation },
             "autoFlipInterval" to { it.autoFlipInterval },
             "landscapeZoom" to { it.landscapeZoom },

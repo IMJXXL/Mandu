@@ -568,7 +568,8 @@ private fun ReadingModeTab(config: ReaderConfig, mode: Mode, bookId: Long, onCon
 @Composable
 private fun GeneralTab(config: ReaderConfig, onConfigChange: (ReaderConfig) -> Unit) {
     CheckboxItem("显示页码", config.isShowPageNum) { onConfigChange(config.copy(isShowPageNum = it)) }
-    CheckboxItem("沉浸式模式（重进生效）", config.isImmersiveMode) { onConfigChange(config.copy(isImmersiveMode = it)) }
+    CheckboxItem("沉浸式模式", config.isImmersiveMode) { onConfigChange(config.copy(isImmersiveMode = it)) }
+    CheckboxItem("非全面屏阅读时隐藏底部导航栏", config.hideNavBarInReader) { onConfigChange(config.copy(hideNavBarInReader = it)) }
     CheckboxItem("保持屏幕常亮", config.isKeepScreenOn) { onConfigChange(config.copy(isKeepScreenOn = it)) }
 
     // ★ N1：无缝续读（默认关；仅同本分卷；开启时读到卷末静默进入下一卷，无过渡页无确认弹窗）
@@ -603,7 +604,7 @@ private fun GeneralTab(config: ReaderConfig, onConfigChange: (ReaderConfig) -> U
     val tapCtx = LocalContext.current
     val tapPrefs = remember { tapCtx.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE) }
     var tapScrollRatio by remember { mutableStateOf(tapPrefs.getFloat("webtoon_tap_scroll_ratio", 0.8f)) }
-    SettingsChipRow("点击翻页距离") {
+    SettingsChipRow("条漫点击翻页距离") {
         listOf("半屏" to 0.5f, "3/4屏" to 0.75f, "默认" to 0.8f, "整屏" to 1.0f).forEach { (label, value) ->
             FilterChip(
                 selected = tapScrollRatio == value,

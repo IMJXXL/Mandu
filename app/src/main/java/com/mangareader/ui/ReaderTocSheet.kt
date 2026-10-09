@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BookmarkBorder
@@ -336,7 +337,19 @@ fun ReaderTocSheet(
                         }
                     }
                     Spacer(Modifier.height(8.dp))
+                    val tocGridState = rememberLazyGridState()
+                    LaunchedEffect(Unit) {
+                        if (viewing) {
+                            val cur = currentNavStack.lastOrNull() ?: ""
+                            val idx = sortedDisplayItems.indexOfFirst { item ->
+                                item.subPath.isNotEmpty() && cur.endsWith(item.subPath) &&
+                                (cur.length == item.subPath.length || cur[cur.length - item.subPath.length - 1] == '/' || cur[cur.length - item.subPath.length - 1] == '\\')
+                            }
+                            if (idx >= 0) tocGridState.scrollToItem(maxOf(0, idx - 1))
+                        }
+                    }
                     LazyVerticalGrid(
+                        state = tocGridState,
                         columns = gridCols,
                         modifier = Modifier.weight(1f),
                         contentPadding = PaddingValues(8.dp),
@@ -456,7 +469,12 @@ fun ReaderTocSheet(
                             }
                         }
                     }
+                    val browseGridState = rememberLazyGridState()
+                    LaunchedEffect(Unit) {
+                        if (currentPage > 0) browseGridState.scrollToItem(maxOf(0, currentPage - 1))
+                    }
                     LazyVerticalGrid(
+                        state = browseGridState,
                         columns = gridCols,
                         modifier = Modifier.weight(1f),
                         contentPadding = PaddingValues(8.dp),

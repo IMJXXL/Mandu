@@ -6,7 +6,7 @@ import com.mangareader.backup.format.SettingsPayload
 object SettingsImporter {
     private val booleanKeys = setOf(
         "isFlipAnimation", "isShowPageNum", "isKeepScreenOn", "isTrimWhiteBorder",
-        "isEinkMode", "isImmersiveMode", "isGrayscale", "isInvertColors",
+        "isEinkMode", "isImmersiveMode", "hideNavBarInReader", "isGrayscale", "isInvertColors",
         "isFlipFlashEnabled", "useSSIV", "landscapeZoom", "imageScaleMode", "zoomStart", "isEinkDither",
         "panNavigation", "doublePageSplit", "doublePageReverse", "autoWebtoon", "doubleMergeSmart",
         "chapterTransition", "seamlessNextVolume", "forceFullDecode",

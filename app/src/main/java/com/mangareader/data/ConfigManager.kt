@@ -35,6 +35,7 @@ class ConfigManager(private val context: Context) {
             put("einkUiHideDelay", config.einkUiHideDelay)
             put("pdfQuality", config.pdfQuality.toDouble())
             put("isImmersiveMode", config.isImmersiveMode)
+            put("hideNavBarInReader", config.hideNavBarInReader)
             put("orientation", config.orientation)
             put("autoFlipInterval", config.autoFlipInterval)
             put("isGrayscale", config.isGrayscale)
@@ -115,6 +116,7 @@ class ConfigManager(private val context: Context) {
                 einkUiHideDelay = json.optLong("einkUiHideDelay", 6000L),
                 pdfQuality = json.optDouble("pdfQuality", 3.0).toFloat(),
                 isImmersiveMode = json.optBoolean("isImmersiveMode", true),
+                hideNavBarInReader = json.optBoolean("hideNavBarInReader", false),
                 orientation = json.optInt("orientation", -1),
                 autoFlipInterval = json.optInt("autoFlipInterval", 0),
                 isGrayscale = json.optBoolean("isGrayscale", false),

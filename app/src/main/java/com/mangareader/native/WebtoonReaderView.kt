@@ -44,6 +44,7 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
     val recycler = WebtoonRv(context)
     private val webtoonFrame = WebtoonFrame(context).apply {
         addView(recycler, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        onMarginChanged = { applySideMarginToVisible() }
     }
     // ★ 双击放大开关（config.isDoubleTapZoom）：转发给 WebtoonRv 的双击缩放判定
     var doubleTapZoom = true
@@ -400,7 +401,25 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
         set(value) {
             field = value
             webtoonFrame.marginPct = value
+            applySideMarginToVisible()
         }
+    private fun applySideMarginToVisible() {
+        val rv = recycler
+        val lm = rv.layoutManager as? androidx.recyclerview.widget.LinearLayoutManager ?: return
+        val first = lm.findFirstVisibleItemPosition()
+        val last = lm.findLastVisibleItemPosition()
+        if (first < 0 || last < first) return
+        val rvW = rv.width.takeIf { it > 0 } ?: rv.context.resources.displayMetrics.widthPixels
+        val m = imageMarginH.coerceAtLeast(0) * rvW / 100
+        for (i in first..last) {
+            val vh = rv.findViewHolderForAdapterPosition(i) ?: continue
+            val lp = vh.itemView.layoutParams as? androidx.recyclerview.widget.RecyclerView.LayoutParams ?: continue
+            if (lp.marginStart != m || lp.marginEnd != m) {
+                lp.marginStart = m; lp.marginEnd = m
+                vh.itemView.layoutParams = lp
+            }
+        }
+    }
     var trimWhiteBorder: Boolean = false
         set(value) {
             if (field == value) return
@@ -1393,10 +1412,12 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
             // ★ C1：VH 回收复用跨位置时按段关系修正页隙（创建时的初值不一定适配新位置）
             val gap = gapPxFor(pos)
             (h.itemView.layoutParams as? RecyclerView.LayoutParams)?.let { lp ->
-                if (lp.bottomMargin != gap) {
-                    lp.bottomMargin = gap
-                    h.itemView.layoutParams = lp
-                }
+                var changed = false
+                if (lp.bottomMargin != gap) { lp.bottomMargin = gap; changed = true }
+                val rvW = recycler.width.takeIf { it > 0 } ?: recycler.context.resources.displayMetrics.widthPixels
+                val sm = imageMarginH.coerceAtLeast(0) * rvW / 100
+                if (lp.marginStart != sm || lp.marginEnd != sm) { lp.marginStart = sm; lp.marginEnd = sm; changed = true }
+                if (changed) h.itemView.layoutParams = lp
             }
 
             val tileFile = tileFileCache[pos]
@@ -1673,21 +1694,19 @@ internal open class GestureDetectorWithLongTap(
 
 /** 手势检测在未缩放父容器上（TSY WebtoonFrame） */
 private class WebtoonFrame(context: Context) : android.widget.FrameLayout(context) {
-    // ★ 侧边留白跟帧宽（2026-10-07 工单"按现在的显示状态"）：百分比以"当前帧宽"为基，
-    //  onSizeChanged 挂钩——旋转/任何宽度变化自动重算，不再用活动屏宽一次定死
     var marginPct = 0
         set(value) { field = value; applyMargin() }
+    var onMarginChanged: (() -> Unit)? = null
     fun applyMargin() {
         val w = width.takeIf { it > 0 } ?: context.resources.displayMetrics.widthPixels
         val m = marginPct.coerceAtLeast(0) * w / 100
-        setPadding(m, 0, m, 0)
-        // ★ 留白取证（"幅度不对"工单）：帧宽/RV宽/RV缩放态一次看清
         runCatching {
             val rv = getChildAt(0)
             com.mangareader.DiagTracer.mark(context,
                 "wtMargin pct=$marginPct px=$m frameW=$w rvW=${rv?.width ?: -1}" +
                     " scale=${(rv as? WebtoonRv)?.diagScale() ?: -1f}")
         }
+        onMarginChanged?.invoke()
     }
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
@@ -1739,7 +1758,7 @@ class WebtoonRv(ctx: Context) : RecyclerView(ctx) {
     var originalHeight = 0; private set
     private var heightSet = false
     private var atFirstPosition = false; private var atLastPosition = false
-    private val minRate get() = DEFAULT_RATE
+    private val minRate get() = MIN_RATE
 
     private val listener = GestureListener()
     private val detector = Detector()
@@ -1768,7 +1787,7 @@ class WebtoonRv(ctx: Context) : RecyclerView(ctx) {
         return px.coerceIn(-halfWidth * (currentScale - 1), halfWidth * (currentScale - 1))
     }
     private fun getPositionY(py: Float): Float {
-        if (currentScale < 1) return 0f
+        if (currentScale < 1) return (originalHeight / 2 - halfHeight).toFloat()
         return py.coerceIn(-halfHeight * (currentScale - 1), halfHeight * (currentScale - 1))
     }
     private fun setScaleRate(rate: Float) { scaleX = rate; scaleY = rate }
@@ -1787,6 +1806,11 @@ class WebtoonRv(ctx: Context) : RecyclerView(ctx) {
             if (toRate <= DEFAULT_RATE) {
                 x = 0f; y = 0f
                 setScaleRate(DEFAULT_RATE)
+                if (originalHeight > 0 && layoutParams.height != originalHeight) {
+                    layoutParams.height = originalHeight
+                    halfHeight = layoutParams.height / 2
+                }
+                requestLayout()
             }
         }
     }
@@ -1809,8 +1833,17 @@ class WebtoonRv(ctx: Context) : RecyclerView(ctx) {
     fun onScale(scaleFactor: Float) {
         currentScale = (currentScale * scaleFactor).coerceIn(minRate, MAX_SCALE_RATE)
         setScaleRate(currentScale)
+        if (currentScale < DEFAULT_RATE) {
+            layoutParams.height = (originalHeight / currentScale).toInt()
+            halfHeight = layoutParams.height / 2
+            requestLayout()
+        } else if (layoutParams.height != originalHeight && originalHeight > 0) {
+            layoutParams.height = originalHeight
+            halfHeight = layoutParams.height / 2
+            requestLayout()
+        }
         if (currentScale <= DEFAULT_RATE) {
-            x = 0f; y = 0f
+            x = 0f; y = getPositionY(y)
         } else {
             x = getPositionX(x); y = getPositionY(y)
         }
@@ -1818,11 +1851,7 @@ class WebtoonRv(ctx: Context) : RecyclerView(ctx) {
 
     fun onScaleBegin() { if (detector.isDoubleTapping) detector.isQuickScaling = true }
     fun onScaleEnd() {
-        if (currentScale <= DEFAULT_RATE) {
-            currentScale = DEFAULT_RATE
-            x = 0f; y = 0f
-            setScaleRate(DEFAULT_RATE)
-        }
+
     }
 
     internal inner class GestureListener : GestureDetectorWithLongTap.Listener() {
@@ -1893,6 +1922,7 @@ class WebtoonRv(ctx: Context) : RecyclerView(ctx) {
     }
 }
 
+private const val MIN_RATE = 0.5f
 private const val DEFAULT_RATE = 1f
 private const val MAX_SCALE_RATE = 3f
 

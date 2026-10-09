@@ -40,7 +40,7 @@ object ReaderScope {
         "isFlipAnimation", "isPageCurlAnimation", "isCurlContentAreaOnly",
         "curlBackContentAlpha", "curlShadowAlpha", "spineShadowAlpha",
         "imageScaleMode", "zoomStart", "landscapeZoom", "useSSIV", "isDoubleTapZoom",
-        "isShowPageNum", "isKeepScreenOn", "isImmersiveMode",
+        "isShowPageNum", "isKeepScreenOn", "isImmersiveMode", "hideNavBarInReader",
         "autoWebtoon", "chapterTransition", "seamlessNextVolume", "autoFlipInterval",
         "isEinkMode", "isEinkDither", "einkDitherAlgorithm", "einkDitherLevels",
         "einkEndpointPassthrough", "einkDecodeSize", "einkUiHideDelay",

@@ -12,7 +12,7 @@ object SettingsExporter {
         "isEinkDither", "einkDitherAlgorithm", "einkDitherLevels", "einkEndpointPassthrough",
         "pageLayout", "useSSIV", "panNavigation", "doublePageShift", "doublePageSplit",
         "doublePageReverse", "centerGapType", "forceFullDecode", "doubleMergeSmart",
-        "isFlipAnimation", "isShowPageNum", "isKeepScreenOn", "isImmersiveMode",
+        "isFlipAnimation", "isShowPageNum", "isKeepScreenOn", "isImmersiveMode", "hideNavBarInReader",
         "orientation", "landscapeZoom", "imageScaleMode", "zoomStart", "autoWebtoon", "chapterTransition",
         "seamlessNextVolume",
         "reader_volume_keys", "reader_volume_keys_inverted", "long_press_save",
