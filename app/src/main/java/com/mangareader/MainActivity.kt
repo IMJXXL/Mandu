@@ -80,6 +80,12 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         requestAllFilesAccess()
         val prefs = getSharedPreferences("manga_reader", MODE_PRIVATE)
+        val orientationValue = prefs.getInt("app_orientation", 0)
+        requestedOrientation = when (orientationValue) {
+            1 -> android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            2 -> android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+            else -> android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        }
         com.mangareader.DiagTracer.mark(this, "mainActivity.onCreate: prefs+edge done, setContent next")
         setContent {
             val darkModeValue = prefs.getString("dark_mode", "SYSTEM") ?: "SYSTEM"

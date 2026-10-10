@@ -2,6 +2,7 @@ package com.mangareader.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.compose.ui.graphics.Color
 
 private fun SharedPreferences.safeGetBoolean(key: String, default: Boolean): Boolean =
     try { getBoolean(key, default) } catch (_: ClassCastException) { default }
@@ -137,7 +138,7 @@ data class ReaderConfig(
     @Deprecated("Dead code - navigationMode is stored as Int, this enum is never referenced") enum class NavigationMode(val label: String) {
         DEFAULT("默认"), L_NAV("L形"), KINDLISH("Kindlish"), EDGE("边沿"), RIGHT_LEFT("右与左")
     }
-    enum class ReadBackground { DEFAULT, LIGHT, DARK, WHITE, GRAY }
+    enum class ReadBackground { DEFAULT, LIGHT, DARK, WHITE, GRAY, PURE_WHITE }
     enum class PageLayout(val label: String) { SINGLE("单页"), DOUBLE("双页"), DOUBLE_SHIFTED("双页+起始页") }
     enum class DownsampleTier(val threshold: Long, val label: String) {
         STANDARD(6_291_456L, "标准"), HD(12_582_912L, "高清"), ULTRA_HD(25_165_824L, "超清"), ORIGINAL(Long.MAX_VALUE, "原图")
@@ -520,4 +521,12 @@ data class ReaderConfig(
         fun changedFields(old: ReaderConfig, new: ReaderConfig): List<String> =
             FIELD_ACCESSORS.mapNotNull { (k, get) -> if (get(old) != get(new)) k else null }
     }
+}
+fun mapReadBackgroundToColor(bg: ReaderConfig.ReadBackground): Color = when (bg) {
+    ReaderConfig.ReadBackground.WHITE -> Color(0xFFE8E8E8)
+    ReaderConfig.ReadBackground.PURE_WHITE -> Color(0xFFFFFFFF)
+    ReaderConfig.ReadBackground.DARK -> Color(0xFF000000)
+    ReaderConfig.ReadBackground.LIGHT -> Color(0xFFF5F5F5)
+    ReaderConfig.ReadBackground.DEFAULT -> Color(0xFF111111)
+    ReaderConfig.ReadBackground.GRAY -> Color(0xFF202125)
 }

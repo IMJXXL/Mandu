@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Sell
@@ -102,6 +103,64 @@ fun TagFilterRow(
                     }
                 )
             }
+        }
+    }
+}
+fun LazyListScope.tagFilterItems(
+    allTags: List<TagWithCount>,
+    selectedIds: Set<Long>,
+    recentIds: List<Long>,
+    onToggle: (Long) -> Unit,
+    onRemove: (Long) -> Unit,
+    onClear: () -> Unit,
+    onOpenPicker: () -> Unit,
+) {
+    if (allTags.isEmpty()) return
+    val byId = allTags.associateBy { it.tag.id }
+    val selected = selectedIds.mapNotNull { byId[it] }
+    val recent = recentIds.mapNotNull { byId[it] }.filter { it.tag.id !in selectedIds }.take(5)
+    item {
+        FilterChip(
+            selected = false,
+            onClick = onOpenPicker,
+            label = { Text(if (selected.isEmpty()) "标签" else "标签 · ${selected.size}", fontSize = 13.sp) },
+            leadingIcon = { Icon(Icons.Outlined.Sell, null, Modifier.size(15.dp)) }
+        )
+    }
+    if (selected.isNotEmpty()) {
+        items(selected.size) { i ->
+            val twc = selected[i]
+            FilterChip(
+                selected = true,
+                onClick = { onRemove(twc.tag.id) },
+                label = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        TagDot(twc.tag.name, twc.tag.color)
+                        Spacer(Modifier.width(6.dp))
+                        Text(twc.tag.name, fontSize = 13.sp)
+                        Spacer(Modifier.width(6.dp))
+                        Text("×", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            )
+        }
+        item {
+            FilterChip(selected = false, onClick = onClear, label = { Text("清除", fontSize = 13.sp) })
+        }
+    } else {
+        items(recent.size) { i ->
+            val twc = recent[i]
+            FilterChip(
+                selected = false,
+                onClick = { onToggle(twc.tag.id) },
+                label = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        TagDot(twc.tag.name, twc.tag.color)
+                        Spacer(Modifier.width(6.dp))
+                        Text(twc.tag.name, fontSize = 13.sp)
+                    }
+                }
+            )
         }
     }
 }

@@ -2295,16 +2295,9 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     }
 
     val bgColor = remember(configVersion) {
-        // 读取全局背景色设置（无 bookId 前缀），默认白色
         val globalBgName = prefs.getString("readBackground", "WHITE") ?: "WHITE"
         val globalBg = try { com.mangareader.data.ReaderConfig.ReadBackground.valueOf(globalBgName) } catch (_: Exception) { com.mangareader.data.ReaderConfig.ReadBackground.WHITE }
-        when (globalBg) {
-            com.mangareader.data.ReaderConfig.ReadBackground.WHITE -> Color(0xFFE8E8E8)
-            com.mangareader.data.ReaderConfig.ReadBackground.GRAY -> Color(0xFF202125)
-            com.mangareader.data.ReaderConfig.ReadBackground.DARK -> Color(0xFF000000)
-            com.mangareader.data.ReaderConfig.ReadBackground.LIGHT -> Color(0xFFF5F5F5)
-            com.mangareader.data.ReaderConfig.ReadBackground.DEFAULT -> Color(0xFF111111)
-        }
+        com.mangareader.data.mapReadBackgroundToColor(globalBg)
     }
 
     // ★ v1.13 C-2：遮罩截取/撤除（定义在 bgColor 之后——局部函数不支持前向引用）

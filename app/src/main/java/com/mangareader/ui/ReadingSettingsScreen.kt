@@ -23,7 +23,7 @@ import androidx.compose.ui.unit.sp
 import com.hippo.ehviewer.Settings
 import com.mangareader.smbbridge.SectionCard
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun ReadingSettingsScreen(onBack: () -> Unit, onOpenKeyMap: (() -> Unit)? = null, onOpenPrefs: (() -> Unit)? = null, onOpenGroupSort: (() -> Unit)? = null) {
     BackHandler { onBack() }
@@ -95,23 +95,36 @@ fun ReadingSettingsScreen(onBack: () -> Unit, onOpenKeyMap: (() -> Unit)? = null
 
             item {
                 SectionCard("显示") {
-                    Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf("黑色" to "DARK", "白色" to "WHITE").forEach { (label, value) ->
-                            val bgColor = if (value == "DARK") Color(0xFF111111) else Color(0xFFE8E8E8)
-                            val isSelected = config.readBackground.name == value
+                    val bgOptions = listOf(
+                        "默认" to com.mangareader.data.ReaderConfig.ReadBackground.WHITE,
+                        "纯白" to com.mangareader.data.ReaderConfig.ReadBackground.PURE_WHITE,
+                        "纯黑" to com.mangareader.data.ReaderConfig.ReadBackground.DARK,
+                        "浅灰" to com.mangareader.data.ReaderConfig.ReadBackground.LIGHT,
+                        "近黑" to com.mangareader.data.ReaderConfig.ReadBackground.DEFAULT,
+                        "深灰" to com.mangareader.data.ReaderConfig.ReadBackground.GRAY,
+                    )
+                    FlowRow(
+                        maxItemsInEachRow = 3,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp)
+                    ) {
+                        bgOptions.forEach { (label, bgEnum) ->
+                            val bgColor = com.mangareader.data.mapReadBackgroundToColor(bgEnum)
+                            val isSelected = config.readBackground == bgEnum
                             Surface(
                                 modifier = Modifier.weight(1f).clickable {
-                                    config = config.copy(readBackground = com.mangareader.data.ReaderConfig.ReadBackground.valueOf(value))
+                                    config = config.copy(readBackground = bgEnum)
                                     config.save(ctx)
                                 },
                                 shape = MaterialTheme.shapes.medium,
                                 color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
                                 tonalElevation = if (isSelected) 4.dp else 0.dp
                             ) {
-                                Box(Modifier.padding(16.dp), contentAlignment = Alignment.Center) {
-                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        Box(Modifier.size(20.dp).background(bgColor, MaterialTheme.shapes.small))
-                                        Text(label, fontSize = 14.sp, color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface)
+                                Box(Modifier.padding(12.dp), contentAlignment = Alignment.Center) {
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        Box(Modifier.size(18.dp).background(bgColor, MaterialTheme.shapes.small))
+                                        Text(label, fontSize = 13.sp, color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface)
                                     }
                                 }
                             }

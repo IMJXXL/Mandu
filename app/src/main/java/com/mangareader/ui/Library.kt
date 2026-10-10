@@ -460,6 +460,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
     var showLayoutMenu by remember { mutableStateOf(false) }
     var hideAllBadges by remember { mutableStateOf(prefs.getBoolean("hide_all_badges", false)) }
     var titleMarquee by remember { mutableStateOf(prefs.getBoolean("shelf_title_marquee", false)) }
+    var currentOrientation by remember { mutableStateOf(prefs.getInt("app_orientation", 0)) }
 
     var searchQuery by remember { mutableStateOf("") }
     var debouncedQuery by remember { mutableStateOf("") }
@@ -1192,6 +1193,8 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
         )
     }
 
+    val compactTopBar = isLandscapeOrientation() && !isTabletWide()
+
     Scaffold(
         topBar = {
             if (isMultiSelect) TopAppBar(
@@ -1219,11 +1222,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
             ) else TopAppBar(
-                title = { Column {
-                    Text("瑾", fontWeight = FontWeight.Bold, fontSize = 20.sp, modifier = Modifier.clickable { showDonation = true })
-                    Text("${books?.size ?: 0} 本", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    // ★ 批量增强进行中状态（2026-10-02）：书架直接可见，解决"入队后失联"；
-                    //   点按进设置（设置→增强队列 看逐章详情）。进度由服务 queueProgress 事件驱动
+                title = {
                     var batchStatus by remember { mutableStateOf("") }
                     LaunchedEffect(Unit) {
                         fun summarize() {
@@ -1237,13 +1236,26 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                         summarize()
                         com.mangareader.sr.SrCore.queueProgress.collect { summarize() }
                     }
-                    if (batchStatus.isNotEmpty()) {
-                        Text(
-                            batchStatus, fontSize = 11.sp, color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.clickable { onSettings() },
-                        )
+                    if (compactTopBar) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("瑾", fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.clickable { showDonation = true })
+                            Text("${books?.size ?: 0} 本", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            if (batchStatus.isNotEmpty()) {
+                                Text(batchStatus, fontSize = 10.sp, color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.clickable { onSettings() })
+                            }
+                        }
+                    } else {
+                        Column {
+                            Text("瑾", fontWeight = FontWeight.Bold, fontSize = 20.sp, modifier = Modifier.clickable { showDonation = true })
+                            Text("${books?.size ?: 0} 本", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            if (batchStatus.isNotEmpty()) {
+                                Text(batchStatus, fontSize = 11.sp, color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.clickable { onSettings() })
+                            }
+                        }
                     }
-                } },
+                },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
                 actions = {
                     IconButton(onClick = { isMultiSelect = true }) { Icon(Icons.Default.Edit, "编辑") }
@@ -1418,12 +1430,23 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                             label = { Text("书架 更多 ›", fontSize = 13.sp) })
                     }
                 }
+                if (compactTopBar && prefs.getBoolean("tag_filter_row_enabled", true)) {
+                    tagFilterItems(
+                        allTags = tagsWithCounts,
+                        selectedIds = selectedTagIds,
+                        recentIds = recentTagIds,
+                        onToggle = { toggleLibraryTag(it) },
+                        onRemove = { removeLibraryTag(it) },
+                        onClear = { clearLibraryTags() },
+                        onOpenPicker = { showTagPicker = true },
+                    )
+                }
             }
-            if (selectedShelfId != null) {
+            if (!compactTopBar && selectedShelfId != null) {
                 Text("书架: $selectedShelfName", fontSize = 13.sp, color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp))
             }
-            if (prefs.getBoolean("tag_filter_row_enabled", true)) TagFilterRow(
+            if (!compactTopBar && prefs.getBoolean("tag_filter_row_enabled", true)) TagFilterRow(
                 allTags = tagsWithCounts,
                 selectedIds = selectedTagIds,
                 recentIds = recentTagIds,
@@ -1680,6 +1703,24 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                         titleMarquee = it
                         prefs.edit().putBoolean("shelf_title_marquee", it).apply()
                     })
+                }
+                Text("软件方向", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("跟随手机" to 0, "竖屏" to 1, "横屏" to 2).forEach { (label, value) ->
+                        FilterChip(
+                            selected = currentOrientation == value,
+                            onClick = {
+                                currentOrientation = value
+                                prefs.edit().putInt("app_orientation", value).apply()
+                                (ctx as? android.app.Activity)?.requestedOrientation = when (value) {
+                                    1 -> android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                                    2 -> android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                                    else -> android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                                }
+                            },
+                            label = { Text(label) },
+                        )
+                    }
                 }
 
                     }
