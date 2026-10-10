@@ -246,11 +246,12 @@ fun ReaderTocSheet(
     var tocSortAsc by remember { mutableStateOf(true) }
     var tocTab by remember { mutableIntStateOf(if (displayItems.size > 1) 0 else 1) }
     val dateFormat = remember { java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.getDefault()) }
+    val ctx = LocalContext.current
     val sortedDisplayItems = remember(displayItems, tocSortAsc) {
-        val base = displayItems.sortedWith(compareByDescending<ArchiveEngine.Item> { it.dir }.thenComparing({ it.name }, NaturalComparator))
+        val config = com.mangareader.util.GroupSortConfigCache.get(ctx)
+        val base = com.mangareader.util.GroupSortUtil.sortItems(displayItems, config, { it.name }, { it.dir })
         if (tocSortAsc) base else base.reversed()
     }
-    val ctx = LocalContext.current
     val configuration = LocalConfiguration.current
     val portraitCols by com.hippo.ehviewer.Settings.thumbColumnsPortrait.valueFlow().collectAsState(initial = com.hippo.ehviewer.Settings.thumbColumnsPortrait.value)
     val landscapeCols by com.hippo.ehviewer.Settings.thumbColumnsLandscape.valueFlow().collectAsState(initial = com.hippo.ehviewer.Settings.thumbColumnsLandscape.value)

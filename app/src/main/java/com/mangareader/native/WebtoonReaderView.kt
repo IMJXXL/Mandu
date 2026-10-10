@@ -745,6 +745,7 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
                     ArchiveEngine.PageMeta(it, "", "", name = "")
                 }
                 pageList = grown
+                onPageCountChanged?.invoke(pageList.size)
                 post { adapter?.notifyItemRangeInserted(oldSize, newCount - oldSize) }
             }
         }

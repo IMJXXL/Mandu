@@ -872,6 +872,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                     )
                 }
                 pageList = grown
+                onPageCountChanged?.invoke(pageList.size)
                 // 远程页表增长：同步扩跨页表（新页尺寸未知=朴素配对，与旧行为一致）
                 rebuildSpreadTable()
                 post { pagerAdapter?.notifyItemRangeInserted(oldSize, newCount - oldSize) }

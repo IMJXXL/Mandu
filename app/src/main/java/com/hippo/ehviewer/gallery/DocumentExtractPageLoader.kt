@@ -126,6 +126,8 @@ suspend inline fun <T> useDocumentExtractPageLoader(
         val prefetchN = Settings.preloadImage.value.coerceAtLeast(1)
         val resumePage = startPage.coerceIn(0, (engine.pageCount - 1).coerceAtLeast(0))
 
+
+
         // Seed the page the reader will actually show. Extracting page 0 first made a
         // resumed network document pay for two image streams before it could present.
         extractMutex.withLock {
@@ -250,12 +252,12 @@ suspend inline fun <T> useDocumentExtractPageLoader(
 
                 override fun close() {
                     // Snapshot: cancel handlers remove from extractJobs concurrently
-                    // (live CHM.values iter on main â†?NoSuchElementException).
+                    // (live CHM.values iter on main ï¿½?NoSuchElementException).
                     discoveryJob.getAndSet(null)?.cancel()
                     extractJobs.values.toList().forEach { it.cancel() }
                     extractJobs.clear()
                     readyWaiters.clear()
-                    // Trust in-memory extract map only â€?never stat/write on main (onDispose).
+                    // Trust in-memory extract map only ï¿½?never stat/write on main (onDispose).
                     val count = engine.pageCount
                     val structureComplete = progressiveEngine?.structureComplete ?: true
                     val complete = count > 0 &&
@@ -267,7 +269,7 @@ suspend inline fun <T> useDocumentExtractPageLoader(
                     super.close()
                 }
 
-                /** In-memory only â€?safe on main / onDispose. */
+                /** In-memory only ï¿½?safe on main / onDispose. */
                 private fun isPageMapped(index: Int): Boolean = pagePaths.containsKey(index)
 
                 /** Disk probe; call only from [Dispatchers.IO]. */
@@ -326,7 +328,7 @@ suspend inline fun <T> useDocumentExtractPageLoader(
                     if (interactive) {
                         interactivePending.add(index)
                         // Stop index walk so the mutex frees for this extract. Mapped pages
-                        // return above and must not cancel: growTo â†?replan re-requests the
+                        // return above and must not cancel: growTo ï¿½?replan re-requests the
                         // current page and used to kill a live page-tree walk.
                         discoveryJob.get()?.cancel()
                     }
@@ -443,7 +445,7 @@ suspend inline fun <T> useDocumentExtractPageLoader(
                                     }
                                     val wanted = discoveryTarget.get()
                                     val before = progressive.pageCount
-                                    if (before > wanted) break
+
                                     // One image page per mutex hold so scroll can snatch the lock
                                     // between kids/resource walks (BATCH>1 blocked extract for seconds).
                                     val after = extractMutex.withLock {
@@ -465,7 +467,7 @@ suspend inline fun <T> useDocumentExtractPageLoader(
                                             )
                                         }
                                     } else {
-                                        // No progress: transport blip or true end â€?do not spin hot.
+                                        // No progress: transport blip or true end ï¿½?do not spin hot.
                                         if (interactivePending.isNotEmpty()) {
                                             delay(PDF_INDEX_YIELD_MS)
                                             continue
@@ -573,12 +575,14 @@ internal fun openDocumentEngine(
         cachedIndex?.format == "pdf"
     return when {
         isMobi -> {
-            // ¼ÇÂ¼¼¶Á÷Ê½£º¿ªÊé=Í·¼¸ KB + Ã¿¼ÇÂ¼ 8B Ì½²â£»½á¹¹¶Ô²»ÉÏ»º´æË÷ÒıÔòÆú»º´æÕæ¿ª
+            // è®°å½•çº§æµå¼è§£æï¼å¤´éƒ¨å‡  KB + æ¯è®°å½• 8B æ¢æµ‹ï¼›ç»“æ„å¯¹ä¸ä¸Šå›é€€ï¼Œå…¨é‡æ¢æµ‹æœ€åå…œåº•
             val engine = if (cachedIndex != null) {
                 MobiEngine.openFromIndex(source, cachedIndex, remoteSize = sizeHint)
                     ?: MobiEngine.open(source, remoteSize = sizeHint, coverOnly = false)
+                    ?: MobiEngine.open(source, remoteSize = sizeHint, coverOnly = false, probeLimit = -1)
             } else {
                 MobiEngine.open(source, remoteSize = sizeHint, coverOnly = false)
+                    ?: MobiEngine.open(source, remoteSize = sizeHint, coverOnly = false, probeLimit = -1)
             }
             // â˜… 2026-10-06 "æœ‰çš„ mobi èƒ½è¯»æœ‰çš„ä¸è¡Œ"ï¼šMobiFile.open å„æ‹’æ”¶è·¯å¾„å†™ lastReject
             //   ï¼ˆDRM/åè¡¨/0å›¾/IOï¼‰ï¼Œæ‹¼è¿› error æ¶ˆæ¯ â†’ toast ä¸ open fail æ—¥å¿—ç›´æ¥ç»™åŸå› 
@@ -656,7 +660,7 @@ internal fun cachedDocumentLoader(
         }.getOrDefault(false)
 
         override fun openSource(index: Int): ImageSource {
-            // Index already verified complete â€?construct path, no open-time File.stat.
+            // Index already verified complete ï¿½?construct path, no open-time File.stat.
             val ext = exts[index] ?: "bin"
             val path = DocumentExtractCache.pagePath(cacheKey, index, ext)
             return object : PathSource {

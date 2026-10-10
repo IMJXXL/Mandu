@@ -48,7 +48,8 @@ fun ReaderItemGrid(
         if (saved != cols) cols = saved
     }
     val sorted = remember(items, sortAsc) {
-        val base = items.sortedWith(compareByDescending<ArchiveEngine.Item> { it.dir }.thenComparing({ it.name }, NaturalComparator))
+        val config = com.mangareader.util.GroupSortConfigCache.get(ctx)
+        val base = com.mangareader.util.GroupSortUtil.sortItems(items, config, { it.name }, { it.dir })
         if (sortAsc) base else base.reversed()
     }
     Column(modifier) {

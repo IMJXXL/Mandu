@@ -3948,7 +3948,8 @@ private fun ItemGrid(
     val resolvedCols = LayoutColumnsResolver.currentValue(configuration.orientation, portraitCols, landscapeCols)
     val gridCols = LayoutColumnsResolver.toGridCols(resolvedCols)
     val sorted = remember(items, sortAsc) {
-        val base = items.sortedWith(compareByDescending<ArchiveEngine.Item> { it.dir }.thenComparing({ it.name }, NaturalComparator))
+        val config = com.mangareader.util.GroupSortConfigCache.get(ctx)
+        val base = com.mangareader.util.GroupSortUtil.sortItems(items, config, { it.name }, { it.dir })
         if (sortAsc) base else base.reversed()
     }
     Column(mod) {

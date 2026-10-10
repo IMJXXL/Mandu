@@ -25,7 +25,7 @@ import com.mangareader.smbbridge.SectionCard
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ReadingSettingsScreen(onBack: () -> Unit, onOpenKeyMap: (() -> Unit)? = null, onOpenPrefs: (() -> Unit)? = null) {
+fun ReadingSettingsScreen(onBack: () -> Unit, onOpenKeyMap: (() -> Unit)? = null, onOpenPrefs: (() -> Unit)? = null, onOpenGroupSort: (() -> Unit)? = null) {
     BackHandler { onBack() }
     val ctx = LocalContext.current
     val prefs = remember { ctx.getSharedPreferences("manga_reader", Context.MODE_PRIVATE) }
@@ -65,6 +65,25 @@ fun ReadingSettingsScreen(onBack: () -> Unit, onOpenKeyMap: (() -> Unit)? = null
                             Text("阅读偏好", fontSize = 16.sp)
                             Text(
                                 "每项都能直接改全局默认值，也能切成只对一本书生效",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Text("›", fontSize = 18.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+
+            if (onOpenGroupSort != null) item {
+                SectionCard("排序") {
+                    Row(
+                        Modifier.fillMaxWidth().clickable { onOpenGroupSort() }.padding(vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("分组排序", fontSize = 16.sp)
+                            Text(
+                                "按关键词分组排序章节，番外篇不再跑到正篇上面",
                                 fontSize = 12.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )

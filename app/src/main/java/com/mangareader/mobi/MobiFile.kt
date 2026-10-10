@@ -16,11 +16,22 @@ import java.io.Closeable
 class MobiFile private constructor(
     private val recordOffsets: LongArray,
     private val fileSize: Long,
-    private val imageRecords: IntArray,
-    private val imageExts: Array<String>,
+    private val numRecords: Int,
+    val resourceStart: Int,
+    val resourceEnd: Int,
 ) {
-    /** 资源区按记录序的图片记录数（=页数）。 */
+    private val imageRecords = ArrayList<Int>()
+    private val imageExts = ArrayList<String>()
+
     val imageCount: Int get() = imageRecords.size
+
+    var probedThrough: Int = resourceStart
+        private set
+
+    var structureComplete: Boolean = false
+        private set
+
+    private var scanningFallback = false
 
     /** 第 [imageIndex] 张图（0 基）的扩展名，如 "jpg"/"png"。 */
     fun imageExt(imageIndex: Int): String? = imageExts.getOrNull(imageIndex)
@@ -31,6 +42,57 @@ class MobiFile private constructor(
         val rec = imageRecords[imageIndex]
         val end = if (rec + 1 < recordOffsets.size) recordOffsets[rec + 1] else fileSize
         return (end - recordOffsets[rec]).coerceAtLeast(0L)
+    }
+
+    fun recordSizeAt(rec: Int): Long {
+        if (rec !in recordOffsets.indices) return -1L
+        val end = if (rec + 1 < recordOffsets.size) recordOffsets[rec + 1] else fileSize
+        return (end - recordOffsets[rec]).coerceAtLeast(0L)
+    }
+
+    fun probeRecordExt(source: SeekableSource, rec: Int): String? {
+        if (rec !in recordOffsets.indices) return null
+        if (recordSizeAt(rec) < 12) return null
+        val probe = ByteArray(12)
+        if (source.readAt(recordOffsets[rec], probe, 0, 12) < 12) return null
+        return imageExtOf(probe)
+    }
+
+    fun probeMore(source: SeekableSource, targetImageCount: Int): Int {
+        if (structureComplete) return imageRecords.size
+        if (targetImageCount <= imageRecords.size) return imageRecords.size
+        val probe = ByteArray(12)
+        val scanEnd = if (scanningFallback) numRecords else resourceEnd
+        var i = probedThrough
+        while (i < scanEnd && imageRecords.size < targetImageCount) {
+            val usable = !scanningFallback || recordEnd(i) - recordOffsets[i] >= 64
+            if (usable) {
+                probeRecordAt(source, i, probe)?.let { (rec, ext) ->
+                    imageRecords.add(rec)
+                    imageExts.add(ext)
+                }
+            }
+            i++
+        }
+        probedThrough = i
+        if (probedThrough >= scanEnd) structureComplete = true
+        return imageRecords.size
+    }
+
+    fun hydrateFromCache(exts: List<String>, complete: Boolean) {
+        imageRecords.clear()
+        imageExts.clear()
+        for (ext in exts) {
+            imageRecords.add(resourceStart + imageRecords.size)
+            imageExts.add(ext)
+        }
+        if (complete) {
+            probedThrough = resourceEnd
+            structureComplete = true
+        } else {
+            probedThrough = resourceStart + exts.size
+            structureComplete = false
+        }
     }
 
     /**
@@ -45,6 +107,17 @@ class MobiFile private constructor(
         val len = end - off
         if (len <= 0L || len > maxBytes) return null
         return source.readFullyAt(off, len.toInt())
+    }
+
+    private fun recordEnd(rec: Int): Long =
+        if (rec + 1 < recordOffsets.size) recordOffsets[rec + 1] else fileSize
+
+    private fun probeRecordAt(source: SeekableSource, i: Int, probe: ByteArray): Pair<Int, String>? {
+        val len = (recordEnd(i) - recordOffsets[i]).toInt()
+        if (len < 12) return null
+        if (source.readAt(recordOffsets[i], probe, 0, 12) < 12) return null
+        val ext = imageExtOf(probe) ?: return null
+        return i to ext
     }
 
     companion object {
@@ -70,8 +143,11 @@ class MobiFile private constructor(
          * 解析 PDB 头 + 记录表 + MOBI 头，魔数探测资源区图片记录。
          * 返回 null = 不是可流式读取的 MOBI（结构坏/DRM），调用方回退既有路径；
          * imageCount == 0 合法（纯文字书/无图 PDB），同样走回退。
+         *
+         * probeLimit < 0 全量探测（现状行为）；== 0 只读头+记录表不探测图片；
+         * > 0 探测到该条图片数即停（structureComplete=false，probeMore 续探）。
          */
-        fun open(source: SeekableSource): MobiFile? {
+        fun open(source: SeekableSource, probeLimit: Int = -1): MobiFile? {
             val size = source.size
             if (size < 78L + 8) return reject("file too small ($size B)")
             val head = source.readFullyAt(0, 78) ?: return reject("PDB header read failed")
@@ -113,34 +189,31 @@ class MobiFile private constructor(
             val start = maxOf(firstImage, textRecordCount + 1).coerceAtLeast(1)
             val end = minOf(firstNonBook, numRecords)
 
-            val probe = ByteArray(12)
-            fun probeRecord(i: Int): Pair<Int, String>? {
-                val len = (recordEnd(i) - offsets[i]).toInt()
-                // 兜底轮复用：<64B 记录不可能是图片（顺带滤掉短垃圾记录降低文本误报面）
-                if (len < 12) return null
-                if (source.readAt(offsets[i], probe, 0, 12) < 12) return null
-                val ext = imageExtOf(probe) ?: return null
-                return i to ext
+            val mobi = MobiFile(offsets, size, numRecords, start, end)
+            if (probeLimit == 0) {
+                mobi.probedThrough = start
+                mobi.structureComplete = false
+                return mobi
             }
-            val images = ArrayList<Int>()
-            val exts = ArrayList<String>()
-            for (i in start until end) {
-                probeRecord(i)?.let { (i2, ext) -> images.add(i2); exts.add(ext) }
+            if (end > start) {
+                mobi.probeMore(source, if (probeLimit > 0) probeLimit else Int.MAX_VALUE)
+            } else {
+                mobi.probedThrough = end
+                mobi.structureComplete = true
             }
             // ★ 兜底轮（2026-10-06 "有的 mobi 不行"）：firstNonBook/firstImage 由转换工具写入，
             //   异常值（azw3 复合书指进 KF8 区、工具 bug 写小）会把探测区收成空/截断 → 0 图 →
             //   整书拒收。主区 0 图时按"记录序全扫（跳 rec0 与 <64B 垃圾）"再试一轮——转换正常
             //   的书主区即命中（不进此分支）；不规范书以可能引入少量文本误报换整本可开。
-            if (images.isEmpty() && (start > 1 || end < numRecords)) {
-                for (i in 1 until numRecords) {
-                    val len = (recordEnd(i) - offsets[i]).toInt()
-                    if (len < 64) continue
-                    probeRecord(i)?.let { (i2, ext) -> images.add(i2); exts.add(ext) }
-                }
-                if (images.isNotEmpty()) lastReject = ""
+            if (mobi.imageRecords.isEmpty() && (start > 1 || end < numRecords)) {
+                mobi.scanningFallback = true
+                mobi.probedThrough = 1
+                mobi.structureComplete = false
+                mobi.probeMore(source, if (probeLimit > 0) probeLimit else Int.MAX_VALUE)
+                if (mobi.imageRecords.isNotEmpty()) lastReject = ""
             }
-            if (images.isEmpty()) lastReject = "no image records (probe [$start,$end) of $numRecords recs)"
-            return MobiFile(offsets, size, images.toIntArray(), exts.toTypedArray())
+            if (mobi.imageRecords.isEmpty()) lastReject = "no image records (probe [$start,$end) of $numRecords recs)"
+            return mobi
         }
 
         private fun imageExtOf(b: ByteArray): String? = when {

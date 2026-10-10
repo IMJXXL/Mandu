@@ -263,6 +263,7 @@ abstract class PageLoader(
      */
     fun growTo(newSize: Int) {
         if (newSize <= pageList.size && newSize <= sizeState.intValue) return
+
         val published: Int
         synchronized(pageList) {
             while (pageList.size < newSize) {

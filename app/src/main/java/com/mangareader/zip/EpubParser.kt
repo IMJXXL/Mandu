@@ -239,7 +239,7 @@ object EpubParser {
      * 解析EPUB中HTML页面引用的图片路径
      * 用于kmoe等EPUB：spine → HTML → <img src="image/xxx.jpg">
      */
-    fun resolveImageHrefs(context: Context, uri: Uri, opfDir: String, spineItems: List<EpubManifestItem>, cacheKey: String? = null): Map<String, String> {
+    fun resolveImageHrefs(context: Context, uri: Uri, opfDir: String, spineItems: List<EpubManifestItem>, cacheKey: String? = null): Map<String, List<String>> {
         val hrefSet = spineItems.map { resolveHref(opfDir, it.href) }.toSet()
 
         // ★ A 修复②：libzip 按名直读 spine 引用的 HTML（旧版全流解压整个 ZIP）
@@ -249,13 +249,14 @@ object EpubParser {
                 val names = com.mangareader.native.NativeEngine.getZipEntryNames(cacheKey)
                 if (names != null) {
                     val (fullIdx, baseIdx) = buildNameIndex(names.toList())
-                    val fast = HashMap<String, String>()
+                    val fast = HashMap<String, List<String>>()
                     var matched = 0
                     for (href in hrefSet) {
                         val idx = fullIdx[href] ?: baseIdx[href.substringAfterLast('/')] ?: continue
                         val html = com.mangareader.native.NativeEngine.readZipEntry(cacheKey, idx)
                             ?.toString(Charsets.UTF_8) ?: continue
-                        extractImgSrc(html)?.let { fast[href] = it; matched++ }
+                        val imgs = extractAllImgSrcs(html)
+                        if (imgs.isNotEmpty()) { fast[href] = imgs; matched++ }
                     }
                     Log.d(TAG, "resolveImageHrefs(libzip): matched $matched/${hrefSet.size}")
                     // 全 miss 时仍落兜底（防个别 EPUB 的 libzip 名字视图与流式视图不一致）
@@ -269,8 +270,8 @@ object EpubParser {
     }
 
     /** 原 ZipInputStream 全流实现，整段保留为兜底 */
-    private fun resolveImageHrefsLegacy(context: Context, uri: Uri, opfDir: String, spineItems: List<EpubManifestItem>): Map<String, String> {
-        val result = mutableMapOf<String, String>()
+    private fun resolveImageHrefsLegacy(context: Context, uri: Uri, opfDir: String, spineItems: List<EpubManifestItem>): Map<String, List<String>> {
+        val result = mutableMapOf<String, List<String>>()
         try {
             context.contentResolver.openInputStream(uri)?.use { input ->
                 val zipInput = java.util.zip.ZipInputStream(input)
@@ -281,7 +282,8 @@ object EpubParser {
                 while (entry != null) {
                     if (!entry.isDirectory && entry.name in hrefSet) {
                         val html = zipInput.readBytes().toString(Charsets.UTF_8)
-                        extractImgSrc(html)?.let { result[entry.name] = it; matched++ }
+                        val imgs = extractAllImgSrcs(html)
+                        if (imgs.isNotEmpty()) { result[entry.name] = imgs; matched++ }
                     }
                     entry = zipInput.nextEntry
                 }
@@ -298,10 +300,11 @@ object EpubParser {
         return if (opfDir.isNotEmpty()) "$opfDir/$href" else href
     }
 
-    private fun extractImgSrc(html: String): String? {
+    private fun extractAllImgSrcs(html: String): List<String> {
         for (pattern in IMG_SRC_PATTERNS) {
-            pattern.find(html)?.let { return it.groupValues[1] }
+            val matches = pattern.findAll(html).map { it.groupValues[1] }.toList()
+            if (matches.isNotEmpty()) return matches
         }
-        return null
+        return emptyList()
     }
 }

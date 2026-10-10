@@ -1,5 +1,6 @@
 package com.hippo.ehviewer.library.document
 
+
 import com.hippo.ehviewer.library.ArchiveByteSource
 import com.hippo.ehviewer.library.DocumentExtractCache
 import com.mangareader.mobi.MobiFile
@@ -19,9 +20,9 @@ import okio.Path
 class MobiEngine private constructor(
     private val source: ArchiveByteSource,
     private val mobi: MobiFile,
-    private val pages: List<PageRef>,
+    private val pages: MutableList<PageRef>,
     private val remoteSize: Long,
-) : DocumentImageEngine {
+) : DocumentImageEngine, ProgressiveDocumentImageEngine {
     data class PageRef(
         val imageIndex: Int,
         val ext: String,
@@ -29,6 +30,27 @@ class MobiEngine private constructor(
     )
 
     override val pageCount: Int get() = pages.size
+
+    override val structureComplete: Boolean get() = mobi.structureComplete
+
+    override fun ensureListedThrough(index: Int): Int {
+        val target = index + 1
+        if (target > pages.size || !mobi.structureComplete) {
+            val discovered = mobi.probeMore(ByteSourceSeekable(source), target)
+
+            while (pages.size < discovered) {
+                val i = pages.size
+                pages.add(
+                    PageRef(
+                        imageIndex = i,
+                        ext = mobi.imageExt(i) ?: "bin",
+                        uncSize = mobi.imageSize(i) ?: 0L,
+                    ),
+                )
+            }
+        }
+        return pages.size
+    }
 
     fun memberName(index: Int): String? = pages.getOrNull(index)?.let { "record-${it.imageIndex}" }
 
@@ -40,6 +62,7 @@ class MobiEngine private constructor(
         remoteSize = remoteSize,
         format = "mobi",
         complete = complete,
+        structureComplete = mobi.structureComplete,
         members = pages.mapIndexed { i, p ->
             DocumentExtractCache.Member(
                 i = i,
@@ -68,17 +91,21 @@ class MobiEngine private constructor(
     companion object {
         /**
          * @param coverOnly if true, keep only the first image in the list.
+         * @param probeLimit null = coverOnly 映射（封面 1 / 首开 3）；-1 = 全量（回退）；
+         *   0 = 只读头；> 0 = 探测到该条图片数即停。
          * @return engine or null if not a readable MOBI (encrypted / bad structure / no images)。
          */
         fun open(
             source: ArchiveByteSource,
             remoteSize: Long = 0L,
             coverOnly: Boolean = false,
+            probeLimit: Int? = null,
         ): MobiEngine? {
             val sizeHint = remoteSize.takeIf { it > 0L }
                 ?: runCatching { source.size }.getOrDefault(0L)
+            val limit = probeLimit ?: if (coverOnly) 1 else 3
             val mobi = try {
-                MobiFile.open(ByteSourceSeekable(source))
+                MobiFile.open(ByteSourceSeekable(source), probeLimit = limit)
             } catch (e: Exception) {
                 MobiFile.lastReject = "open exception: ${e::class.java.simpleName}"
                 null
@@ -89,14 +116,15 @@ class MobiEngine private constructor(
                     ext = mobi.imageExt(i) ?: "bin",
                     uncSize = mobi.imageSize(i) ?: 0L,
                 )
-            }
+            }.toMutableList()
             if (pages.isEmpty()) return null
-            return MobiEngine(source, mobi, if (coverOnly) pages.take(1) else pages, sizeHint)
+            return MobiEngine(source, mobi, if (coverOnly) pages.take(1).toMutableList() else pages, sizeHint)
         }
 
         /**
          * Reuse durable page list; still needs the PDB record table (header few KB) for extraction.
-         * 结构与缓存不一致（页数/ext 变化）返回 null，调用方落回 [open]。
+         * 轻探测指纹比对：只读头+记录表（零图片探测流量），逐成员 uncSize 校验位置映射，
+         * 首条记录 12B 魔数校验扩展名。结构与缓存不一致返回 null，调用方落回 [open]。
          */
         fun openFromIndex(
             source: ArchiveByteSource,
@@ -105,18 +133,49 @@ class MobiEngine private constructor(
         ): MobiEngine? {
             if (index.members.isEmpty()) {
                 MobiFile.lastReject = "cached index empty"
+
                 return null
             }
-            val fresh = open(source, remoteSize, coverOnly = false) ?: return null
-            val matches = fresh.pages.size == index.members.size &&
-                fresh.pages.withIndex().all { (i, p) ->
-                    index.members.getOrNull(i)?.ext == p.ext
+            val seekable = ByteSourceSeekable(source)
+            val head = try {
+                MobiFile.open(seekable, probeLimit = 0)
+            } catch (e: Exception) {
+                MobiFile.lastReject = "open exception: ${e::class.java.simpleName}"
+                null
+            } ?: return null
+            val freshSize = runCatching { seekable.size }.getOrDefault(0L)
+            if (index.remoteSize > 0L && freshSize > 0L && index.remoteSize != freshSize) {
+                MobiFile.lastReject = "cached index mismatch (size ${index.remoteSize} vs $freshSize)"
+                return null
+            }
+            val regionRecords = head.resourceEnd - head.resourceStart
+            if (index.members.size > regionRecords ||
+                (index.structureComplete && index.members.size != regionRecords)
+            ) {
+                MobiFile.lastReject =
+                    "cached index mismatch (${index.members.size} members vs $regionRecords region recs)"
+                return null
+            }
+            for ((i, m) in index.members.withIndex()) {
+                if (head.recordSizeAt(head.resourceStart + i) != m.uncSize) {
+                    MobiFile.lastReject = "cached index mismatch (member $i uncSize ${m.uncSize})"
+                    return null
                 }
-            if (!matches) {
-                MobiFile.lastReject = "cached index mismatch (${index.members.size} members vs ${fresh.pages.size} fresh)"
+            }
+            val first = index.members.first()
+            if (head.probeRecordExt(seekable, head.resourceStart) != first.ext) {
+                MobiFile.lastReject = "cached index mismatch (first ext vs ${first.ext})"
                 return null
             }
-            return fresh
+            head.hydrateFromCache(index.members.map { it.ext }, index.structureComplete)
+            val pages = index.members.map { m ->
+                PageRef(imageIndex = m.i, ext = m.ext, uncSize = m.uncSize)
+            }.toMutableList()
+            val size = remoteSize.takeIf { it > 0L }
+                ?: freshSize.takeIf { it > 0L }
+                ?: index.remoteSize
+
+            return MobiEngine(source, head, pages, size)
         }
     }
 }

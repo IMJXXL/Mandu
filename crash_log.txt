@@ -1,0 +1,356 @@
+--------- beginning of main
+10-09 08:38:37.153  4382  4558 D GestureStubView_Touch: disableTouch    old=true   new=false
+10-09 08:38:37.153  4382  4558 D GestureStubView_Touch: updateTouchable    old=true   new=true
+10-09 08:38:37.153  4382  4558 D GestureStubView_Touch: disableTouch    old=true   new=false
+10-09 08:38:37.153  4382  4558 D GestureStubView_Touch: updateTouchable    old=true   new=true
+10-09 08:38:37.153  4382  4558 D RecentsImpl: showBackStubWindow  hasNavigationBar=true
+10-09 08:38:37.153  4382  4558 D GestureStubView_Touch: setKeepHidden    old=true   new=false
+10-09 08:38:37.153  4382  4558 D GestureStubView_Touch: updateTouchable    old=true   new=false
+10-09 08:38:37.153  4382  4558 D GestureStubView_Touch:   updateTouchable---requestApplyInsets
+10-09 08:38:37.153  4382  4558 W GestureStubView: adaptRotation   currentRotation=0   mRotation=0
+10-09 08:38:37.153  4382  4558 D GestureStubView: resetRenderProperty: showGestureStub   isLayoutParamChanged=false
+10-09 08:38:37.153  4382  4558 D GestureStubView_Touch: disableTouch    old=false   new=false
+10-09 08:38:37.154  4382  4558 D GestureStubView: showGestureStub
+10-09 08:38:37.154  4382  4558 D GestureStubView_Touch: setKeepHidden    old=true   new=false
+10-09 08:38:37.154  4382  4558 D GestureStubView_Touch: updateTouchable    old=true   new=false
+10-09 08:38:37.154  4382  4558 D GestureStubView_Touch:   updateTouchable---requestApplyInsets
+10-09 08:38:37.154  4382  4558 W GestureStubView: adaptRotation   currentRotation=0   mRotation=0
+10-09 08:38:37.154  4382  4558 D GestureStubView: resetRenderProperty: showGestureStub   isLayoutParamChanged=false
+10-09 08:38:37.154  4382  4558 D GestureStubView_Touch: disableTouch    old=false   new=false
+10-09 08:38:37.154  4382  4558 D GestureStubView: showGestureStub
+10-09 08:38:37.154  4047  4111 D HomeWallpaperRenderer: OFFSET  x: 1.0  y: 0.0
+10-09 08:38:37.161  8530  8585 D ViewContentFactory: initViewContentFetcherClass
+10-09 08:38:37.161  8530  8585 D ViewContentFactory: getInterceptorPackageInfo
+10-09 08:38:37.161  8530  8585 D ViewContentFactory: getInitialApplication took 0ms
+10-09 08:38:37.161  8530  8585 D ViewContentFactory: packageInfo.packageName: com.miui.catcherpatch
+10-09 08:38:37.162  4759  4996 D MiuiFastConnectService: stopBleScan: scanning: true
+10-09 08:38:37.162  4759  4996 D BluetoothAdapter: isLeEnabled(): ON
+10-09 08:38:37.163  8530  8585 D ViewContentFactory: initViewContentFetcherClass took 3ms
+10-09 08:38:37.163  4009  4952 D BtGatt.GattService: stopScan() - queue size =2
+10-09 08:38:37.163  8530  8585 I ContentCatcher: ViewContentFetcher : ViewContentFetcher
+10-09 08:38:37.163  8530  8585 D ViewContentFactory: createInterceptor took 3ms
+10-09 08:38:37.164  4009  4453 I BtGatt.ScanManager: msg.what = 1, msg.arg1 = 0(mMiuiControllingType)
+10-09 08:38:37.164  4009  4453 D BtGatt.ScanManager: track LE scan event: callerPackage = [com.xiaomi.bluetooth], scanMode = [0], reportDelayMillis = [0], behavior = [2], scannerId = [8], duration = [59931]
+10-09 08:38:37.165  4009  4952 D BtGatt.GattService: unregisterScanner() - scannerId=8
+10-09 08:38:37.166  4382  7074 W FloatingIconLayer: release
+10-09 08:38:37.166  4382  4558 D GestureStubView: gatherTransparentRegion: need render w:54  h:1627
+10-09 08:38:37.167  4382  4558 D GestureStubView: gatherTransparentRegion: need render w:54  h:1627
+10-09 08:38:37.168  4047  4111 D HomeWallpaperRenderer: OFFSET  x: 1.0  y: 0.0
+10-09 08:38:37.168  1171  1171 D vendor.qti.bluetooth@1.0-ibs_handler: SerialClockVote: vote for UART CLK ON
+10-09 08:38:37.169  1171  1171 D vendor.qti.bluetooth@1.0-wake_lock: Acquire wakelock is acquired 
+10-09 08:38:37.169  1171  1171 I vendor.qti.bluetooth@1.0-ibs_handler: DeviceWakeUp: Writing IBS_WAKE_IND
+10-09 08:38:37.174  1171  4645 I vendor.qti.bluetooth@1.0-ibs_handler: ProcessIbsCmd: Received IBS_WAKE_ACK: 0xFC
+10-09 08:38:37.174  1171  4645 I vendor.qti.bluetooth@1.0-ibs_handler: ProcessIbsCmd: Signal wack_cond_
+10-09 08:38:37.174  1171  1171 D vendor.qti.bluetooth@1.0-ibs_handler: DeviceWakeUp: Unblocked from waiting for FC, pthread_cond_timedwait ret = 0
+10-09 08:38:37.175  1171  4645 I vendor.qti.bluetooth@1.0-ibs_handler: ProcessIbsCmd: Received IBS_WAKE_IND: 0xFD
+10-09 08:38:37.175  1171  4645 I vendor.qti.bluetooth@1.0-ibs_handler: ProcessIbsCmd: Writing IBS_WAKE_ACK
+10-09 08:38:37.175  4009  4112 D BtGatt.GattService: onScanFilterParamsConfigured() - clientIf=8, status=0, action=1, availableSpace=57
+10-09 08:38:37.175  4009  4112 D BtGatt.ScanManager: callback done for scannerId - 8 status - 0
+10-09 08:38:37.176  4009  4112 D BtGatt.GattService: onScanFilterParamsConfigured() - clientIf=8, status=0, action=1, availableSpace=58
+10-09 08:38:37.176  4009  4112 D BtGatt.ScanManager: callback done for scannerId - 8 status - 0
+10-09 08:38:37.177  4009  4112 D BtGatt.GattService: onScanFilterParamsConfigured() - clientIf=8, status=0, action=1, availableSpace=59
+10-09 08:38:37.177  4009  4112 D BtGatt.ScanManager: callback done for scannerId - 8 status - 0
+10-09 08:38:37.177  4009  4112 D BtGatt.GattService: onScanFilterParamsConfigured() - clientIf=8, status=0, action=1, availableSpace=60
+10-09 08:38:37.177  4009  4112 D BtGatt.ScanManager: callback done for scannerId - 8 status - 0
+10-09 08:38:37.178  4009  4112 D BtGatt.GattService: onScanFilterParamsConfigured() - clientIf=8, status=0, action=1, availableSpace=61
+10-09 08:38:37.178  4009  4112 D BtGatt.ScanManager: callback done for scannerId - 8 status - 0
+10-09 08:38:37.179  4009  4112 D BtGatt.GattService: onScanFilterParamsConfigured() - clientIf=8, status=0, action=1, availableSpace=62
+10-09 08:38:37.179  4009  4112 D BtGatt.ScanManager: callback done for scannerId - 8 status - 0
+--------- beginning of system
+10-09 08:38:37.179  2348  4767 I WindowManagerService: Physical orientation not applied, rotation=0
+10-09 08:38:37.179  4009  4453 D BtGatt.ScanManager: configureRegularScanParams() - queue=1
+10-09 08:38:37.179  4009  4453 D BtGatt.ScanManager: configureRegularScanParams() - ScanSetting LE 1M Scan mode=0 ScanSetting LE Coded Scan mode=0 mLastConfiguredScanSettingLE1M=0 mLastConfiguredScanSettingLECoded=0 scanPhy=255
+10-09 08:38:37.179  4009  4453 D BtGatt.ScanManager: track LE scan event: callerPackage = [scannative], nativeScanMode = [13], behavior = [11], duration = [59923]
+10-09 08:38:37.180  4009  4453 D BtGatt.ScanManager: configureRegularScanParams - scanInterval LE 1M = 660 configureRegularScanParams - scanWindow LE 1M= 66 configureRegularScanParams - scanInterval LE Coded= 660 configureRegularScanParams - scanWindow LE Coded= 66
+10-09 08:38:37.180  4009  4453 D BtGatt.ScanManager: recordNativeStartScan() - mLastNativeScanParams = 13
+10-09 08:38:37.180  4009  4112 D BtGatt.GattService: onScanParamSetupCompleted : 0
+10-09 08:38:37.180  8530  8572 I AdrenoGLES-0: QUALCOMM build                   : 85d46827a0, Idf71a216d1
+10-09 08:38:37.180  8530  8572 I AdrenoGLES-0: Build Date                       : 04/24/22
+10-09 08:38:37.180  8530  8572 I AdrenoGLES-0: OpenGL ES Shader Compiler Version: EV031.36.08.09
+10-09 08:38:37.180  8530  8572 I AdrenoGLES-0: Local Branch                     : 
+10-09 08:38:37.180  8530  8572 I AdrenoGLES-0: Remote Branch                    : 
+10-09 08:38:37.180  8530  8572 I AdrenoGLES-0: Remote Branch                    : 
+10-09 08:38:37.180  8530  8572 I AdrenoGLES-0: Reconstruct Branch               : 
+10-09 08:38:37.180  8530  8572 I AdrenoGLES-0: Build Config                     : S P 12.1.1 AArch64
+10-09 08:38:37.180  8530  8572 I AdrenoGLES-0: Driver Path                      : /vendor/lib64/egl/libGLESv2_adreno.so
+10-09 08:38:37.180  8530  8572 I AdrenoGLES-0: Driver Version                   : 0615.0
+10-09 08:38:37.184  4047  4111 D HomeWallpaperRenderer: OFFSET  x: 1.0  y: 0.0
+10-09 08:38:37.186  8530  8572 I AdrenoGLES-0: PFP: 0x01730147, ME: 0x00000000
+10-09 08:38:37.192  8530  8572 W libc    : Access denied finding property "vendor.migl.debug"
+10-09 08:38:37.194  1234 29573 I SDM     : HWCColorModeStc::GetColorModeCount: Supported color mode count = 3
+10-09 08:38:37.194  1234 29573 I SDM     : HWCColorModeStc::GetColorModes: Color mode = 0 is supported
+10-09 08:38:37.194  1234 29573 I SDM     : HWCColorModeStc::GetColorModes: Color mode = 7 is supported
+10-09 08:38:37.194  1234 29573 I SDM     : HWCColorModeStc::GetColorModes: Color mode = 9 is supported
+10-09 08:38:37.194  1389  1690 D MI-SF   : addDolbyVisionHdr enter hdrTypes 2
+10-09 08:38:37.194  1389  1690 E MI-SF   : hdrTypes:2
+10-09 08:38:37.194  1389  1690 E MI-SF   : hdrTypes:3
+10-09 08:38:37.194  1389  1690 E MI-SF   : hdrTypes:4
+10-09 08:38:37.201  4047  4111 D HomeWallpaperRenderer: OFFSET  x: 1.0  y: 0.0
+10-09 08:38:37.201  8530  8572 D com.mangareade: MiuiProcessManagerServiceStub setSchedFifo
+10-09 08:38:37.201  8530  8572 I MiuiProcessManagerImpl: setSchedFifo pid:8530, mode:3
+10-09 08:38:37.213  2348  2565 D PerfImpl: perfFirstDrawBoost: com.mangareader, 8530, 1
+10-09 08:38:37.219  8530  8530 D DecorView[]: onWindowFocusChanged hasWindowFocus true
+10-09 08:38:37.219  8530  8530 I HandWritingStubImpl: refreshLastKeyboardType: 1
+10-09 08:38:37.219  8530  8530 I HandWritingStubImpl: getCurrentKeyboardType: 1
+10-09 08:38:37.220  2348  2561 I ActivityTaskManager: Displayed com.mangareader/.MainActivity: +209ms
+10-09 08:38:37.220  2348  2561 D PerfImpl: perfLockReleaseHandler: 201337
+10-09 08:38:37.221  4047  4111 D HomeWallpaperRenderer: OFFSET  x: 1.0  y: 0.0
+10-09 08:38:37.221  2348  4224 W InputManager-JNI: Input channel object 'c53e758 Splash Screen com.mangareader (client)' was disposed without first being removed with the input manager!
+10-09 08:38:37.221  5945  5945 V InputMethod: unbindInput(): binding=InputBinding{android.os.BinderProxy@8a34671 / uid 10084 / pid 4382} ic=InputConnectionWrapper{idHash=#e8f7eba mMissingMethods=}
+10-09 08:38:37.222  5945  5945 I bdmiime : onUnbindInput
+10-09 08:38:37.222  5945  5945 V InputMethodService: CALL: hideWindow
+10-09 08:38:37.223  1171  4645 I vendor.qti.bluetooth@1.0-ibs_handler: ProcessIbsCmd: Received IBS_SLEEP_IND: 0xFE
+10-09 08:38:37.225  8530  8530 I HandWritingStubImpl: isKeyboardTypeChanged: false
+10-09 08:38:37.225  8530  8530 I HandWritingStubImpl: isKeyboardTypeChanged: false
+10-09 08:38:37.225  8530  8530 I HandWritingStubImpl: getCurrentKeyboardType: 1
+10-09 08:38:37.225  5945  5945 V InputMethod: bindInput(): binding=InputBinding{android.os.BinderProxy@4a6f4c8 / uid 11762 / pid 8530} ic=InputConnectionWrapper{idHash=#45b5961 mMissingMethods=}
+10-09 08:38:37.226  5945  5945 V InputMethod: startInput(): editor=android.view.inputmethod.EditorInfo@226cc86
+10-09 08:38:37.226  5945  5945 V InputMethodService: CALL: doFinishInput
+10-09 08:38:37.226  5945  5945 D InlineSuggestionSessionController: notifyOnFinishInput
+10-09 08:38:37.226  5945  5945 V InputMethodService: CALL: onFinishInput
+10-09 08:38:37.226  5945  5945 D InlineSuggestionSessionController: notifyOnStartInput: com.mangareader, 0
+10-09 08:38:37.226  5945  5945 V InputMethodService: CALL: onStartInput
+10-09 08:38:37.226  5945  5945 I bdmiime : onStartInput called, com.mangareader restarting：false, fieldId： -1, inputType：0, imeOptions： 0
+10-09 08:38:37.229  4759  4996 D MiuiFastConnectService: handleMessage: MSG_START_BLE_SCAN mode: 0
+10-09 08:38:37.229  4759  4996 D BluetoothAdapter: isLeEnabled(): ON
+10-09 08:38:37.229  4759  4996 D BluetoothLeImp: isRoutingAllowedForScanStub
+10-09 08:38:37.231  4009  4952 D BtGatt.GattService: registerScanner() - UUID=03beebec-3a4f-4ad5-adf3-2acaf8aa3f89
+10-09 08:38:37.234  4009  4112 D BtGatt.GattService: onScannerRegistered() - UUID=03beebec-3a4f-4ad5-adf3-2acaf8aa3f89, scannerId=8, status=0
+10-09 08:38:37.234  4759 29751 D BluetoothLeScanner: onScannerRegistered() - status=0 scannerId=8 mScannerId=0
+10-09 08:38:37.237  5945  5945 I bdmiime : getSysParam -> orientation isPortrait = true
+10-09 08:38:37.238  5945  5945 I bdmiime : initGlobal bw:1220, bl:0, br:1220, sw:1220, sh:2576, 1220, rw:1220, rh:2712, as:3.6, ss: 3.0, pad:false,cd:0G26G8-61747F-949648-00BBFF-GBEG15-F3, way:0
+10-09 08:38:37.238  4009  4952 D BtGatt.GattService: start scan with filters. callingPackage: com.xiaomi.bluetooth
+10-09 08:38:37.243  4047  4111 D HomeWallpaperRenderer: OFFSET  x: 1.0  y: 0.0
+10-09 08:38:37.243  4009  4952 D BtGatt.GattService: enforcePrivilegedPermissionIfNeeded([BluetoothLeScanFilter [mDeviceName=null, mDeviceAddress=null, mUuid=null, mUuidMask=null, mServiceSolicitationUuid=null, mServiceSolicitationUuidMask=null, mServiceDataUuid=null, mServiceData=null, mServiceDataMask=null, mManufacturerId=911, mManufacturerData=[], mManufacturerDataMask=null, mOrganizationId=-1, mTDSFlags=-1, mTDSFlagsMask=-1, mWifiNANHash=null], mGroupBasedFiltering=false, BluetoothLeScanFilter [mDeviceName=null, mDeviceAddress=null, mUuid=null, mUuidMask=null, mServiceSolicitationUuid=null, mServiceSolicitationUuidMask=null, mServiceDataUuid=null, mServiceData=null, mServiceDataMask=null, mManufacturerId=65535, mManufacturerData=[77], mManufacturerDataMask=null, mOrganizationId=-1, mTDSFlags=-1, mTDSFlagsMask=-1, mWifiNANHash=null], mGroupBasedFiltering=false, BluetoothLeScanFilter [mDeviceName=null, mDeviceAddress=null, mUuid=null, mUuidMask=null, mServiceSolicitationUuid=null, mServiceSolicitationUuidMask=null, mServiceDataUuid=0000fe95-0000-1000-8000-00805f9b34fb, mServiceData=[], mServiceDataMask=null, mManufacturerId=-1, mManufacturerData=null, mManufacturerDataMask=null, mOrganizationId=-1, mTDSFlags=-1, mTDSFlagsMask=-1, mWifiNANHash=null], mGroupBasedFiltering=false, BluetoothLeScanFilter [mDeviceName=null, mDeviceAddress=null, mUuid=null, mUuidMask=null, mServiceSolicitationUuid=null, mServiceSolicitationUuidMask=null, mServiceDataUuid=0000fdaa-0000-1000-8000-00805f9b34fb, mServiceData=[], mServiceDataMask=null, mManufacturerId=-1, mManufacturerData=null, mManufacturerDataMask=null, mOrganizationId=-1, mTDSFlags=-1, mTDSFlagsMask=-1, mWifiNANHash=null], mGroupBasedFiltering=false, BluetoothLeScanFilter [mDeviceName=null, mDeviceAddress=null, mUuid=null, mUuidMask=null, mServiceSolicitationUuid=null, mServiceSolicitationUuidMask=null, mServiceDataUuid=0000fdee-0000-1000-8000-00805f9b34fb, mServiceData=[1, 1, 1], mServiceDataMask=null, mManufacturerId=-1, mManufacturerData=null, mManufacturerDataMask=null, mOrganizationId=-1, mTDSFlags=-1, mTDSFlagsMask=-1, mWifiNANHash=null], mGroupBasedFiltering=false, BluetoothLeScanFilter [mDeviceName=null, mDeviceAddress=null, mUuid=null, mUuidMask=null, mServiceSolicitationUuid=null, mServiceSolicitationUuidMask=null, mServiceDataUuid=0000fd2d-0000-1000-8000-00805f9b34fb, mServiceData=[], mServiceDataMask=null, mManufacturerId=-1, mManufacturerData=null, mManufacturerDataMask=null, mOrganizationId=-1, mTDSFlags=-1, mTDSFlagsMask=-1, mWifiNANHash=null], mGroupBasedFiltering=false])
+10-09 08:38:37.244  4009  4952 W BluetoothUtils: callingUid is Process.BLUETOOTH_UID
+10-09 08:38:37.251  4047  4111 D HomeWallpaperRenderer: OFFSET  x: 1.0  y: 0.0
+10-09 08:38:37.254  4009  4453 I BtGatt.ScanManager: msg.what = 9, msg.arg1 = 0(mMiuiControllingType)
+10-09 08:38:37.254  4009  4453 I BtGatt.ScanManager: msg.what = 0, msg.arg1 = 0(mMiuiControllingType)
+10-09 08:38:37.254  4009  4453 D BtGatt.ScanManager: handling starting scan
+10-09 08:38:37.254  4009  4453 D BtGatt.ScanManager: isAptXLowLatencyModeEnabled: false
+10-09 08:38:37.254  4009  4453 D BtGatt.ScanManager: track LE scan event: callerPackage = [com.xiaomi.bluetooth], scanMode = [0], reportDelayMillis = [0], behavior = [1], scannerId = [8], duration = [0]
+10-09 08:38:37.256  1171  4645 I vendor.qti.bluetooth@1.0-ibs_handler: ProcessIbsCmd: Received IBS_WAKE_IND: 0xFD
+10-09 08:38:37.256  1171  4645 I vendor.qti.bluetooth@1.0-ibs_handler: ProcessIbsCmd: Writing IBS_WAKE_ACK
+10-09 08:38:37.257  4009  4112 D BtGatt.GattService: onScanFilterEnableDisabled() - clientIf=8, status=0, action=1
+10-09 08:38:37.257  4009  4112 D BtGatt.ScanManager: callback done for scannerId - 8 status - 0
+10-09 08:38:37.257  4009  4453 D BtGatt.ScanManager: configureScanFilters rssiThreshold: -60, 15
+10-09 08:38:37.257  4009  4453 D BtGatt.ScanManager: Available Filter size: 59
+10-09 08:38:37.257  4009  4112 D BtGatt.GattService: onScanFilterConfig() - clientIf=8, action = 0 status = 0, filterType=0, availableSpace=0
+10-09 08:38:37.257  4009  4112 D BtGatt.ScanManager: callback done for scannerId - 8 status - 0
+10-09 08:38:37.257  4009  4453 D BtGatt.ScanManager: configureFilterParamter 500 10000 1 0, deliveryMode=0
+10-09 08:38:37.261  4009  4112 D BtGatt.GattService: onScanFilterParamsConfigured() - clientIf=8, status=0, action=0, availableSpace=61
+10-09 08:38:37.261  4009  4112 D BtGatt.ScanManager: callback done for scannerId - 8 status - 0
+10-09 08:38:37.262  4009  4112 D BtGatt.GattService: onScanFilterConfig() - clientIf=8, action = 0 status = 0, filterType=0, availableSpace=0
+10-09 08:38:37.262  4009  4112 D BtGatt.ScanManager: callback done for scannerId - 8 status - 0
+10-09 08:38:37.262  4009  4453 D BtGatt.ScanManager: configureFilterParamter 500 10000 1 0, deliveryMode=0
+10-09 08:38:37.263  4009  4112 D BtGatt.GattService: onScanFilterParamsConfigured() - clientIf=8, status=0, action=0, availableSpace=60
+10-09 08:38:37.263  4009  4112 D BtGatt.ScanManager: callback done for scannerId - 8 status - 0
+10-09 08:38:37.264  4009  4112 D BtGatt.GattService: onScanFilterConfig() - clientIf=8, action = 0 status = 0, filterType=0, availableSpace=0
+10-09 08:38:37.264  4009  4112 D BtGatt.ScanManager: callback done for scannerId - 8 status - 0
+10-09 08:38:37.264  4009  4453 D BtGatt.ScanManager: configureFilterParamter 500 10000 1 0, deliveryMode=0
+10-09 08:38:37.267  4047  4111 D HomeWallpaperRenderer: OFFSET  x: 1.0  y: 0.0
+10-09 08:38:37.269   849   849 E KeymasterUtils: rsp_header->status: -28
+10-09 08:38:37.269   849   849 E KeyMasterHalDevice: abort_operation
+10-09 08:38:37.269   849   849 E KeyMasterHalDevice: ret: -28
+10-09 08:38:37.269   849   849 E KeymasterUtils: rsp_header->status: -28
+10-09 08:38:37.269   849   849 E KeyMasterHalDevice: abort_operation
+10-09 08:38:37.269   849   849 E KeyMasterHalDevice: ret: -28
+10-09 08:38:37.269  4009  4112 D BtGatt.GattService: onScanFilterParamsConfigured() - clientIf=8, status=0, action=0, availableSpace=59
+10-09 08:38:37.270  4009  4112 D BtGatt.ScanManager: callback done for scannerId - 8 status - 0
+10-09 08:38:37.271  4009  4112 D BtGatt.GattService: onScanFilterConfig() - clientIf=8, action = 0 status = 0, filterType=0, availableSpace=0
+10-09 08:38:37.271  4009  4112 D BtGatt.ScanManager: callback done for scannerId - 8 status - 0
+10-09 08:38:37.272  4009  4453 D BtGatt.ScanManager: configureFilterParamter 500 10000 1 0, deliveryMode=0
+10-09 08:38:37.274  4009  4112 D BtGatt.GattService: onScanFilterParamsConfigured() - clientIf=8, status=0, action=0, availableSpace=58
+10-09 08:38:37.275  4009  4112 D BtGatt.ScanManager: callback done for scannerId - 8 status - 0
+10-09 08:38:37.276  8530  8615 D ArchiveEngine: listDirFast: 2 items from /storage/emulated/0/浩克下载/Download
+10-09 08:38:37.276  4009  4112 D BtGatt.GattService: onScanFilterConfig() - clientIf=8, action = 0 status = 0, filterType=0, availableSpace=0
+10-09 08:38:37.276  4009  4112 D BtGatt.ScanManager: callback done for scannerId - 8 status - 0
+10-09 08:38:37.276  4009  4453 D BtGatt.ScanManager: configureFilterParamter 500 10000 1 0, deliveryMode=0
+10-09 08:38:37.278  4009  4112 D BtGatt.GattService: onScanFilterParamsConfigured() - clientIf=8, status=0, action=0, availableSpace=57
+10-09 08:38:37.278  4009  4112 D BtGatt.ScanManager: callback done for scannerId - 8 status - 0
+10-09 08:38:37.281  4009  4112 D BtGatt.GattService: onScanFilterConfig() - clientIf=8, action = 0 status = 0, filterType=0, availableSpace=0
+10-09 08:38:37.281  4009  4112 D BtGatt.ScanManager: callback done for scannerId - 8 status - 0
+10-09 08:38:37.283  4009  4453 D BtGatt.ScanManager: configureFilterParamter 500 10000 1 0, deliveryMode=0
+10-09 08:38:37.283  4047  4111 D HomeWallpaperRenderer: OFFSET  x: 1.0  y: 0.0
+10-09 08:38:37.286  4009  4112 D BtGatt.GattService: onScanFilterParamsConfigured() - clientIf=8, status=0, action=0, availableSpace=56
+10-09 08:38:37.286  4009  4112 D BtGatt.ScanManager: callback done for scannerId - 8 status - 0
+10-09 08:38:37.286  4009  4453 D BtGatt.ScanManager: configureRegularScanParams() - queue=2
+10-09 08:38:37.286  4009  4453 D BtGatt.ScanManager: configureRegularScanParams() - ScanSetting LE 1M Scan mode=0 ScanSetting LE Coded Scan mode=0 mLastConfiguredScanSettingLE1M=0 mLastConfiguredScanSettingLECoded=0 scanPhy=255
+10-09 08:38:37.287  4009  4453 D BtGatt.ScanManager: track LE scan event: callerPackage = [scannative], nativeScanMode = [13], behavior = [11], duration = [107]
+10-09 08:38:37.287  4009  4453 D BtGatt.ScanManager: configureRegularScanParams - scanInterval LE 1M = 660 configureRegularScanParams - scanWindow LE 1M= 66 configureRegularScanParams - scanInterval LE Coded= 660 configureRegularScanParams - scanWindow LE Coded= 66
+10-09 08:38:37.287  4009  4453 D BtGatt.ScanManager: recordNativeStartScan() - mLastNativeScanParams = 13
+10-09 08:38:37.287  4009  4112 D BtGatt.GattService: onScanParamSetupCompleted : 0
+10-09 08:38:37.288  8530  8610 D ArchiveEngine: listDirFast: 4 items from /storage/emulated/0/浩克下载/动态
+10-09 08:38:37.299  4047  4111 D HomeWallpaperRenderer: OFFSET  x: 1.0  y: 0.0
+10-09 08:38:37.312 24604 24781 V MSF.C.MSFCore[@PS]: [Event] MSFPacketStatistics.cpp(300)::DoCheckRequestTimeout->current rtts:98.396
+10-09 08:38:37.316  4047  4111 D HomeWallpaperRenderer: OFFSET  x: 1.0  y: 0.0
+10-09 08:38:37.329  4382  4382 D Launcher_UnlockAnimationStateMachine: mResetIdleStateRunnable
+10-09 08:38:37.331  1171  4645 I vendor.qti.bluetooth@1.0-ibs_handler: ProcessIbsCmd: Received IBS_SLEEP_IND: 0xFE
+10-09 08:38:37.334  4047  4111 D HomeWallpaperRenderer: OFFSET  x: 1.0  y: 0.0
+10-09 08:38:37.351  4047  4111 D HomeWallpaperRenderer: OFFSET  x: 1.0  y: 0.0
+10-09 08:38:37.356  8530  8610 D ArchiveEngine: listDirFast: 0 items from /storage/emulated/0/浩克下载/动态/[DyDy_cos] Animated Collection (WEBP) [AI Generated]
+10-09 08:38:37.358  8530  8563 D ArchiveEngine: listDirFast: 0 items from /storage/emulated/0/浩克下载/动态/My realistic AI animated 16 [ai generated]
+10-09 08:38:37.364  4047  4111 D HomeWallpaperRenderer: OFFSET  x: 1.0  y: 0.0
+10-09 08:38:37.381  8530  8563 D ArchiveEngine: listDirFast: 0 items from /storage/emulated/0/浩克下载/动态/My realistic AI animated collection 5 [ai generated]
+10-09 08:38:37.383  4047  4111 D HomeWallpaperRenderer: OFFSET  x: 1.0  y: 0.0
+10-09 08:38:37.386  8530  8562 I SmbScanner: root raw listing: A, [Comic][CAT__S.EYE][貓之眼][北条司][HK]Vol.01.zip, [大逃殺 典藏版][田口雅之][長鴻]Vol_14.zip, [航海王 总集篇][尾田荣一郎][Vol.01 浪漫的开始][天津人民美术].zip, 新建文本文档.html, 金田一少年之事件簿01.mobi
+10-09 08:38:37.395  8530  8563 D ArchiveEngine: listDirFast: 0 items from /storage/emulated/0/浩克下载/动态/My realistic AI animated collection 7 [ai generated]
+10-09 08:38:37.397  4047  4111 D HomeWallpaperRenderer: OFFSET  x: 1.0  y: 0.0
+10-09 08:38:37.399  8530  8559 D ArchiveEngine: listDirFast: 2 items from /storage/emulated/0/浩克下载/新文件夹
+10-09 08:38:37.413  2348  2564 W TaskSnapshot_CInjector: couldPersist()... false.
+10-09 08:38:37.414  4047  4111 D HomeWallpaperRenderer: OFFSET  x: 1.0  y: 0.0
+10-09 08:38:37.430  4047  4111 D HomeWallpaperRenderer: OFFSET  x: 1.0  y: 0.0
+10-09 08:38:37.447  4047  4111 D HomeWallpaperRenderer: OFFSET  x: 1.0  y: 0.0
+10-09 08:38:37.464  4047  4111 D HomeWallpaperRenderer: OFFSET  x: 1.0  y: 0.0
+10-09 08:38:37.479  4047  4111 D HomeWallpaperRenderer: OFFSET  x: 1.0  y: 0.0
+10-09 08:38:37.496  4047  4111 D HomeWallpaperRenderer: OFFSET  x: 1.0  y: 0.0
+10-09 08:38:37.501  8530  8562 I SmbScanner: scan done: discovered=5 inserted=0 pruned=0 skippedDirs=0 paths=[smb:2:test2/A, smb:2:test2/[Comic][CAT__S.EYE][貓之眼][北条司][HK]Vol.01.zip, smb:2:test2/[大逃殺 典藏版][田口雅之][長鴻]Vol_14.zip, smb:2:test2/[航海王 总集篇][尾田荣一郎][Vol.01 浪漫的开始][天津人民美术].zip, smb:2:test2/金田一少年之事件簿01.mobi]
+10-09 08:38:37.513  4047  4111 D HomeWallpaperRenderer: OFFSET  x: 1.0  y: 0.0
+10-09 08:38:37.529  4047  4111 D HomeWallpaperRenderer: OFFSET  x: 1.0  y: 0.0
+10-09 08:38:37.545  4047  4111 D HomeWallpaperRenderer: OFFSET  x: 1.0  y: 0.0
+10-09 08:38:37.562  4047  4111 D HomeWallpaperRenderer: OFFSET  x: 1.0  y: 0.0
+10-09 08:38:37.579  4047  4111 D HomeWallpaperRenderer: OFFSET  x: 1.0  y: 0.0
+10-09 08:38:37.595  4047  4111 D HomeWallpaperRenderer: OFFSET  x: 1.0  y: 0.0
+10-09 08:38:37.611  4382  4382 W DimLayer: removeDimLayer
+10-09 08:38:37.611  4047  4111 D HomeWallpaperRenderer: OFFSET  x: 1.0  y: 0.0
+10-09 08:38:37.612  4382  4382 E LauncherAnimationRunner: finish: mFinishRunnable.run
+10-09 08:38:37.616  1110  5773 E traffic : traffic monitor has been disabled or argment error.
+10-09 08:38:37.618  4382  4382 D Launcher.Lifecycle: onStop:UserHandle{0},65dd7e9,false
+10-09 08:38:37.618  4382  4382 D LauncherClient.Service: service already disconnected:com.miui.newhome
+10-09 08:38:37.618  4382  4382 W Launcher.Workspace: MiuiHome:onSaveInstanceState
+10-09 08:38:37.618  4382  4382 W ScreenView_Workspace: MiuiHome:onSaveInstanceState
+10-09 08:38:37.618  6951  6991 D LauncherOverlay: setActivityState:0
+10-09 08:38:37.619  4382  4382 W ScreenView_HotSeats: MiuiHome:onSaveInstanceState
+10-09 08:38:37.619  4382  4382 W ScreenView_RecommendAppsThumbnailView: MiuiHome:onSaveInstanceState
+10-09 08:38:37.619  4382  4382 W ScreenView_WorkspaceThumbnailView: MiuiHome:onSaveInstanceState
+10-09 08:38:37.619  4382  4382 W ScreenView_EditingEntryThumbnailView: MiuiHome:onSaveInstanceState
+10-09 08:38:37.619  4382  4382 W ViewPager: MiuiHome:onSaveInstanceState
+10-09 08:38:37.619  4382  4382 W ScreenView_DeleteIconContainer: MiuiHome:onSaveInstanceState
+10-09 08:38:37.620  2348  3561 I MiuiNetworkPolicyTrafficLimit: updateWhiteListUidForMobileTraffic uid=10084,add=false
+10-09 08:38:37.620  2348  3561 I MiuiNetworkPolicyTrafficLimit: updateWhiteListUidForMobileTraffic uid=10074,add=false
+10-09 08:38:37.622  2348  3561 D MiuiNetworkPolicyTrafficLimit: updateWhiteListUidForMobileTraffic rst=true
+10-09 08:38:37.623  2348  3561 D MiuiNetworkPolicyTrafficLimit: updateWhiteListUidForMobileTraffic rst=true
+10-09 08:38:37.623  8689  9244 I MilletUtils: not find packageName :com.miui.huanji
+10-09 08:38:37.623  8689  9244 D MilletPolicy: HasForegroundService or audio pkgName=tv.danmaku.bili
+10-09 08:38:37.630  2348  4767 I WindowManagerService: Physical orientation not applied, rotation=0
+10-09 08:38:37.632  2348  4081 W ActivityTaskManager: Skip mGoingToSleepWakeLock release for sleepingOrShuttingDown
+10-09 08:38:37.635  2348  4767 I WindowManagerService: Physical orientation not applied, rotation=0
+10-09 08:38:37.635  2652  2695 D VA_ActivityUtils: getTopActivity packageName:ComponentInfo{com.mangareader/com.mangareader.MainActivity}
+10-09 08:38:37.635  2652  2695 D VA_AppStateWatcher: currentPkgName:com.mangareader, lastPkgName:com.mangareader
+10-09 08:38:37.635  2652  2695 E VA_AppStateWatcher: handleMessage: return!
+10-09 08:38:37.636  6951  6951 D LauncherOverlay.Window: onStop
+10-09 08:38:37.646  1389  1389 D MI-SF   : Launcher Changed hasLauncher=0
+10-09 08:38:37.805  8530  8613 I WebDavScanner: root raw listing: Backups, 文件夹, [Comic][CAT__S.EYE][貓之眼][北条司][HK]Vol.01.zip, [Kmoe][廢淵戰鬼GACHIAKUTA]卷01.mobi
+10-09 08:38:38.278  8689  8982 I DisplayFrameSetting: homeToAppEnd pkg=com.mangareader
+10-09 08:38:38.290  1171  4654 I vendor.qti.bluetooth@1.0-ibs_handler: DeviceSleep: TX Awake, Sending SLEEP_IND
+10-09 08:38:38.290  1171  4654 D vendor.qti.bluetooth@1.0-ibs_handler: SerialClockVote: vote for UART CLK OFF
+10-09 08:38:38.305  8530  8559 I WebDavScanner: scan done: discovered=3 inserted=0 pruned=0 skippedDirs=0 paths=[webdav:1:文件夹, webdav:1:[Comic][CAT__S.EYE][貓之眼][北条司][HK]Vol.01.zip, webdav:1:[Kmoe][廢淵戰鬼GACHIAKUTA]卷01.mobi]
+10-09 08:38:38.353 24604 24781 V MSF.C.MSFCore[@PS]: [Event] MSFPacketStatistics.cpp(300)::DoCheckRequestTimeout->current rtts:98.396
+10-09 08:38:38.440  1171  4469 D vendor.qti.bluetooth@1.0-wake_lock: Release wakelock is released 
+10-09 08:38:39.043 24604 24806 V MSF.C.MSFCore[@DD]: [Event] MSFDDNetworkEngine.cpp(179)::onTcpInfoUpdate->onTcpInfoUpdate:
+10-09 08:38:39.043 24604 24806 V MSF.C.MSFCore[@DD]:                      tcpi_state = 1;
+10-09 08:38:39.043 24604 24806 V MSF.C.MSFCore[@DD]:                      tcpi_ca_state = 0;
+10-09 08:38:39.043 24604 24806 V MSF.C.MSFCore[@DD]:                      tcpi_rto = 240 ms;
+10-09 08:38:39.043 24604 24806 V MSF.C.MSFCore[@DD]:                      tcpi_unacked = 0;
+10-09 08:38:39.043 24604 24806 V MSF.C.MSFCore[@DD]:                      tcpi_rttcur = 36 ms;
+10-09 08:38:39.043 24604 24806 V MSF.C.MSFCore[@DD]:                      tcpi_rttvar = 23 ms;
+10-09 08:38:39.043 24604 24806 V MSF.C.MSFCore[@DD]:                      tcpi_bytes_retrans = 0 bytes;
+10-09 08:38:39.043 24604 24806 V MSF.C.MSFCore[@DD]:                      tcpi_notsent_bytes = 0 bytes;
+10-09 08:38:39.043 24604 24806 V MSF.C.MSFCore[@DD]:                      tcpi_bytes_received = 8470 bytes;
+10-09 08:38:39.043 24604 24806 V MSF.C.MSFCore[@DD]:                      tcpi_bytes_sent = 1908 bytes 
+10-09 08:38:39.043 24604 24806 V MSF.C.MSFCore[@DD]:                      tcpi_last_data_sent = 122968 ms 
+10-09 08:38:39.043 24604 24806 V MSF.C.MSFCore[@DD]:                      tcpi_last_data_recv = 109476 ms 
+10-09 08:38:39.067  2348  3622 D SchedBoost: stopBoostInternal:
+10-09 08:38:39.067  2348  3622 D SchedBoost: ready to stop boost
+10-09 08:38:39.068  2348  3622 D SchedBoost: stopBoostInternal:
+10-09 08:38:39.068  2348  3622 D SchedBoost: ready to stop boost
+10-09 08:38:39.123  8530  8559 I DedupBooks: 无重复记录（书库 25 本）
+10-09 08:38:39.219 24604 25319 E [FEKit_]: high_reliability_reporter.cpp:51 HighReliabilityReporter doReportTask
+10-09 08:38:39.393 24604 24781 V MSF.C.MSFCore[@PS]: [Event] MSFPacketStatistics.cpp(300)::DoCheckRequestTimeout->current rtts:98.396
+10-09 08:38:39.514  1285 24848 I QC2Comp : [hevcDLowLat_1208] Stats: Pending(10) i/p-done(6) Works: Q: 7004/Done 6995|Work-Rate: Q(0.0/s Avg=1.5/s) Done(0.000/s Avg=1.459/s)| Stream: 14.93fps 1.6Mbps
+10-09 08:38:39.514  1285 24848 I QC2Comp : [hevcDLowLat_1208] Mem-usage:  [In-1D: 5 bufs 42.188 MB] [1D-2271: 4 bufs 0.062 MB] [2D-2272: 23 bufs 56.961 MB] [1D-2271: 15 bufs 0.234 MB] | Total: 99.445 MB
+10-09 08:38:40.419  4328  4328 D DynamicService: PhoneStateListener.onDataActivity: direction=3
+10-09 08:38:40.419  4328  4328 D DynamicService: modem or radio power state change,messageType: 128 state: 3
+10-09 08:38:40.419  4328  4328 D DynamicService: listeners is null or md controller is disable!!!
+10-09 08:38:40.422 24604 24781 V MSF.C.MSFCore[@PS]: [Event] MSFPacketStatistics.cpp(300)::DoCheckRequestTimeout->current rtts:98.396
+10-09 08:38:41.432  4328  4328 D DynamicService: PhoneStateListener.onDataActivity: direction=0
+10-09 08:38:41.433  4328  4328 D DynamicService: modem or radio power state change,messageType: 128 state: 0
+10-09 08:38:41.433  4328  4328 D DynamicService: listeners is null or md controller is disable!!!
+10-09 08:38:41.461 24604 24781 V MSF.C.MSFCore[@PS]: [Event] MSFPacketStatistics.cpp(300)::DoCheckRequestTimeout->current rtts:98.396
+10-09 08:38:42.150 24604 24806 V MSF.C.MSFCore[@DD]: [Event] MSFDDNetworkEngine.cpp(179)::onTcpInfoUpdate->onTcpInfoUpdate:
+10-09 08:38:42.150 24604 24806 V MSF.C.MSFCore[@DD]:                      tcpi_state = 1;
+10-09 08:38:42.150 24604 24806 V MSF.C.MSFCore[@DD]:                      tcpi_ca_state = 0;
+10-09 08:38:42.150 24604 24806 V MSF.C.MSFCore[@DD]:                      tcpi_rto = 240 ms;
+10-09 08:38:42.150 24604 24806 V MSF.C.MSFCore[@DD]:                      tcpi_unacked = 0;
+10-09 08:38:42.150 24604 24806 V MSF.C.MSFCore[@DD]:                      tcpi_rttcur = 36 ms;
+10-09 08:38:42.150 24604 24806 V MSF.C.MSFCore[@DD]:                      tcpi_rttvar = 23 ms;
+10-09 08:38:42.150 24604 24806 V MSF.C.MSFCore[@DD]:                      tcpi_bytes_retrans = 0 bytes;
+10-09 08:38:42.150 24604 24806 V MSF.C.MSFCore[@DD]:                      tcpi_notsent_bytes = 0 bytes;
+10-09 08:38:42.150 24604 24806 V MSF.C.MSFCore[@DD]:                      tcpi_bytes_received = 8470 bytes;
+10-09 08:38:42.150 24604 24806 V MSF.C.MSFCore[@DD]:                      tcpi_bytes_sent = 1908 bytes 
+10-09 08:38:42.150 24604 24806 V MSF.C.MSFCore[@DD]:                      tcpi_last_data_sent = 126072 ms 
+10-09 08:38:42.150 24604 24806 V MSF.C.MSFCore[@DD]:                      tcpi_last_data_recv = 112580 ms 
+10-09 08:38:42.501 24604 24781 V MSF.C.MSFCore[@PS]: [Event] MSFPacketStatistics.cpp(300)::DoCheckRequestTimeout->current rtts:98.396
+10-09 08:38:42.637  8689  9244 I MilletUtils: not find packageName :com.miui.huanji
+10-09 08:38:42.638  8689  9244 D MilletPolicy: HasForegroundService or audio pkgName=tv.danmaku.bili
+10-09 08:38:42.742  8530  8657 D ProfileInstaller: Skipping profile installation for com.mangareader
+10-09 08:38:43.539 24604 24781 V MSF.C.MSFCore[@PS]: [Event] MSFPacketStatistics.cpp(300)::DoCheckRequestTimeout->current rtts:98.396
+10-09 08:38:44.515  1285 24848 I QC2Comp : [hevcDLowLat_1208] Stats: Pending(10) i/p-done(6) Works: Q: 7004/Done 6995|Work-Rate: Q(0.0/s Avg=1.5/s) Done(0.000/s Avg=1.458/s)| Stream: 14.93fps 1.6Mbps
+10-09 08:38:44.515  1285 24848 I QC2Comp : [hevcDLowLat_1208] Mem-usage:  [In-1D: 5 bufs 42.188 MB] [1D-2271: 4 bufs 0.062 MB] [2D-2272: 23 bufs 56.961 MB] [1D-2271: 15 bufs 0.234 MB] | Total: 99.445 MB
+10-09 08:38:44.579 24604 24781 V MSF.C.MSFCore[@PS]: [Event] MSFPacketStatistics.cpp(300)::DoCheckRequestTimeout->current rtts:98.396
+10-09 08:38:44.908  6188 10751 D SLM-SRV-SLAService: checktemp temperature = 35588 temperature_average = 35840 isPerformanceMode = false thermal_enable_slm = true
+10-09 08:38:44.927 22267 22589 I cr_CronetUrlRequestContext: destroyNativeStreamLocked org.chromium.net.impl.CronetBidirectionalStream@409e778
+10-09 08:38:44.984  2076  2089 I mstatdaemon: Entering time loop
+10-09 08:38:44.984  2076  2089 I mstatdaemon: t = 1791506324
+10-09 08:38:44.984  2076  2089 I mstatdaemon: translated_t = 1475516324
+10-09 08:38:44.984  2076  2089 I mstat_log: mstatcommitLog log_alloc() failed
+10-09 08:38:45.110  8530  8556 I com.mangareade: ProcessProfilingInfo new_methods=0 is saved saved_to_disk=0 resolve_classes_delay=8000
+10-09 08:38:45.156  2348  2590 W ActivityManager: Unable to start service Intent { cmp=com.miui.powerkeeper/.perfshielder.PerfShielderStatisticsService } U=0: not found
+10-09 08:38:45.245 24604 24806 V MSF.C.MSFCore[@DD]: [Event] MSFDDNetworkEngine.cpp(179)::onTcpInfoUpdate->onTcpInfoUpdate:
+10-09 08:38:45.245 24604 24806 V MSF.C.MSFCore[@DD]:                      tcpi_state = 1;
+10-09 08:38:45.245 24604 24806 V MSF.C.MSFCore[@DD]:                      tcpi_ca_state = 0;
+10-09 08:38:45.245 24604 24806 V MSF.C.MSFCore[@DD]:                      tcpi_rto = 240 ms;
+10-09 08:38:45.245 24604 24806 V MSF.C.MSFCore[@DD]:                      tcpi_unacked = 0;
+10-09 08:38:45.245 24604 24806 V MSF.C.MSFCore[@DD]:                      tcpi_rttcur = 36 ms;
+10-09 08:38:45.245 24604 24806 V MSF.C.MSFCore[@DD]:                      tcpi_rttvar = 23 ms;
+10-09 08:38:45.245 24604 24806 V MSF.C.MSFCore[@DD]:                      tcpi_bytes_retrans = 0 bytes;
+10-09 08:38:45.245 24604 24806 V MSF.C.MSFCore[@DD]:                      tcpi_notsent_bytes = 0 bytes;
+10-09 08:38:45.245 24604 24806 V MSF.C.MSFCore[@DD]:                      tcpi_bytes_received = 8470 bytes;
+10-09 08:38:45.245 24604 24806 V MSF.C.MSFCore[@DD]:                      tcpi_bytes_sent = 1908 bytes 
+10-09 08:38:45.245 24604 24806 V MSF.C.MSFCore[@DD]:                      tcpi_last_data_sent = 129168 ms 
+10-09 08:38:45.245 24604 24806 V MSF.C.MSFCore[@DD]:                      tcpi_last_data_recv = 115676 ms 
+10-09 08:38:45.619 24604 24781 V MSF.C.MSFCore[@PS]: [Event] MSFPacketStatistics.cpp(300)::DoCheckRequestTimeout->current rtts:98.396
+10-09 08:38:45.767 24604 24781 V MSF.C.MSFCore[@DD]: [Event] MSFQuicConnect.cpp(1096)::operator()->[quic] connId:11, isSideWayConn:1, writeBufferSize:0, connection stats:{"address_validated_via_decrypting_packet":false,"address_validated_via_token":false,"blocked_frames_received":0,"blocked_frames_sent":0,"bytes_received":14341,"bytes_retransmitted":48,"bytes_sent":15052,"bytes_spuriously_retransmitted":0,"cid":"fad670f138e0669a","close_code":-1,"close_msg":"","close_type":-1,"commit_id":"b4acf55a","connect_duration_ms":78,"create_stream_count":0,"crypto_retransmit_count":0,"egress_mtu":1350,"estimated_bandwidth":"5694.70 kbits/s (711.84 kbytes/s)","estimated_bandwidth_kbytes":711,"handshake_count":2,"handshake_in_progress_count":0,"hit_disk_cache":false,"hit_memory_cache":true,"host":"111.206.149.85","ingress_mtu":1350,"key_update_count":0,"library_version":"0.7.0","loss_timeout_count":0,"max_egress_mtu":1350,"max_sequence_reordering":0,"max_time_reordering_us":0,"min_rtt_us":15817,"num_ack_aggregation_epochs":0,"num_coalesced_p_processed":0,"num_coalesced_p_received":0,"num_conn_probing_recd":0,"num_failed_auth_packets_recd":0,"p_spuriously_detected_lost":0,"p_spuriously_retransmitted":0,"packets_discarded":0,"packets_dropped":0,"packets_lost":0,"packets_processed":44,"packets_received":44,"packets_reordered":0,"packets_retransmitted":1,"packets_sent":34,"ping_frames_sent":7,"pto_count":0,"reorder_timeout_count":0,"retry_packet_processed":false,"rto_count":0,"scene_id":0,"sent_legacy_v_encapsulated_p":0,"server_ip":"111.206.149.85","slowstart_bytes_lost":0,"slowstart_bytes_sent":0,"slowstart_count":0,"slowstart_duration":0,"slowstart_num_rtts":0,"slowstart_packets_lost":0,"slowstart_packets_sent":34,"srtt_us":65633,"stream_bytes_received":11291,"stream_bytes_sent":0,"tcp_loss_events":0,"tlp_count":0,"tls_0_rtt_p_recd_af_dis_decry":0,"total_loss_detection_rsp_time":0.0,"undecry_p_recd_bf_hs_complete":0}
+10-09 08:38:46.156  6443  8122 D TrafficManageService: onReceive: intent.action = com.android.server.action.NETWORK_STATS_UPDATED
+10-09 08:38:46.166  2348  3559 W NetworkPolicy: shared quota unsupported; generating rule for each iface
+10-09 08:38:46.176  2348  2387 W System  : A resource failed to call release. 
+10-09 08:38:46.177  2348  2387 W System  : A resource failed to call close. 
+10-09 08:38:46.177  2348  2387 W System  : A resource failed to call close. 
+10-09 08:38:46.177  2348  2387 W System  : A resource failed to call close. 
+10-09 08:38:46.459 24677 24677 D MetaFarmWidgetUpdateManager: sendWidgetRequest hasWidget:false, source:3, isLogin:true
+10-09 08:38:46.460 24677 24677 D MetaFarmWidgetUpdateManager: sendRequestUpdateMessage
+10-09 08:38:46.656 24604 24781 V MSF.C.MSFCore[@PS]: [Event] MSFPacketStatistics.cpp(300)::DoCheckRequestTimeout->current rtts:98.396
+10-09 08:38:47.647  8689  9244 I MilletUtils: not find packageName :com.miui.huanji
+10-09 08:38:47.648  8689  9244 D MilletPolicy: HasForegroundService or audio pkgName=tv.danmaku.bili
+10-09 08:38:47.694 24604 24781 V MSF.C.MSFCore[@PS]: [Event] MSFPacketStatistics.cpp(300)::DoCheckRequestTimeout->current rtts:98.396
+10-09 08:38:47.771   922  8608 I keystore2: keystore2::watchdog: Watchdog thread idle -> terminating. Have a great day.
+10-09 08:38:48.364 24604 24806 V MSF.C.MSFCore[@DD]: [Event] MSFDDNetworkEngine.cpp(179)::onTcpInfoUpdate->onTcpInfoUpdate:
+10-09 08:38:48.364 24604 24806 V MSF.C.MSFCore[@DD]:                      tcpi_state = 1;
+10-09 08:38:48.364 24604 24806 V MSF.C.MSFCore[@DD]:                      tcpi_ca_state = 0;
+10-09 08:38:48.364 24604 24806 V MSF.C.MSFCore[@DD]:                      tcpi_rto = 240 ms;
+10-09 08:38:48.364 24604 24806 V MSF.C.MSFCore[@DD]:                      tcpi_unacked = 0;
+10-09 08:38:48.364 24604 24806 V MSF.C.MSFCore[@DD]:                      tcpi_rttcur = 36 ms;
+10-09 08:38:48.364 24604 24806 V MSF.C.MSFCore[@DD]:                      tcpi_rttvar = 23 ms;
+10-09 08:38:48.364 24604 24806 V MSF.C.MSFCore[@DD]:                      tcpi_bytes_retrans = 0 bytes;
+10-09 08:38:48.364 24604 24806 V MSF.C.MSFCore[@DD]:                      tcpi_notsent_bytes = 0 bytes;
+10-09 08:38:48.364 24604 24806 V MSF.C.MSFCore[@DD]:                      tcpi_bytes_received = 8470 bytes;
+10-09 08:38:48.364 24604 24806 V MSF.C.MSFCore[@DD]:                      tcpi_bytes_sent = 1908 bytes 
+10-09 08:38:48.364 24604 24806 V MSF.C.MSFCore[@DD]:                      tcpi_last_data_sent = 132288 ms 
+10-09 08:38:48.364 24604 24806 V MSF.C.MSFCore[@DD]:                      tcpi_last_data_recv = 118796 ms 
+10-09 08:38:48.735 24604 24781 V MSF.C.MSFCore[@PS]: [Event] MSFPacketStatistics.cpp(300)::DoCheckRequestTimeout->current rtts:98.396
+10-09 08:38:49.515  1285 24848 I QC2Comp : [hevcDLowLat_1208] Stats: Pending(10) i/p-done(6) Works: Q: 7004/Done 6995|Work-Rate: Q(0.0/s Avg=1.5/s) Done(0.000/s Avg=1.456/s)| Stream: 14.93fps 1.6Mbps
+10-09 08:38:49.516  1285 24848 I QC2Comp : [hevcDLowLat_1208] Mem-usage:  [In-1D: 5 bufs 42.188 MB] [1D-2271: 4 bufs 0.062 MB] [2D-2272: 23 bufs 56.961 MB] [1D-2271: 15 bufs 0.234 MB] | Total: 99.445 MB
+10-09 08:38:49.772 24604 24781 V MSF.C.MSFCore[@PS]: [Event] MSFPacketStatistics.cpp(300)::DoCheckRequestTimeout->current rtts:98.396
+10-09 08:38:49.811 24677  3175 I SmartThreadExecutor: handleMessage: start check 0
+10-09 08:38:49.811 24677  3175 I SmartThreadExecutor: handleMessage: check end 0 -9 false
+10-09 08:38:50.068  2348  3121 W ProcessStats: Tracking association SourceState{44b5e11 com.miui.powerkeeper/1000 BTopFgs #301760} whose proc state 2 is better than process ProcessState{fe3c3ac com.miui.securitycenter.remote/1000 pkg=com.miui.securitycenter} proc state 3 (323 skipped)

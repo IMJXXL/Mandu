@@ -2680,21 +2680,22 @@ class ArchiveEngine(private val ctx: Context) {
                         var missCount = 0
                         for ((spineIdx, spineItem) in epubResult.spineItems.withIndex()) {
                             val htmlHref = com.mangareader.zip.EpubParser.resolveHref(epubResult.opfDir, spineItem.href)
-                            val imgSrc = htmlToImgMap[htmlHref] ?: htmlToImgMap[htmlHref.substringAfterLast("/")]
-                            if (imgSrc != null) {
-                                var normalizedImg: String = imgSrc!!
-                                while (normalizedImg.startsWith("../") || normalizedImg.startsWith("./")) {
-                                    normalizedImg = if (normalizedImg.startsWith("../")) normalizedImg.substring(3) else normalizedImg.substring(2)
-                                }
-                                if (normalizedImg.startsWith("/")) normalizedImg = normalizedImg.substring(1)
-                                // O(1) HashMap 查找
-                                val match = nameByPath[normalizedImg] ?: nameByPath[normalizedImg.substringAfterLast("/")]
-                                if (match != null) {
-                                    spineOrderedNames.add(match)
-                                    matchCount++
-                                } else {
-                                    missCount++
-                                    if (missCount <= 5) Log.d(TAG, "scanEpub: MISS spine[$spineIdx] href=$htmlHref imgSrc=$normalizedImg not in allNames(${allNames.size})")
+                            val imgSrcs = htmlToImgMap[htmlHref] ?: htmlToImgMap[htmlHref.substringAfterLast("/")]
+                            if (imgSrcs != null) {
+                                for (imgSrc in imgSrcs) {
+                                    var normalizedImg: String = imgSrc
+                                    while (normalizedImg.startsWith("../") || normalizedImg.startsWith("./")) {
+                                        normalizedImg = if (normalizedImg.startsWith("../")) normalizedImg.substring(3) else normalizedImg.substring(2)
+                                    }
+                                    if (normalizedImg.startsWith("/")) normalizedImg = normalizedImg.substring(1)
+                                    val match = nameByPath[normalizedImg] ?: nameByPath[normalizedImg.substringAfterLast("/")]
+                                    if (match != null) {
+                                        spineOrderedNames.add(match)
+                                        matchCount++
+                                    } else {
+                                        missCount++
+                                        if (missCount <= 5) Log.d(TAG, "scanEpub: MISS spine[$spineIdx] imgSrc=$normalizedImg not in allNames(${allNames.size})")
+                                    }
                                 }
                             } else {
                                 missCount++
@@ -3506,7 +3507,7 @@ class ArchiveEngine(private val ctx: Context) {
                             }
                         }
                         d(TAG, "listDirFast: ${fastItems.size} items from ${dirFile.absolutePath}")
-                        return fastItems.sortedWith(compareByDescending<Item> { it.dir }.thenComparing({ it.name }, NaturalComparator))
+                        return com.mangareader.util.GroupSortUtil.sortItems(fastItems, com.mangareader.util.GroupSortConfigCache.get(ctx), { it.name }, { it.dir })
                     }
                 }
             } catch (_: Exception) {}
@@ -3535,7 +3536,7 @@ class ArchiveEngine(private val ctx: Context) {
                 }
             }
         } catch (e: Exception) { Log.e(TAG, "listDir: ${e.message}", e) }
-        return items.sortedWith(compareByDescending<Item> { it.dir }.thenComparing({ it.name }, NaturalComparator))
+        return com.mangareader.util.GroupSortUtil.sortItems(items, com.mangareader.util.GroupSortConfigCache.get(ctx), { it.name }, { it.dir })
     }
 
     private fun parsePath(path: String): PathInfo? {
