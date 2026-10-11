@@ -106,22 +106,33 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?, Int) -> Unit
     ) { padding ->
         var showAbout by remember { mutableStateOf(false) }
         var diagExportMsg by remember { mutableStateOf<String?>(null) }
+        var diagExportBusy by remember { mutableStateOf(false) }
         LazyColumn(modifier = Modifier.padding(padding).fillMaxSize().wrapContentWidth(Alignment.CenterHorizontally).widthIn(max = CONTENT_MAX_WIDTH_DP).padding(16.dp)) {
             item {
             Spacer(Modifier.height(12.dp))
             }
             item {
             // 【临时功能，用完整体删除】全量日志导出（含本进程 logcat，已脱敏）——远端排障用
+            // ★ 2026-10-11 修"点不动"：原实现点击后在主线程同步跑 logcat 抓取+crash buffer
+            //   正则切块+多轮正则脱敏，日志大时界面冻结数秒（ANR 体感=不能用了）——
+            //   改 IO 协程 + 忙态提示，导出期间禁点防重入
             val ctx = androidx.compose.ui.platform.LocalContext.current
-            Card(Modifier.fillMaxWidth().clickable {
-                diagExportMsg = com.mangareader.sr.DiagLogExporter.export(ctx)
+            Card(Modifier.fillMaxWidth().clickable(enabled = !diagExportBusy) {
+                diagExportBusy = true
+                scope.launch {
+                    diagExportMsg = withContext(Dispatchers.IO) { com.mangareader.sr.DiagLogExporter.export(ctx) }
+                    diagExportBusy = false
+                }
             }) {
                 Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.Info, null, modifier = Modifier.size(24.dp))
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
                         Text("导出全部日志（临时）", fontSize = 16.sp)
-                        Text(diagExportMsg ?: "含引擎初始化细节，供排障分析", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            if (diagExportBusy) "正在导出，请稍候…" else diagExportMsg ?: "含引擎初始化细节，供排障分析",
+                            fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }
@@ -418,6 +429,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?, Int) -> Unit
                             //   诊断 + 设备信息，写入公共 Download，用户经文件管理器直接取用
                             // 2026-09-30：导出目录可选（有的设备写不了公共 Download），SAF 授权持久化
                             var exportMsg by remember { mutableStateOf<String?>(null) }
+                            var diagExporting by remember { mutableStateOf(false) }
                             var exportDirName by remember { mutableStateOf(com.mangareader.DiagExporter.chosenDirLabel(ctx)) }
                             val pickExportDir = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
                                 if (uri != null) {
@@ -425,9 +437,15 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?, Int) -> Unit
                                     exportDirName = com.mangareader.DiagExporter.chosenDirLabel(ctx)
                                 }
                             }
+                            // ★ 2026-10-11 同顶部卡片：主线程同步导出会卡界面，改 IO 协程+忙态
                             TextButton(onClick = {
-                                exportMsg = com.mangareader.DiagExporter.export(ctx)
-                            }) { Text("导出诊断日志（排障用）") }
+                                if (diagExporting) return@TextButton
+                                diagExporting = true
+                                scope.launch {
+                                    exportMsg = withContext(Dispatchers.IO) { com.mangareader.DiagExporter.export(ctx) }
+                                    diagExporting = false
+                                }
+                            }) { Text(if (diagExporting) "正在导出…" else "导出诊断日志（排障用）") }
                             TextButton(onClick = { pickExportDir.launch(null) }) {
                                 Text(
                                     if (exportDirName == null) "选择日志导出目录（默认下载目录）"

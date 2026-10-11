@@ -135,11 +135,16 @@ object DiagLogExporter {
     }
 
     /** crash buffer 跨进程存活——上一进程的 FATAL 堆栈在这里。按记录块拆分后只留
-     *  本应用相关的块（堆栈含包名/头部带截断进程名 com.mangareade），其他应用崩溃不导出。 */
+     *  本应用相关的块（堆栈含包名/头部带截断进程名 com.mangareade），其他应用崩溃不导出。
+     *  ★ 2026-10-11：加 -t 行数上限（全设备 crash buffer 可能积累巨大，拖慢导出+膨胀文件）。 */
     private fun appendCrashBuffer(sb: StringBuilder) {
-        val proc = Runtime.getRuntime().exec(arrayOf("logcat", "-d", "-b", "crash", "-v", "time"))
+        val proc = Runtime.getRuntime().exec(arrayOf("logcat", "-d", "-t", "3000", "-b", "crash", "-v", "time"))
         val text = proc.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
         proc.waitFor()
+        if (text.isBlank()) {
+            sb.appendLine("（crash buffer 读取为空——系统可能限制了应用读取 logcat，请看下方 logcat 段是否有内容）")
+            return
+        }
         val mine = text.split(Regex("""(?=\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3})"""))
             .filter { it.contains("mangaread", ignoreCase = true) }
         if (mine.isEmpty()) {
@@ -149,8 +154,10 @@ object DiagLogExporter {
         }
     }
 
+    /** ★ 2026-10-11：-t 行数上限——阅读器高频打点场景全量 dump 可达数十 MB，
+     *  正则脱敏按字符逐个替换，主线程时代直接卡死，异步化后也要防导出文件无限膨胀。 */
     private fun appendLogcat(sb: StringBuilder) {
-        val proc = Runtime.getRuntime().exec(arrayOf("logcat", "-d", "--pid=${android.os.Process.myPid()}", "-v", "time"))
+        val proc = Runtime.getRuntime().exec(arrayOf("logcat", "-d", "-t", "20000", "--pid=${android.os.Process.myPid()}", "-v", "time"))
         val text = proc.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
         proc.waitFor()
         sb.append(sanitize(text))
@@ -163,11 +170,19 @@ object DiagLogExporter {
                 val values = ContentValues().apply {
                     put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
                     put(MediaStore.MediaColumns.MIME_TYPE, "text/plain")
+                    // ★ 2026-10-11 两段式提交：部分 OEM 对直接写已提交条目不友好（写完文件管理器
+                    //  看不到/0 字节），IS_PENDING 1→写→0 是 MediaStore 规范姿势
+                    put(MediaStore.MediaColumns.IS_PENDING, 1)
                 }
                 val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
                     ?: return "导出失败: 无法写入下载目录"
-                context.contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
-                    ?: return "导出失败: 打开输出流失败"
+                runCatching {
+                    context.contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
+                        ?: return "导出失败: 打开输出流失败"
+                }.getOrElse { return "导出失败: ${it.message}" }
+                values.clear()
+                values.put(MediaStore.MediaColumns.IS_PENDING, 0)
+                runCatching { context.contentResolver.update(uri, values, null, null) }
                 "已保存到 手机下载/Download 目录: $fileName"
             } else {
                 val f = File(context.getExternalFilesDir(null) ?: context.filesDir, fileName)
