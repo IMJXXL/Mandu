@@ -726,7 +726,10 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                         // ★ v1.384：章末按阅读序 slot 判（横宽页双 slot 的末页首 slot 不再漏报
                         //   章末——旧 pageToSpread(currentPage) 指向首 slot，末页双 slot 时恒差 1）
                         if (!layoutSwitchPending) {
-                            if (s >= spreadTable.slotCount - 1) onChapterEnd?.invoke(true)
+                            // ★ 章末触发改语义（2026-10-11 用户实测裁定）：不再在"选中末页"时触发——
+                            //   VP2 onPageSelected 在拖拽过半就告选中，无缝续读会在用户还没看到末页
+                            //   时就切章。改为：在末页上再做前进翻动动作才触发（fireChapterEndAttempt，
+                            //   三通道：末页前拖/点击下一页区/nextPage 翻页键）。
                             if (currentPage == 0) onChapterEnd?.invoke(false)
                         }
                     }
@@ -816,11 +819,51 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         }
     }
 
+    // ★ 末页前进尝试检测（2026-10-11 章末语义改定）：本页在阅读序末 slot 且手势前进方向
+    //   累积位移过阈，视为"往下一页翻"——无缝续读的触发点（VP2 在末页前拖被钐制后不
+    //   产生滚动事件，只能在根分发层观察原始触点）。每手势一次，缩放/平移中不触发。
+    private var endAttemptFired = false
+    private var endAttemptAccum = 0f
+    private fun fireChapterEndAttempt() {
+        if (!layoutSwitchPending && !setupAnchoring && pagerAdapter != null) {
+            onChapterEnd?.invoke(true)
+        }
+    }
+    private fun isOnReadingLastSlot(): Boolean = try {
+        val count = spreadTable.slotCount
+        count > 0 && (if (isRtl) viewPager.currentItem == 0 else viewPager.currentItem == count - 1)
+    } catch (_: Exception) { false }
+
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
         super.dispatchTouchEvent(ev)
         gestureDetector.onTouchEvent(ev)
+        // 末页前拖观察（与根手势兜底互不干扰：后者只在 RV 未接管时翻页，本检测只在末页报章末）
+        when (ev.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                endAttemptFired = false; endAttemptAccum = 0f
+                lastEndAttemptRaw = if (verticalPager) ev.y else (if (isRtl) ev.x else -ev.x)
+            }
+            MotionEvent.ACTION_MOVE -> {
+                if (!endAttemptFired && isOnReadingLastSlot() &&
+                    !isCurrentPageZoomed() && !activePagePanning() &&
+                    viewPager.scrollState == ViewPager2.SCROLL_STATE_IDLE
+                ) {
+                    val fwd = if (verticalPager) ev.y else (if (isRtl) ev.x else -ev.x)
+                    // 累积量需要相邻 MOVE 间的增量——这里用与上次触点差值累加
+                    endAttemptAccum += fwd - lastEndAttemptRaw
+                    lastEndAttemptRaw = fwd
+                    if (endAttemptAccum > 28f * resources.displayMetrics.density) {
+                        endAttemptFired = true
+                        fireChapterEndAttempt()
+                    }
+                } else {
+                    lastEndAttemptRaw = if (verticalPager) ev.y else (if (isRtl) ev.x else -ev.x)
+                }
+            }
+        }
         return true
     }
+    private var lastEndAttemptRaw = 0f
 
     override fun dispatchDraw(canvas: Canvas) {
         super.dispatchDraw(canvas)
@@ -1581,6 +1624,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         val count = pagerAdapter?.itemCount ?: 0
         val next = viewPager.currentItem + 1
         if (next < count) viewPager.setCurrentItem(next, flipAnimationEnabled && !verticalPager)
+        else fireChapterEndAttempt()  // ★ 末页上再点下一页区/翻页键 = 前进尝试
     }
     fun prevPage() {
         // navigateToPan: 缩放时先平移到边缘再翻页
