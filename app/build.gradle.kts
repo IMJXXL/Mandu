@@ -17,7 +17,7 @@ android {
         applicationId = "com.mangareader"
         minSdk = 24
         targetSdk = 37
-versionCode = 67
+versionCode = 68
 versionName = "1.397"
 
         externalNativeBuild {
