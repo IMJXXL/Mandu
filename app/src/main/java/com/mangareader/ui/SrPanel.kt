@@ -389,18 +389,21 @@ private fun SrPanelContent(
                     }
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
                         modifier = Modifier.horizontalScroll(rememberScrollState()),
                     ) {
                         listOf(
                             SrUiState.SCOPE_OFF to "关闭",
                             SrUiState.SCOPE_PAGE to "仅当前页",
                             SrUiState.SCOPE_BOOK to "当前整本",
+                            SrUiState.SCOPE_ALWAYS to "始终开启",
                         ).forEach { (v, label) ->
                             FilterChip(
                                 selected = scopeState == v,
                                 onClick = {
                                     SrUiState.scope.intValue = v
+                                    // ★ 始终开启=全局持久（记住选择，重启也在）；其余作用域维持会话级
+                                    SrCore.settings.setScopeAlways(v == SrUiState.SCOPE_ALWAYS)
                                     if (v == SrUiState.SCOPE_OFF) SrUiState.compareActive.value = false
                                     SrPipeline.onScopeChanged(v)
                                 },
@@ -419,11 +422,17 @@ private fun SrPanelContent(
                                 }
                             },
                             enabled = usable && scopeState != SrUiState.SCOPE_OFF,
-                            contentPadding = PaddingValues(horizontal = 10.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp),
                             modifier = Modifier.height(32.dp),
                         ) {
                             Text("重算本页", fontSize = 12.sp)
                         }
+                    }
+                    if (scopeState == SrUiState.SCOPE_ALWAYS) {
+                        Text(
+                            "始终开启：对所有书一直生效，进书/切书/重启都不重置，直到手动选回其它档或关闭",
+                            fontSize = 11.sp, color = MaterialTheme.colorScheme.primary,
+                        )
                     }
                     Text(
                         "关闭时不处理页面，下面的设置可以先选好。已增强过的页（离线或自动保存的）会直接优先显示，不受开关影响。",
@@ -824,7 +833,7 @@ private fun SrPanelContent(
                         }
                     }
 
-                    if (scopeState == SrUiState.SCOPE_BOOK) {
+                    if (scopeState >= SrUiState.SCOPE_BOOK) {
                         Text("提前加载页数（整本模式翻页更顺）", fontSize = 14.sp, fontWeight = FontWeight.Medium)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             listOf(-1 to "跟随设备", 1 to "1 页", 2 to "2 页", 3 to "3 页", 5 to "5 页").forEach { (v, label) ->

@@ -107,6 +107,10 @@ class SrSettings(context: Context) {
     fun areaDownscaleStrength(): Int = prefs.getInt("sr_area_downscale_strength", 100)
     fun setAreaDownscaleStrength(v: Int) = prefs.edit().putInt("sr_area_downscale_strength", v).apply()
 
+    // ★ 始终开启作用域（SCOPE_ALWAYS，2026-10-11）：全局+持久记忆，重启自动恢复直到手动关闭
+    fun scopeAlways(): Boolean = prefs.getBoolean("sr_scope_always", false)
+    fun setScopeAlways(v: Boolean) = prefs.edit().putBoolean("sr_scope_always", v).apply()
+
     fun useBookOverride(bookId: Long): Boolean = prefs.getBoolean("sr_book_${bookId}_use", false)
     fun setUseBookOverride(bookId: Long, v: Boolean) = prefs.edit().putBoolean("sr_book_${bookId}_use", v).apply()
 

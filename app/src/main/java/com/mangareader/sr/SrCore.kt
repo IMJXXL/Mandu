@@ -74,6 +74,8 @@ object SrCore {
             queueStore = SRQueueStore(appContext)
             profileManager = DeviceProfileManager(appContext)
             dispatcher.preloadWindow = effectivePreloadWindow()
+            // ★ 始终开启作用域恢复（SCOPE_ALWAYS 持久记忆）：冷启动把 scope 拉回常开
+            if (settings.scopeAlways()) SrUiState.scope.intValue = SrUiState.SCOPE_ALWAYS
             initialized = true
         }
         // 模型解包放后台，不阻塞启动
