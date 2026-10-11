@@ -148,6 +148,7 @@ suspend inline fun <T> useStreamArchivePageLoader(
                         scope = this,
                         cacheKey = cacheKey,
                         partial = partial,
+                        source = source,
                         titleHint = titleHint,
                         info = info,
                         startPage = startPage,
@@ -817,6 +818,7 @@ internal fun partialCachedStreamLoader(
     scope: CoroutineScope,
     cacheKey: String,
     partial: ArchiveStreamPageCache.PartialIndex,
+    source: ArchiveByteSource,
     titleHint: String,
     info: GalleryInfo?,
     startPage: Int,
@@ -824,7 +826,19 @@ internal fun partialCachedStreamLoader(
 ): PageLoader {
     val pageCount = partial.totalPages
     val exts = partial.exts
-    val availableSet = partial.availablePages.toSet()
+    // ★ 联网自愈（2026-10-11 用户场景"半缓存断网看一半、网络恢复"）：原实现是纯静态缓存表——
+    //   未缓存页整场会话永远"离线不可用"，网络恢复也翻不过去，必须退出重进。现对成员表带
+    //   seek 偏移的书（zip 全 CD / tar 结构完整）：未缓存页请求时现场走在线桥按偏移取该成员
+    //   落缓存（网络仍不通则原样报离线失败，重试语义不变）。取到的页下次打开直接命中缓存。
+    val seekIndex = ArchiveStreamPageCache.loadIndex(cacheKey)
+        ?.takeIf { it.canOpenFromSeekIndexOnly() }
+    val available = java.util.Collections.newSetFromMap(
+        java.util.concurrent.ConcurrentHashMap<Int, Boolean>(),
+    )
+    available.addAll(partial.availablePages)
+    val fetchInFlight = java.util.Collections.newSetFromMap(
+        java.util.concurrent.ConcurrentHashMap<Int, Boolean>(),
+    )
     return object : PageLoader(
         scope,
         info,
@@ -857,10 +871,45 @@ internal fun partialCachedStreamLoader(
         override fun prefetchPages(pages: List<Int>, bounds: IntRange) = Unit
 
         override fun onRequest(index: Int, force: Boolean, orgImg: Boolean) {
-            if (index in availableSet) {
+            if (index in available) {
                 notifySourceReady(index, orgImg)
-            } else {
+                return
+            }
+            if (seekIndex == null || index !in 0 until pageCount || !fetchInFlight.add(index)) {
                 notifyPageFailed(index, "离线不可用（未缓存）")
+                return
+            }
+            scope.launch(Dispatchers.IO) {
+                val ok = runCatching {
+                    ArchiveAccess.withArchive {
+                        val bridge = ArchiveStreamBridge(source)
+                        try {
+                            val size = bridge.size
+                            if (size <= 0L) return@withArchive false
+                            // 装成员表（seek 偏移来自索引，免网络重走 EOCD/CD）后按位取单页
+                            if (openFromSeekIndex(bridge, size, seekIndex) <= 0) return@withArchive false
+                            val buffer = bridge.checkedNative { extractToByteBuffer(index) }
+                                ?: return@withArchive false
+                            val bytes = try {
+                                check(buffer.isDirect)
+                                ByteArray(buffer.remaining()).also { buffer.duplicate().get(it) }
+                            } finally {
+                                releaseByteBuffer(buffer)
+                            }
+                            val ext = exts[index] ?: "bin"
+                            ArchiveStreamPageCache.writePageBytes(cacheKey, index, ext, bytes)
+                            true
+                        } finally {
+                            bridge.close()
+                        }
+                    }
+                }.getOrDefault(false)
+                if (ok) available.add(index)
+                withContext(Dispatchers.Main) {
+                    if (ok) notifySourceReady(index, orgImg)
+                    else notifyPageFailed(index, "离线不可用（未缓存）")
+                }
+                fetchInFlight.remove(index)
             }
         }
     }
