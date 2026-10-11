@@ -17,14 +17,13 @@ object PanelDetectorCore {
         h: Int,
         rtl: Boolean,
         confFail: Float = PanelTunables.CONF_FAIL,
-        bottomUp: Boolean = false,
     ): PanelPageResult {
         if (w <= 0 || h <= 0 || gray.size != w * h) return fallbackResult()
         val mask = PanelBinarize.buildInkMask(gray, w, h)
         val closed = PanelBinarize.close(mask, w, h, PanelBinarize.closeKernelSize(w, h))
         val rects = PanelComponents.toPanelRects(closed, w, h)
         if (rects.isEmpty()) return fallbackResult()
-        val ordered = PanelOrder.sortReadingOrder(rects, rtl, bottomUp)
+        val ordered = PanelOrder.sortReadingOrder(rects, rtl)
         return PanelConfidence.evaluate(ordered, w, h, rtl, confFail)
     }
 }

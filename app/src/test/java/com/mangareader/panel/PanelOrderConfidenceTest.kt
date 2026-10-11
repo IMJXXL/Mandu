@@ -61,17 +61,6 @@ class PanelOrderConfidenceTest {
         assertEquals(listOf(a, b, c, d), out)
     }
 
-    @Test
-    fun `bottom-up order reads rows bottom-to-top`() {
-        // 纵向倒序（设置"先下"）：行序 下→上，行内横向顺序不变
-        val a = box(0, 0, 99, 99)      // 上行左
-        val b = box(110, 0, 209, 99)   // 上行右
-        val c = box(0, 110, 99, 209)   // 下行左
-        val d = box(110, 110, 209, 209) // 下行右
-        val out = PanelOrder.sortReadingOrder(listOf(a, b, c, d), rtl = false, bottomUp = true)
-        assertEquals(listOf(c, d, a, b), out)
-    }
-
     // ———— 置信度 ————
 
     @Test

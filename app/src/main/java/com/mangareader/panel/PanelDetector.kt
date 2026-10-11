@@ -21,7 +21,6 @@ object PanelDetector {
         src: Bitmap,
         rtl: Boolean,
         confFail: Float = PanelTunables.CONF_FAIL,
-        bottomUp: Boolean = false,
     ): PanelPageResult = withContext(Dispatchers.Default) {
         val t0 = android.os.SystemClock.elapsedRealtime()
         val sw = if (src.config == Bitmap.Config.HARDWARE) src.copy(Bitmap.Config.ARGB_8888, false) else src
@@ -41,7 +40,7 @@ object PanelDetector {
                     0.587f * ((p shr 8) and 0xFF) +
                     0.114f * (p and 0xFF)).toInt()
             }
-            val r = PanelDetectorCore.analyze(gray, dw, dh, rtl, confFail, bottomUp)
+            val r = PanelDetectorCore.analyze(gray, dw, dh, rtl, confFail)
             Log.d(
                 "PanelDetector",
                 "detect ${dw}x${dh} boxes=${r.boxes.size} conf=${r.pageConf} fallback=${r.fallback} ${android.os.SystemClock.elapsedRealtime() - t0}ms",

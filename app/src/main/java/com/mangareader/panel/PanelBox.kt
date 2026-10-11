@@ -71,8 +71,6 @@ object PanelTunables {
     const val FULL_PAGE_AREA = 0.85f
     /** 页置信度低于此值 → 整页单格降级 */
     const val CONF_FAIL = 0.5f
-    /** 连续降级页数达到此值 → 自动退出逐格模式（UI 层消费） */
-    const val CONSECUTIVE_FAIL_EXIT = 3
 
     /**
      * ★ 灵敏度档位 → 页置信度门槛（设置面板映射，唯一出处）：
