@@ -21,10 +21,13 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -72,9 +75,11 @@ import com.mangareader.data.SearchHistory
 import com.mangareader.viewer.ArchiveEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.coroutines.coroutineContext
 
 import kotlinx.coroutines.yield
 import kotlinx.coroutines.CoroutineScope
@@ -97,6 +102,19 @@ sealed interface ShelfItem {
     ) : ShelfItem
 }
 
+/**
+ * ★ 首页搜索下探子文件夹（2026-10-11 用户需求）的命中项：
+ *   书名 LIKE 之外，在目录书的子文件夹/已访问子路径里按名称匹配。
+ *   jumpPath 供 Reader(bookId, jumpPath) 直达命中的那一层；relPath 是书名下的相对路径展示。
+ */
+private data class DeepSearchHit(
+    val bookId: Long,
+    val bookTitle: String,
+    val jumpPath: String,
+    val relPath: String,
+    val isDir: Boolean,
+)
+
 private fun buildChildPath(path: String, item: ArchiveEngine.Item): String? {
     if (path.startsWith("z:")) {
         val inner = path.removePrefix("z:")
@@ -112,6 +130,34 @@ private fun buildChildPath(path: String, item: ArchiveEngine.Item): String? {
 
 private fun buildLeafPath(item: ArchiveEngine.Item): String {
     return "a:${item.auth}|${item.tree}|${item.doc}|${item.name.substringAfterLast(".").lowercase()}"
+}
+
+/**
+ * 搜索下探·即时层配套：从进度路径里剥出书根之下的相对段。
+ * d: 书根="d:auth|tree|doc" ↔ 进度叶="a:auth|tree|doc|ext"（比对 SAF docId 前缀）；
+ * z: 书根="z:archive//sub/" ↔ 进度="z:archive//sub/…"（同档案才剥前缀）；
+ * smb:/webdav: 直接前缀剥离。无法确认属于该书 → null（宁缺勿滥，防跨书误挂）。
+ */
+private fun deepProgressRel(bookPath: String, path: String): String? {
+    return runCatching {
+        when {
+            bookPath.startsWith("d:") && (path.startsWith("a:") || path.startsWith("d:")) -> {
+                val bDoc = bookPath.removePrefix("d:").split('|').getOrNull(2) ?: return null
+                val pDoc = path.removePrefix(if (path.startsWith("a:") ) "a:" else "d:").split('|').getOrNull(2) ?: return null
+                val rel = pDoc.removePrefix(if (bDoc.endsWith("/")) bDoc else "$bDoc/")
+                rel.trimStart('/').ifEmpty { null }
+            }
+            path.startsWith(bookPath) -> path.removePrefix(bookPath).trimStart('/').ifEmpty { null }
+            bookPath.startsWith("z:") && path.startsWith("z:") -> {
+                val bInner = bookPath.removePrefix("z:")
+                val pInner = path.removePrefix("z:")
+                if (bInner.substringBefore("//") != pInner.substringBefore("//")) return null
+                val rel = pInner.substringAfter("//").removePrefix(bInner.substringAfter("//"))
+                rel.trimStart('/').ifEmpty { null }
+            }
+            else -> null
+        }
+    }.getOrNull()
 }
 
 private fun convertRemoteEntriesLib(
@@ -218,6 +264,28 @@ private fun sortShelfItems(items: List<ShelfItem>, sort: SortMode): List<ShelfIt
     }
 }
 
+/** 搜索下探命中行：书名 › 书内相对路径，点击带 jumpPath 直达该层 */
+@Composable
+private fun DeepHitRow(hit: DeepSearchHit, onTap: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onTap).padding(horizontal = 8.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            if (hit.isDir) Icons.Default.Folder else Icons.Default.InsertDriveFile,
+            null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.width(10.dp))
+        Column {
+            Text(hit.bookTitle, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                hit.relPath, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettings: () -> Unit = {}, onOpenHistory: () -> Unit = {}, onOpenKomgaSeries: (String, String) -> Unit = { _, _ -> }) {
@@ -297,6 +365,55 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
             }
         }
         return result
+    }
+
+    /**
+     * 搜索下探·下探层（2026-10-11）：对一本目录书逐层走子文件夹按名称匹配。
+     * 只走 d: SAF 树与 smb:/webdav: 远程目录书（engine.children 对远程禁用，走网关列目录）；
+     * z: 归档书不现场开包（零开包原则），由进度即时层兜底。
+     * 封顶：深度 ≤6、每书 ≤200 目录、命中 ≤30、全局 deadline 由调用方传入——
+     * SAF/远程列目录慢，改词即整任务取消，deadline 兜底防拖死。
+     */
+    suspend fun deepWalkBook(
+        book: Book,
+        query: String,
+        deadlineMs: Long,
+        onHits: (List<DeepSearchHit>) -> Unit,
+    ) {
+        val root = book.filePath
+        val remote = root.startsWith("smb:") || root.startsWith("webdav:")
+        if (!remote && !root.startsWith("d:")) return
+        data class Node(val path: String, val rel: String, val depth: Int)
+        val queue = ArrayDeque<Node>()
+        queue.add(Node(root, "", 0))
+        var visited = 0
+        val hits = ArrayList<DeepSearchHit>()
+        while (queue.isNotEmpty() && visited < 200 && hits.size < 30 &&
+            System.currentTimeMillis() < deadlineMs && coroutineContext.isActive
+        ) {
+            val node = queue.removeFirst()
+            visited++
+            val children: List<ArchiveEngine.Item> = try {
+                if (remote) listRemoteFolderChildren(node.path) ?: emptyList()
+                else withContext(Dispatchers.IO) { engine.children(node.path) }
+            } catch (_: Exception) { emptyList() }
+            for (item in children) {
+                val childRel = if (node.rel.isEmpty()) item.name else "${node.rel}/${item.name}"
+                if (item.name.contains(query, ignoreCase = true)) {
+                    val jump = when {
+                        remote -> item.doc
+                        item.dir -> buildChildPath(node.path, item) ?: continue
+                        else -> buildLeafPath(item)
+                    }
+                    hits.add(DeepSearchHit(book.id, book.title, jump, childRel, item.dir))
+                }
+                if (item.dir && node.depth < 5) {
+                    val childPath = if (remote) item.doc else buildChildPath(node.path, item) ?: continue
+                    queue.add(Node(childPath, childRel, node.depth + 1))
+                }
+            }
+        }
+        if (hits.isNotEmpty()) onHits(hits)
     }
 
     fun makeOpenedKey(bookId: Long, leafPath: String?): String {
@@ -684,6 +801,50 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                 }
                 books = if (sortAsc) ordered.reversed() else ordered
                 shelfItems = null
+            }
+        }
+    }
+
+    // ★ 首页搜索下探子文件夹（2026-10-11 用户需求）：书名 LIKE 之外的两层匹配——
+    //   ①即时层：reading_progress 已访问子路径按名称匹配（进度表 LIKE 一次查询，z: 归档/
+    //     远程书零开包也命中看过的卷）；②下探层：目录书（d:/smb:/webdav:）逐层列子文件夹
+    //     匹配，封顶+改词取消+总 deadline，逐书流式上屏。z: 归档不现场开包（沿用审查方案
+    //     「零开包」原则，未看过的卷搜不到，属已知边界）。
+    var deepHits by remember { mutableStateOf<List<DeepSearchHit>>(emptyList()) }
+    LaunchedEffect(debouncedQuery) {
+        val q = debouncedQuery.trim()
+        if (q.isEmpty()) { deepHits = emptyList(); return@LaunchedEffect }
+        deepHits = emptyList()
+        val seen = HashSet<String>()
+        val collected = ArrayList<DeepSearchHit>()
+        fun push(h: DeepSearchHit) {
+            if (collected.size >= 60) return
+            if (seen.add("${h.bookId}|${h.jumpPath}")) collected.add(h)
+        }
+        val all = withContext(Dispatchers.IO) {
+            runCatching { dao.getVisibleBooks().first() }.getOrDefault(emptyList())
+        }
+        val byId = all.associateBy { it.id }
+        val titleMatched = books.orEmpty().mapTo(HashSet()) { it.id }
+        withContext(Dispatchers.IO) {
+            runCatching {
+                dao.searchVisibleProgressPaths(q).forEach { p ->
+                    val b = byId[p.bookId] ?: return@forEach
+                    val rel = deepProgressRel(b.filePath, p.path) ?: return@forEach
+                    if (!rel.contains(q, ignoreCase = true)) return@forEach
+                    push(DeepSearchHit(b.id, b.title, p.path, rel, false))
+                }
+            }
+        }
+        if (collected.isNotEmpty()) deepHits = collected.toList()
+        if (collected.size < 60 && isActive) {
+            val deadline = System.currentTimeMillis() + 6000
+            for (b in all) {
+                if (!isActive || collected.size >= 60 || System.currentTimeMillis() >= deadline) break
+                if (b.id in titleMatched) continue
+                val before = collected.size
+                deepWalkBook(b, q, deadline) { walkHits -> walkHits.forEach { push(it) } }
+                if (collected.size != before) deepHits = collected.toList()
             }
         }
     }
@@ -1462,7 +1623,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
                 }
-            } else if ((shelfItems ?: books!!.map { ShelfItem.Single(it) }).isEmpty()) {
+            } else if ((shelfItems ?: books!!.map { ShelfItem.Single(it) }).isEmpty() && deepHits.isEmpty()) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         if (selectedTagIds.isNotEmpty() || selectedShelfId != null || filter != FilterMode.ALL || debouncedQuery.isNotEmpty()) {
@@ -1491,13 +1652,68 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                     LocalConfiguration.current.screenWidthDp, effectiveCols, 12.dp, 8.dp,
                 )
                 val renderItems = shelfItems ?: books!!.map { ShelfItem.Single(it) }
+                // ★ 首页滚动记忆（2026-10-11 用户需求）：锚定首项 key 为主、index 兜底，落盘
+                //   SharedPreferences——杀进程/滑掉最近任务后重进也回原位；打开书再返回的场景由
+                //   「列表就绪后显式恢复」兜住（默认 rememberSaveable 在 books 异步加载完成前就被
+                //   空列表钳到 0，返回后回顶即此病）。搜索结果态不记（结果集每次都是新的）。
+                //   只存 index 不存像素 offset：列数变化下误差一屏内可接受（审查方案既定取舍）。
+                val shelfItemKey: (ShelfItem) -> String = { when (it) { is ShelfItem.Single -> "b:${it.book.id}"; is ShelfItem.Series -> "s:${it.serverId}:${it.seriesId}" } }
+                val shelfListState = rememberLazyListState()
+                val shelfGridState = rememberLazyGridState()
+                val renderItemsState = rememberUpdatedState(renderItems)
+                var shelfRestored by remember { mutableStateOf(false) }
+                fun persistShelfScroll(items: List<ShelfItem>, index: Int) {
+                    if (items.isEmpty()) return
+                    val item = items.getOrNull(index) ?: return
+                    prefs.edit().putInt("library_scroll_index", index)
+                        .putString("library_scroll_anchor", shelfItemKey(item)).apply()
+                }
+                LaunchedEffect(layoutMode, shelfListState, shelfGridState) {
+                    snapshotFlow {
+                        if (layoutMode == 3) shelfListState.firstVisibleItemIndex to shelfListState.isScrollInProgress
+                        else shelfGridState.firstVisibleItemIndex to shelfGridState.isScrollInProgress
+                    }.collect { (idx, scrolling) ->
+                        if (shelfRestored && !scrolling && debouncedQuery.isEmpty()) {
+                            persistShelfScroll(renderItemsState.value, idx)
+                        }
+                    }
+                }
+                LaunchedEffect(renderItems.isNotEmpty()) {
+                    if (renderItems.isEmpty() || shelfRestored) return@LaunchedEffect
+                    val savedIdx = prefs.getInt("library_scroll_index", -1)
+                    val savedKey = prefs.getString("library_scroll_anchor", null)
+                    val anchorIdx = savedKey?.let { key -> renderItems.indexOfFirst { shelfItemKey(it) == key } } ?: -1
+                    val target = when {
+                        anchorIdx >= 0 -> anchorIdx
+                        savedIdx > 0 -> savedIdx.coerceAtMost(renderItems.size - 1)
+                        else -> -1
+                    }
+                    if (target >= 0) {
+                        if (layoutMode == 3) shelfListState.scrollToItem(target) else shelfGridState.scrollToItem(target)
+                    }
+                    shelfRestored = true
+                }
                 if (layoutMode == 3) {
                     androidx.compose.foundation.lazy.LazyColumn(
+                        state = shelfListState,
                         modifier = Modifier.fillMaxSize().wrapContentWidth(Alignment.CenterHorizontally).widthIn(max = CONTENT_MAX_WIDTH_DP),
                         contentPadding = PaddingValues(12.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        items(renderItems, key = { when (it) { is ShelfItem.Single -> "b:${it.book.id}"; is ShelfItem.Series -> "s:${it.serverId}:${it.seriesId}" } }, contentType = { when (it) { is ShelfItem.Single -> "book"; is ShelfItem.Series -> "series" } }) { item ->
+                        if (deepHits.isNotEmpty()) {
+                            item(key = "deep:header", contentType = "deepHeader") {
+                                Text(
+                                    "子文件夹命中 ${deepHits.size} 条",
+                                    fontSize = 13.sp, fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp),
+                                )
+                            }
+                            items(deepHits, key = { "deep:${it.bookId}:${it.jumpPath}" }, contentType = { "deepHit" }) { hit ->
+                                DeepHitRow(hit, onTap = { openBookThrottled(hit.bookId, hit.jumpPath) })
+                            }
+                        }
+                        items(renderItems, key = shelfItemKey, contentType = { when (it) { is ShelfItem.Single -> "book"; is ShelfItem.Series -> "series" } }) { item ->
                             when (item) {
                                 is ShelfItem.Single -> {
                                     val b = item.book
@@ -1518,9 +1734,22 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                         }
                     }
                 } else {
-                    LazyVerticalGrid(columns = gridCols, contentPadding = PaddingValues(12.dp),
+                    LazyVerticalGrid(state = shelfGridState, columns = gridCols, contentPadding = PaddingValues(12.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        items(renderItems, key = { when (it) { is ShelfItem.Single -> "b:${it.book.id}"; is ShelfItem.Series -> "s:${it.serverId}:${it.seriesId}" } }, contentType = { when (it) { is ShelfItem.Single -> "book"; is ShelfItem.Series -> "series" } }) { item ->
+                        if (deepHits.isNotEmpty()) {
+                            item(key = "deep:header", span = { GridItemSpan(maxLineSpan) }, contentType = "deepHeader") {
+                                Text(
+                                    "子文件夹命中 ${deepHits.size} 条",
+                                    fontSize = 13.sp, fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp),
+                                )
+                            }
+                            items(deepHits, key = { "deep:${it.bookId}:${it.jumpPath}" }, span = { GridItemSpan(maxLineSpan) }, contentType = { "deepHit" }) { hit ->
+                                DeepHitRow(hit, onTap = { openBookThrottled(hit.bookId, hit.jumpPath) })
+                            }
+                        }
+                        items(renderItems, key = shelfItemKey, contentType = { when (it) { is ShelfItem.Single -> "book"; is ShelfItem.Series -> "series" } }) { item ->
                             when (item) {
                                 is ShelfItem.Single -> {
                                     val b = item.book
@@ -1557,6 +1786,14 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
         var sliderCols by remember { mutableStateOf(if (isLandscape) landscapeCols else portraitCols) }
         var layoutSheetVisible by remember { mutableStateOf(false) }
         var dragOffset by remember { mutableStateOf(0f) }
+
+        // ★ 自绘弹层必须自己接系统返回键（本层不是 Dialog/ModalBottomSheet，不拦截返回）：
+        //   缺失时 back 会落在 library 路由上直接退 app（2026-10-11 用户实报）。
+        //   与点遮罩/下拉拖拽关闭同款两步置 false。
+        BackHandler {
+            layoutSheetVisible = false
+            showLayoutMenu = false
+        }
 
         LaunchedEffect(Unit) { layoutSheetVisible = true }
         Box(

@@ -847,6 +847,14 @@ interface MangaDao {
     @Query("SELECT * FROM reading_progress WHERE bookId = :bookId AND updatedAt > 0 ORDER BY updatedAt DESC")
     suspend fun getAllProgressForBook(bookId: Long): List<ReadingProgress>
 
+    /** ★ 首页搜索下探（2026-10-11）：即时层——已访问子路径里匹配查询词（z: 归档/远程书零开包也命中看过的卷） */
+    @Query(
+        "SELECT p.* FROM reading_progress p INNER JOIN manga_books b ON b.id = p.bookId " +
+            "WHERE b.isHidden = 0 AND p.updatedAt > 0 AND p.path LIKE '%' || :query || '%' " +
+            "ORDER BY p.updatedAt DESC LIMIT 120"
+    )
+    suspend fun searchVisibleProgressPaths(query: String): List<ReadingProgress>
+
     @Query("SELECT * FROM reading_progress WHERE bookId = :bookId AND path = :path LIMIT 1")
     suspend fun getProgress(bookId: Long, path: String): ReadingProgress?
 
