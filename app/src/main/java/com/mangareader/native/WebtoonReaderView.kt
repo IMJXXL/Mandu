@@ -635,7 +635,15 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
             val ratio = context.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE).getFloat("webtoon_tap_scroll_ratio", 0.8f)
             when (navigation.getAction(fx, fy)) {
                 NavigationAction.PREV -> recycler.tapZoneScroll?.invoke(-ratio)
-                NavigationAction.NEXT -> recycler.tapZoneScroll?.invoke(ratio)
+                // ★ 审查修复（2026-10-11）：底部点"下一页区"=前进尝试报章末（与 pager/curl 点击通道
+                //   一致；此前只调 scrollViewport 空转，用户在底部反复点击无响应）
+                NavigationAction.NEXT -> {
+                    if (!recycler.canScrollVertically(1) && !recycler.isZoomedNow()) {
+                        webtoonFrame.onBottomDragAttempt?.invoke()
+                    } else {
+                        recycler.tapZoneScroll?.invoke(ratio)
+                    }
+                }
                 NavigationAction.MENU -> recycler.tapListener?.invoke(ev)
             }
         }
@@ -1764,6 +1772,8 @@ private class WebtoonFrame(context: Context) : android.widget.FrameLayout(contex
         when (ev.actionMasked) {
             MotionEvent.ACTION_DOWN -> { endAttemptFired = false; endAttemptAccum = 0f; lastEndAttemptRaw = ev.y }
             MotionEvent.ACTION_MOVE -> {
+                // ★ 多指守卫（审查修复）：底部捏合的初始下拖不算翻章尝试
+                if (ev.pointerCount > 1) { lastEndAttemptRaw = ev.y } else
                 if (!endAttemptFired && !rv.canScrollVertically(1) && !rv.isZoomedNow()) {
                     endAttemptAccum += ev.y - lastEndAttemptRaw
                     lastEndAttemptRaw = ev.y

@@ -302,8 +302,11 @@ fun CurlReaderContent(
                         val gaps = ScalePlan.edgeGaps(ScalePlan.alignX(zoomStart, isRtl), cw, dispW)
                         val gy = ScalePlan.edgeGaps(ScalePlan.alignY(zoomStart), ch, dispH)
                         with(LocalDensity.current) {
-                            insetL = (if (isRtl) gaps.second else gaps.first).toDp()
-                            insetR = (if (isRtl) gaps.first else gaps.second).toDp()
+                            // ★ 审查修复（2026-10-11）：镜像已摘，这对交换失去了它补偿的对象——
+                            //   保留会把 RTL 宽图自动对齐从右缘（阅读起始缘，正确）翻到左缘。
+                            //   双页（镜像未摘）的同款交换保留。
+                            insetL = gaps.first.toDp()
+                            insetR = gaps.second.toDp()
                             insetT = gy.first.toDp()
                             insetB = gy.second.toDp()
                         }

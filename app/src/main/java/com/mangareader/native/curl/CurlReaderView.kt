@@ -159,8 +159,9 @@ class CurlReaderView(context: Context) : FrameLayout(context), ReaderViewDelegat
             val fy = e.y / height
             // RTL 与 pager 同款：区域固定（左 PREV/右 NEXT），RTL 在动作层翻转
             // ★ 章末同步（2026-10-11）：前进方向的点击在末页上 = 前进尝试（无缝续读触发点）
-            fun forwardTap() { if (currentPage < pageList.size - 1) tapForwardTrigger.intValue++ else onChapterEnd?.invoke(true) }
-            fun backwardTap() { if (currentPage > 0) tapBackwardTrigger.intValue++ else onChapterEnd?.invoke(false) }
+            //   ★ 审查修复：空页表（setup 前）不报章末
+            fun forwardTap() { if (pageList.isEmpty() || currentPage < pageList.size - 1) tapForwardTrigger.intValue++ else onChapterEnd?.invoke(true) }
+            fun backwardTap() { if (pageList.isEmpty() || currentPage > 0) tapBackwardTrigger.intValue++ else onChapterEnd?.invoke(false) }
             when (navigation.getAction(fx, fy)) {
                 NavigationAction.PREV -> if (isRtl) forwardTap() else backwardTap()
                 NavigationAction.NEXT -> if (isRtl) backwardTap() else forwardTap()
@@ -188,6 +189,8 @@ class CurlReaderView(context: Context) : FrameLayout(context), ReaderViewDelegat
         when (ev.actionMasked) {
             MotionEvent.ACTION_DOWN -> { endAttemptFired = false; endAttemptAccum = 0f; lastEndAttemptRaw = -ev.x }
             MotionEvent.ACTION_MOVE -> {
+                // ★ 多指守卫（审查修复）：捏合初始漂移不算翻页尝试
+                if (ev.pointerCount > 1) { lastEndAttemptRaw = -ev.x } else
                 if (!endAttemptFired && pageList.isNotEmpty() && currentPage >= pageList.size - 1 &&
                     curlZoomState.scale.floatValue <= 1f
                 ) {

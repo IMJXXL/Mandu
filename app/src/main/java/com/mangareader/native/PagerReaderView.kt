@@ -844,6 +844,8 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 lastEndAttemptRaw = if (verticalPager) ev.y else -ev.x
             }
             MotionEvent.ACTION_MOVE -> {
+                // ★ 多指守卫（审查修复）：末页捏合的初始横向漂移不算翻页尝试
+                if (ev.pointerCount > 1) { lastEndAttemptRaw = if (verticalPager) ev.y else -ev.x } else
                 if (!endAttemptFired && isOnReadingLastSlot() &&
                     !isCurrentPageZoomed() && !activePagePanning() &&
                     viewPager.scrollState == ViewPager2.SCROLL_STATE_IDLE
