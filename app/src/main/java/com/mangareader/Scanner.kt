@@ -26,8 +26,14 @@ import java.security.MessageDigest
 
 class Scanner(private val ctx: Context, private val dao: MangaDao) {
     // ★ v1.13 扫描优化：封面后台补齐专用域（独立 SupervisorJob，不阻塞扫描返回）
+    // ★ v1.13 扫描优化：封面后台补齐专用域（独立 SupervisorJob，不阻塞扫描返回）
+    // ★ 异常兜底（2026-10-11 审查）：两阶段入库 fire-and-forget 在此域跑，无 handler 时
+    //   SAF 权限被回收/磁盘满等异常直接崩进程（且用户已看到"刷新成功"提示）
     private val coverScope = kotlinx.coroutines.CoroutineScope(
-        kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO
+        kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO +
+            kotlinx.coroutines.CoroutineExceptionHandler { _, e ->
+                android.util.Log.e(TAG, "scan phase-2 error: ${e.message}")
+            }
     )
     companion object {
         private const val TAG = "Scanner"
@@ -489,8 +495,13 @@ class Scanner(private val ctx: Context, private val dao: MangaDao) {
         val auth = uri.authority ?: ""
         if (books.isEmpty()) {
             val oldCount = dao.countBooksByFolder("a:$auth|$docId|%", "d:$auth|$docId%", "z:a:$auth|$docId|%")
+            // ★ 空清单护栏（2026-10-11 审查，文档阶段0规划落地）：SAF/文件系统瞬断会让本次
+            //   清单为空——原逻辑直接按 LIKE 删全根并级联清进度/书签/标签。DB 非空时放弃
+            //   本轮不删（宁可漏删，不可瞬断清库）；确要清根由用户在书架删。
             if (oldCount > 0) {
-                dao.deleteBooksByFolderParams("a:$auth|$docId|%", "d:$auth|$docId%", "z:a:$auth|$docId|%")
+                android.util.Log.w(TAG, "commitRescanResults: empty manifest but $oldCount books exist — skip deletion (transient IO?) for ${f.displayName}")
+                dao.updateFolder(f.copy(lastScanAt = System.currentTimeMillis()))
+                return 0
             }
             dao.updateFolder(f.copy(lastScanAt = System.currentTimeMillis()))
             return -oldCount

@@ -261,7 +261,9 @@ class MainActivity : ComponentActivity() {
                 var pendingUpdate by remember { mutableStateOf<com.mangareader.updatecheck.UpdateInfo?>(null) }
                 LaunchedEffect(Unit) {
                     kotlinx.coroutines.delay(3000)
+                    // ★ 消费即清（审查 P3）：recreate()（切深浅色）后 UpdateState 残留会重弹更新框
                     pendingUpdate = com.mangareader.updatecheck.UpdateState.pendingUpdate
+                    com.mangareader.updatecheck.UpdateState.pendingUpdate = null
                 }
                 pendingUpdate?.let { info ->
                     androidx.compose.ui.window.Dialog(onDismissRequest = { pendingUpdate = null }) {
