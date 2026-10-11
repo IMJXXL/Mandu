@@ -216,6 +216,48 @@ fun tocItemChPath(currentNavStack: List<String>, item: ArchiveEngine.Item): Stri
     } else null
 }
 
+/**
+ * ★ 目录页签子文件夹滚动记忆（2026-10-11 用户需求「子文件夹里面的文件滑动位置能记忆」）：
+ * 键 "bookId|当前层路径" → 首个可见格 index。访问序 LRU 上限 128，写穿 SharedPreferences
+ * （org.json 数组落盘），进程重启仍记得；降层/返回/关目录重开书再进同一层都落回原位。
+ * 存 index 不存像素 offset：列数/屏幕变化下误差一屏内可接受（对齐审查方案既定取舍）。
+ */
+object TocScrollStore {
+    private const val PREF_KEY = "toc_scroll_positions"
+    private const val MAX = 128
+    private val mem = LinkedHashMap<String, Int>(32, 0.75f, true)
+
+    private fun prefs(ctx: android.content.Context) =
+        ctx.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE)
+
+    private fun load(ctx: android.content.Context) {
+        runCatching {
+            val s = prefs(ctx).getString(PREF_KEY, null) ?: return
+            val arr = org.json.JSONArray(s)
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                mem[o.getString("k")] = o.getInt("v")
+            }
+        }
+    }
+
+    fun get(ctx: android.content.Context, key: String): Int? {
+        if (mem.isEmpty()) load(ctx)
+        return mem[key]
+    }
+
+    fun put(ctx: android.content.Context, key: String, index: Int) {
+        if (mem.isEmpty()) load(ctx)
+        mem[key] = index
+        while (mem.size > MAX) mem.remove(mem.keys.first())
+        runCatching {
+            val arr = org.json.JSONArray()
+            for ((k, v) in mem) arr.put(org.json.JSONObject().put("k", k).put("v", v))
+            prefs(ctx).edit().putString(PREF_KEY, arr.toString()).apply()
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun ReaderTocSheet(
@@ -294,6 +336,36 @@ fun ReaderTocSheet(
             }
             Spacer(Modifier.height(8.dp))
 
+            // ★ 子文件夹滚动记忆（TocScrollStore）：状态提上来跨页签存活——原 rememberLazyGridState
+            //   在目录页签分支内，切页签即丢位；目录↔浏览来回也是一次"重置"。
+            //   滚动停稳即写（键=bookId|当前层）；换层恢复：首次打开沿用"定位当前章"语义，
+            //   已记忆层落回原位，未记忆新层回顶（修掉换层残留旧 index 乱停的旧病）。
+            val tocGridState = rememberLazyGridState()
+            val tocCurPath = rememberUpdatedState(currentNavStack.lastOrNull() ?: "")
+            LaunchedEffect(Unit) {
+                snapshotFlow { tocGridState.firstVisibleItemIndex to tocGridState.isScrollInProgress }
+                    .collect { (idx, scrolling) ->
+                        if (!scrolling) TocScrollStore.put(ctx, "$bookId|${tocCurPath.value}", idx)
+                    }
+            }
+            var tocLocated by remember { mutableStateOf(false) }
+            LaunchedEffect(tocCurPath.value) {
+                val stored = TocScrollStore.get(ctx, "$bookId|${tocCurPath.value}")
+                val maxIdx = (sortedDisplayItems.size - 1).coerceAtLeast(0)
+                when {
+                    !tocLocated && viewing -> {
+                        val cur = tocCurPath.value
+                        val idx = sortedDisplayItems.indexOfFirst { item ->
+                            item.subPath.isNotEmpty() && cur.endsWith(item.subPath) &&
+                            (cur.length == item.subPath.length || cur[cur.length - item.subPath.length - 1] == '/' || cur[cur.length - item.subPath.length - 1] == '\\')
+                        }
+                        if (idx >= 0) tocGridState.scrollToItem(maxOf(0, idx - 1))
+                    }
+                    stored != null -> tocGridState.scrollToItem(stored.coerceIn(0, maxIdx))
+                    else -> tocGridState.scrollToItem(0)
+                }
+                tocLocated = true
+            }
             if (tocTab == 2) {
                 // ─── 书签页签 ───
                 if (bookmarks.isEmpty()) {
@@ -338,17 +410,6 @@ fun ReaderTocSheet(
                         }
                     }
                     Spacer(Modifier.height(8.dp))
-                    val tocGridState = rememberLazyGridState()
-                    LaunchedEffect(Unit) {
-                        if (viewing) {
-                            val cur = currentNavStack.lastOrNull() ?: ""
-                            val idx = sortedDisplayItems.indexOfFirst { item ->
-                                item.subPath.isNotEmpty() && cur.endsWith(item.subPath) &&
-                                (cur.length == item.subPath.length || cur[cur.length - item.subPath.length - 1] == '/' || cur[cur.length - item.subPath.length - 1] == '\\')
-                            }
-                            if (idx >= 0) tocGridState.scrollToItem(maxOf(0, idx - 1))
-                        }
-                    }
                     LazyVerticalGrid(
                         state = tocGridState,
                         columns = gridCols,
