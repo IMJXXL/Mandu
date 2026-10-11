@@ -11,13 +11,13 @@ import com.mangareader.data.MangaDao
 object ShelfExporter {
     suspend fun export(dao: MangaDao): ShelfPayload {
         val bookshelves = dao.exportAllBookshelves().map {
-            BookshelfDto(it.id, it.name, it.createdAt, it.sortOrder)
+            BookshelfDto(it.id, it.name, it.createdAt, it.sortOrder, it.isHidden)
         }
         val bookshelfItems = dao.exportAllBookshelfItems().map {
             BookshelfItemDto(it.id, it.bookshelfId, it.bookId)
         }
         val tags = dao.exportAllTags().map {
-            TagDto(it.id, it.name, it.color)
+            TagDto(it.id, it.name, it.color, it.isHidden, it.sortOrder)
         }
         val tagLinks = dao.exportAllTagLinks().map {
             TagLinkDto(it.id, it.tagId, it.bookId, it.source)

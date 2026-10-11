@@ -15,12 +15,23 @@ object SettingsExporter {
         "isFlipAnimation", "isShowPageNum", "isKeepScreenOn", "isImmersiveMode", "hideNavBarInReader",
         "orientation", "landscapeZoom", "imageScaleMode", "zoomStart", "autoWebtoon", "chapterTransition",
         "seamlessNextVolume",
+        // ★ 白名单补齐（2026-10-11 审查）：此前约 30 个全局键不导出——恢复后滤镜/纹理/
+        //   仿真翻页/长图分割/横屏自动/氛围音等整组回默认
+        "clickFlipInvertH", "isDoubleTapZoom", "isPageCurlAnimation", "isCurlContentAreaOnly",
+        "curlBackContentAlpha", "curlShadowAlpha", "spineShadowAlpha",
+        "autoDoubleLandscape", "landscapeAutoWebtoon", "doublePageStart", "autoDoubleLayout",
+        "tileModeEnabled", "downsampleTier", "tallSplitEnabled", "tallSplitSensitivity",
+        "brightness", "screenBrightness", "brightnessEnabled", "screenBrightnessEnabled",
+        "contrast", "contrastEnabled", "gamma", "gammaEnabled",
+        "textureEnabled", "texturePresetId", "textureAlpha", "textureConcentration", "textureScope",
+        "ambienceSound", "ambienceVolume",
         "reader_volume_keys", "reader_volume_keys_inverted", "long_press_save",
         "reader_hw_keys_enabled", "hw_key_mappings",
         "bookmark_note_enabled", "default_read_mode",
         "sr_enabled", "sr_upscale_enabled", "sr_model", "sr_denoise", "sr_quality",
         "sr_enable_gpu", "sr_bw_enabled", "sr_bw_gray_levels", "sr_bw_density",
         "sr_compare", "sr_preload_override", "sr_realtime_cache_mb",
+        "sr_engine", "sr_npu_block", "sr_npu_test_ok", "sr_artifact_cache_mb",
     )
 
     fun export(context: Context): SettingsPayload {

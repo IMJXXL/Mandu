@@ -45,10 +45,21 @@ object BackupImporter {
             var totalImported = 0
             val failedCategories = mutableListOf<String>()
 
+            // ★ bookId 重映射表（按 filePath 预算一次，进度/书架/标签共用）：跨设备恢复
+            //   stable-id 前的自增 id 书会错位，进度线原有映射、书架线此前漏（2026-10-11 审查）
+            val bookIdMap = HashMap<Long, Long>()
+            if (payload.progress?.mangaBooksAggregate?.any { it.filePath.isNotEmpty() } == true) {
+                payload.progress?.mangaBooksAggregate?.forEach { dto ->
+                    if (dto.filePath.isNotEmpty()) {
+                        runCatching { dao.getBookByPath(dto.filePath) }.getOrNull()?.let { bookIdMap[dto.id] = it.id }
+                    }
+                }
+            }
+
             if (contentSelection.progress && payload.progress != null) {
                 try {
                     onProgress("正在恢复阅读进度")
-                    totalImported += ProgressImporter.`import`(dao, payload.progress, conflictStrategy)
+                    totalImported += ProgressImporter.`import`(dao, payload.progress, conflictStrategy, bookIdMap)
                 } catch (e: Exception) {
                     android.util.Log.e("BackupImport", "阅读进度恢复失败", e)
                     failedCategories.add("阅读进度")
@@ -69,7 +80,7 @@ object BackupImporter {
             if (contentSelection.shelf && payload.shelf != null) {
                 try {
                     onProgress("正在恢复书架分类")
-                    totalImported += ShelfImporter.`import`(dao, payload.shelf, conflictStrategy)
+                    totalImported += ShelfImporter.`import`(dao, payload.shelf, conflictStrategy, bookIdMap)
                 } catch (e: Exception) {
                     android.util.Log.e("BackupImport", "书架分类恢复失败", e)
                     failedCategories.add("书架分类")

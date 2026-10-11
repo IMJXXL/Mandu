@@ -52,6 +52,9 @@ class ConfigManager(private val context: Context) {
             put("doublePageShift", config.doublePageShift)
             put("doublePageSplit", config.doublePageSplit)
             put("doublePageReverse", config.doublePageReverse)
+            // ★ 预设补齐（2026-10-11 审查）：此前缺 3 字段，切换配置方案静默重置为默认
+            put("doublePageStart", config.doublePageStart)
+            put("autoDoubleLayout", config.autoDoubleLayout)
             put("autoWebtoon", config.autoWebtoon)
             put("chapterTransition", config.chapterTransition)
             put("centerGapType", config.centerGapType)
@@ -74,6 +77,7 @@ class ConfigManager(private val context: Context) {
             put("texturePresetId", config.texturePresetId)
             put("textureAlpha", config.textureAlpha)
             put("textureConcentration", config.textureConcentration)
+            put("textureScope", config.textureScope)
             put("ambienceSound", config.ambienceSound)
             put("ambienceVolume", config.ambienceVolume)
             put("imageScaleMode", config.imageScaleMode)
@@ -133,6 +137,8 @@ class ConfigManager(private val context: Context) {
                 doublePageShift = json.optInt("doublePageShift", 0),
                 doublePageSplit = json.optBoolean("doublePageSplit", false),
                 doublePageReverse = json.optBoolean("doublePageReverse", false),
+                doublePageStart = json.optInt("doublePageStart", 2).let { if (it in 2..10) it else 2 },
+                autoDoubleLayout = json.optInt("autoDoubleLayout", 0).let { if (it in 0..2) it else 0 },
                 autoWebtoon = json.optBoolean("autoWebtoon", true),
                 chapterTransition = json.optBoolean("chapterTransition", true),
                 centerGapType = json.optInt("centerGapType", 0),
@@ -155,6 +161,7 @@ class ConfigManager(private val context: Context) {
                 texturePresetId = json.optInt("texturePresetId", 0),
                 textureAlpha = json.optInt("textureAlpha", 15),
                 textureConcentration = json.optInt("textureConcentration", 100),
+                textureScope = json.optInt("textureScope", 0),
                 ambienceSound = json.optString("ambienceSound", ""),
                 ambienceVolume = json.optInt("ambienceVolume", 60),
                 imageScaleMode = json.optInt("imageScaleMode", 1).let { if (it in 0..4) it else 1 },

@@ -21,6 +21,8 @@ data class ProgressPayload(
     val readingHistory: List<ReadingHistoryDto> = emptyList(),
     val bookmarks: List<BookmarkDto> = emptyList(),
     val mangaBooksAggregate: List<BookAggregateDto> = emptyList(),
+    // ★ v2 补整表（2026-10-11 审查）：双页单页豁免此前整表无备份，恢复后全丢
+    val soloFlags: List<PageSoloFlagDto> = emptyList(),
 )
 
 @Serializable
@@ -51,6 +53,6 @@ data class ConnectionsPayload(
     val importedFolders: List<ImportedFolderDto> = emptyList(),
 )
 
-const val BACKUP_FORMAT_VERSION = 1
+const val BACKUP_FORMAT_VERSION = 2
 const val DEFAULT_REMOTE_BACKUP_DIR = "/MangaReaderBackups"
 const val DEFAULT_LOCAL_RETENTION_COUNT = 7

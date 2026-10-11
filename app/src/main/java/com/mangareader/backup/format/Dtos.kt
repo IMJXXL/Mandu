@@ -12,6 +12,14 @@ data class ReadingProgressDto(
     val updatedAt: Long,
     val animDialogChoice: Int = 0,
     val totalPages: Int = 0,
+    // ★ v2 备份补列（2026-10-11 审查）：双页半页位，缺省 false 向后兼容旧备份
+    val halfRight: Boolean = false,
+)
+
+@Serializable
+data class PageSoloFlagDto(
+    val chPath: String,
+    val pageIdx: Int,
 )
 
 @Serializable
@@ -41,6 +49,8 @@ data class BookAggregateDto(
     val readPages: Int,
     val lastReadAt: Long?,
     val filePath: String = "",
+    // ★ v2 补列：自定义封面路径（封面文件本体不随备份，恢复后由重扫/网络补图）
+    val customCoverPath: String? = null,
 )
 
 @Serializable
@@ -56,6 +66,8 @@ data class BookshelfDto(
     val name: String,
     val createdAt: Long,
     val sortOrder: Int = 0,
+    // ★ v2 补列：隐藏书架（缺省 false=旧备份行为不变）
+    val isHidden: Boolean = false,
 )
 
 @Serializable
@@ -70,6 +82,9 @@ data class TagDto(
     val id: Long = 0,
     val name: String,
     val color: Long = 0xFF7C8CF8,
+    // ★ v2 补列：隐藏标签/手动排序位（缺省=旧备份行为不变）
+    val isHidden: Boolean = false,
+    val sortOrder: Int = 0,
 )
 
 @Serializable
@@ -107,6 +122,8 @@ data class WebDavSourceDto(
     val addedAt: Long = 0,
     val lastOkAt: Long = 0,
     val lastError: String? = null,
+    // ★ v2 补列：不主动加载封面（缺省 false=旧备份行为不变）
+    val noCoverFetch: Boolean = false,
 )
 
 @Serializable

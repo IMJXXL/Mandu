@@ -534,6 +534,12 @@ interface MangaDao {
     @Query("DELETE FROM reading_history")
     suspend fun clearAllHistory()
 
+    @Transaction
+    suspend fun replaceHistoryAtomic(items: List<ReadingHistory>) {
+        clearAllHistory()
+        insertHistoryReplace(items)
+    }
+
     // ==================== ★ v1.13 A' 历史页 progress 主导数据源 ====================
 
     /** 每卷一行：(bookId,path) 唯一索引天然保证；updatedAt>0 过滤 Scanner 占位行与"已隐藏"行 */
@@ -1219,13 +1225,28 @@ interface MangaDao {
     @Query("SELECT * FROM reading_progress")
     suspend fun exportAllProgress(): List<ReadingProgress>
 
+    @Query("SELECT * FROM page_solo_flags")
+    suspend fun exportAllSoloFlags(): List<PageSoloFlag>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertSoloFlagsReplace(items: List<PageSoloFlag>)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertSoloFlagsIgnore(items: List<PageSoloFlag>)
+
+    @Query("DELETE FROM page_solo_flags")
+    suspend fun clearAllSoloFlags()
+
+    @Query("UPDATE manga_books SET customCoverPath = :customCoverPath WHERE id = :bookId")
+    suspend fun updateBookCustomCover(bookId: Long, customCoverPath: String?)
+
     @Query("SELECT * FROM reading_history")
     suspend fun exportAllHistory(): List<ReadingHistory>
 
     @Query("SELECT * FROM bookmarks")
     suspend fun exportAllBookmarks(): List<Bookmark>
 
-    @Query("SELECT id, readPages, lastReadAt, filePath FROM manga_books")
+    @Query("SELECT id, readPages, lastReadAt, filePath, customCoverPath FROM manga_books")
     suspend fun exportAllBooksAggregate(): List<BookAggregateRow>
 
     @Query("SELECT id, isFavorite, isHidden FROM manga_books")
@@ -1264,6 +1285,14 @@ interface MangaDao {
     @Query("DELETE FROM reading_progress")
     suspend fun clearAllProgress()
 
+    // ★ 备份"覆盖"恢复原子化（2026-10-11 审查）：clear 与 insert 拆两条独立调用，中途被杀
+    //   = 全清后没写回=数据全丢。@Transaction 保证同原子。
+    @Transaction
+    suspend fun replaceProgressAtomic(items: List<ReadingProgress>) {
+        clearAllProgress()
+        insertProgressReplace(items)
+    }
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertHistoryReplace(items: List<ReadingHistory>)
 
@@ -1280,6 +1309,12 @@ interface MangaDao {
     @Query("DELETE FROM bookmarks")
     suspend fun clearAllBookmarks()
 
+    @Transaction
+    suspend fun replaceBookmarksAtomic(items: List<Bookmark>) {
+        clearAllBookmarks()
+        insertBookmarksReplace(items)
+    }
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertBookshelvesReplace(items: List<Bookshelf>)
 
@@ -1288,6 +1323,12 @@ interface MangaDao {
 
     @Query("DELETE FROM bookshelves")
     suspend fun clearAllBookshelves()
+
+    @Transaction
+    suspend fun replaceBookshelvesAtomic(items: List<Bookshelf>) {
+        clearAllBookshelves()
+        insertBookshelvesReplace(items)
+    }
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertBookshelfItemsReplace(items: List<BookshelfItem>)
@@ -1298,6 +1339,12 @@ interface MangaDao {
     @Query("DELETE FROM bookshelf_items")
     suspend fun clearAllBookshelfItems()
 
+    @Transaction
+    suspend fun replaceBookshelfItemsAtomic(items: List<BookshelfItem>) {
+        clearAllBookshelfItems()
+        insertBookshelfItemsReplace(items)
+    }
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertTagsReplace(items: List<Tag>)
 
@@ -1306,6 +1353,12 @@ interface MangaDao {
 
     @Query("DELETE FROM tags")
     suspend fun clearAllTags()
+
+    @Transaction
+    suspend fun replaceTagsAtomic(items: List<Tag>) {
+        clearAllTags()
+        insertTagsReplace(items)
+    }
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertTagLinksReplace(items: List<TagLink>)
@@ -1316,6 +1369,12 @@ interface MangaDao {
     @Query("DELETE FROM tag_links")
     suspend fun clearAllTagLinks()
 
+    @Transaction
+    suspend fun replaceTagLinksAtomic(items: List<TagLink>) {
+        clearAllTagLinks()
+        insertTagLinksReplace(items)
+    }
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertSmbSourcesReplace(items: List<com.ehviewer.core.database.model.SmbSourceEntity>)
 
@@ -1325,6 +1384,12 @@ interface MangaDao {
     @Query("DELETE FROM SMB_SOURCES")
     suspend fun clearAllSmbSources()
 
+    @Transaction
+    suspend fun replaceSmbSourcesAtomic(items: List<com.ehviewer.core.database.model.SmbSourceEntity>) {
+        clearAllSmbSources()
+        insertSmbSourcesReplace(items)
+    }
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertWebDavSourcesReplace(items: List<com.ehviewer.core.database.model.WebDavSourceEntity>)
 
@@ -1333,6 +1398,12 @@ interface MangaDao {
 
     @Query("DELETE FROM WEBDAV_SOURCES")
     suspend fun clearAllWebDavSources()
+
+    @Transaction
+    suspend fun replaceWebDavSourcesAtomic(items: List<com.ehviewer.core.database.model.WebDavSourceEntity>) {
+        clearAllWebDavSources()
+        insertWebDavSourcesReplace(items)
+    }
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertLibraryRootsReplace(items: List<com.ehviewer.core.database.model.LibraryRootEntity>)
@@ -1364,6 +1435,7 @@ data class BookAggregateRow(
     val readPages: Int,
     val lastReadAt: Long?,
     val filePath: String,
+    val customCoverPath: String? = null,
 )
 
 data class BookShelfFlagsRow(
@@ -1472,7 +1544,7 @@ data class KomgaProgressSyncQueueEntity(
 
 @Database(
     entities = [Book::class, Folder::class, ReadingHistory::class, Bookshelf::class, BookshelfItem::class, Tag::class, TagLink::class, ReadingProgress::class, Bookmark::class, com.ehviewer.core.database.model.SmbSourceEntity::class, com.ehviewer.core.database.model.LibraryRootEntity::class, com.ehviewer.core.database.model.LocalGalleryEntity::class, com.ehviewer.core.database.model.WebDavSourceEntity::class, DownloadTaskEntity::class, KomgaSeriesCacheEntity::class, KomgaBookMemoEntity::class, KomgaProgressSyncQueueEntity::class, PageSoloFlag::class],
-    version = 27,
+    version = MangaDatabase.SCHEMA_VERSION,
     exportSchema = false
 )
 abstract class MangaDatabase : com.ehviewer.core.database.LocalLibraryDatabase() {
@@ -1480,6 +1552,9 @@ abstract class MangaDatabase : com.ehviewer.core.database.LocalLibraryDatabase()
     abstract override fun smbSourceDao(): com.ehviewer.core.database.dao.SmbSourceDao
 
     companion object {
+        /** ★ 数据库版本唯一事实源（注解与备份导出共用，防硬编码漂移） */
+        const val SCHEMA_VERSION = 27
+
         @Volatile
         private var INSTANCE: MangaDatabase? = null
 

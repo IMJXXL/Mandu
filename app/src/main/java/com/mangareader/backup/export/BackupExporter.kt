@@ -44,7 +44,7 @@ object BackupExporter {
             val payload = BackupPayload(
                 formatVersion = BACKUP_FORMAT_VERSION,
                 appVersion = context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "",
-                dbVersion = 17,
+                dbVersion = com.mangareader.data.MangaDatabase.SCHEMA_VERSION,
                 createdAt = System.currentTimeMillis(),
                 progress = progress,
                 settings = settings,

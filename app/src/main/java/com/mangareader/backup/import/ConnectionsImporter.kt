@@ -20,7 +20,7 @@ object ConnectionsImporter {
                 SmbSourceEntity(it.id, it.displayName, it.host, it.port, it.easyTierHost ?: "", it.share, it.pathPrefix ?: "", it.username ?: "", it.domain ?: "", it.addedAt, if (it.lastOkAt > 0) it.lastOkAt else null, it.lastError)
             }
             when (strategy) {
-                ConflictStrategy.OVERWRITE -> { dao.clearAllSmbSources(); dao.insertSmbSourcesReplace(items) }
+                ConflictStrategy.OVERWRITE -> dao.replaceSmbSourcesAtomic(items)
                 ConflictStrategy.SKIP -> dao.insertSmbSourcesIgnore(items)
                 ConflictStrategy.MERGE -> dao.insertSmbSourcesReplace(items)
             }
@@ -31,10 +31,10 @@ object ConnectionsImporter {
         }
         if (payload.webdavSources.isNotEmpty()) {
             val items = payload.webdavSources.map {
-                WebDavSourceEntity(it.id, it.displayName, it.baseUrl, it.easyTierHost ?: "", it.pathPrefix ?: "", it.username ?: "", it.addedAt, if (it.lastOkAt > 0) it.lastOkAt else null, it.lastError)
+                WebDavSourceEntity(it.id, it.displayName, it.baseUrl, it.easyTierHost ?: "", it.pathPrefix ?: "", it.username ?: "", it.addedAt, if (it.lastOkAt > 0) it.lastOkAt else null, it.lastError, it.noCoverFetch)
             }
             when (strategy) {
-                ConflictStrategy.OVERWRITE -> { dao.clearAllWebDavSources(); dao.insertWebDavSourcesReplace(items) }
+                ConflictStrategy.OVERWRITE -> dao.replaceWebDavSourcesAtomic(items)
                 ConflictStrategy.SKIP -> dao.insertWebDavSourcesIgnore(items)
                 ConflictStrategy.MERGE -> dao.insertWebDavSourcesReplace(items)
             }
