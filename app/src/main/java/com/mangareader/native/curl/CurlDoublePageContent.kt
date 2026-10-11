@@ -87,11 +87,10 @@ fun CurlDoublePageContent(
     val rightHalf = Rect(0.5f, 0f, 1f, 1f)
     val leftHalf = Rect(0f, 0f, 0.5f, 1f)
 
-    val dragInteraction = PageCurlConfig.StartEndDragInteraction(
-        pointerBehavior = PageCurlConfig.DragInteraction.PointerBehavior.PageEdge,
-        forward = PageCurlConfig.StartEndDragInteraction.Config(start = rightHalf, end = leftHalf),
-        backward = PageCurlConfig.StartEndDragInteraction.Config(start = leftHalf, end = rightHalf),
-    )
+    // ★ P1-6 对齐单页修复（2026-10-11）：StartEndDragInteraction(PageEdge) 拖拽实机无效
+    //   （单页同病根 2026-10-06 已换 GestureDragInteraction，见 CurlReaderContent），
+    //   双页漏改导致卷页只能点击翻页
+    val dragInteraction: PageCurlConfig.DragInteraction = PageCurlConfig.GestureDragInteraction()
 
     val tapInteraction = PageCurlConfig.TargetTapInteraction(
         forward = PageCurlConfig.TargetTapInteraction.Config(target = rightHalf),

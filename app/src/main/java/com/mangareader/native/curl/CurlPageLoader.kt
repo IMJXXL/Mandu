@@ -86,7 +86,12 @@ class CurlPageLoader(
                     val srcId = System.identityHashCode(srHit)
                     val already = synchronized(bakedFrom) { bakedFrom[idx] }
                     if (already != srcId) {
-                        cache.put(idx, com.mangareader.filter.PaperPageTexture.apply(srHit))
+                        // ★ 补抖动对齐常规解码路径（SR 回填不走 processBitmap）
+                        var dithered = srHit
+                        if (einkDither && !dithered.isRecycled) {
+                            try { dithered = dithered.applyEinkDither(einkDitherAlgorithm, einkDitherLevels, einkEndpointPassthrough) } catch (_: Exception) {}
+                        }
+                        cache.put(idx, com.mangareader.filter.PaperPageTexture.apply(dithered))
                         synchronized(bakedFrom) { bakedFrom[idx] = srcId }
                         onLoaded(idx)
                     }
@@ -159,8 +164,26 @@ class CurlPageLoader(
                         loader.execute(coil3.request.ImageRequest.Builder(context).data(raw).build())
                     }
                     val image = result.image
-                    if (image is coil3.BitmapImage) {
-                        var bmp = image.bitmap
+                    // ★ BitmapImage=静图；DrawableImage=远程动图（此前无分支被静默丢弃=仿真翻页白页），
+                    //   取首帧转静图兜底（curl 纹理管线不支持动图播放）
+                    var bmp: Bitmap? = when (image) {
+                        is coil3.BitmapImage -> image.bitmap
+                        is coil3.DrawableImage -> try {
+                            val dr = image.drawable
+                            (dr as? android.graphics.drawable.BitmapDrawable)?.bitmap
+                                ?: android.graphics.Bitmap.createBitmap(
+                                    dr.intrinsicWidth.coerceAtLeast(1),
+                                    dr.intrinsicHeight.coerceAtLeast(1),
+                                    Bitmap.Config.ARGB_8888,
+                                ).also { out ->
+                                    val c = android.graphics.Canvas(out)
+                                    dr.setBounds(0, 0, out.width, out.height)
+                                    dr.draw(c)
+                                }
+                        } catch (_: Exception) { null }
+                        else -> null
+                    }
+                    if (bmp != null) {
                         val cropActive = cropL > 0.001f || cropT > 0.001f || cropR > 0.001f || cropB > 0.001f
                         if (cropActive && bmp.width > 10 && bmp.height > 10) {
                             try {

@@ -94,7 +94,11 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
 
     /** 只读暴露当前页（遮罩超时重载等外部只读场景用；写入仍走内部流程/ goToPage） */
     val currentPageForKick: Int get() = currentPage
-    private val loadScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+    // ★ 异常兜底：loadScope 无 handler 时任一解码/网络异常直接崩进程（审查新发现）
+    private val loadScope = CoroutineScope(
+        Dispatchers.Default + SupervisorJob() +
+            kotlinx.coroutines.CoroutineExceptionHandler { _, e -> android.util.Log.w("WebtoonRV", "page load error: ${e.message}") }
+    )
     // ★ P4（2026-10-04）：删除 ensureArchive/nativeArchive 死句柄——打开的归档句柄全程无读取方，
     //   每次开书白付一次 mmap+中央目录解析；正文解码走 engine.loadPage 独立缓存
     @Volatile private var scrolling = false

@@ -151,6 +151,10 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         if (einkDither == enabled && einkDitherAlgorithm == algorithm && einkDitherLevels == levels && einkEndpointPassthrough == endpointPassthrough) return
         setEinkDither(enabled, algorithm, levels, endpointPassthrough)
         bitmapCache.evictAll()
+        // ★ halfCache/mergedCache 同步失效：半页/合并页烘焙自旧参数位图，键不含参数身份，
+        //   不清则左半新右半旧（审查 N4）
+        halfCache.evictAll()
+        mergedCache.evictAll()
         val cur = currentPage
         (cur - 2..cur + 5).forEach {
             if (it in pageList.indices) { inflightLoads.remove(it); loadPageAsync(it) }
@@ -161,6 +165,8 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
      *  失效 + 当前±窗口重载，其余页滑到时 cache miss 按新纹理解码（eink 抖动同款无白屏策略） */
     fun applyPaperTextureNow() {
         bitmapCache.evictAll()
+        halfCache.evictAll()
+        mergedCache.evictAll()
         val cur = currentPage
         (cur - 2..cur + 5).forEach {
             if (it in pageList.indices) { inflightLoads.remove(it); loadPageAsync(it) }
@@ -172,7 +178,11 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     var pageBgColor: Int = android.graphics.Color.parseColor("#FFFFFF")
     var imageMarginH: Int = 0
 
-    private var loadScope: CoroutineScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+    // ★ 异常兜底：loadScope 无 handler 时任一解码/网络异常直接崩进程（审查新发现）
+    private var loadScope: CoroutineScope = CoroutineScope(
+        Dispatchers.Default + SupervisorJob() +
+            kotlinx.coroutines.CoroutineExceptionHandler { _, e -> android.util.Log.w("PagerView", "page load error: ${e.message}") }
+    )
 
     /** ★ 跳页调度（2026-09-09）：inflight 加载 job 注册表，prioritizeLoad 取消窗口外 job 释放 IO 资源 */
     private val loadJobs = java.util.concurrent.ConcurrentHashMap<Int, kotlinx.coroutines.Job>()
@@ -304,8 +314,9 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         val kind = pageAnimFlags.firstOrNull { it.pageIdx == idx }?.kind ?: return
         if (animFailedIdx.contains(idx)) return  // 构造失败过：静图路径接管，不再重试
         // ★ Bug#9：命中 raw cache 直接复用，不重走 IO；命中已构造 drawable 直接补 start
-        if (pageAnimDrawables[idx] != null) {
-            val existingDrawable = pageAnimDrawables[idx]!!
+        // ★ pageAnimDrawables 全路径加锁（后台 loadScope put 与主线程读写并发，审查 P2-1）
+        val existingDrawable = synchronized(pageAnimDrawables) { pageAnimDrawables[idx] }
+        if (existingDrawable != null) {
             // ★ Bug C-1a 修复：drawable 虽在 map 里，但 holder 可能是新复用的（ImageView 上没有这个 drawable）。
             //   原版只 startAnimIfNotRunning 不 setAnimDrawable → 回翻时 holder 的 ImageView 空白 → 闪白。
             //   若 holder 当前 held 的不是这个 drawable，则 setAnimDrawable 重设到 ImageView（内部 SKIP 同实例）。
@@ -419,7 +430,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
      *      这里走"不 stop "+ "isRunning false 才 START" 双保险。 */
     private fun startAnimIfNotRunning(idx: Int) {
         // ★ §34.1：不再 forEach stop 其他页——保留它们持续 running 以避免 stop/start 重启空窗
-        val d = pageAnimDrawables[idx]
+        val d = synchronized(pageAnimDrawables) { pageAnimDrawables[idx] }
         if (d == null) {
             currentPlayingAnimIdx = -1
             return
@@ -433,7 +444,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             anim?.start()
         } catch (t: Throwable) {
             // ★ Bug#10 兜底：start 异常时把坏 drawable 从 map 移除，下次进这页能重新 load/build
-            pageAnimDrawables.remove(idx)
+            synchronized(pageAnimDrawables) { pageAnimDrawables.remove(idx) }
         }
         currentPlayingAnimIdx = idx
     }
@@ -474,10 +485,10 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         } catch (_: Exception) {}
     }
 
-    // ★ F3.1 修正版（0829 双页闪退实锤）：LruCache 按张数限容（8 张），sizeOf 恒返回 1。
+    // ★ F3.1 修正版（0829 双页闪退实锤）：LruCache 按张数限容（16 张），sizeOf 恒返回 1。
     //   首版按 byteCount 计重——位图 recycle 后 byteCount 归 0，LruCache 内部计重失配，
     //   evictAll 时抛 "sizeOf() is reporting inconsistent results!" 闪退；常量计重永不失配。
-    //   单页内存上限由 F3.2 解码闸（≤6M px ≈ 24MB）兜底，8 张最坏 ~192MB，远好于原来无上限。
+    //   单页内存上限由 F3.2 解码闸（≤6M px ≈ 24MB）兜底，16 张最坏 ~384MB（注释口径对齐实现）。
     private val bitmapCache = object : android.util.LruCache<Int, Bitmap>(16) {
         override fun sizeOf(key: Int, value: Bitmap): Int = 1
     }
@@ -899,14 +910,19 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             // 页数或引擎变化：完全重建
             this.currentPage = startPage
             loadScope.cancel()
-            loadScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+            loadScope = CoroutineScope(
+                Dispatchers.Default + SupervisorJob() +
+                    kotlinx.coroutines.CoroutineExceptionHandler { _, e -> android.util.Log.w("PagerView", "page load error: ${e.message}") }
+            )
             loadJobs.clear() // ★ 调度修复：旧 scope 的 job 全部作废，注册表同步清空
             // ★ ⑧ 最小修复：切章 clear 前 recycle 所有 bitmap，避免裸 clear 导致 Bitmap 泄漏（内存只涨不回收）
             clearBitmapCacheRecycling()
             // ★ §24 二代 Bug#6：切卷时必须清空动图状态——否则上一卷的 pageAnimDrawables 不释放（decoder/内存泄露）、
             //   pageAnimFlags 残留污染新卷 idx 判定、animatedCount 不归零导致提前弹"切翻页"对话框
-            pageAnimDrawables.values.forEach { try { if (it is Animatable && it.isRunning) it.stop() } catch (_: Throwable) {} }
-            pageAnimDrawables.clear()
+            synchronized(pageAnimDrawables) {
+                pageAnimDrawables.values.forEach { try { if (it is Animatable && it.isRunning) it.stop() } catch (_: Throwable) {} }
+                pageAnimDrawables.clear()
+            }
             pageAnimFlags = emptyList()
             animatedCount = 0
             animFailedIdx.clear()
@@ -1052,6 +1068,8 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         this.trimThreshold = threshold
         this.trimWhiteRatio = whiteRatio
         clearTileFileCache()
+        halfCache.evictAll()
+        mergedCache.evictAll()
         // ★ 修复白屏：不清除全部缓存+notifyDataSetChanged（会白屏），
         //   逐页 remove+loadPageAsync，旧 bitmap 在 SSIV 中保留显示直到新 bitmap 加载完成
         val cur = currentPage
@@ -1067,6 +1085,8 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         if (cropL == l && cropT == t && cropR == r && cropB == b) return
         cropL = l; cropT = t; cropR = r; cropB = b
         clearTileFileCache()
+        halfCache.evictAll()
+        mergedCache.evictAll()
         val cur = currentPage
         (cur - 2..cur + 5).forEach {
             if (it in pageList.indices) { bitmapCache.remove(it); inflightLoads.remove(it); loadPageAsync(it) }
@@ -1415,8 +1435,13 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     /** 注入放大后的 bitmap 到缓存并刷新当前页显示 */
     fun injectUpscaledBitmap(pageIndex: Int, bitmap: Bitmap) {
         // 不主动回收旧bitmap，让GC自然处理（避免ViewHolder还在使用时被回收导致黑屏）
+        // ★ 墨水屏抖动：SR 注入不走 processBitmap，补抖动对齐 webtoon 的同款注入（审查 P2-4）
+        var bmp = bitmap
+        if (einkDither && !bmp.isRecycled) {
+            try { bmp = bmp.applyEinkDither(einkDitherAlgorithm, einkDitherLevels, einkEndpointPassthrough) } catch (_: Exception) {}
+        }
         // ★ 超分结果异步回填：SR 源图未贴纹理，注入缓存前补贴
-        bitmapCache.put(pageIndex, com.mangareader.filter.PaperPageTexture.apply(bitmap))
+        bitmapCache.put(pageIndex, com.mangareader.filter.PaperPageTexture.apply(bmp))
         val pos = positionOf(pageIndex)
         android.util.Log.i("PagerView", "srInject p=$pageIndex pos=$pos bmp=${bitmap.width}x${bitmap.height}")
         if (pos >= 0 && pos < pageList.size) {
@@ -1631,7 +1656,12 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 com.mangareader.sr.SrPipeline.noteViewport(width, height, false)
                 val srHit = com.mangareader.sr.SrPipeline.attachOrScheduleFast(idx, cached)
                 if (srHit != null && !srHit.isRecycled && srHit !== cached) {
-                    bitmapCache.put(idx, com.mangareader.filter.PaperPageTexture.apply(srHit))
+                    // ★ 补抖动对齐 injectUpscaledBitmap（SR 缓存命中回填同样不走 processBitmap）
+                    var dithered = srHit
+                    if (einkDither && !dithered.isRecycled) {
+                        try { dithered = dithered.applyEinkDither(einkDitherAlgorithm, einkDitherLevels, einkEndpointPassthrough) } catch (_: Exception) {}
+                    }
+                    bitmapCache.put(idx, com.mangareader.filter.PaperPageTexture.apply(dithered))
                     val pos = if (isRtl) pageList.size - 1 - idx else idx
                     if (pos >= 0 && pos < pageList.size) pagerAdapter?.notifyItemChanged(pos, "loaded")
                 }
@@ -1639,7 +1669,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             return
         }
         // ★ LV119：动图页已在 pageAnimDrawables 中，跳过静图加载
-        if (pageAnimDrawables[idx] != null) return
+        if (synchronized(pageAnimDrawables) { pageAnimDrawables[idx] } != null) return
         val meta = pageList[idx]
         val nowTs = android.os.SystemClock.uptimeMillis()
         val pitTs = inflightLoads[idx]
@@ -1715,7 +1745,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                         }
                     }
                     if (drawable != null) {
-                        pageAnimDrawables[idx] = drawable
+                        synchronized(pageAnimDrawables) { pageAnimDrawables[idx] = drawable }
                         if (pageAnimFlags.none { it.pageIdx == idx }) {
                             pageAnimFlags = pageAnimFlags + AnimFlag(idx, kind)
                             animatedCount++
@@ -1937,8 +1967,10 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         growListener?.let { old -> remotePageSupply?.onPageCountGrow?.remove(old) }
         growListener = null
         // ★ §24 二代释放动图 Drawable（停 + 清 map），防 View 销毁后 decoder 跑漏内存
-        pageAnimDrawables.values.forEach { try { if (it is Animatable && it.isRunning) it.stop() } catch (_: Throwable) {} }
-        pageAnimDrawables.clear()
+        synchronized(pageAnimDrawables) {
+            pageAnimDrawables.values.forEach { try { if (it is Animatable && it.isRunning) it.stop() } catch (_: Throwable) {} }
+            pageAnimDrawables.clear()
+        }
         currentPlayingAnimIdx = -1
         pageAnimFlags = emptyList()
         animatedCount = 0
@@ -1949,6 +1981,9 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         inflightLoads.clear() // ★ 白屏工单任务3
         // ★ v102: 不 recycle（SSIV 可能仍持有引用，同 clearBitmapCacheRecycling）；evict 后 GC 自动回收
         bitmapCache.evictAll()
+        // ★ 半页/合并页缓存跨 release 残留（同实例 release→re-setup 后旧章图驻留）
+        halfCache.evictAll()
+        mergedCache.evictAll()
         clearTileFileCache()
         // ★ v1.13 C-1：身份字段随缓存一并作废——下次 setup 必命中 pagesChanged=true 走全量重建
         //   （重建 adapter + setCurrentItem + preloadAround 补载），根治模式切换白屏
@@ -2186,7 +2221,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 val realIdx = spreadTable.firstPage(slotPos)
                 val half = spreadTable.slotHalf(slotPos)
                 // ★ LV119 对齐参考项目：Coil3 自动识别动图 → pageAnimDrawables → ImageView 播放
-                val animDrawable = pageAnimDrawables[realIdx]
+                val animDrawable = synchronized(pageAnimDrawables) { pageAnimDrawables[realIdx] }
                 if (animDrawable != null) {
                     holder.setAnimDrawable(realIdx, animDrawable)
                     if (realIdx == currentPage) startAnimIfNotRunning(realIdx)
@@ -2603,7 +2638,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             disposeAnimDrawable()
             heldIdx = idx
             heldAnimDrawable = drawable
-            pageAnimDrawables[idx] = drawable
+            synchronized(pageAnimDrawables) { pageAnimDrawables[idx] = drawable }
             // 动图页隐藏 SSIV 走 ImageView 显示
             ssiv?.visibility = View.GONE
             iv?.visibility = View.VISIBLE
