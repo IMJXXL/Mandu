@@ -292,7 +292,9 @@ class PanelGuideOverlay(context: Context) : View(context) {
 
         if (bmp == null || bmp.isRecycled) {
             canvas.drawColor(Color.BLACK)
-            canvas.drawText("分格识别中…", vw / 2 - hintPaint.textSize * 3, vh / 2, hintPaint)
+            // result 已到但位图没载到 = 解码失败；result 未到 = 正常识别中
+            val msg = if (result != null) "页面加载失败，点击中键退出" else "分格识别中…"
+            canvas.drawText(msg, vw / 2 - hintPaint.textSize * msg.length / 2.2f, vh / 2, hintPaint)
             return
         }
 
