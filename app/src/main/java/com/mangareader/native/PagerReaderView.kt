@@ -833,13 +833,15 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     //   产生滚动事件，只能在根分发层观察原始触点）。每手势一次，缩放/平移中不触发。
     private var endAttemptFired = false
     private var endAttemptAccum = 0f
-    fun fireChapterEndAttempt() {   // public：Reader 硬件键 RTL 分支在阅读序末页调用（无缝续读触发点）
+    fun fireChapterEndAttempt(forward: Boolean = true) {   // public：Reader 硬件键 RTL 分支在阅读序末页调用（无缝续读触发点）
         if (!layoutSwitchPending && !setupAnchoring && pagerAdapter != null) {
-            onChapterEnd?.invoke(true)
+            onChapterEnd?.invoke(forward)
         }
     }
     /** 当前 adapter 位次（ViewPager2.currentItem 公开访问器；Reader 硬件键 RTL 分支判边界用） */
     val currentItem: Int get() = viewPager.currentItem
+    /** adapter 总 slot 数（公开访问器；Reader 硬件键 RTL 后退分支判阅读序首页边界用） */
+    val adapterCount: Int get() = pagerAdapter?.itemCount ?: 0
     private fun isOnReadingLastSlot(): Boolean = try {
         val count = spreadTable.slotCount
         count > 0 && (if (isRtl) viewPager.currentItem == 0 else viewPager.currentItem == count - 1)
@@ -1645,6 +1647,9 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         // ★ v1.384 slot 级翻页：物理 slot -1（对称 nextPage，半页位由表表达）
         val prev = viewPager.currentItem - 1
         if (prev >= 0) viewPager.setCurrentItem(prev, flipAnimationEnabled && !verticalPager)
+        // ★ 首页上再点后退区/翻页键 = 后退尝试（上一章，对称 nextPage 的末页前进尝试；
+        //   报告 §6.4 遗留项：此前 LTR 静默无动作，RTL 已由 F7 覆盖）
+        else fireChapterEndAttempt(forward = false)
     }
 
     /**
