@@ -37,6 +37,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
 import moe.tarsin.kt.install
 import okio.Path
@@ -96,8 +97,18 @@ suspend inline fun <T> useDocumentExtractPageLoader(
             val partialLoader = partialIdx?.let { idx ->
                 val exts = idx.members.associate { it.i to it.ext }
                 val total = idx.members.size
-                val available = idx.members.filter { DocumentExtractCache.isPageCached(cacheKey, it.i, it.ext) }
-                    .map { it.i }.toSet()
+                val available = ConcurrentHashMap.newKeySet<Int>().apply {
+                    addAll(idx.members.filter { DocumentExtractCache.isPageCached(cacheKey, it.i, it.ext) }.map { it.i })
+                }
+                // ★ 在线自愈（2026-10-11，对齐档案流式 partialCachedStreamLoader）：断网半缓存
+                //   打开后网络恢复，未缓存页按页补拉。有界探测当门卫（4s）——在线才值得开引擎
+                //   （文档引擎打开本身需要网络：PDF 页树/EPUB OPF/mobi 解析）；引擎懒开一次
+                //   （AtomicReference + 互斥），提取串行（引擎非线程安全），成功写
+                //   DocumentExtractCache 并按页通知，失败按页报"离线不可用"。
+                var healReason = "离线不可用（未缓存）"
+                val healEngine = AtomicReference<DocumentImageEngine?>(null)
+                val healMutex = Mutex()
+                val healInFlight = ConcurrentHashMap.newKeySet<Int>()
                 if (total > 0 && available.isNotEmpty()) {
                     install(
                         object : PageLoader(
@@ -127,9 +138,74 @@ suspend inline fun <T> useDocumentExtractPageLoader(
                                 }
                             }
                             override fun prefetchPages(pages: List<Int>, bounds: IntRange) = Unit
+                            override fun close() {
+                                // 自愈引擎随会话收尾：顺手把补拉后的完整度写回索引
+                                healEngine.getAndSet(null)?.let { eng ->
+                                    runCatching {
+                                        val structureComplete =
+                                            (eng as? ProgressiveDocumentImageEngine)?.structureComplete ?: true
+                                        DocumentExtractCache.saveIndexAsync(
+                                            eng.toIndex(
+                                                cacheKey,
+                                                complete = structureComplete && eng.pageCount > 0 &&
+                                                    (0 until eng.pageCount).all { i ->
+                                                        eng.extOf(i)?.let {
+                                                            DocumentExtractCache.isPageCached(cacheKey, i, it)
+                                                        } == true
+                                                    },
+                                            ),
+                                        )
+                                    }
+                                    runCatching { eng.close() }
+                                }
+                                super.close()
+                            }
+
                             override fun onRequest(index: Int, force: Boolean, orgImg: Boolean) {
-                                if (index in available) notifySourceReady(index, orgImg)
-                                else notifyPageFailed(index, "离线不可用（未缓存）")
+                                if (index in available) {
+                                    notifySourceReady(index, orgImg)
+                                    return
+                                }
+                                if (index !in 0 until total) {
+                                    notifyPageFailed(index, "离线不可用（未缓存）")
+                                    return
+                                }
+                                // 去重：同页补拉在途时静默等待通知
+                                if (!healInFlight.add(index)) return
+                                scope.launch(Dispatchers.IO) {
+                                    try {
+                                        healReason = "离线不可用（未缓存）"
+                                        val ok = runCatching {
+                                            healMutex.withLock {
+                                                val ext = exts[index]
+                                                if (ext != null && DocumentExtractCache.isPageCached(cacheKey, index, ext)) {
+                                                    return@withLock true
+                                                }
+                                                val netSize = boundedRemoteSizeProbe(source)
+                                                if (netSize <= 0L) return@withLock false
+                                                healReason = "页面补拉失败"
+                                                val eng = healEngine.get() ?: openDocumentEngine(
+                                                    source = source,
+                                                    sizeHint = netSize,
+                                                    formatHint = formatHint,
+                                                    titleHint = titleHint,
+                                                    cacheKey = cacheKey,
+                                                    cachedIndex = idx,
+                                                    progressivePdf = progressivePdf,
+                                                ).also { healEngine.set(it) }
+                                                if (index >= eng.pageCount) return@withLock false
+                                                eng.extractToCache(cacheKey, index) != null
+                                            }
+                                        }.getOrDefault(false)
+                                        if (ok) available.add(index)
+                                        withContext(Dispatchers.Main) {
+                                            if (ok) notifySourceReady(index, orgImg)
+                                            else notifyPageFailed(index, healReason)
+                                        }
+                                    } finally {
+                                        healInFlight.remove(index)
+                                    }
+                                }
                             }
                         },
                     )
