@@ -60,6 +60,21 @@ internal val SIZE_PROBE_POOL = Executors.newCachedThreadPool { r ->
 }
 
 /**
+ * ★ 远程 size 有界探测（默认 4s，2026-10-11 离线半读全家族）：黑洞式断网下 source.size
+ * 阻塞 8~16s+（SMB 8s 连接×重试、WebDAV 更长），15s 打开预算先耗尽 → 各加载器的
+ * 磁盘缓存检查（complete+partial）永远走不到。超时按"未知(-1)"处理，调用方据此走
+ * 离线缓存分支；被放弃的探测线程最迟等到连接超时自行结束（结果丢弃无副作用）。
+ */
+@PublishedApi
+internal fun boundedRemoteSizeProbe(source: ArchiveByteSource, timeoutMs: Long = 4_000L): Long = try {
+    java.util.concurrent.CompletableFuture
+        .supplyAsync({ runCatching { source.size }.getOrDefault(-1L) }, SIZE_PROBE_POOL)
+        .get(timeoutMs, java.util.concurrent.TimeUnit.SECONDS)
+} catch (_: Exception) {
+    -1L
+}
+
+/**
  * Stream-open a remote archive via [ArchiveByteSource] + libarchive seek/read.
  *
  * Local folder archives use mmap ([useArchivePageLoader]) and do **not** go through here.

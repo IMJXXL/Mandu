@@ -77,8 +77,9 @@ suspend inline fun <T> useSolidExtractPageLoader(
     autoCloseScope {
         coroutineScope {
             // Soft-fail remote size (WebDAV restart): do not crash; fall back to 0 and open checks.
+            // ★ 有界探测（离线半读）：黑洞断网不再耗尽打开预算，complete/半缓存分支可达
             val sizeHint = remoteSize.takeIf { it > 0L }
-                ?: runCatching { source.size }.getOrDefault(0L)
+                ?: com.hippo.ehviewer.gallery.boundedRemoteSizeProbe(source).coerceAtLeast(0L)
             // Hard invalidate before any resume/cold path; pin while reader owns this key.
             SolidExtractCache.invalidateIfRemoteSizeMismatch(cacheKey, sizeHint)
             SolidExtractCache.pin(cacheKey)
@@ -102,8 +103,10 @@ suspend inline fun <T> useSolidExtractPageLoader(
                 return@coroutineScope block(loader)
             }
 
-            check(sizeHint > 0L) { "Cannot open solid archive (size unknown): $cacheKey" }
-
+            // ★ 半缓存离线续读（2026-10-11）：size 未知不再硬失败——列表/页面种子来自
+            //   pages/+index.json（seedFromDiskIndex），已缓存页零网络直出；未缓存页在
+            //   nativeOpener 处按页失败（onRequest 已兜 notifyPageFailed）。完全无缓存的
+            //   离线书在下方 listedCount 检查处干净失败，与在线失败同通道。
             val engine = SolidExtractEngine(
                 cacheKey = cacheKey,
                 remoteSize = sizeHint,
@@ -120,6 +123,11 @@ suspend inline fun <T> useSolidExtractPageLoader(
                 if (solidOpen.get()) return@opener
                 solidOpenMutex.withLock {
                     if (solidOpen.get()) return@withLock
+                    // ★ size 未知（离线/探测失败）禁止开顺流会话——openSolidSequential 需要
+                    //   真实 size 做游标界，强开=错误行为；按页失败走人话提示
+                    if (sizeHint <= 0L) {
+                        throw IllegalStateException("离线不可用（未缓存且 size 未知）")
+                    }
                     val bridge = ArchiveStreamBridge(source)
                     solidBridgeRef.set(bridge)
                     // maxScanBytes = 0: no scan limit
@@ -140,8 +148,9 @@ suspend inline fun <T> useSolidExtractPageLoader(
                 runCatching { solidBridgeRef.getAndSet(null)?.close() }
             })
 
-            if (!engine.isKnownOnDisk(0)) {
+            if (!engine.isKnownOnDisk(0) && sizeHint > 0L) {
                 // Cold (or missing page 0): must open native and extract/list first page.
+                // ★ 离线（size 未知）不冷开：nativeOpener 会抛错中断打开；缓存页依 seed 正常出
                 engine.ensureThrough(0)
             }
             check(engine.listedCount() > 0) { "Solid archive has no playable images" }

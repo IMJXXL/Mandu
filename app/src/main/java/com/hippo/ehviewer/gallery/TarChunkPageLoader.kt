@@ -66,8 +66,13 @@ suspend inline fun <T> useTarChunkPageLoader(
             return@coroutineScope block(loader)
         }
 
-        val archiveSize = runCatching { source.size }.getOrDefault(-1L)
-        check(archiveSize > 0L) { "Cannot open TAR (size unknown): $cacheKey" }
+        // ★ 有界探测 + 半缓存离线续读（2026-10-11）：size 未知时只要磁盘有种子
+        // （index 或已缓存页）就继续——已缓存页零网络直出，未缓存页在引擎读取处按页失败；
+        // 无种子的离线书仍在此干净失败。
+        val archiveSize = com.hippo.ehviewer.gallery.boundedRemoteSizeProbe(source)
+        val hasDiskSeed = ArchiveStreamPageCache.loadIndex(cacheKey)?.members?.isNotEmpty() == true ||
+            ArchiveStreamPageCache.listCachedPages(cacheKey).isNotEmpty()
+        check(archiveSize > 0L || hasDiskSeed) { "Cannot open TAR (size unknown): $cacheKey" }
         ArchiveStreamPageCache.invalidateIfRemoteSizeMismatch(cacheKey, archiveSize)
         val ready = ArchiveStreamPageCache.isCompleteAndReady(cacheKey, remoteSize = archiveSize)
         if (ready != null && ready.format == "tar") {
@@ -93,13 +98,15 @@ suspend inline fun <T> useTarChunkPageLoader(
         engine.seedFromDisk(diskIndex)
 
         // Need at least page 0 listed+extracted for open.
-        if (!engine.isKnownOnDisk(0)) {
+        // ★ 离线（size 未知）不冷开：引擎读取必撞网络。第 0 页未缓存时交给
+        //   请求期按页失败，其余已缓存页正常出。
+        if (!engine.isKnownOnDisk(0) && archiveSize > 0L) {
             engine.ensureThrough(0)
         }
         check(engine.listedCount() > 0) { "TAR has no playable images" }
 
         // Resume: header-walk (skip cached) to startPage, extract only misses.
-        if (startPage > 0 && !engine.isKnownOnDisk(startPage)) {
+        if (startPage > 0 && !engine.isKnownOnDisk(startPage) && archiveSize > 0L) {
             engine.ensureThrough(startPage)
         }
 

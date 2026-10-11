@@ -63,8 +63,59 @@ suspend inline fun <T> usePdfiumPageLoader(
     crossinline block: suspend (PageLoader) -> T,
 ): T = autoCloseScope {
     coroutineScope {
-        val size = remoteSize.takeIf { it > 0L } ?: runCatching { source.size }.getOrDefault(0L)
-        check(size > 0L) { "Cannot open PDF (size unknown): $cacheKey" }
+        // ★ 有界探测 + 半缓存离线续读（2026-10-11 审查）：pdfium 探测在最前且无离线路径，
+        // 黑洞断网下整本打不开。size 未知时若磁盘有可用索引（渲染页落 DocumentExtractCache），
+        // 引擎无关直出已缓存页，未缓存页按页失败；无缓存才干净失败。
+        val size = remoteSize.takeIf { it > 0L } ?: com.hippo.ehviewer.gallery.boundedRemoteSizeProbe(source).coerceAtLeast(0L)
+        if (size <= 0L) {
+            val partialIdx = DocumentExtractCache.loadUsableIndex(cacheKey, remoteSize = 0L)
+            val partialLoader = partialIdx?.let { idx ->
+                val exts = idx.members.associate { it.i to it.ext }
+                val total = idx.members.size
+                val available = idx.members.filter { DocumentExtractCache.isPageCached(cacheKey, it.i, it.ext) }
+                    .map { it.i }.toSet()
+                if (total > 0 && available.isNotEmpty()) {
+                    install(
+                        object : PageLoader(
+                            this,
+                            info,
+                            startPage.coerceIn(0, (total - 1).coerceAtLeast(0)),
+                            total,
+                            false,
+                        ) {
+                            override val title by lazy { info?.title ?: titleHint }
+                            override fun getImageExtension(index: Int) = exts[index] ?: "jpg"
+                            override fun savePage(index: Int, file: Path): Boolean = runCatching {
+                                val ext = exts[index] ?: "jpg"
+                                if (!DocumentExtractCache.isPageCached(cacheKey, index, ext)) return@runCatching false
+                                val p = DocumentExtractCache.pagePath(cacheKey, index, ext)
+                                File(p.toString()).copyTo(File(file.toString()), overwrite = true)
+                                true
+                            }.getOrDefault(false)
+                            override fun openSource(index: Int): ImageSource {
+                                val ext = exts[index] ?: "jpg"
+                                val p = DocumentExtractCache.pagePath(cacheKey, index, ext)
+                                return object : PathSource {
+                                    override val source: Path = p
+                                    override val type: String = ext
+                                    override fun close() = Unit
+                                }
+                            }
+                            override fun prefetchPages(pages: List<Int>, bounds: IntRange) = Unit
+                            override fun onRequest(index: Int, force: Boolean, orgImg: Boolean) {
+                                if (index in available) notifySourceReady(index, orgImg)
+                                else notifyPageFailed(index, "离线不可用（未缓存）")
+                            }
+                        },
+                    )
+                } else null
+            }
+            if (partialLoader != null) {
+                DocumentExtractCache.touchAsync(cacheKey)
+                return@coroutineScope block(partialLoader)
+            }
+            check(false) { "Cannot open PDF offline (no usable cache): $cacheKey" }
+        }
 
         val pdfKey = "remote_pdf:$cacheKey"
 

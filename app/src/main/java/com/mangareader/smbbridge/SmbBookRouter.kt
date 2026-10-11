@@ -219,7 +219,7 @@ object SmbBookRouter {
                     titleHint = titleHint,
                     info = null,
                     startPage = startPage,
-                    remoteSize = runCatching { byteSource.size }.getOrDefault(0L),
+                    remoteSize = com.hippo.ehviewer.gallery.boundedRemoteSizeProbe(byteSource),
                 ) { loader -> block(loader, byteSource) }
             } else {
                 // ★ 2026-10-05 M2：mobi 系走记录级流式文档管线（不再落 ZIP 流解析必失败）
@@ -235,7 +235,7 @@ object SmbBookRouter {
                     formatHint = documentFormat,
                     info = null,
                     startPage = startPage,
-                    remoteSize = runCatching { byteSource.size }.getOrDefault(0L),
+                    remoteSize = com.hippo.ehviewer.gallery.boundedRemoteSizeProbe(byteSource),
                     progressivePdf = documentFormat == "pdf",
                 ) { loader -> block(loader, byteSource) }
             }
@@ -247,7 +247,7 @@ object SmbBookRouter {
                     titleHint = titleHint,
                     info = null,
                     startPage = startPage,
-                    remoteSize = runCatching { byteSource.size }.getOrDefault(0L),
+                    remoteSize = com.hippo.ehviewer.gallery.boundedRemoteSizeProbe(byteSource),
                     passwdProvider = effectivePasswdProvider,
                 ) { loader -> block(loader, byteSource) }
             } catch (e: CancellationException) {

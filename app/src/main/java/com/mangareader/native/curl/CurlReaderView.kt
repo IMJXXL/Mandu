@@ -107,6 +107,8 @@ class CurlReaderView(context: Context) : FrameLayout(context), ReaderViewDelegat
         get() = curlBackContentAlphaState.floatValue
         set(value) { curlBackContentAlphaState.floatValue = value }
     var remotePageSupply: RemotePageSupply? = null
+    /** 当前注册的页数增长监听（setup 先摘后挂、release 摘除） */
+    private var growListener: ((Int) -> Unit)? = null
         set(value) {
             field = value
         }
@@ -248,6 +250,23 @@ class CurlReaderView(context: Context) : FrameLayout(context), ReaderViewDelegat
         onPageCountChanged?.invoke(pageList.size)
         loader.bind(engine, treePath, pages, remotePageSupply)
         loader.setCurrentPage(startPage)
+        // ★ 远程 solid 书页数增长接入（2026-10-11 审查）：此前 curl 不接 onPageCountGrow，
+        //   页表恒为开局快照，增长页永远翻不到。与 pager/webtoon 同款：先摘后挂。
+        growListener?.let { old -> remotePageSupply?.onPageCountGrow?.remove(old) }
+        val listener = { newCount: Int ->
+            if (newCount > pageList.size) {
+                val src = treePath.substringAfterLast('.', "").lowercase().let { e -> if (e == "cbz") "zip" else e }
+                pageList = pageList + (pageList.size until newCount).map {
+                    ArchiveEngine.PageMeta(it, src, "", localIdx = it, originalPageIdx = it, name = "")
+                }
+                engine?.let { e -> loader.bind(e, treePath, pageList, remotePageSupply) }
+                onPageCountChanged?.invoke(pageList.size)
+                renderCompose()
+                loader.preloadAround(currentPage, pageList.size) { reloadTrigger.intValue++ }
+            }
+        }
+        remotePageSupply?.onPageCountGrow?.add(listener)
+        growListener = listener
         renderCompose()
         loader.preloadAround(startPage, pages.size) { idx ->
             reloadTrigger.intValue++
@@ -303,6 +322,8 @@ class CurlReaderView(context: Context) : FrameLayout(context), ReaderViewDelegat
     }
 
     override fun release() {
+        growListener?.let { old -> remotePageSupply?.onPageCountGrow?.remove(old) }
+        growListener = null
         flipSound.release()
         loader.cancelAll()
         scope.cancel()

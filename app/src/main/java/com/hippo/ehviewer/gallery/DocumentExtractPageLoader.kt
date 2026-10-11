@@ -63,8 +63,9 @@ suspend inline fun <T> useDocumentExtractPageLoader(
     crossinline block: suspend (PageLoader) -> T,
 ): T = autoCloseScope {
     coroutineScope {
+        // ★ 有界探测（离线半读）：黑洞断网不再耗尽打开预算
         val sizeHint = remoteSize.takeIf { it > 0L }
-            ?: runCatching { source.size }.getOrDefault(0L)
+            ?: com.hippo.ehviewer.gallery.boundedRemoteSizeProbe(source).coerceAtLeast(0L)
         DocumentExtractCache.invalidateIfRemoteSizeMismatch(cacheKey, sizeHint)
         DocumentExtractCache.pin(cacheKey)
         install({ }, { _, _ -> DocumentExtractCache.unpin(cacheKey) })
@@ -87,7 +88,59 @@ suspend inline fun <T> useDocumentExtractPageLoader(
             return@coroutineScope block(loader)
         }
 
-        check(sizeHint > 0L) { "Cannot open document (size unknown): $cacheKey" }
+        // ★ 半缓存离线续读（2026-10-11）：size 未知（离线/探测失败）且磁盘有可用索引时，
+        // 引擎无关直出——文档引擎打开需要网络（PDF 页树/EPUB OPF 解析），离线走不了
+        // 在线管线；已缓存页零网络直出，未缓存页按页失败。在线路径完全不变。
+        if (sizeHint <= 0L) {
+            val partialIdx = DocumentExtractCache.loadUsableIndex(cacheKey, remoteSize = 0L)
+            val partialLoader = partialIdx?.let { idx ->
+                val exts = idx.members.associate { it.i to it.ext }
+                val total = idx.members.size
+                val available = idx.members.filter { DocumentExtractCache.isPageCached(cacheKey, it.i, it.ext) }
+                    .map { it.i }.toSet()
+                if (total > 0 && available.isNotEmpty()) {
+                    install(
+                        object : PageLoader(
+                            this,
+                            info,
+                            startPage.coerceIn(0, (total - 1).coerceAtLeast(0)),
+                            total,
+                            hasAds,
+                            decodeImages = false,
+                        ) {
+                            override val title by lazy { info?.title ?: titleHint }
+                            override fun getImageExtension(index: Int) = exts[index] ?: "bin"
+                            override fun savePage(index: Int, file: Path): Boolean = runCatching {
+                                val ext = exts[index] ?: return@runCatching false
+                                if (!DocumentExtractCache.isPageCached(cacheKey, index, ext)) return@runCatching false
+                                val p = DocumentExtractCache.pagePath(cacheKey, index, ext)
+                                java.io.File(p.toString()).copyTo(java.io.File(file.toString()), overwrite = true)
+                                true
+                            }.getOrDefault(false)
+                            override fun openSource(index: Int): ImageSource {
+                                val ext = exts[index] ?: "bin"
+                                val p = DocumentExtractCache.pagePath(cacheKey, index, ext)
+                                return object : PathSource {
+                                    override val source: Path = p
+                                    override val type: String = ext
+                                    override fun close() = Unit
+                                }
+                            }
+                            override fun prefetchPages(pages: List<Int>, bounds: IntRange) = Unit
+                            override fun onRequest(index: Int, force: Boolean, orgImg: Boolean) {
+                                if (index in available) notifySourceReady(index, orgImg)
+                                else notifyPageFailed(index, "离线不可用（未缓存）")
+                            }
+                        },
+                    )
+                } else null
+            }
+            if (partialLoader != null) {
+                DocumentExtractCache.touchAsync(cacheKey)
+                return@coroutineScope block(partialLoader)
+            }
+            check(false) { "Cannot open document offline (no usable cache): $cacheKey" }
+        }
 
         // Prefer durable page list: skip PDF page-tree / EPUB OPF on reopen.
         val cachedIdx = DocumentExtractCache.loadUsableIndex(cacheKey, remoteSize = sizeHint)

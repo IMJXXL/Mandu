@@ -248,7 +248,7 @@ object WebDavBookRouter {
                     titleHint = titleHint,
                     info = null,
                     startPage = startPage,
-                    remoteSize = runCatching { byteSource.size }.getOrDefault(0L),
+                    remoteSize = com.hippo.ehviewer.gallery.boundedRemoteSizeProbe(byteSource),
                 ) { loader -> block(loader, byteSource) }
             } else {
                 // ★ 2026-10-05 M2：mobi 系走记录级流式文档管线（不再整档下载回退）
@@ -265,7 +265,7 @@ object WebDavBookRouter {
                     formatHint = documentFormat,
                     info = null,
                     startPage = startPage,
-                    remoteSize = runCatching { byteSource.size }.getOrDefault(0L),
+                    remoteSize = com.hippo.ehviewer.gallery.boundedRemoteSizeProbe(byteSource),
                     progressivePdf = documentFormat == "pdf",
                 ) { loader -> block(loader, byteSource) }
             }
@@ -277,7 +277,7 @@ object WebDavBookRouter {
                     titleHint = titleHint,
                     info = null,
                     startPage = startPage,
-                    remoteSize = runCatching { byteSource.size }.getOrDefault(0L),
+                    remoteSize = com.hippo.ehviewer.gallery.boundedRemoteSizeProbe(byteSource),
                     passwdProvider = effectivePasswdProvider,
                 ) { loader -> block(loader, byteSource) }
             } catch (e: CancellationException) {

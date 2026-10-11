@@ -1515,7 +1515,8 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     fun toggleBookmark() {
         val b = book ?: return
         if (!viewing || pageList.isEmpty() || b.id <= 0) return
-        val chPath = navStack.lastOrNull() ?: b.filePath
+        // ★ 落归一键（审查 R5）：与进度同身份，远程书多路径形式（尾/双斜杠）下书签不再分裂
+        val chPath = com.mangareader.data.RemotePaths.normalizeBookKey(navStack.lastOrNull() ?: b.filePath)
         // ★ 存物理页（审查 P2 口径统一）：展开表下 cur 是流位，展开参数一变跳书签就错页；
         //   进度链路已统一 progressPhysicalPage，书签同口径
         val page = progressPhysicalPage(pageList, cur)
@@ -1542,7 +1543,10 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     /** 书签跳转：同章直接翻 cur（同进度条跳页通道，五模式天然生效）；跨章复用目录跳章模式带 targetPage */
     fun jumpToBookmark(bm: com.mangareader.data.Bookmark) {
         val chNow = navStack.lastOrNull()
-        if (bm.chapterPath == chNow && pageList.isNotEmpty()) {
+        // ★ 归一后比较（审查 R5）：旧书签存裸键也能与归一进度/导航键对上
+        val sameChapter = com.mangareader.data.RemotePaths.normalizeBookKey(bm.chapterPath) ==
+            com.mangareader.data.RemotePaths.normalizeBookKey(chNow ?: "")
+        if (sameChapter && pageList.isNotEmpty()) {
             // ★ 书签页=物理页（写侧 progressPhysicalPage）：展开表映射回流位，未展开表恒等
             val expanded = pageList.any { it.segmentTotal > 0 || it.splitSide != 0 }
             val mapped = if (expanded) pageList.indexOfFirst { it.originalPageIdx == bm.page } else -1
@@ -3827,12 +3831,13 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                 TextButton(onClick = {
                     showBookmarkNoteDialog = false
                     if (b != null && viewing && pageList.isNotEmpty() && b.id > 0) {
-                        val chPath = navStack.lastOrNull() ?: b.filePath
-                    val note = pendingBookmarkNote.ifEmpty { null }
-                    scope.launch(Dispatchers.IO) {
-                        dao.insertBookmark(com.mangareader.data.Bookmark(bookId = b.id, chapterPath = chPath, page = progressPhysicalPage(pageList, cur), note = note))
-                        bookmarkTick++
-                    }
+                        // ★ 落归一键（审查 R5）：与进度同身份，远程书多路径形式下书签不再分裂
+                        val chPath = com.mangareader.data.RemotePaths.normalizeBookKey(navStack.lastOrNull() ?: b.filePath)
+                        val note = pendingBookmarkNote.ifEmpty { null }
+                        scope.launch(Dispatchers.IO) {
+                            dao.insertBookmark(com.mangareader.data.Bookmark(bookId = b.id, chapterPath = chPath, page = progressPhysicalPage(pageList, cur), note = note))
+                            bookmarkTick++
+                        }
                         android.widget.Toast.makeText(ctx, "已添加书签（第 ${cur + 1} 页）", android.widget.Toast.LENGTH_SHORT).show()
                     }
                 }) { Text("保存") }
