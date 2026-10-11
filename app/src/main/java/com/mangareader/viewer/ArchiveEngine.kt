@@ -339,6 +339,11 @@ class ArchiveEngine(private val ctx: Context) {
 
     internal fun clearMobiFastCache() = synchronized(mobiFastCache) { mobiFastCache.clear() }
 
+    // ★ 2026-10-11 黑页兜底：每 (文件,页) 只补试一次的守卫（LRU 256，防坏书反复重试拖慢）
+    private val mobiPageRetryKeys = object : LinkedHashMap<String, Boolean>(64, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Boolean>): Boolean = size > 256
+    }
+
     fun clearNativeCache() {
         com.mangareader.native.NativeEngine.clearCache()
         com.mangareader.native.NativeEngine.clearMobiCache()
@@ -1027,8 +1032,9 @@ class ArchiveEngine(private val ctx: Context) {
                 val tree = makeTree(p.auth, p.tree)
                 val uri = DocumentsContract.buildDocumentUriUsingTree(tree, p.doc)
                 val cacheKey = uri.toString()
-                // ★ 2026-10-05 快路径前置：尺寸探测/条漫判定只付一条记录的区间读，不触发整档装载
-                mobiFastPage(cacheKey, uri, meta.localIdx)?.let { return it }
+                // ★ 2026-10-11 用户拍板：本地 mobi 不走自研流式快路径（用户实报个别页黑，
+                //   原有 libmobi 链"非常好"）——恢复原链：libmobi 读页 → Java 两遍扫描兜底。
+                //   自研 MobiFile 保留给远程 DocumentExtract 链（MobiEngine）。
                 ctx.contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
                     val fd = pfd.detachFd()
                     try { com.mangareader.native.NativeEngine.openMobiWithFd(cacheKey, fd) } catch (_: Exception) {}
@@ -1409,12 +1415,8 @@ class ArchiveEngine(private val ctx: Context) {
                 val uri = DocumentsContract.buildDocumentUriUsingTree(tree, p.doc)
                 val cacheKey = uri.toString()
                 Log.d(TAG, "MOBI loadPage: idx=${meta.localIdx} cacheKey=${cacheKey.takeLast(30)}")
-                // ★ 2026-10-05 快路径前置：命中则免 libmobi 整档装载（读页 = 一条记录区间读）
-                mobiFastPage(cacheKey, uri, meta.localIdx)?.let { rawData ->
-                    Log.d(TAG, "MOBI loadPage: fast ${rawData.size}B")
-                    val bmp = decodeBitmap(rawData)
-                    if (bmp != null) return bmp
-                }
+                // ★ 2026-10-11 用户拍板：本地 mobi 不走自研流式快路径（见 loadPageRaw 同款注释），
+                //   恢复原链：libmobi 整档装载读页 → Java 两遍扫描兜底
                 // get fd from URI, pass to libmobi
                 ctx.contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
                     val fd = pfd.detachFd()
@@ -1434,6 +1436,15 @@ class ArchiveEngine(private val ctx: Context) {
                 val bmp = loadMobiPage(uri, meta.localIdx)?.let { decodeBitmap(it) }
                 if (bmp != null) return bmp
             } catch (e: Exception) { Log.e(TAG, "MOBI error: ${e.message}") }
+            // ★ 2026-10-11 黑页兜底（用户实报"个别页黑、重进才好"=SD/SAF 瞬态读失败特征，
+            //   Boyue+外置SD 同病已实锤过）：流式/libmobi/Java 三段全 null 时延迟 250ms
+            //   整链补试一次（重进 loadPage 自身即整链重跑）；每 (文件,页) 只补一次，
+            //   真坏页不至被 rebind 反复重试拖慢。取证短码区别"三段全 null"。
+            runCatching { com.mangareader.DiagTracer.markStatic("mobi: page fail idx=${meta.localIdx} r=${mobiPageRetryKeys.size}") }
+            if (mobiPageRetryKeys.put("$treeStr#${meta.localIdx}", true) == null) {
+                runCatching { Thread.sleep(250) }
+                runCatching { return loadPage(meta, treeStr) }
+            }
             return null
         }
         // PDF/dir/其他: Java路径（保留Java缓存）
@@ -2599,13 +2610,19 @@ class ArchiveEngine(private val ctx: Context) {
         if (!com.mangareader.native.NativeEngine.isOpenZip(cacheKey)) {
             val realFile = getRealFile(uri)
             val realPath = realFile?.absolutePath ?: ""
-            val pfd = ctx.contentResolver.openFileDescriptor(uri, "r")
+            val pfd = try { ctx.contentResolver.openFileDescriptor(uri, "r") } catch (_: Exception) { null }
             if (pfd != null) {
                 val fd = pfd.detachFd()
                 synchronized(pfdKeepAlive) { pfdKeepAlive[cacheKey] = pfd }
                 try { com.mangareader.native.NativeEngine.openZipWithFd(cacheKey, fd, realPath) } catch (_: Exception) {}
             }
         }
+        // ★ 取证（2026-10-11 用户报 epub 开卷弹"文件暂时找不到"）：此前全链路静默，
+        //   日志零线索。失败短码：zipopen=句柄没开 / parsenull=spine 解析失败 / 0img=无图 epub
+        fun epubFail(stage: String) {
+            runCatching { com.mangareader.DiagTracer.markStatic("epub: empty $stage n=${doc.length}") }
+        }
+        if (!com.mangareader.native.NativeEngine.isOpenZip(cacheKey)) epubFail("zipopen")
 
         // 解析 EPUB spine
         try {
@@ -2728,6 +2745,7 @@ class ArchiveEngine(private val ctx: Context) {
             }
         } catch (e: Exception) {
             Log.e(TAG, "scanEpub spine parse failed: ${e.message}")
+            epubFail("parseerr ${e.message?.take(40) ?: ""}")
         }
 
         // 回退：文件名排序
@@ -2742,9 +2760,16 @@ class ArchiveEngine(private val ctx: Context) {
                     else com.mangareader.util.ComicSortUtil.fileNameComparator.compare(names[a], names[b])
                 })
                 .map { names[it] }
+            if (sortedNames.isEmpty()) {
+                // ★ 无图 epub（纯文字书/DRM 乱名）：不缓存空表——旧代码连空表也进
+                //   sortedImageNamesCache，本进程内这本书永远秒回空=反复弹"文件暂时找不到"
+                epubFail("0img entries=${names.size}")
+                return emptyList()
+            }
             synchronized(sortedImageNamesCache) { sortedImageNamesCache[cacheKey] = sortedNames }
             return sortedNames.mapIndexed { idx, n -> PageMeta(idx, "zip", doc, idx, name = n.substringAfterLast("/").substringBeforeLast(".")) }
         }
+        epubFail("namesnull")
         return emptyList()
     }
 
@@ -2782,13 +2807,8 @@ class ArchiveEngine(private val ctx: Context) {
         try {
             // fd-based opening
             ctx.contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
-                // ★ 2026-10-05 快路径前置：命中则页表来自记录级解析，开书不再整档进内存
-                val fast = runCatching { mobiFastOpen(cacheKey, uri, pfd) }.getOrNull()
-                if (fast != null && fast.imageCount > 0) {
-                    for (i in 0 until fast.imageCount) pages.add(PageMeta(i, "mobi", doc, i))
-                    Log.d(TAG, "mobi-fp scan: pages=${fast.imageCount} in ${android.os.SystemClock.elapsedRealtime() - t0}ms")
-                    return pages
-                }
+                // ★ 2026-10-11 用户拍板：本地 mobi 不走自研流式页表（同 loadPage/loadPageRaw，
+                //   页表与读页必须同链同源，避免快慢页表差异）——恢复原链：libmobi 计数 → Java 扫描
                 val fd = pfd.detachFd()
                 try {
                     com.mangareader.native.NativeEngine.openMobiWithFd(cacheKey, fd)
