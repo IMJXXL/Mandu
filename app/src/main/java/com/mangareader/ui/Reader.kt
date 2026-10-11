@@ -3218,24 +3218,40 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     // ★ ④ 修复：单卷缺失友好提示。区别 showErrorDialog（整本 / CASCADE 删所有 progress）：本弹窗只删本卷 progress。
     //   - 「移除本卷进度」→ 仅清 missingFilePath 这一卷 progress，保留其它卷完整历史。
     //   - 「返回」→ 直接 viewing=false 回目录/书架，不动 progress（SAF 临时失败后用户重进即可恢复）。
+    //   ★ 2026-10-11 用户拍板：红色破坏位应该是「从书架移除」——文件真没了时用户的自然诉求是
+    //     清掉书架死条目（删书行=CASCADE 连同全部进度），「移除本卷进度」降级为普通按钮保留
+    //     （目录书里只死一卷、其它卷还要读的场景）。
     if (showFileMissingDialog) {
         AlertDialog(onDismissRequest = {
             showFileMissingDialog = false
             // 关闭 = 等同返回：不删 progress，留在原处
             viewing = false
         }, title = { Text("文件暂时找不到") },
-            text = { Text("这一卷的源文件暂时无法访问，可能已被移动、删除，或权限发生变化。\n\n本卷的其它进度仍会保留。") },
+            text = { Text("这一卷的源文件暂时无法访问，可能已被移动、删除，或权限发生变化。\n\n「移除本卷进度」只清这一卷的阅读记录；「从书架移除」会连书带全部进度一起删。") },
             confirmButton = {
-                TextButton(onClick = {
-                    showFileMissingDialog = false
-                    val p = missingFilePath
-                    scope.launch {
-                        try { book?.let { dao.deleteProgress(it.id, p) } } catch (_: Exception) {}
-                    }
-                    // 删除后回退：与 goBack 同语义地处理目录栈
-                    viewing = false
-                    try { back() } catch (_: Exception) {}
-                }) { Text("移除本卷进度", color = MaterialTheme.colorScheme.error) }
+                Row {
+                    TextButton(onClick = {
+                        showFileMissingDialog = false
+                        val p = missingFilePath
+                        scope.launch {
+                            try { book?.let { dao.deleteProgress(it.id, p) } } catch (_: Exception) {}
+                        }
+                        // 删除后回退：与 goBack 同语义地处理目录栈
+                        viewing = false
+                        try { back() } catch (_: Exception) {}
+                    }) { Text("移除本卷进度") }
+                    Spacer(Modifier.width(4.dp))
+                    TextButton(onClick = {
+                        showFileMissingDialog = false
+                        val b = book
+                        scope.launch {
+                            try { b?.customCoverPath?.let { engine.deleteCustomCoverByPath(it) } } catch (_: Exception) {}
+                            try { b?.let { dao.deleteBook(it) } } catch (_: Exception) {}
+                        }
+                        viewing = false
+                        try { back() } catch (_: Exception) {}
+                    }) { Text("从书架移除", color = MaterialTheme.colorScheme.error) }
+                }
             },
             dismissButton = {
                 TextButton(onClick = {
@@ -3483,7 +3499,14 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             if (isRtl) {
                 if (dir > 0) {
                     if (pager.currentItem > 0) pager.prevPage() else pager.fireChapterEndAttempt()
-                } else pager.nextPage()
+                }
+                // ★ RTL dir<0 = 阅读序后退：adapter+1=nextPage；到阅读序首页（adapter 末位）
+                //   再按上一页 = 后退尝试（上一章，报告 forward=false——nextPage 内部边界恒报
+                //   前进，方向语义必须在镜像层纠正，与点按区 PREV 映射同款）
+                else {
+                    if (pager.currentItem < (pager.adapterCount - 1)) pager.nextPage()
+                    else pager.fireChapterEndAttempt(forward = false)
+                }
             } else {
                 if (dir > 0) pager.nextPage() else pager.prevPage()
             }
