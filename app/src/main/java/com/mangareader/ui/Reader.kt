@@ -2513,9 +2513,9 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     Scaffold(
         topBar = {
             // ★ 快赢 #1：菜单滑入滑出（200ms；墨水屏自动关；不挡触摸——退场后移出命中区）
-            AnimatedSlideVisibility(
+            //   ★ F8：槽位用 AnimatedBarVisibility——滑出与占位高度塌缩同步，阅读区不再尾帧突跳
+            AnimatedBarVisibility(
                 visible = (ui || !viewing) && !landscapeReading,
-                enterFromBottom = false,
                 animate = !config.isEinkMode,
             ) {
                 val pageSubtitle = if (viewing && displayPages.isNotEmpty() && cur >= 0) {
@@ -2584,9 +2584,9 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         },
         containerColor = bgColor,
         bottomBar = {
-            AnimatedSlideVisibility(
+            // ★ F8：同顶栏——滑出与高度塌缩同步，阅读区平滑回收
+            AnimatedBarVisibility(
                 visible = viewing && ui && !landscapeReading,
-                enterFromBottom = true,
                 animate = !config.isEinkMode,
             ) {
                 Column(Modifier.fillMaxWidth()) {
