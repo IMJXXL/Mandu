@@ -64,6 +64,8 @@ class PanelGuideOverlay(context: Context) : View(context) {
     private var result: PanelPageResult? = null
     private var panelIdx = 0
     private var pendingLanding: Int? = null
+    /** 连续降级页计数（C8）：达 [PanelTunables.CONSECUTIVE_FAIL_EXIT] 自动退出逐格模式 */
+    private var consecutiveFails = 0
 
     // 绘制缓存（onDraw 内不得分配）
     private val scrimPaint = Paint().apply { color = Color.BLACK; alpha = DIM_ALPHA }
@@ -100,6 +102,7 @@ class PanelGuideOverlay(context: Context) : View(context) {
         pageBitmap = null
         panelIdx = 0
         pendingLanding = null
+        consecutiveFails = 0
         cropRect = null
         visibility = VISIBLE
         showPage(s.currentPage())
@@ -169,7 +172,18 @@ class PanelGuideOverlay(context: Context) : View(context) {
         }
         cropRect = null
         invalidate()
-        if (!r.fallback) prefetchNextPage()
+        if (!r.fallback) {
+            consecutiveFails = 0
+            prefetchNextPage()
+        } else {
+            consecutiveFails++
+            if (consecutiveFails >= PanelTunables.CONSECUTIVE_FAIL_EXIT) {
+                android.widget.Toast.makeText(
+                    context, "连续多页识别不到分格，已恢复普通阅读", android.widget.Toast.LENGTH_SHORT,
+                ).show()
+                session?.onExit?.invoke()
+            }
+        }
     }
 
     // ———— 格导航 ————
