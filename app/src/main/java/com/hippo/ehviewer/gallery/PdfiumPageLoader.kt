@@ -68,6 +68,9 @@ suspend inline fun <T> usePdfiumPageLoader(
         // 引擎无关直出已缓存页，未缓存页按页失败；无缓存才干净失败。
         val size = remoteSize.takeIf { it > 0L } ?: com.hippo.ehviewer.gallery.boundedRemoteSizeProbe(source).coerceAtLeast(0L)
         if (size <= 0L) {
+            // ★ D1（报告 §4.3）：离线分支补 pin——会话期间后台 trim 不能删正在看的页（与 Document 分支对齐）
+            DocumentExtractCache.pin(cacheKey)
+            install({ }, { _, _ -> DocumentExtractCache.unpin(cacheKey) })
             val partialIdx = DocumentExtractCache.loadUsableIndex(cacheKey, remoteSize = 0L)
             val partialLoader = partialIdx?.let { idx ->
                 val exts = idx.members.associate { it.i to it.ext }

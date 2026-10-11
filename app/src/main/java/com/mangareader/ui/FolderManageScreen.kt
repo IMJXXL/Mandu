@@ -160,15 +160,19 @@ fun FolderManageScreen(onBack: () -> Unit) {
                         scanning = true; scanTarget = "一键扫描所有文件夹…"; scanCount = 0
                         var totalAdded = 0
                         var totalRemoved = 0
+                        var anyIncomplete = false
                         withContext(Dispatchers.IO) {
                             folders.forEach { f ->
-                                val (a, r) = scanner.rescanAndCommit(f) { count -> scanCount = count }
-                                totalAdded += a; totalRemoved += r
+                                val outcome = scanner.rescanAndCommit(f) { count -> scanCount = count }
+                                totalAdded += outcome.added; totalRemoved += outcome.removed
+                                if (outcome.manifestIncomplete) anyIncomplete = true
                             }
                         }
                         scanCount = totalAdded
                         scanning = false
+                        // ★ U1：清单不完整（SAF 瞬断）不得谎报"无变化"
                         val msg = when {
+                            anyIncomplete -> "存储瞬时不稳定，部分文件夹本次跳过检查，稍后可重试"
                             totalAdded == 0 && totalRemoved == 0 -> "扫描完成，书架无变化"
                             else -> "扫描成功：新增 $totalAdded 本、移除 $totalRemoved 本，封面后台加载中"
                         }
@@ -232,10 +236,12 @@ fun FolderManageScreen(onBack: () -> Unit) {
                             TextButton(onClick = {
                                 scope.launch {
                                     scanning = true; scanTarget = "正在扫描「${f.displayName}」…"; scanCount = 0
-                                    val (addedN, removedN) = withContext(Dispatchers.IO) { scanner.rescanAndCommit(f) { count -> scanCount = count } }
+                                    val outcome = withContext(Dispatchers.IO) { scanner.rescanAndCommit(f) { count -> scanCount = count } }
+                                    val addedN = outcome.added; val removedN = outcome.removed
                                     scanCount = addedN
                                     scanning = false
                                     val msg = when {
+                                        outcome.manifestIncomplete -> "存储瞬时不稳定，本次跳过检查，稍后可重试"
                                         addedN == 0 && removedN == 0 -> "刷新完成，书架无变化"
                                         else -> "刷新成功：新增 $addedN 本、移除 $removedN 本，封面后台加载中"
                                     }

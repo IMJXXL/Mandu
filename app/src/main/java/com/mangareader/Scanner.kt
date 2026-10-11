@@ -54,7 +54,7 @@ class Scanner(private val ctx: Context, private val dao: MangaDao) {
             val child = DocumentsContract.buildChildDocumentsUriUsingTree(uri, docId)
 
             val books = mutableListOf<Book>()
-            scanDirFast(auth, treeStr, docId, child, books) { found -> onProgress?.invoke(found) }
+            scanDirFast(auth, treeStr, docId, child, books, onFound = { found -> onProgress?.invoke(found) })
 
             if (books.isNotEmpty()) {
                 val newIds = dao.insertBooksWithStableId(books)
@@ -424,7 +424,7 @@ class Scanner(private val ctx: Context, private val dao: MangaDao) {
             val docId = DocumentsContract.getTreeDocumentId(uri)
             val auth = uri.authority ?: ""
             val child = DocumentsContract.buildChildDocumentsUriUsingTree(uri, docId)
-            scanDirFast(auth, treeStr, docId, child, books) { found -> onProgress?.invoke(found) }
+            scanDirFast(auth, treeStr, docId, child, books, onFound = { found -> onProgress?.invoke(found) })
             books
         }
     }
@@ -476,17 +476,20 @@ class Scanner(private val ctx: Context, private val dao: MangaDao) {
     }
 
     /** Phase 1: 仅元数据扫描（不入库、不加载封面），极速返回 Book 列表供 UI 立即提示成功。 */
-    suspend fun rescanMetaOnly(f: Folder, onProgress: ((Int) -> Unit)? = null): List<Book> = withContext(Dispatchers.IO + kotlinx.coroutines.NonCancellable) {
+    suspend fun rescanMetaOnly(f: Folder, onProgress: ((Int) -> Unit)? = null, failFlag: java.util.concurrent.atomic.AtomicBoolean? = null): List<Book> = withContext(Dispatchers.IO + kotlinx.coroutines.NonCancellable) {
         scanMutex.withLock {
             val books = mutableListOf<Book>()
             val uri = Uri.parse(f.treeUri)
             val docId = DocumentsContract.getTreeDocumentId(uri)
             val auth = uri.authority ?: ""
             val child = DocumentsContract.buildChildDocumentsUriUsingTree(uri, docId)
-            scanDirFast(auth, f.treeUri, docId, child, books, skipDedup = true) { found -> onProgress?.invoke(found) }
+            scanDirFast(auth, f.treeUri, docId, child, books, skipDedup = true, onFound = { found -> onProgress?.invoke(found) }, failFlag = failFlag)
             books
         }
     }
+
+    /** ★ U1：扫描结果三态——manifestIncomplete=true 表示清单因 SAF 瞬断而不完整，UI 应提示重试而非"无变化" */
+    data class ScanOutcome(val added: Int, val removed: Int, val manifestIncomplete: Boolean = false)
 
     /** Phase 2: 删旧入新 + 后台封面补齐。 */
     private suspend fun commitRescanResults(f: Folder, books: List<Book>): Int {
@@ -535,8 +538,8 @@ class Scanner(private val ctx: Context, private val dao: MangaDao) {
     /** 刷新：Phase 1 极速扫元数据 → 返回真实 (新增, 移除) 数；Phase 2 后台入库+封面。
      *  ★ 文案修正：books 是全量清单（含未变的书），原来直接把 books.size 当"新增"报——
      *  书架没变也提示"新增 N 本"。现在与库中现存路径集合对比出真实增删数。 */
-    suspend fun rescanAndCommit(f: Folder, onProgress: ((Int) -> Unit)? = null): Pair<Int, Int> = withContext(Dispatchers.IO + kotlinx.coroutines.NonCancellable) {
-        if (RescanSnapshotManager.isSnapshotActive()) return@withContext Pair(0, 0)
+    suspend fun rescanAndCommit(f: Folder, onProgress: ((Int) -> Unit)? = null): ScanOutcome = withContext(Dispatchers.IO + kotlinx.coroutines.NonCancellable) {
+        if (RescanSnapshotManager.isSnapshotActive()) return@withContext ScanOutcome(0, 0)
         val treeUri = Uri.parse(f.treeUri)
         val auth = treeUri.authority ?: ""
         val docId = DocumentsContract.getTreeDocumentId(treeUri)
@@ -548,7 +551,10 @@ class Scanner(private val ctx: Context, private val dao: MangaDao) {
             .getOrDefault(emptyList())
             .filter { p -> prefixes.any { p.startsWith(it) } }
             .toSet()
-        val books = rescanMetaOnly(f, onProgress)
+        val failFlag = java.util.concurrent.atomic.AtomicBoolean(false)
+        val books = rescanMetaOnly(f, onProgress, failFlag)
+        // ★ U1：清单空 + 库里有书 + SAF 确实失败过 → 标记不完整（护栏已放弃删除，但 UI 必须知道）
+        val manifestIncomplete = failFlag.get() && books.isEmpty() && oldPaths.isNotEmpty()
         val newPaths = books.map { it.filePath }.toSet()
         val added = newPaths.count { it !in oldPaths }
         val removed = oldPaths.count { it !in newPaths }
@@ -559,10 +565,10 @@ class Scanner(private val ctx: Context, private val dao: MangaDao) {
             kotlinx.coroutines.delay(3000L)
             runCatching { com.mangareader.viewer.PageIndexWarmer.kick(ctx, dao) }
         }
-        Pair(added, removed)
+        ScanOutcome(added, removed, manifestIncomplete)
     }
 
-    private suspend fun scanDirFast(auth: String, treeStr: String, treeDocId: String, childUri: Uri, books: MutableList<Book>, skipDedup: Boolean = false, onFound: ((Int) -> Unit)? = null) {
+    private suspend fun scanDirFast(auth: String, treeStr: String, treeDocId: String, childUri: Uri, books: MutableList<Book>, skipDedup: Boolean = false, onFound: ((Int) -> Unit)? = null, failFlag: java.util.concurrent.atomic.AtomicBoolean? = null) {
         try {
             // ★ §37 扫描校验压缩包内容开关 —— 默认【关】（宁滥勿缺原则：宁可书架上多放几本非漫画
             //   archive，也绝不漏掉一本真漫画）。关闭即维持现状全收，开启后才多跑 hasZipImages 严格校验、
@@ -633,7 +639,17 @@ class Scanner(private val ctx: Context, private val dao: MangaDao) {
                 DocumentsContract.Document.COLUMN_DOCUMENT_ID,
                 DocumentsContract.Document.COLUMN_MIME_TYPE
             )
-            ctx.contentResolver.query(childUri, projection, null, null, null)?.use { c ->
+            // ★ U1（2026-10-11）：SAF 查询失败（抛异常/返回 null）不再与"真空目录"混浆——
+            //   标记到 failFlag，上层据此提示"清单未完整"而非"无变化"
+            val cursor = try {
+                ctx.contentResolver.query(childUri, projection, null, null, null)
+            } catch (e: Exception) {
+                Log.d(TAG, "scanDirFast query failed: ${e.message}")
+                failFlag?.set(true)
+                null
+            }
+            if (cursor == null) failFlag?.set(true)
+            cursor?.use { c ->
                 val ni = c.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
                 val ii = c.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
                 val mi = c.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE)
