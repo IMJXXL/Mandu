@@ -153,6 +153,16 @@ fun NativeReaderScreen(
     onPanelGuideExit: () -> Unit = {},
     /** 逐格墨水屏分支：不压暗不裁切放大零动画，仅描边当前格 */
     panelGuideEink: Boolean = false,
+    /** ★ 逐格设置（2026-10-11，全局键，面板即改即生效）：灵敏度档 0宽松/1标准/2严格 */
+    panelGuideSensitivity: Int = 1,
+    /** 非当前格压暗程度 0~100（百分比 → 255 级 alpha） */
+    panelGuideDim: Int = 55,
+    /** 翻格动画（墨水屏恒关） */
+    panelGuideAnim: Boolean = true,
+    /** 阅读方向覆盖：0=跟随阅读模式 1=日漫·右开 2=国漫·左开 */
+    panelGuideRtl: Int = 0,
+    /** 纵向阅读序：0=先上（常规） 1=先下（行序倒转 下→上） */
+    panelGuideVert: Int = 0,
     /** ★ §34.3：VERT_PAGER 模式——竖向翻页走 PagerReaderView（不是 webtoon 连续滚动） */
     verticalPager: Boolean = false,
     flipAnimationEnabled: Boolean = true,
@@ -720,10 +730,14 @@ fun NativeReaderScreen(
                         treePath = treePath,
                         engine = engine,
                         pages = pages,
-                        rtl = isRtl,
+                        rtl = when (panelGuideRtl) { 1 -> true; 2 -> false; else -> isRtl },
                         eink = panelGuideEink,
                         nav = panelNav,
                         accentColor = panelAccent,
+                        dimAlpha = 255 * panelGuideDim / 100,
+                        animEnabled = panelGuideAnim,
+                        minConf = com.mangareader.panel.PanelTunables.confFailFor(panelGuideSensitivity),
+                        vertBottomUp = panelGuideVert == 1,
                         goToPage = { target -> d.goToPage(target) },
                         currentPage = { savedPage },
                         onExit = { panelExitCallback.value() },
@@ -737,6 +751,20 @@ fun NativeReaderScreen(
             overlay?.end()
         }
         onDispose { }
+    }
+
+    // ★ 逐格面板即改即生效（2026-10-11）：显示类（压暗/动画）纯绘制热更新；
+    //   识别类（灵敏度/方向）清结果缓存重检当前页。begin 时 DisposableEffect 已带全量参数，
+    //   这里只处理"会话进行中改设置"——会话未激活时 overlay 内部空转。
+    LaunchedEffect(panelGuideDim, panelGuideAnim) {
+        panelOverlayRef?.onRenderSettingsChanged(255 * panelGuideDim / 100, panelGuideAnim)
+    }
+    LaunchedEffect(panelGuideSensitivity, panelGuideRtl, panelGuideVert) {
+        panelOverlayRef?.onDetectSettingsChanged(
+            com.mangareader.panel.PanelTunables.confFailFor(panelGuideSensitivity),
+            when (panelGuideRtl) { 1 -> true; 2 -> false; else -> isRtl },
+            panelGuideVert == 1,
+        )
     }
 
     AndroidView(

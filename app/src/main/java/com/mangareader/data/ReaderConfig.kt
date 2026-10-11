@@ -131,7 +131,19 @@ data class ReaderConfig(
     val textureScope: Int = 0,
     // 氛围音选择：""=关 "rain"=预设雨声，其余=filesDir/ambience/ 下用户导入的文件名；音量 0-100
     val ambienceSound: String = "",
-    val ambienceVolume: Int = 60
+    val ambienceVolume: Int = 60,
+
+    // ★ 逐格引导设置（2026-10-11，全局语义——算法参数属设备级偏好，不按书记忆）：
+    /** 检测灵敏度：0=宽松(置信门槛0.35，弱分格/彩漫页更易通过) 1=标准(0.5) 2=严格(0.65) */
+    val panelGuideSensitivity: Int = 1,
+    /** 非当前格压暗程度 0~100（百分比，默认 55 ≈ 255 级中的 140） */
+    val panelGuideDim: Int = 55,
+    /** 翻格动画（墨水屏恒关） */
+    val panelGuideAnim: Boolean = true,
+    /** 阅读方向覆盖：0=跟随阅读模式 1=日漫·右开(RTL) 2=国漫·左开(LTR) */
+    val panelGuideRtl: Int = 0,
+    /** 纵向阅读序：0=先上（常规 上→下） 1=先下（行序倒转 下→上） */
+    val panelGuideVert: Int = 0,
 ) {
     enum class ScrollMode { VERTICAL, HORIZONTAL_LEFT, HORIZONTAL_RIGHT }
     @Deprecated("注释过时——clickFlipType.ordinal 正被 Reader/各视图使用；新模式 EDGE/KINDLISH 已接 buildNavigation") enum class ClickFlipType { NO, LEFT_RIGHT, DIAGONAL_LB_RT, DIAGONAL_LT_RB, L_SHAPE, EDGE, KINDLISH }
@@ -237,6 +249,12 @@ data class ReaderConfig(
             putInt("${prefix}textureScope", textureScope)
             putString("${prefix}ambienceSound", ambienceSound)
             putInt("${prefix}ambienceVolume", ambienceVolume)
+            // ★ 逐格引导设置恒全局键（无前缀），与 load/presetScope 全局语义闭环
+            putInt("panelGuideSensitivity", panelGuideSensitivity)
+            putInt("panelGuideDim", panelGuideDim)
+            putBoolean("panelGuideAnim", panelGuideAnim)
+            putInt("panelGuideRtl", panelGuideRtl)
+            putInt("panelGuideVert", panelGuideVert)
             apply()
         }
     }
@@ -355,6 +373,11 @@ data class ReaderConfig(
                     else -> ""
                 },
                 ambienceVolume = rInt("ambienceVolume", 60).coerceIn(0, 100),
+                panelGuideSensitivity = rInt("panelGuideSensitivity", 1).coerceIn(0, 2),
+                panelGuideDim = rInt("panelGuideDim", 55).coerceIn(0, 100),
+                panelGuideAnim = rBoolean("panelGuideAnim", true),
+                panelGuideRtl = rInt("panelGuideRtl", 0).coerceIn(0, 2),
+                panelGuideVert = rInt("panelGuideVert", 0).coerceIn(0, 1),
                 downsampleTier = run {
                     when (val raw = rawFor("downsampleTier")) {
                         is String -> try { DownsampleTier.valueOf(raw) } catch (_: Exception) { DownsampleTier.STANDARD }
@@ -515,6 +538,11 @@ data class ReaderConfig(
             "downsampleTier" to { it.downsampleTier.name },
             "tallSplitEnabled" to { it.tallSplitEnabled },
             "tallSplitSensitivity" to { it.tallSplitSensitivity },
+            "panelGuideSensitivity" to { it.panelGuideSensitivity },
+            "panelGuideDim" to { it.panelGuideDim },
+            "panelGuideAnim" to { it.panelGuideAnim },
+            "panelGuideRtl" to { it.panelGuideRtl },
+            "panelGuideVert" to { it.panelGuideVert },
         )
 
         /** 书内设置面板 diff：返回真正改动的键名（含全局键——由 ReaderScope 决定写层） */

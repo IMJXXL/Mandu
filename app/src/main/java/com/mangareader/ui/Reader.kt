@@ -287,6 +287,9 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     var showSrPanel by remember { mutableStateOf(false) }
     // ★ 逐格引导（Panel-by-Panel）：会话级开关（评估报告 §7）；仅 pager 单页族，NES 生效判定同源
     var panelGuideActive by remember { mutableStateOf(false) }
+    // ★ 逐格设置面板（2026-10-11 用户拍板"点按钮进面板控制功能与开启"）：按钮恒开面板，
+    //   面板内 开始/退出 + 灵敏度/压暗/动画/方向（全局键，即改即生效）
+    var showPanelGuideSheet by remember { mutableStateOf(false) }
     var showRename by remember { mutableStateOf(false) }
     var renameInput by remember { mutableStateOf("") }
     var showSrQueue by remember { mutableStateOf(false) }
@@ -2617,12 +2620,13 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                         ) { toggleBookmark() })
                         add(BottomBarAction(Icons.Default.AutoFixHigh, "画质增强") { showSrPanel = true })
                         // ★ 逐格阅读（评估报告 §7）：与画质增强并存的功能按钮；激活态换关闭样式
+                        //   2026-10-11：点击恒开设置面板（开启/退出在面板内），不再直接切换
                         if (panelGuideUsable) {
                             add(BottomBarAction(
                                 if (panelGuideActive) Icons.Default.Close else Icons.Default.GridView,
                                 if (panelGuideActive) "退出逐格" else "逐格阅读",
                                 isActive = panelGuideActive,
-                            ) { panelGuideActive = !panelGuideActive })
+                            ) { showPanelGuideSheet = true })
                         }
                         // 超分作用域已开启 / 离线批量产物 / 本页增强结果（页级产物回填内存）→ 出现"对比"按钮
                         // ★ 2026-10-03：读 srTick 订阅管线事件——emitReady（含产物回填出结果）会
@@ -2810,6 +2814,12 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                             panelGuideActive = panelGuideActive,
                             onPanelGuideExit = { panelGuideActive = false },
                             panelGuideEink = config.isEinkMode,
+                            // ★ 逐格设置（全局键）：面板即改即生效（NES 内热更新到覆盖层）
+                            panelGuideSensitivity = config.panelGuideSensitivity,
+                            panelGuideDim = config.panelGuideDim,
+                            panelGuideAnim = config.panelGuideAnim,
+                            panelGuideRtl = config.panelGuideRtl,
+                            panelGuideVert = config.panelGuideVert,
                             verticalPager = verticalPagerEffective,
                             flipAnimationEnabled = config.isFlipAnimation,
                             pageCurlAnimationEnabled = config.isPageCurlAnimation,
@@ -3099,7 +3109,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                         pageBookmarked = pageBookmarked,
                         showPanelGuide = panelGuideUsable,
                         panelGuideActive = panelGuideActive,
-                        onPanelGuide = { panelGuideActive = !panelGuideActive },
+                        onPanelGuide = { showPanelGuideSheet = true },
                         onBack = ::goBack,
                         onRename = {
                             renameInput = book?.title ?: ""
@@ -3338,6 +3348,50 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     // ★ 逐格激活时 Back 退出（先于其他 BackHandler 挂载顺序无碍：Compose 逆序启用）
     if (panelGuideActive) {
         BackHandler { panelGuideActive = false }
+    }
+
+    // ★ 逐格设置面板（2026-10-11）：点按钮恒开面板；开启/退出 + 四项设置即改即生效
+    if (showPanelGuideSheet) {
+        BackHandler { showPanelGuideSheet = false }
+        com.mangareader.ui.PanelGuideSheet(
+            sensitivity = config.panelGuideSensitivity,
+            dim = config.panelGuideDim,
+            anim = config.panelGuideAnim,
+            rtlOverride = config.panelGuideRtl,
+            vertBottomUp = config.panelGuideVert == 1,
+            active = panelGuideActive,
+            onSensitivity = { v ->
+                config = config.copy(panelGuideSensitivity = v)
+                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideSensitivity", v)
+                configVersion++
+            },
+            onDim = { v ->
+                config = config.copy(panelGuideDim = v)
+                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideDim", v)
+                configVersion++
+            },
+            onAnim = { v ->
+                config = config.copy(panelGuideAnim = v)
+                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideAnim", v)
+                configVersion++
+            },
+            onRtl = { v ->
+                config = config.copy(panelGuideRtl = v)
+                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideRtl", v)
+                configVersion++
+            },
+            onVert = { v ->
+                val iv = if (v) 1 else 0
+                config = config.copy(panelGuideVert = iv)
+                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideVert", iv)
+                configVersion++
+            },
+            onToggleActive = {
+                showPanelGuideSheet = false
+                panelGuideActive = !panelGuideActive
+            },
+            onDismiss = { showPanelGuideSheet = false },
+        )
     }
 
     if (showSrPanel) {

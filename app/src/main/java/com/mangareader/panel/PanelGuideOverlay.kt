@@ -47,6 +47,8 @@ class PanelGuideOverlay(context: Context) : View(context) {
         val animEnabled: Boolean = true,
         /** 页置信度降级门槛（设置面板灵敏度档位 → PanelTunables.confFailFor） */
         val minConf: Float = PanelTunables.CONF_FAIL,
+        /** 纵向阅读序倒转：true=行序 下→上（设置面板"先下"）；false=常规 上→下 */
+        val vertBottomUp: Boolean = false,
         val goToPage: (Int) -> Unit,
         val currentPage: () -> Int,
         val onExit: () -> Unit,
@@ -144,11 +146,11 @@ class PanelGuideOverlay(context: Context) : View(context) {
         invalidate()
     }
 
-    /** 识别类：置信门槛/阅读方向——清本书结果缓存并重检当前页（方向变了阅读序也要重排） */
-    fun onDetectSettingsChanged(minConf: Float, rtl: Boolean) {
+    /** 识别类：置信门槛/阅读方向（横+纵）——清本书结果缓存并重检当前页（方向变了阅读序也要重排） */
+    fun onDetectSettingsChanged(minConf: Float, rtl: Boolean, bottomUp: Boolean) {
         val s = session ?: return
-        if (s.minConf == minConf && s.rtl == rtl) return
-        session = s.copy(minConf = minConf, rtl = rtl)
+        if (s.minConf == minConf && s.rtl == rtl && s.vertBottomUp == bottomUp) return
+        session = s.copy(minConf = minConf, rtl = rtl, vertBottomUp = bottomUp)
         PanelDetector.Cache.clearBook(s.treePath)
         showPage(shownPage)
     }
@@ -176,7 +178,7 @@ class PanelGuideOverlay(context: Context) : View(context) {
             }
             val res = PanelDetector.Cache.get(sCaptured.treePath, page)
                 ?: (if (bmp == null) PanelDetectorCore.fallbackResult()
-                    else runCatching { PanelDetector.detect(bmp, sCaptured.rtl, sCaptured.minConf) }
+                    else runCatching { PanelDetector.detect(bmp, sCaptured.rtl, sCaptured.minConf, sCaptured.vertBottomUp) }
                         .getOrDefault(PanelDetectorCore.fallbackResult()))
             post {
                 if (session !== sCaptured || shownPage != page) return@post
@@ -253,7 +255,7 @@ class PanelGuideOverlay(context: Context) : View(context) {
         if (next !in s.pages.indices || PanelDetector.Cache.get(s.treePath, next) != null) return
         scope.launch {
             val bmp = runCatching { s.engine.loadPage(s.pages[next], s.treePath) }.getOrNull() ?: return@launch
-            val r = runCatching { PanelDetector.detect(bmp, s.rtl, s.minConf) }.getOrNull() ?: return@launch
+            val r = runCatching { PanelDetector.detect(bmp, s.rtl, s.minConf, s.vertBottomUp) }.getOrNull() ?: return@launch
             post { if (session === s) PanelDetector.Cache.put(s.treePath, next, r) }
         }
     }
