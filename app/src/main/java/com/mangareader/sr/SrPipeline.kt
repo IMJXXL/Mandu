@@ -140,7 +140,7 @@ object SrPipeline {
             SrCore.manager.getCachedResult(key)?.let { return it }
             SrCore.diskCache.get(key)?.let { return it }
         }
-        if (batchChapterOnDisk()) {
+        if (batchChapterOnDisk() && slotIsWholePage(pageIndex)) {
             SrCore.diskCache.getBatchPage(sessionBookTitle, SRQueueItem.chapterKey(sessionBookId, sessionTreeStr), batchPageIdx(pageIndex))?.let { return it }
         }
         return null
@@ -269,6 +269,16 @@ object SrPipeline {
         }
     }
 
+    /**
+     * ★ 展开表守卫（2026-10-11 用户实报「点超分后页码内容串位/跳到别的图」）：
+     * 段页（segmentIndex>0，条漫长图拆分/PDF 高分页切段）与半页（splitSide!=0，宽页拆分）
+     * 的位次在页表里 ≠ 整页——loadPage/批量产物/页级产物按整页原图存取，把整页内容灌进
+     * 段位就是串图。这些位次只有视图亲手切好的 callerBitmap 才是正确内容，任何"按位次
+     * 自行取图"的通道都必须绕开。未展开表恒 true（位次=整页，原语义不变）。
+     */
+    private fun slotIsWholePage(pageIndex: Int): Boolean =
+        sessionPageList.getOrNull(pageIndex)?.let { it.segmentIndex == 0 && it.splitSide == 0 } ?: true
+
     /** 阅读器翻页钩子：更新当前页；"整本"作用域做前后预载；"仅当前页"作用域旧页让位 */
     fun onPageChanged(centerIdx: Int, totalPages: Int) {
         currentPageIdx = centerIdx
@@ -290,7 +300,8 @@ object SrPipeline {
                 SrCore.manager.abortInFlight()
             }
         }
-        if (SrUiState.scope.intValue == SrUiState.SCOPE_BOOK) {
+        // ★ 始终开启(SCOPE_ALWAYS)与整本同权：翻页预载整本推进
+        if (SrUiState.scope.intValue >= SrUiState.SCOPE_BOOK) {
             SrCore.dispatcher.onPageChanged(sessionChapterId, centerIdx, totalPages)
         }
     }
@@ -398,17 +409,20 @@ object SrPipeline {
             }
         }
         if (batchChapterOnDisk()) {
-            SrCore.diskCache.getBatchPage(sessionBookTitle, SRQueueItem.chapterKey(sessionBookId, sessionTreeStr), batchPageIdx(pageIndex))?.let { bmp ->
-                // 同步回填内存结果缓存（只进内存，不写实时磁盘区——批量产物有自己的领地，不重复占用配额）。
-                // 回填后状态指示/前后对比也能看到批量产物，不再出现"已显示超分却提示未启动"。
-                // ★摩尔纹：内存/显示走回缩副本，磁盘批量产物保持全尺寸
-                val disp = SrMoireDownscale.apply(bmp, viewportW, viewportH, viewportTall)
-                try {
-                    SrCore.manager.putCachedResult(
-                        SrCore.manager.buildCacheKey(sessionChapterId, pageIndex), disp,
-                    )
-                } catch (_: Throwable) {}
-                return disp
+            // ★ 展开表守卫：批量产物按原始整页页序落盘，段/半页位吃到的必然是整页内容=串图
+            if (slotIsWholePage(pageIndex)) {
+                SrCore.diskCache.getBatchPage(sessionBookTitle, SRQueueItem.chapterKey(sessionBookId, sessionTreeStr), batchPageIdx(pageIndex))?.let { bmp ->
+                    // 同步回填内存结果缓存（只进内存，不写实时磁盘区——批量产物有自己的领地，不重复占用配额）。
+                    // 回填后状态指示/前后对比也能看到批量产物，不再出现"已显示超分却提示未启动"。
+                    // ★摩尔纹：内存/显示走回缩副本，磁盘批量产物保持全尺寸
+                    val disp = SrMoireDownscale.apply(bmp, viewportW, viewportH, viewportTall)
+                    try {
+                        SrCore.manager.putCachedResult(
+                            SrCore.manager.buildCacheKey(sessionChapterId, pageIndex), disp,
+                        )
+                    } catch (_: Throwable) {}
+                    return disp
+                }
             }
         }
         return null
@@ -594,6 +608,9 @@ object SrPipeline {
                     val eng = engine ?: return@run null
                     val meta = sessionPageList.getOrNull(pageIndex) ?: return@run null
                     if (!isApplicable(meta)) return@run null
+                    // ★ 展开表守卫：段/半页位自动加载拿到的是整页原图（loadPage 不切段），
+                    //   产物按位次灌回段位=串图；只处理视图传来的切好内容
+                    if (meta.segmentIndex > 0 || meta.splitSide != 0) return@run null
                     eng.loadPage(meta, sessionTreeStr)
                 }
                 if (original == null || original.isRecycled) return@launch
