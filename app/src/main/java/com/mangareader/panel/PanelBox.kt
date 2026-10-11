@@ -74,6 +74,16 @@ object PanelTunables {
     /** 连续降级页数达到此值 → 自动退出逐格模式（UI 层消费） */
     const val CONSECUTIVE_FAIL_EXIT = 3
 
+    /**
+     * ★ 灵敏度档位 → 页置信度门槛（设置面板映射，唯一出处）：
+     *   0=宽松（弱分格/彩漫页更易通过，可能误分） 1=标准 2=严格（更保守，宁整页勿误分）
+     */
+    fun confFailFor(sensitivity: Int): Float = when (sensitivity) {
+        0 -> 0.35f
+        2 -> 0.65f
+        else -> CONF_FAIL
+    }
+
     // —— 阅读顺序（PanelOrder）——
     /** 垂直重叠 ≥ 较矮框此比例 → 归同行 */
     const val ROW_OVERLAP = 0.5f

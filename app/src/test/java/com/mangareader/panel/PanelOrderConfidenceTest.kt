@@ -108,4 +108,18 @@ class PanelOrderConfidenceTest {
         assertFalse("满版单格是正常结果", r.fallback)
         assertEquals(1, r.boxes.size)
     }
+
+    @Test
+    fun `sensitivity threshold moves fallback boundary`() {
+        // 低覆盖+无中缝的一组框（conf≈0.49）：宽松档(0.35)通过、严格档(0.65)降级
+        val boxes = listOf(
+            box(0, 0, 149, 99),      // 150×100
+            box(160, 120, 319, 279), // 160×160，与上框无重叠无缝
+        )
+        val lenient = PanelConfidence.evaluate(boxes, 320, 480, rtl = false, confFail = 0.35f)
+        val strict = PanelConfidence.evaluate(boxes, 320, 480, rtl = false, confFail = 0.65f)
+        assertFalse("宽松档不应降级 conf=${lenient.pageConf}", lenient.fallback)
+        assertTrue("严格档应降级 conf=${strict.pageConf}", strict.fallback)
+        assertEquals("同一组框置信度本身不应随门槛变化", lenient.pageConf, strict.pageConf, 1e-6f)
+    }
 }

@@ -13,6 +13,7 @@ internal object PanelConfidence {
         w: Int,
         h: Int,
         rtl: Boolean,
+        confFail: Float = PanelTunables.CONF_FAIL,
     ): PanelPageResult {
         val pageArea = w.toFloat() * h
         if (boxes.isEmpty()) return fallbackResult()
@@ -39,7 +40,7 @@ internal object PanelConfidence {
 
         // 整页规则：唯一框覆盖 ≥85% → 满版/跨页大图，属正常单格，不降级
         val isFullPageSingle = boxes.size == 1 && boxes[0].area / pageArea >= PanelTunables.FULL_PAGE_AREA
-        val fail = conf < PanelTunables.CONF_FAIL && !isFullPageSingle
+        val fail = conf < confFail && !isFullPageSingle
         if (fail) return fallbackResult(conf)
 
         val normalized = boxes.mapIndexed { i, b ->

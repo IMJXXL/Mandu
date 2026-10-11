@@ -11,13 +11,13 @@ object PanelDetectorCore {
     fun fallbackResult(): PanelPageResult =
         PanelPageResult(listOf(PanelBox(0f, 0f, 1f, 1f, 0, 0f)), 0f, fallback = true)
 
-    fun analyze(gray: IntArray, w: Int, h: Int, rtl: Boolean): PanelPageResult {
+    fun analyze(gray: IntArray, w: Int, h: Int, rtl: Boolean, confFail: Float = PanelTunables.CONF_FAIL): PanelPageResult {
         if (w <= 0 || h <= 0 || gray.size != w * h) return fallbackResult()
         val mask = PanelBinarize.buildInkMask(gray, w, h)
         val closed = PanelBinarize.close(mask, w, h, PanelBinarize.closeKernelSize(w, h))
         val rects = PanelComponents.toPanelRects(closed, w, h)
         if (rects.isEmpty()) return fallbackResult()
         val ordered = PanelOrder.sortReadingOrder(rects, rtl)
-        return PanelConfidence.evaluate(ordered, w, h, rtl)
+        return PanelConfidence.evaluate(ordered, w, h, rtl, confFail)
     }
 }

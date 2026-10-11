@@ -17,7 +17,7 @@ object PanelDetector {
      * 检测单页。缩样至长边≤[PanelTunables.MAX_SIDE]（性能预算 30~50ms/页），即用即弃。
      * HARDWARE 位图先拷软件位图（getPixels 不支持硬件位图）。
      */
-    suspend fun detect(src: Bitmap, rtl: Boolean): PanelPageResult = withContext(Dispatchers.Default) {
+    suspend fun detect(src: Bitmap, rtl: Boolean, confFail: Float = PanelTunables.CONF_FAIL): PanelPageResult = withContext(Dispatchers.Default) {
         val t0 = android.os.SystemClock.elapsedRealtime()
         val sw = if (src.config == Bitmap.Config.HARDWARE) src.copy(Bitmap.Config.ARGB_8888, false) else src
         try {
@@ -36,7 +36,7 @@ object PanelDetector {
                     0.587f * ((p shr 8) and 0xFF) +
                     0.114f * (p and 0xFF)).toInt()
             }
-            val r = PanelDetectorCore.analyze(gray, dw, dh, rtl)
+            val r = PanelDetectorCore.analyze(gray, dw, dh, rtl, confFail)
             Log.d(
                 "PanelDetector",
                 "detect ${dw}x${dh} boxes=${r.boxes.size} conf=${r.pageConf} fallback=${r.fallback} ${android.os.SystemClock.elapsedRealtime() - t0}ms",

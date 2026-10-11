@@ -41,6 +41,12 @@ class PanelGuideOverlay(context: Context) : View(context) {
         val nav: com.mangareader.native.ViewerNavigation,
         /** 描边/高亮用强调色（NES 侧经 readerAccentColor 推导后传 int） */
         val accentColor: Int,
+        /** 非当前格压暗 alpha 0~255（设置面板"压暗程度"，0=不压暗纯放大） */
+        val dimAlpha: Int = DIM_ALPHA,
+        /** 翻格动画（设置面板可关；墨水屏恒关） */
+        val animEnabled: Boolean = true,
+        /** 页置信度降级门槛（设置面板灵敏度档位 → PanelTunables.confFailFor） */
+        val minConf: Float = PanelTunables.CONF_FAIL,
         val goToPage: (Int) -> Unit,
         val currentPage: () -> Int,
         val onExit: () -> Unit,
@@ -104,6 +110,7 @@ class PanelGuideOverlay(context: Context) : View(context) {
         pendingLanding = null
         consecutiveFails = 0
         cropRect = null
+        scrimPaint.alpha = s.dimAlpha
         visibility = VISIBLE
         showPage(s.currentPage())
     }
@@ -124,6 +131,26 @@ class PanelGuideOverlay(context: Context) : View(context) {
     fun onHostPageChanged(page: Int) {
         if (session == null || page == shownPage) return
         showPage(page)
+    }
+
+    // ———— 运行时热更新（设置面板即改即生效，不重开 begin）————
+
+    /** 显示类：压暗程度/翻格动画——纯绘制参数，滑条拖动即时生效，不触发重识别 */
+    fun onRenderSettingsChanged(dimAlpha: Int, animEnabled: Boolean) {
+        val s = session ?: return
+        if (s.dimAlpha == dimAlpha && s.animEnabled == animEnabled) return
+        session = s.copy(dimAlpha = dimAlpha, animEnabled = animEnabled)
+        scrimPaint.alpha = dimAlpha
+        invalidate()
+    }
+
+    /** 识别类：置信门槛/阅读方向——清本书结果缓存并重检当前页（方向变了阅读序也要重排） */
+    fun onDetectSettingsChanged(minConf: Float, rtl: Boolean) {
+        val s = session ?: return
+        if (s.minConf == minConf && s.rtl == rtl) return
+        session = s.copy(minConf = minConf, rtl = rtl)
+        PanelDetector.Cache.clearBook(s.treePath)
+        showPage(shownPage)
     }
 
     override fun onDetachedFromWindow() {
@@ -149,7 +176,7 @@ class PanelGuideOverlay(context: Context) : View(context) {
             }
             val res = PanelDetector.Cache.get(sCaptured.treePath, page)
                 ?: (if (bmp == null) PanelDetectorCore.fallbackResult()
-                    else runCatching { PanelDetector.detect(bmp, sCaptured.rtl) }
+                    else runCatching { PanelDetector.detect(bmp, sCaptured.rtl, sCaptured.minConf) }
                         .getOrDefault(PanelDetectorCore.fallbackResult()))
             post {
                 if (session !== sCaptured || shownPage != page) return@post
@@ -226,7 +253,7 @@ class PanelGuideOverlay(context: Context) : View(context) {
         if (next !in s.pages.indices || PanelDetector.Cache.get(s.treePath, next) != null) return
         scope.launch {
             val bmp = runCatching { s.engine.loadPage(s.pages[next], s.treePath) }.getOrNull() ?: return@launch
-            val r = runCatching { PanelDetector.detect(bmp, s.rtl) }.getOrNull() ?: return@launch
+            val r = runCatching { PanelDetector.detect(bmp, s.rtl, s.minConf) }.getOrNull() ?: return@launch
             post { if (session === s) PanelDetector.Cache.put(s.treePath, next, r) }
         }
     }
@@ -372,7 +399,7 @@ class PanelGuideOverlay(context: Context) : View(context) {
 
     private fun animateCropTo(target: RectF) {
         val s = session ?: return
-        if (s.eink) {
+        if (s.eink || !s.animEnabled) {
             cropRect = target
             invalidate()
             return
@@ -384,9 +411,17 @@ class PanelGuideOverlay(context: Context) : View(context) {
     }
 
     private fun drawHint(canvas: Canvas, r: PanelPageResult?) {
-        if (r == null) {
-            // 识别中（本页结果未到但旧位图还在显示）：右下角小字
-            canvas.drawText("识别中…", width - hintPaint.textSize * 3.6f, height - hintPaint.textSize * 1.6f, hintPaint)
+        when {
+            r == null ->
+                // 识别中（本页结果未到但旧位图还在显示）：右下角小字
+                canvas.drawText("识别中…", width - hintPaint.textSize * 3.6f, height - hintPaint.textSize * 1.6f, hintPaint)
+            // ★ 降级页角标（2026-10-11 用户"经常不行"诊断：让识别失败可见——
+            //   这类页面按整页显示，与"功能没生效"观感相同，角标把两者区分开）
+            r.fallback ->
+                canvas.drawText(
+                    "本页未识别到分格",
+                    width - hintPaint.textSize * 8.4f, height - hintPaint.textSize * 1.6f, hintPaint,
+                )
         }
     }
 
