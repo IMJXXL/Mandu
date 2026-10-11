@@ -374,12 +374,14 @@ object WebDavClient {
     /**
      * Run [block]; on transport/timeout, reset the matching client and retry **once**.
      * Auth / 4xx-style failures are not retried (they rethrow immediately).
+     * ★ [retryable]=false 用于下载类路径（P1-2）：输出流由调用方持有，重试=从字节 0 重写同一流，
+     *   弱网中断后 tmp=[前N字节+完整文件] 被静默发布为坏缓存。失败直接上抛，由调用方干净重试。
      */
-    private suspend fun <T> withTransportRetry(sticky: Boolean = false, block: suspend () -> T): T {
+    private suspend fun <T> withTransportRetry(sticky: Boolean = false, retryable: Boolean = true, block: suspend () -> T): T {
         try {
             return block()
         } catch (e: Throwable) {
-            if (!isRetryableTransport(e)) throw e
+            if (!retryable || !isRetryableTransport(e)) throw e
             logcat {
                 "WebDavClient: transport error — reset ${if (sticky) "sticky" else "browse"} + one retry: ${e.message}"
             }
@@ -554,7 +556,7 @@ object WebDavClient {
         }
         val downloadContext = coroutineContext
         downloadGate().withPermit {
-            withTransportRetry {
+            withTransportRetry(retryable = false) {
                 val url = absoluteUrl(source, relativeFilePath)
                 val auth = basicAuthHeader(source.username, password)
                 http().prepareGet(url) {
@@ -1253,8 +1255,11 @@ object WebDavClient {
                     auth?.let { header(HttpHeaders.Authorization, it) }
                 }.status.value in 200..299
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (_: Exception) {
-            true
+            // ★ 建目录失败如实上报（此前吞异常返回 true，真实失败让后续 PUT 撞 409 难排查）
+            false
         }
     }
 

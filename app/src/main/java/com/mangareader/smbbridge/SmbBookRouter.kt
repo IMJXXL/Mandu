@@ -297,7 +297,9 @@ object SmbBookRouter {
                 startPage = imageIndex,
             ) { loader -> block(loader, null) }
         } else {
-            android.util.Log.i("SmbBookRouter", "stream archive path: remote=$remote ext=${ref.ext} size=${runCatching { byteSource.size }.getOrDefault(-1L)}")
+            // ★ 纯打日志不再探测 size（审查 P2）：byteSource.size 是真实网络 stat，黑洞断网下
+            //   阻塞 10-16s 叠加路由预算把打开判死，Stream 的离线优先缓存检查被架空
+            android.util.Log.i("SmbBookRouter", "stream archive path: remote=$remote ext=${ref.ext}")
             useStreamArchivePageLoader(
                 source = byteSource,
                 cacheKey = cacheKey,

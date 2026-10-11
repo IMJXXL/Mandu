@@ -3547,6 +3547,8 @@ object SmbGateway {
         relativeFilePath: String,
         out: OutputStream,
         yieldable: Boolean = false,
+        // ★ 默认 false（P1-2）：out 由调用方持有，传输重试=非幂等重写。失败上抛由调用方干净重试。
+        retryable: Boolean = false,
     ) = withIOContext {
         ZipAsDirListing.zipMemberPath(relativeFilePath)?.let { (zipRel, member) ->
             val local = ZipMemberCover.ensure("smb:${source.id}:$zipRel", member) {
@@ -3564,7 +3566,7 @@ object SmbGateway {
         val downloadContext = coroutineContext
         val kind = if (yieldable) ShareOp.Background else ShareOp.Data
         val copy = suspend {
-            copyOpenFile(source, password, relativeFilePath, downloadContext, kind) { file ->
+            copyOpenFile(source, password, relativeFilePath, downloadContext, kind, retryable = retryable) { file ->
                 SmbSequentialCopy.copy(
                     read = SmbSequentialCopy.of(file),
                     start = 0L,
@@ -3649,6 +3651,7 @@ object SmbGateway {
         relativeFilePath: String,
         downloadContext: kotlin.coroutines.CoroutineContext,
         kind: ShareOp = ShareOp.Data,
+        retryable: Boolean = true,
         block: (com.hierynomus.smbj.share.File) -> T,
     ): T {
         val activeFile = AtomicReference<com.hierynomus.smbj.share.File?>(null)
@@ -3657,7 +3660,7 @@ object SmbGateway {
         val cancelClose = downloadContext[Job]?.closeFileOnCancelling(activeFile)
         try {
             val loc = resolveLocation(source, relativeFilePath)
-            return withShare(source, password, kind, loc.share) { share ->
+            return withShare(source, password, kind, loc.share, retryable = retryable) { share ->
                 share.openFile(
                     loc.pathInShare,
                     EnumSet.of(AccessMask.GENERIC_READ),
@@ -3689,6 +3692,7 @@ object SmbGateway {
         password: String,
         kind: ShareOp = ShareOp.Data,
         shareName: String = fixedShare(source),
+        retryable: Boolean = true,
         block: (DiskShare) -> T,
     ): T = withContext(Dispatchers.IO) {
         require(shareName.isNotBlank()) { "SMB share name required" }
@@ -3722,6 +3726,10 @@ object SmbGateway {
             if (isFileHandleAbortError(first)) throw first
             if (first is IOException && first.message?.contains("recovering") == true) throw first
             if (first is IOException && first.message?.contains("busy:") == true) throw first
+            // ★ 非幂等下载路径（P1-2）：输出流由调用方持有，透明重试会从字节 0 重写同一流——
+            //   弱网中断后 tmp=[前N字节+完整文件] 且第二遍通常成功 → 坏缓存被静默发布。
+            //   retryable=false 直接上抛：页加载走既有"重试本页"通道（干净重下），失败可见优于静默损坏。
+            if (!retryable) throw first
             logcat(first)
 
             // App background / video ON_STOP closed this pool under us — never circuit;

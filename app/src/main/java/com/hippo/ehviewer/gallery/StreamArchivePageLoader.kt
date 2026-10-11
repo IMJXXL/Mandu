@@ -31,8 +31,10 @@ import com.hippo.ehviewer.library.ArchiveStreamPageCache
 import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -50,6 +52,12 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import moe.tarsin.kt.install
 import okio.Path
+
+/** ★ size 有界探测专用池：被放弃的探测线程阻塞至连接超时后自行结束，结果丢弃 */
+@PublishedApi
+internal val SIZE_PROBE_POOL = Executors.newCachedThreadPool { r ->
+    Thread(r, "stream-size-probe").apply { isDaemon = true }
+}
 
 /**
  * Stream-open a remote archive via [ArchiveByteSource] + libarchive seek/read.
@@ -104,8 +112,18 @@ suspend inline fun <T> useStreamArchivePageLoader(
             return@coroutineScope block(loader)
         }
 
-        // Soft-fail remote size (WebDAV restart): IOException �?open fails cleanly, no process crash.
-        val archiveSizeBytes = runCatching { source.size }.getOrDefault(-1L)
+        // Soft-fail remote size (WebDAV restart): IOException → open fails cleanly, no process crash.
+        // ★ 有界探测（审查 P1-1）：黑洞式断网下 source.size 阻塞 8~16s+（SMB 8s 连接×重试、WebDAV
+        //   更长），15s 打开预算先耗尽 → partial 离线分支永远走不到=半缓存书离线打不开。
+        //   限时 4s，超时按"size 未知"处理走 partial；被放弃的探测线程最迟等到连接超时自行结束
+        //   （结果丢弃无副作用；在线误判时书以已缓存页打开，下次在线自动补全）。
+        val archiveSizeBytes = try {
+            java.util.concurrent.CompletableFuture
+                .supplyAsync({ runCatching { source.size }.getOrDefault(-1L) }, SIZE_PROBE_POOL)
+                .get(4, java.util.concurrent.TimeUnit.SECONDS)
+        } catch (_: Exception) {
+            -1L
+        }
         if (archiveSizeBytes <= 0L) {
             val partial = ArchiveStreamPageCache.isPartialReady(cacheKey)
             if (partial != null) {

@@ -303,6 +303,8 @@ object WebDavCache {
                     val tmp = File("$key.tmp.${System.nanoTime()}")
                     try {
                         FileOutputStream(tmp).use { out -> write(out) }
+                        // ★ 对齐 SmbCache.commitTmp：空文件不发布（0 字节=下载失败，重下优于空页缓存）
+                        if (!tmp.isFile || tmp.length() == 0L) error("WebDAV download produced empty temp file for ${path.name}")
                         val finalPath = maybeConvertHdrDownload(tmp, path, nameHint)
                         markPresent(finalPath)
                         touch(finalPath)

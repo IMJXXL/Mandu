@@ -104,8 +104,9 @@ object RemoteArchiveOpen {
             }
         }
         val size = knownSizeBytes ?: runCatching { WebDavClient.fileSizeOrNull(source, password, remote) }.getOrDefault(null)
-        if (knownSizeBytes != null && knownSizeBytes > ARCHIVE_DOWNLOAD_WARN_BYTES && !allowLarge) {
-            throw ArchiveTooLargeException(knownSizeBytes)
+        // ★ 守卫用解析后的 size（此前查错变量用 knownSizeBytes，探测路径的 size 永不触发大档守卫）
+        if (size != null && size > ARCHIVE_DOWNLOAD_WARN_BYTES && !allowLarge) {
+            throw ArchiveTooLargeException(size)
         }
         var downloaded = false
         onWillDownload?.invoke()
