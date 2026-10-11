@@ -242,6 +242,20 @@ fun NativeReaderScreen(
 
     val effectiveUseCurl = useCurl && !curlDisabledByAnim
 
+    // ★ 静默失效补知（报告 §二.3 #7）：动图页整会话关仿真翻页是最令人困惑的条件
+    //   （其余 6 条件都是可见的模式选择）——关闭时 Toast 一次说明原因（每章一次）
+    var curlAnimToastShown by remember(treePath) { mutableStateOf(false) }
+    LaunchedEffect(effectiveUseCurl, useCurl, curlDisabledByAnim, treePath) {
+        if (useCurl && curlDisabledByAnim && !curlAnimToastShown) {
+            curlAnimToastShown = true
+            android.widget.Toast.makeText(
+                ctx,
+                "检测到动图页，本章仿真翻页已临时改为普通翻页",
+                android.widget.Toast.LENGTH_SHORT,
+            ).show()
+        }
+    }
+
     fun activeDelegate(isVerticalNow: Boolean): ReaderViewDelegate =
         if (isVerticalNow) webtoonView
         else if (effectiveUseCurl && pageLayout != 0) curlDoublePageView

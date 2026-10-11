@@ -60,8 +60,8 @@ fun CurlPageContent(
     // 全部页面统一 Image 常驻：曾对当前页用 SSIV（可双指缩放）其余页用 Image，翻页落地
     // 瞬间 AndroidView↔Image 组件类型切换产生空白帧（b12d1e4/bc54d52 双页同类问题的
     // 单页残留），统一 Image 消除切换；细节缩放由双击缩放补（isDoubleTapZoom 门控）。
-    val mirror = if (isRtl) Modifier.graphicsLayer { scaleX = -1f } else Modifier
-    val baseModifier = Modifier.fillMaxSize().clipToBounds().then(mirror)
+    // ★ 内层反镜像同摘（外层镜像已摘，保留会变成真镜像显示）；isRtl 参数仍供 alignX 缩放对齐用
+    val baseModifier = Modifier.fillMaxSize().clipToBounds()
     // ★ 整屏幕纸纹（textureScope=1）：纸面留边用外层算好的 bgPaint 铺纸纹（同配方同相位），
     //   平涂背景曾把外层纸纹背景整块盖死；关=平涂原样
     val bgMod = if (bgTexPaint != null) Modifier.drawBehind {
@@ -315,11 +315,12 @@ fun CurlReaderContent(
         val areaModifier = Modifier.fillMaxSize().padding(
             start = insetL, top = insetT, end = insetR, bottom = insetB,
         )
-        val curlModifier = if (isRtl) {
-            areaModifier.graphicsLayer { scaleX = -1f }
-        } else {
-            areaModifier
-        }
+        // ★ RTL 方向统一（报告 §二.2，2026-10-11）：摞镜像——此前外层镜像把卷页手势/几何
+        //   一起翻转，RTL 书变成"右滑=下一页"，与 pager 的"左滑永远=下一页"相反（测试工单实锤：
+        //   从 pager 切过来按左滑习惯翻回上一页）。摞镜后单页视觉零变化（与内层
+        //   反镜像本就互抵，两层同摘），仅手势方向与 pager 对齐。双页的双层镜像与
+        //   页序 XOR/spine 四处联动，需真机回归后再摘（本批不动）。
+        val curlModifier = areaModifier
 
         PageCurl(
             count = totalPages,
