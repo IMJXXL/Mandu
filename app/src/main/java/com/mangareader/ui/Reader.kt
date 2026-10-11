@@ -99,7 +99,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     val act = ctx as? Activity
     val app = ctx.applicationContext as App
     val dao = app.db.mangaDao()
-    val engine = remember { ArchiveEngine(ctx) }
+    val engine = remember { ArchiveEngine(ctx).apply { scopeBookId = bookId } }
     val scope = rememberCoroutineScope()
     val prefs = remember { ctx.getSharedPreferences("manga_reader", Context.MODE_PRIVATE) }
     var currentBookId by remember { mutableLongStateOf(bookId) }
@@ -2657,6 +2657,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                         }
                         com.mangareader.native.NativeReaderScreen(
                             engine = engine,
+                            bookId = bookId,
                             treePath = navStack.lastOrNull() ?: book?.filePath ?: "",
                             pages = displayPages,
                             startPage = safeCur,

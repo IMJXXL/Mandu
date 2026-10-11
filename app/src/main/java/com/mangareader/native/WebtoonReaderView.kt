@@ -77,6 +77,11 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
     /** ★ SMB/WebDAV 页面供给抽象（RemotePageSupply）：非 null 时页面加载走远程会话，ArchiveEngine 不参与 */
     @Volatile
     var remotePageSupply: RemotePageSupply? = null
+    /** ★ 书内作用域 bookId（NES setup 前注入）：视图配置读取必须与 Reader 同源——
+     *  读全局值会把"全局开长图分割+本书关"这类书内设置架空（审查 P1-5） */
+    var scopeBookId: Long = -1L
+    /** 当前注册的页数增长监听（setup 重入先摘旧的、release 摘除——防旧视图实例空转持有引用） */
+    private var growListener: ((Int) -> Unit)? = null
     // 超分：渐进替换事件订阅（release/setup 重建时取消）
     private var srEventJob: kotlinx.coroutines.Job? = null
 
@@ -730,7 +735,7 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
         if (clickFlipType != clickFlip) { clickFlipType = clickFlip; applyNavigation() }
         val screenMax = maxOf(context.resources.displayMetrics.widthPixels, context.resources.displayMetrics.heightPixels)
         val screenWidth = context.resources.displayMetrics.widthPixels
-        val cfg = com.mangareader.data.ReaderConfig.load(context)
+        val cfg = com.mangareader.data.ReaderConfig.load(context, scopeBookId)
         tabletWebtoonWidthPct = context.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE).getInt("webtoon_tablet_cap_pct", 100).coerceIn(50, 100)
         recycler.tapScrollRatio = context.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE).getFloat("webtoon_tap_scroll_ratio", 0.8f)
         setupPages = pages
@@ -738,17 +743,24 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
             tallRatioThreshold = com.mangareader.engine.pdf.PdfTallSplitCalculator.ratioThreshold(cfg.tallSplitSensitivity))
         this.currentPage = startPage
         onPageCountChanged?.invoke(this.pageList.size)
-        remotePageSupply?.onPageCountGrow?.add { newCount ->
+        // ★ 监听器先摘后挂（此前每次 setup 追加不移除，旧实例监听器存活空转）
+        growListener?.let { old -> remotePageSupply?.onPageCountGrow?.remove(old) }
+        val listener = { newCount: Int ->
             if (newCount > pageList.size) {
                 val oldSize = pageList.size
+                val src = treePath.substringAfterLast('.', "").lowercase().let { e -> if (e == "cbz") "zip" else e }
                 val grown = pageList + (pageList.size until newCount).map {
-                    ArchiveEngine.PageMeta(it, "", "", name = "")
+                    // ★ 与 PagerReaderView 对齐：增长页带 localIdx/originalPageIdx 戳——
+                    //   缺省 0 会让 loadRemotePage 全取第 0 页（solid 条漫增长页全显示第一页）
+                    ArchiveEngine.PageMeta(it, src, "", localIdx = it, originalPageIdx = it, name = "")
                 }
                 pageList = grown
                 onPageCountChanged?.invoke(pageList.size)
                 post { adapter?.notifyItemRangeInserted(oldSize, newCount - oldSize) }
             }
         }
+        remotePageSupply?.onPageCountGrow?.add(listener)
+        growListener = listener
         // 超分渐进替换：订阅引擎完成事件，命中当前章节即原位替换
         srEventJob?.cancel()
         srEventJob = try {
@@ -1236,6 +1248,9 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
     override fun release() {
         runCatching { flushProbedSizes() } // ★ 退出前把渐进收集的尺寸落盘，下次进书拆分全量生效
         srEventJob?.cancel(); srEventJob = null
+        // ★ 摘除页数增长监听（防旧视图实例被 supply 持有）
+        growListener?.let { old -> remotePageSupply?.onPageCountGrow?.remove(old) }
+        growListener = null
         // ★ v1.11 P0：清掉挂起的 settleWindow 与 pending 释放机制（view 销毁/切视图后不再执行）
         cancelPendingRelease()
         // ★ §24 二代：释放信号状态（E4 起条漫播放动图，Drawable 一并停帧清空）

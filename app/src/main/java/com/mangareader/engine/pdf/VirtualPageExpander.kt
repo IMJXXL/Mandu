@@ -52,6 +52,10 @@ object VirtualPageExpander {
         tallRatioThreshold: Float = PdfTallSplitCalculator.TALL_RATIO_THRESHOLD,
     ): List<ArchiveEngine.PageMeta> {
         if ((!tallSplitEnabled || !isWebtoonMode) && !wideSplitEnabled) return pages
+        // ★ 幂等守卫（2026-10-11 审查）：已展开表（带段页/半页戳）整表透传。二次展开不仅无增益
+        //   （重入方 allowProbe=false 探不了新尺寸），还会把非段页的 originalPageIdx 盖成"展开表
+        //   位次"——远程书解码按 originalPageIdx 取原始页，段页之后所有普通页内容错位。
+        if (pages.any { it.segmentTotal > 0 || it.splitSide != 0 }) return pages
         var storeStamp: String? = null
         var storeSizes: Map<String, IntArray>? = null
         val pending = HashMap<String, IntArray>()

@@ -173,6 +173,8 @@ fun NativeReaderScreen(
     textureScope: Int = 0,
     ambienceSound: String = "",
     ambienceVolume: Int = 60,
+    /** ★ 书内作用域 bookId（P1-5）：视图配置读取必须与 Reader 同源，全局值会架空书内设置 */
+    bookId: Long = -1L,
     /** ★ SMB/WebDAV 页面供给（design.md 2.2.2）：非 null 时阅读页面走远程会话。
      *   以参数形式在 setup() 之前注入 delegate，消除"setup 早于供给挂接"的竞态窗口。 */
     remoteSupply: com.mangareader.native.RemotePageSupply? = null,
@@ -304,6 +306,8 @@ fun NativeReaderScreen(
             delegate.setDoublePageReverse(doublePageReverse)
         }
         // ★ §34.3：verticalPager 传给 pagerView.setup（webtoon 走默认 false 无影响）
+        // ★ 书内作用域 bookId：视图配置读取与 Reader 同源（P1-5），必须在 setup 前注入
+        if (delegate is WebtoonReaderView) delegate.scopeBookId = bookId
         // ★ 点击翻页区域接线（此前硬编码 0=关闭，区域设置从未生效——2026-09-29 修复）
         delegate.setup(engine, treePath, pages, savedPage, isVertical, clickFlip, isRtl, verticalPager)
         delegate.setClickFlipInvert(clickFlipInvert)

@@ -76,6 +76,8 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     /** ★ SMB/WebDAV 页面供给抽象（RemotePageSupply）：非 null 时 loadPageAsync 走远程会话，ArchiveEngine 不参与 */
     @Volatile
     var remotePageSupply: RemotePageSupply? = null
+    /** 当前注册的页数增长监听（setup 重入先摘旧的、release 摘除——防旧视图实例空转持有引用） */
+    private var growListener: ((Int) -> Unit)? = null
     // 超分：渐进替换事件订阅（release/setup 重建时取消）
     private var srEventJob: kotlinx.coroutines.Job? = null
 
@@ -860,7 +862,9 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         //   setup 不上报会让上一章条漫的展开页数残留 → 进度条越界、goToPage 吞页、done 误标读完
         onPageCountChanged?.invoke(pageList.size)
         // SMB/WebDAV solid archive: page count grows as extract progresses
-        remotePageSupply?.onPageCountGrow?.add { newCount ->
+        // ★ 监听器先摘后挂（此前每次 setup 追加不移除，旧实例监听器存活空转）
+        growListener?.let { old -> remotePageSupply?.onPageCountGrow?.remove(old) }
+        val listener = { newCount: Int ->
             if (newCount > pageList.size) {
                 val oldSize = pageList.size
                 val grown = pageList + (pageList.size until newCount).map {
@@ -878,6 +882,8 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 post { pagerAdapter?.notifyItemRangeInserted(oldSize, newCount - oldSize) }
             }
         }
+        remotePageSupply?.onPageCountGrow?.add(listener)
+        growListener = listener
         // 超分渐进替换：订阅引擎完成事件，命中当前章节即原位替换
         srEventJob?.cancel()
         srEventJob = try {
@@ -1927,6 +1933,9 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     override fun release() {
 
         srEventJob?.cancel(); srEventJob = null
+        // ★ 摘除页数增长监听（防旧视图实例被 supply 持有）
+        growListener?.let { old -> remotePageSupply?.onPageCountGrow?.remove(old) }
+        growListener = null
         // ★ §24 二代释放动图 Drawable（停 + 清 map），防 View 销毁后 decoder 跑漏内存
         pageAnimDrawables.values.forEach { try { if (it is Animatable && it.isRunning) it.stop() } catch (_: Throwable) {} }
         pageAnimDrawables.clear()

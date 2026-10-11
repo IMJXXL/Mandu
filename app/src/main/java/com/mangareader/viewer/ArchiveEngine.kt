@@ -180,6 +180,11 @@ class ArchiveEngine(private val ctx: Context) {
 
     private val config by lazy { com.mangareader.data.ReaderConfig.load(ctx) }
 
+    /** ★ 书内作用域 bookId（Reader 创建实例时注入）：pdfQuality 等书级配置在引擎读取点
+     *  必须按书取值（此前恒读全局，书内设置静默失效——审查 AE5）。Scanner 自建实例保持 -1=全局 */
+    @Volatile
+    var scopeBookId: Long = -1L
+
     private val isEink by lazy { config.isEinkMode }
     private val forceFullDecode: Boolean get() {
         val prefs = ctx.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE)
@@ -477,7 +482,7 @@ class ArchiveEngine(private val ctx: Context) {
             val realPath = realFile?.absolutePath ?: ""
             val pfd = ctx.contentResolver.openFileDescriptor(uri, "r") ?: return null
             val fd = pfd.detachFd()
-            pfdKeepAlive[cacheKey] = pfd
+            synchronized(pfdKeepAlive) { pfdKeepAlive[cacheKey] = pfd }
             try { com.mangareader.native.NativeEngine.openZipWithFd(cacheKey, fd, realPath) } catch (_: Exception) { return null }
         }
         val allNames = try { com.mangareader.native.NativeEngine.getZipEntryNames(cacheKey) } catch (_: Exception) { null }
@@ -528,7 +533,7 @@ class ArchiveEngine(private val ctx: Context) {
             val realPath = realFile?.absolutePath ?: ""
             val pfd = ctx.contentResolver.openFileDescriptor(uri, "r") ?: return null
             val fd = pfd.detachFd()
-            pfdKeepAlive[cacheKey] = pfd
+            synchronized(pfdKeepAlive) { pfdKeepAlive[cacheKey] = pfd }
             try { com.mangareader.native.NativeEngine.openZipWithFd(cacheKey, fd, realPath) } catch (_: Exception) { return null }
         }
         val allNames = try { com.mangareader.native.NativeEngine.getZipEntryNames(cacheKey) } catch (_: Exception) { null }
@@ -686,7 +691,9 @@ class ArchiveEngine(private val ctx: Context) {
                 put("digest", digest ?: "")
                 put("pages", arr)
             }
-            val tmp = File(dir, sha1Hex(path) + ".tmp")
+            // ★ tmp 名带 nanoTime（对齐 :799 archive 版）：warmer/阅读器并发写同一目录索引时
+            //   固定名互踩会产生坏 JSON（审查 P2-3）
+            val tmp = File(dir, sha1Hex(path) + "-" + System.nanoTime() + ".tmp")
             tmp.writeText(obj.toString())
             val dest = dirIndexFile(path)
             if (!tmp.renameTo(dest)) {
@@ -975,7 +982,7 @@ class ArchiveEngine(private val ctx: Context) {
                         val subPath = inner.substring(sepIdx + 2)
                         val result = getZipAllNames(archivePath) ?: return null
                         val (cacheKey, allNames) = result
-                        val root = zipTreeCache.getOrPut(cacheKey) { buildZipTree(allNames.toList()) }
+                        val root = zipTree(cacheKey) { buildZipTree(allNames.toList()) }
                         var current = root
                         val pathParts = subPath.split('/').filter { it.isNotEmpty() }
                         for (part in pathParts) {
@@ -1080,11 +1087,14 @@ class ArchiveEngine(private val ctx: Context) {
                     if (pfd != null) {
                         try {
                             val fd = pfd.detachFd()
-                            try {
+                            val ok = try {
                                 com.mangareader.native.NativeEngine.pdfOpen(docKey, fd)
                             } catch (e: Exception) {
                                 Log.e(TAG, "loadPageSize pdfOpen failed: ${e.message}", e)
-                                // ★ A2：pdfOpen 失败 = native 未接管 fd，必须手动关闭防泄漏
+                                false
+                            }
+                            if (!ok) {
+                                // ★ A2：pdfOpen 返回 false/抛异常 = native 未接管 fd，必须手动关闭防泄漏
                                 try { android.os.ParcelFileDescriptor.adoptFd(fd).close() } catch (_: Exception) {}
                             }
                         } finally { try { pfd.close() } catch (_: Exception) {} }
@@ -1321,7 +1331,7 @@ class ArchiveEngine(private val ctx: Context) {
                         android.util.Log.d(TAG, "loadPage z: archivePath=$archivePath subPath=$subPath idx=${meta.localIdx}")
                         val result = getZipAllNames(archivePath) ?: return null
                         val (cacheKey, allNames) = result
-                        val root = zipTreeCache.getOrPut(cacheKey) { buildZipTree(allNames.toList()) }
+                        val root = zipTree(cacheKey) { buildZipTree(allNames.toList()) }
                         var current = root
                         val pathParts = subPath.split('/').filter { it.isNotEmpty() }
                         for (part in pathParts) {
@@ -2060,7 +2070,7 @@ class ArchiveEngine(private val ctx: Context) {
             val archivePath = "a:${item.auth}|${item.tree}|${item.doc}"
             val result = getZipAllNames(archivePath) ?: return null
             val (cacheKey, allNames) = result
-            val root = zipTreeCache.getOrPut(cacheKey) { buildZipTree(allNames.toList()) }
+            val root = zipTree(cacheKey) { buildZipTree(allNames.toList()) }
             var current = root
             val pathParts = item.subPath.split('/').filter { it.isNotEmpty() }
             for (part in pathParts) {
@@ -2179,10 +2189,13 @@ class ArchiveEngine(private val ctx: Context) {
             val cvPath = "cv:${item.doc}"
             val raw = try {
                 kotlinx.coroutines.runBlocking {
-                    if (item.auth == "webdav") {
-                        com.mangareader.webdavbridge.WebDavCoverLoader.loadCoverRawWebDav(cvPath)
-                    } else {
-                        com.mangareader.smbbridge.SmbCoverLoader.loadCoverRawSmb(cvPath)
+                    // ★ 有界等待：服务器挂起时不能永久占住 Coil 封面线程（审查 AE7）
+                    kotlinx.coroutines.withTimeoutOrNull(15_000L) {
+                        if (item.auth == "webdav") {
+                            com.mangareader.webdavbridge.WebDavCoverLoader.loadCoverRawWebDav(cvPath)
+                        } else {
+                            com.mangareader.smbbridge.SmbCoverLoader.loadCoverRawSmb(cvPath)
+                        }
                     }
                 }
             } catch (_: Exception) { null }
@@ -2490,7 +2503,8 @@ class ArchiveEngine(private val ctx: Context) {
         return pages
     }
 
-    private val realFileCache2 = mutableMapOf<String, java.io.File>()
+    // ★ ConcurrentHashMap（此前裸 HashMap，Coil 封面线程与阅读器 IO 线程并发读写=结构损坏风险）
+    private val realFileCache2 = java.util.concurrent.ConcurrentHashMap<String, java.io.File>()
 
     // ★ P10（2026-10-04）：d: 父书子压缩包页数并行统计
     private class SubArcDoc(val ext: String, val docId: String)
@@ -2532,7 +2546,7 @@ class ArchiveEngine(private val ctx: Context) {
                     val pfd = ctx.contentResolver.openFileDescriptor(uri, "r")
                     if (pfd != null) {
                         val fd = pfd.detachFd()
-                        pfdKeepAlive[cacheKey] = pfd
+                        synchronized(pfdKeepAlive) { pfdKeepAlive[cacheKey] = pfd }
                         try { com.mangareader.native.NativeEngine.openZipWithFd(cacheKey, fd, realPath) } catch (_: Exception) {}
                     }
                 }
@@ -2588,7 +2602,7 @@ class ArchiveEngine(private val ctx: Context) {
             val pfd = ctx.contentResolver.openFileDescriptor(uri, "r")
             if (pfd != null) {
                 val fd = pfd.detachFd()
-                pfdKeepAlive[cacheKey] = pfd
+                synchronized(pfdKeepAlive) { pfdKeepAlive[cacheKey] = pfd }
                 try { com.mangareader.native.NativeEngine.openZipWithFd(cacheKey, fd, realPath) } catch (_: Exception) {}
             }
         }
@@ -3094,11 +3108,14 @@ class ArchiveEngine(private val ctx: Context) {
             if (!com.mangareader.native.NativeEngine.pdfIsOpen(key)) {
                 ctx.contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
                     val fd = pfd.detachFd()
-                    try {
+                    val ok = try {
                         com.mangareader.native.NativeEngine.pdfOpen(key, fd)
                     } catch (e: Exception) {
                         Log.e(TAG, "countPdfPages pdfOpen failed: ${e.message}")
-                        // ★ A2：pdfOpen 失败 = native 未接管 fd，必须手动关闭防泄漏
+                        false
+                    }
+                    if (!ok) {
+                        // ★ A2：pdfOpen 返回 false/抛异常 = native 未接管 fd，必须手动关闭防泄漏
                         try { android.os.ParcelFileDescriptor.adoptFd(fd).close() } catch (_: Exception) {}
                     }
                 }
@@ -3136,7 +3153,7 @@ class ArchiveEngine(private val ctx: Context) {
                     val fd = pfd.detachFd()
                     synchronized(debugLogBuffer) { debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: fd=$fd realPath=$realPath") }
                     flushLog(ctx)
-                    pfdKeepAlive[cacheKey] = pfd
+                    synchronized(pfdKeepAlive) { pfdKeepAlive[cacheKey] = pfd }
                     try {
                         com.mangareader.native.NativeEngine.openZipWithFd(cacheKey, fd, realPath)
                         synchronized(debugLogBuffer) { debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: openZipWithFd OK") }
@@ -3192,7 +3209,11 @@ class ArchiveEngine(private val ctx: Context) {
             if (commonsResult != null) { flushLog(ctx); return commonsResult }
 
             // ★ B12：补 put——原"只 get 不 put"假缓存永远 miss；null 不缓存（与原语义一致）
-            val realFile = realFileCache2[cacheKey] ?: getRealFile(uri)?.also { realFileCache2[cacheKey] = it }
+            val realFile = realFileCache2[cacheKey] ?: getRealFile(uri)?.also {
+                // 容量护栏：进程级缓存只增不减会累积全库路径，超限整体清空（树可重建）
+                if (realFileCache2.size > 512) realFileCache2.clear()
+                realFileCache2[cacheKey] = it
+            }
             synchronized(debugLogBuffer) { debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: realFile=${realFile?.absolutePath ?: "null"} isFile=${realFile?.isFile}") }
             flushLog(ctx)
             if (realFile != null && realFile.isFile) {
@@ -3237,7 +3258,7 @@ class ArchiveEngine(private val ctx: Context) {
                 }
                 if (targetData != null) { flushLog(ctx); return targetData }
             } catch (e: Exception) { Log.w(TAG, "loadFromZip SAF fallback: ${e.message}") }
-        } catch (e: Exception) { debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip EXCEPTION: ${e.message}") }
+        } catch (e: Exception) { synchronized(debugLogBuffer) { debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip EXCEPTION: ${e.message}") } }
         synchronized(debugLogBuffer) { debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: ALL FAILED for target=$targetIndex") }
         flushLog(ctx)
         return null
@@ -3258,13 +3279,17 @@ class ArchiveEngine(private val ctx: Context) {
                 if (pfd != null) {
                     try {
                         val fd = pfd.detachFd()
-                        try {
+                        val ok = try {
                             com.mangareader.native.NativeEngine.pdfOpen(docKey, fd)
-                            Log.d(TAG, "loadPdfPage: pdfOpen success")
                         } catch (e: Exception) {
                             Log.e(TAG, "pdfOpen failed: ${e.message}", e)
-                            // ★ A2：pdfOpen 失败 = native 未接管 fd，必须手动关闭防泄漏
+                            false
+                        }
+                        if (!ok) {
+                            // ★ A2：pdfOpen 返回 false/抛异常 = native 未接管 fd，必须手动关闭防泄漏
                             try { android.os.ParcelFileDescriptor.adoptFd(fd).close() } catch (_: Exception) {}
+                        } else {
+                            Log.d(TAG, "loadPdfPage: pdfOpen success")
                         }
                     } finally { try { pfd.close() } catch (_: Exception) {} }
                 } else {
@@ -3283,7 +3308,7 @@ class ArchiveEngine(private val ctx: Context) {
             // 低配设备降至1x(72DPI)省内存，高配升至5x(360DPI)提清晰度
             // 默认3x(216DPI)手机够用，不会超过PDF原版质量
             // 注意：pdfium dpi参数是死代码，实际分辨率由w/h控制
-            val config = com.mangareader.data.ReaderConfig.load(ctx)
+            val config = com.mangareader.data.ReaderConfig.load(ctx, scopeBookId)
             val dpi = (config.pdfQuality * 72f).toInt().coerceIn(72, 360)
             val screenMax = maxOf(ctx.resources.displayMetrics.widthPixels, ctx.resources.displayMetrics.heightPixels)
             var w = (dpi.toFloat() * pageWidth / 72f).toInt().coerceAtLeast(1)
@@ -3344,11 +3369,14 @@ class ArchiveEngine(private val ctx: Context) {
                         if (pfd != null) {
                             try {
                                 val fd = pfd.detachFd()
-                                try {
+                                val ok = try {
                                     com.mangareader.native.NativeEngine.pdfOpen(docKey, fd)
                                 } catch (e: Exception) {
                                     Log.e(TAG, "loadPdfPageSegment pdfOpen failed: ${e.message}", e)
-                                    // ★ A2：pdfOpen 失败 = native 未接管 fd，必须手动关闭防泄漏
+                                    false
+                                }
+                                if (!ok) {
+                                    // ★ A2：pdfOpen 返回 false/抛异常 = native 未接管 fd，必须手动关闭防泄漏
                                     try { android.os.ParcelFileDescriptor.adoptFd(fd).close() } catch (_: Exception) {}
                                 }
                             } finally { try { pfd.close() } catch (_: Exception) {} }
@@ -3908,7 +3936,11 @@ class ArchiveEngine(private val ctx: Context) {
                 val want = HashSet<Int>()
                 repeat(3) { want.add(targetIndex + it) }
                 val got = readArchiveEntriesViaFd(entry.pfd.fd, want)
-                for ((i, data) in got) adjacentPrereadCache.put("$cacheKey|p$i", data)
+                for ((i, data) in got) {
+                    // ★ 超限页不入缓存：LruCache maxSize=32MB，单页 ≥32MB put 后立即被 trim 自逐
+                    //   （缓存抖动+无谓的大块拷贝），直接跳过
+                    if (data.size < 32 * 1024 * 1024) adjacentPrereadCache.put("$cacheKey|p$i", data)
+                }
                 got[targetIndex]
             }
         } catch (e: Exception) {
@@ -4017,6 +4049,12 @@ class ArchiveEngine(private val ctx: Context) {
 
     private val zipTreeCache = java.util.concurrent.ConcurrentHashMap<String, ZipDirNode>()
 
+    /** zip 树缓存取用：超限整体清空防进程级无限累积（每本 z: 书一棵全条目树，审查 AE3） */
+    private fun zipTree(cacheKey: String, build: () -> ZipDirNode): ZipDirNode {
+        if (zipTreeCache.size > 24) zipTreeCache.clear()
+        return zipTreeCache.getOrPut(cacheKey, build)
+    }
+
     private fun buildZipTree(entryNames: List<String>): ZipDirNode {
         val root = ZipDirNode("", "", true)
         // ★ B4 修复：预建 name→首个 index 映射替代循环内 entryNames.indexOf(name) 的 O(N²)；
@@ -4082,7 +4120,7 @@ class ArchiveEngine(private val ctx: Context) {
             val realPath = realFile?.absolutePath ?: ""
             val pfd = ctx.contentResolver.openFileDescriptor(uri, "r") ?: return false
             val fd = pfd.detachFd()
-            pfdKeepAlive[cacheKey] = pfd
+            synchronized(pfdKeepAlive) { pfdKeepAlive[cacheKey] = pfd }
             try { com.mangareader.native.NativeEngine.openZipWithFd(cacheKey, fd, realPath) } catch (_: Exception) {}
         }
         val allNames = try { com.mangareader.native.NativeEngine.getZipEntryNames(cacheKey) } catch (_: Exception) { null }
@@ -4129,7 +4167,7 @@ class ArchiveEngine(private val ctx: Context) {
             val realPath = realFile?.absolutePath ?: ""
             val pfd = ctx.contentResolver.openFileDescriptor(uri, "r") ?: return null
             val fd = pfd.detachFd()
-            pfdKeepAlive[cacheKey] = pfd
+            synchronized(pfdKeepAlive) { pfdKeepAlive[cacheKey] = pfd }
             try { com.mangareader.native.NativeEngine.openZipWithFd(cacheKey, fd, realPath) } catch (_: Exception) {}
         }
         val allNames = try { com.mangareader.native.NativeEngine.getZipEntryNames(cacheKey) } catch (_: Exception) { null }
@@ -4141,7 +4179,7 @@ class ArchiveEngine(private val ctx: Context) {
         val p = parsePath(filePath) ?: return emptyList()
         val result = getZipAllNames(filePath) ?: return emptyList()
         val (cacheKey, allNames) = result
-        val root = zipTreeCache.getOrPut(cacheKey) { buildZipTree(allNames.toList()) }
+        val root = zipTree(cacheKey) { buildZipTree(allNames.toList()) }
         if (isFlatZip(root)) return emptyList()
         var current = root
         if (!subPath.isNullOrEmpty()) {
@@ -4173,7 +4211,7 @@ class ArchiveEngine(private val ctx: Context) {
         val p = parsePath(archivePath) ?: return emptyList()
         val result = getZipAllNames(archivePath) ?: return emptyList()
         val (cacheKey, allNames) = result
-        val root = zipTreeCache.getOrPut(cacheKey) { buildZipTree(allNames.toList()) }
+        val root = zipTree(cacheKey) { buildZipTree(allNames.toList()) }
         var current = root
         val pathParts = subPath.split('/').filter { it.isNotEmpty() }
         for (part in pathParts) {
