@@ -9,9 +9,11 @@ import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material.icons.filled.BookmarkAdd
 import androidx.compose.material.icons.filled.BookmarkAdded
 import androidx.compose.material.icons.filled.CompareArrows
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.LibraryAdd
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Settings
@@ -51,6 +53,10 @@ fun LandscapeReaderChrome(
     showCompare: Boolean,
     compareActive: Boolean,
     pageBookmarked: Boolean,
+    /** ★ 逐格阅读（2026-10-11）：可用性由 Reader 判定（与底栏同源），激活时换关闭样式 */
+    showPanelGuide: Boolean = false,
+    panelGuideActive: Boolean = false,
+    onPanelGuide: () -> Unit = {},
     onBack: () -> Unit,
     onRename: () -> Unit,
     onAddToShelf: () -> Unit,
@@ -112,6 +118,11 @@ fun LandscapeReaderChrome(
                 railButton(Icons.Default.Menu, "目录") { onToc() }
                 railButton(if (pageBookmarked) Icons.Default.BookmarkAdded else Icons.Default.BookmarkAdd, if (pageBookmarked) "已书签" else "书签", active = pageBookmarked) { onBookmark() }
                 railButton(Icons.Default.AutoFixHigh, "画质增强") { onSrPanel() }
+                if (showPanelGuide) railButton(
+                    if (panelGuideActive) Icons.Default.Close else Icons.Default.GridView,
+                    if (panelGuideActive) "退出逐格" else "逐格阅读",
+                    active = panelGuideActive,
+                ) { onPanelGuide() }
                 if (showCompare) railButton(Icons.Default.CompareArrows, if (compareActive) "退出对比" else "对比", active = compareActive) { onCompare() }
                 railButton(Icons.Default.Settings, "设置") { onSettings() }
             }

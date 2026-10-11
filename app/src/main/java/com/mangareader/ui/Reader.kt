@@ -285,6 +285,8 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     var showToc by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     var showSrPanel by remember { mutableStateOf(false) }
+    // ★ 逐格引导（Panel-by-Panel）：会话级开关（评估报告 §7）；仅 pager 单页族，NES 生效判定同源
+    var panelGuideActive by remember { mutableStateOf(false) }
     var showRename by remember { mutableStateOf(false) }
     var renameInput by remember { mutableStateOf("") }
     var showSrQueue by remember { mutableStateOf(false) }
@@ -320,6 +322,22 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     val isRtl = mode == Mode.RTL
     // ★ §34.3：VERT_PAGER 翻页模式（竖向 ViewPager2）——与 isVerticalMode（条漫）分开
     val isVerticalPagerMode = mode == Mode.VERT_PAGER
+    // ★ 逐格入口可用性（与 NES begin 判定同源）：翻页族单页 + 非竖翻/瓦片/横屏自动双页/横屏自动条漫/仿真翻页。
+    //   双页分割（pageLayout==0 下拆半页）可用——半页图直接检测；双页拼合（pageLayout 1/2）一期不支持。
+    val panelGuideUsable = (mode == Mode.FLIP || mode == Mode.RTL) &&
+        !isVerticalPagerMode &&
+        !config.tileModeEnabled &&
+        config.pageLayout == com.mangareader.data.ReaderConfig.PageLayout.SINGLE &&
+        !(config.autoDoubleLandscape && !config.doublePageSplit && LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE) &&
+        !(config.landscapeAutoWebtoon && LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE) &&
+        !com.mangareader.native.curl.isCurlEnabled(
+            flipAnimationEnabled = config.isFlipAnimation,
+            pageCurlAnimationEnabled = config.isPageCurlAnimation,
+            isVertical = false,
+            verticalPager = isVerticalPagerMode,
+            doublePageSplit = config.doublePageSplit,
+            tileModeEnabled = config.tileModeEnabled,
+        )
 
     // ★ §36 目录/网格子项阅读状态徽章 + §37 刷 progressForToc
     //   一次拉该书所有 reading_progress，共享给 ReaderTocSheet 与 ItemGrid 两处徽章计算，
@@ -2598,6 +2616,14 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                             isActive = pageBookmarked
                         ) { toggleBookmark() })
                         add(BottomBarAction(Icons.Default.AutoFixHigh, "画质增强") { showSrPanel = true })
+                        // ★ 逐格阅读（评估报告 §7）：与画质增强并存的功能按钮；激活态换关闭样式
+                        if (panelGuideUsable) {
+                            add(BottomBarAction(
+                                if (panelGuideActive) Icons.Default.Close else Icons.Default.GridView,
+                                if (panelGuideActive) "退出逐格" else "逐格阅读",
+                                isActive = panelGuideActive,
+                            ) { panelGuideActive = !panelGuideActive })
+                        }
                         // 超分作用域已开启 / 离线批量产物 / 本页增强结果（页级产物回填内存）→ 出现"对比"按钮
                         // ★ 2026-10-03：读 srTick 订阅管线事件——emitReady（含产物回填出结果）会
                         //   bump tick（SrCore.emitReady），按钮在结果落地的同一拍出现
@@ -2780,6 +2806,10 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                             doubleMergeSmart = config.doubleMergeSmart,
                             pageDims = pageDimsState,
                             tileModeEnabled = config.tileModeEnabled,
+                            // ★ 逐格引导（2026-10-11）：开关/回执/墨水屏分支
+                            panelGuideActive = panelGuideActive,
+                            onPanelGuideExit = { panelGuideActive = false },
+                            panelGuideEink = config.isEinkMode,
                             verticalPager = verticalPagerEffective,
                             flipAnimationEnabled = config.isFlipAnimation,
                             pageCurlAnimationEnabled = config.isPageCurlAnimation,
@@ -3067,6 +3097,9 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                         showCompare = com.mangareader.sr.SrUiState.scope.intValue > 0 || com.mangareader.sr.SrPipeline.sessionHasBatch,
                         compareActive = com.mangareader.sr.SrUiState.compareActive.value,
                         pageBookmarked = pageBookmarked,
+                        showPanelGuide = panelGuideUsable,
+                        panelGuideActive = panelGuideActive,
+                        onPanelGuide = { panelGuideActive = !panelGuideActive },
                         onBack = ::goBack,
                         onRename = {
                             renameInput = book?.title ?: ""
@@ -3301,6 +3334,11 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     }
 
 
+
+    // ★ 逐格激活时 Back 退出（先于其他 BackHandler 挂载顺序无碍：Compose 逆序启用）
+    if (panelGuideActive) {
+        BackHandler { panelGuideActive = false }
+    }
 
     if (showSrPanel) {
         BackHandler { showSrPanel = false }

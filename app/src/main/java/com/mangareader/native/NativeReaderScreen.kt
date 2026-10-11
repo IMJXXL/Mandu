@@ -12,8 +12,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
@@ -144,6 +146,13 @@ fun NativeReaderScreen(
     soloPages: Set<Int> = emptySet(),
     pageDims: IntArray = IntArray(0),
     tileModeEnabled: Boolean = false,
+    /** ★ 逐格引导（Panel-by-Panel，2026-10-11）：会话级开关。仅 pager 单页族生效（pageLayout==0、
+     *   非竖向/瓦片/仿真翻页）；覆盖层自载页位图（engine.loadPage），与 delegate 视图状态解耦 */
+    panelGuideActive: Boolean = false,
+    /** 逐格退出回执（含模式竞态兜底退出）——Reader 侧清 panelGuideActive */
+    onPanelGuideExit: () -> Unit = {},
+    /** 逐格墨水屏分支：不压暗不裁切放大零动画，仅描边当前格 */
+    panelGuideEink: Boolean = false,
     /** ★ §34.3：VERT_PAGER 模式——竖向翻页走 PagerReaderView（不是 webtoon 连续滚动） */
     verticalPager: Boolean = false,
     flipAnimationEnabled: Boolean = true,
@@ -203,6 +212,7 @@ fun NativeReaderScreen(
     var containerRef by remember { mutableStateOf<FrameLayout?>(null) }
     var brightnessOverlayAlpha by remember { mutableStateOf(0f) }
     var brightnessOverlayRef by remember { mutableStateOf<View?>(null) }
+    var panelOverlayRef by remember { mutableStateOf<com.mangareader.panel.PanelGuideOverlay?>(null) }
 
     val webtoonView = remember { WebtoonReaderView(ctx).apply { layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT) } }
     val pagerView = remember { PagerReaderView(ctx).apply { layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT) } }
@@ -295,7 +305,7 @@ fun NativeReaderScreen(
             prevDelegate.release()
         }
         lastReleasedDelegate = delegate
-        delegate.onPageChanged = { page -> savedPage = page; onPageChanged(page) }
+        delegate.onPageChanged = { page -> savedPage = page; onPageChanged(page); panelOverlayRef?.onHostPageChanged(page) }
         delegate.onPageCountChanged = { count -> onPageCountChanged(count) }
         delegate.onToggleUi = onToggleUi
         // 先设置颜色再setup，确保adapter创建时用正确颜色
@@ -690,6 +700,45 @@ fun NativeReaderScreen(
         }
     }
 
+    // ★ 逐格引导 begin/end 接线（评估报告 §7.1）。生效判定与 Reader 底栏入口同源：
+    //   pager + 单页布局(pageLayout==0，横屏自动双页展开后的生效值) + 非竖向/瓦片/仿真翻页。
+    //   不满足时立即回执退出（模式竞态兜底）。treePath 入 key：跨章无缝续读换章时重 begin。
+    val panelExitCallback = rememberUpdatedState(onPanelGuideExit)
+    val panelNav = remember(clickFlip, clickFlipInvert) {
+        com.mangareader.native.buildNavigation(clickFlip, clickFlipInvert, verticalPager = false)
+    }
+    val panelAccent = com.mangareader.ui.readerAccentColor(
+        androidx.compose.ui.graphics.Color(pageBgColor),
+    ).toArgb()
+    DisposableEffect(panelGuideActive, treePath, isVertical, effectiveUseCurl, tileModeEnabled, pageLayout, panelGuideEink) {
+        val overlay = panelOverlayRef
+        if (panelGuideActive) {
+            val d = activeDelegate(isVertical)
+            if (d is PagerReaderView && !isVertical && !effectiveUseCurl && !tileModeEnabled && pageLayout == 0) {
+                overlay?.begin(
+                    com.mangareader.panel.PanelGuideOverlay.Session(
+                        treePath = treePath,
+                        engine = engine,
+                        pages = pages,
+                        rtl = isRtl,
+                        eink = panelGuideEink,
+                        nav = panelNav,
+                        accentColor = panelAccent,
+                        goToPage = { target -> d.goToPage(target) },
+                        currentPage = { savedPage },
+                        onExit = { panelExitCallback.value() },
+                    )
+                )
+            } else {
+                android.widget.Toast.makeText(ctx, "当前阅读模式不支持逐格阅读", android.widget.Toast.LENGTH_SHORT).show()
+                panelExitCallback.value()
+            }
+        } else {
+            overlay?.end()
+        }
+        onDispose { }
+    }
+
     AndroidView(
         factory = {
             // 两层结构：container 是滤镜层（灰度/反色/对比度/图片亮度经硬件层 paint 作用于此），
@@ -710,6 +759,13 @@ fun NativeReaderScreen(
             root.addView(container)
             root.addView(brightnessOverlay)
             brightnessOverlayRef = brightnessOverlay
+            // ★ 逐格引导覆盖层：盖在 brightnessOverlay 之上（激活时 consume 全部触摸）
+            val panelOverlay = com.mangareader.panel.PanelGuideOverlay(ctx).apply {
+                layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                visibility = View.GONE
+            }
+            root.addView(panelOverlay)
+            panelOverlayRef = panelOverlay
             fun syncVis() {
                 webtoonView.visibility = if (isVertical) View.VISIBLE else View.GONE
                 pagerView.visibility = if (!isVertical && !effectiveUseCurl) View.VISIBLE else View.GONE
