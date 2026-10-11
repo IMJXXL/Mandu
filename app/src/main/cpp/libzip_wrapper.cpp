@@ -67,8 +67,12 @@ bool LibzipWrapper::isOpen(const std::string& path) {
 
 void LibzipWrapper::openWithFd(const std::string& path, int fd, const std::string& realPath) {
     std::lock_guard<std::mutex> lock(mutex);
-    if (handles.find(path) != handles.end()) return;
-    if (!load()) return;
+    // ★ fd 所有权纪律：Kotlin 侧 detachFd() 后所有权移交本函数——
+    //   要么接管（存入 handles，由 close()/clearAll() 关闭），要么任何提前返回路径就地 close。
+    //   （此前除 real_fd 外所有路径都丢弃 fd：句柄已存在/打开失败/pread 分支 ownsFd=false，
+    //     每开一本 zip 漏一个 fd，长会话累积到 fd 耗尽。）
+    if (handles.find(path) != handles.end()) { ::close(fd); return; }
+    if (!load()) { ::close(fd); return; }
 
     if (!realPath.empty()) {
         int real_fd = open(realPath.c_str(), O_RDONLY);
@@ -79,7 +83,9 @@ void LibzipWrapper::openWithFd(const std::string& path, int fd, const std::strin
                 struct zip* za = zip_fdopen(real_fd, ZIP_RDONLY, &zerr);
                 if (za) {
                     zip_int64_t numEntries = zip_get_num_entries(za, 0);
-                    handles[path] = {za, nullptr, real_fd, (int)numEntries, nullptr, {}, false, true};
+                    // zip_fdopen 接管 real_fd（zip_discard 会关闭它），故 ownsFd=false 防 double-close
+                    handles[path] = {za, nullptr, real_fd, (int)numEntries, nullptr, {}, false, false};
+                    ::close(fd);  // 句柄用 real_fd，调用方移交的 fd 就地关闭
                     return;
                 }
             }
@@ -89,6 +95,7 @@ void LibzipWrapper::openWithFd(const std::string& path, int fd, const std::strin
 
     struct stat st;
     if (fstat(fd, &st) < 0) {
+        ::close(fd);
         return;
     }
 
@@ -100,6 +107,7 @@ void LibzipWrapper::openWithFd(const std::string& path, int fd, const std::strin
     if (!source) {
         zip_error_fini(&error);
         delete ctx;
+        ::close(fd);
         return;
     }
 
@@ -108,20 +116,24 @@ void LibzipWrapper::openWithFd(const std::string& path, int fd, const std::strin
         zip_error_fini(&error);
         zip_source_free(source);
         delete ctx;
+        ::close(fd);
         return;
     }
     zip_error_fini(&error);
 
     zip_int64_t numEntries = zip_get_num_entries(za, 0);
-    handles[path] = {za, source, fd, (int)numEntries, ctx, {}, false, false};
+    // pread 回调不关闭 fd，所有权归本 handle → ownsFd=true
+    handles[path] = {za, source, fd, (int)numEntries, ctx, {}, false, true};
 }
 
 void LibzipWrapper::close(const std::string& path) {
     std::lock_guard<std::mutex> lock(mutex);
     auto it = handles.find(path);
     if (it != handles.end()) {
+        // zip_open_from_source 成功后 source 所有权移交 za，zip_discard 已释放它；
+        // 再 zip_source_free = double-free（此前 closeZip 无 Kotlin 调用方未暴露）
         if (it->second.za) zip_discard(it->second.za);
-        if (it->second.source) zip_source_free(it->second.source);
+        else if (it->second.source) zip_source_free(it->second.source);
         if (it->second.ownsFd && it->second.fd >= 0) ::close(it->second.fd);
         delete static_cast<PreadContext*>(it->second.ctx);
         handles.erase(it);
@@ -282,7 +294,7 @@ void LibzipWrapper::clearAll() {
     std::lock_guard<std::mutex> lock(mutex);
     for (auto& kv : handles) {
         if (kv.second.za) zip_discard(kv.second.za);
-        if (kv.second.source) zip_source_free(kv.second.source);
+        else if (kv.second.source) zip_source_free(kv.second.source);
         if (kv.second.ownsFd && kv.second.fd >= 0) ::close(kv.second.fd);
         delete static_cast<PreadContext*>(kv.second.ctx);
     }

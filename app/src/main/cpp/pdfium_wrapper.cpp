@@ -43,7 +43,10 @@ bool PdfiumWrapper::openDocument(const std::string& key, int fd) {
 
 bool PdfiumWrapper::openDocumentWithPassword(const std::string& key, int fd, const char* password) {
     std::lock_guard<std::mutex> lock(mutex);
-    if (handles.find(key) != handles.end()) return true;
+    // ★ Kotlin 侧 detachFd() 后 fd 所有权移交本函数；句柄已存在时接管失败，
+    //   必须就地关闭，否则 TOCTOU（pdfIsOpen 检查与 pdfOpen 之间被别的线程抢先 open）
+    //   或同 key 重入都会漏 fd
+    if (handles.find(key) != handles.end()) { ::close(fd); return true; }
     if (!load()) return false;
 
     off_t fileSize = lseek(fd, 0, SEEK_END);
@@ -69,6 +72,7 @@ bool PdfiumWrapper::openDocumentWithPassword(const std::string& key, int fd, con
         if (oldest->second.currentPage) fn_ClosePage(oldest->second.currentPage);
         if (oldest->second.doc) fn_CloseDocument(oldest->second.doc);
         if (oldest->second.mappedData) munmap(oldest->second.mappedData, oldest->second.mappedSize);
+        if (oldest->second.fd >= 0) close(oldest->second.fd);
         handles.erase(oldest);
     }
 
