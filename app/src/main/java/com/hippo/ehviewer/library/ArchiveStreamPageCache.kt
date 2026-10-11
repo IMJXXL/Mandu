@@ -124,7 +124,9 @@ object ArchiveStreamPageCache {
         }
     }
 
-    const val INDEX_VERSION: Int = 3
+    // ★ 3→4（2026-10-11 存量坏索引自愈）：历史版本封面提取以 sortEntries=false 写索引
+    //   （物理序≠自然序的 zip 页序错），升版后旧索引被 loadIndex 拒绝、由阅读器在线重建
+    const val INDEX_VERSION: Int = 4
 
     fun dirFor(cacheKey: String): Path = root / sha256Hex(cacheKey)
 
@@ -174,9 +176,12 @@ object ArchiveStreamPageCache {
     fun loadIndex(cacheKey: String): Index? {
         val f = File(indexPath(cacheKey).toString())
         if (!f.isFile || f.length() == 0L) return null
-        return runCatching {
+        val idx = runCatching {
             json.decodeFromString(Index.serializer(), f.readText())
-        }.getOrNull()
+        }.getOrNull() ?: return null
+        // ★ 版本不符一律拒绝（含旧版 sortEntries=false 产物）：阅读器回落在线重建
+        if (idx.v != INDEX_VERSION) return null
+        return idx
     }
 
     private val indexWriteLocks = ConcurrentHashMap<String, Any>()

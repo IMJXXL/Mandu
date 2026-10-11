@@ -544,7 +544,11 @@ object ArchiveCoverCache {
                                             bridge,
                                             archiveSize,
                                             /* sortEntries = */
-                                            false,
+                                            // ★ 改 true（2026-10-11 0001 页序实锤）：zip 全量 CD 已整包在手，qsort
+                                            //   成本可忽略；false 按物理顺序收条目→序号落盘进 seek 索引→阅读器
+                                            //   信任磁盘索引 → 0001.jpeg 在 zip 尾部时排到最后一页；同时恢复
+                                            //   cover_only 的"自然首张做封面"语义
+                                            true,
                                             /* coverOnly = */
                                             !isZip,
                                             /* progressiveTar = */
@@ -586,7 +590,7 @@ object ArchiveCoverCache {
                                                     openArchiveStream(
                                                         bridge,
                                                         archiveSize,
-                                                        /* sortEntries = */ false,
+                                                        /* sortEntries = */ true,
                                                         /* coverOnly = */ !isZip,
                                                         /* progressiveTar = */ false,
                                                         /* maxScanBytes = */ if (isZip) 0L else scanCapNonZip,
