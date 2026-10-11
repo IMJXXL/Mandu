@@ -78,6 +78,26 @@ fun AppearanceSettingsScreen(onBack: () -> Unit) {
                             )
                         }
                     }
+                    // ★ 快赢 #6：AMOLED 纯黑开关接线（主题链路已建成未接）——纯增量，不开=零变化
+                    var amoled by remember { mutableStateOf(prefs.getBoolean("is_amoled_dark", false)) }
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                    ) {
+                        Column {
+                            Text("AMOLED 纯黑", fontSize = 14.sp)
+                            Text("暗色下背景改为纯黑（OLED 省电）", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        androidx.compose.material3.Switch(
+                            checked = amoled,
+                            onCheckedChange = {
+                                amoled = it
+                                prefs.edit().putBoolean("is_amoled_dark", it).apply()
+                                activity?.recreate()
+                            },
+                        )
+                    }
                 }
             }
 

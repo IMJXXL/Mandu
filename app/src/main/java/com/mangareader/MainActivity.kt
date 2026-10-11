@@ -102,7 +102,9 @@ class MainActivity : ComponentActivity() {
             val useCustomColor = prefs.getBoolean("use_custom_color", false)
             val customColor = prefs.getInt("custom_color", 0xFFE91E63.toInt())
 
-            Theme(dark = dark, appTheme = currentTheme, dynamicColor = dynamicColor, customPrimary = customColor.takeIf { useCustomColor }) {
+            // ★ 快赢 #6：AMOLED 纯黑接线（仅暗色生效，Theme 内部 isDark=false 时忽略）
+            val isAmoledDark = dark && prefs.getBoolean("is_amoled_dark", false)
+            Theme(dark = dark, appTheme = currentTheme, isAmoled = isAmoledDark, dynamicColor = dynamicColor, customPrimary = customColor.takeIf { useCustomColor }) {
                 // 首次组合提交 = 界面真正挂载（闪退若发生在此前，stages 终止于 setContent 上一条）
                 SideEffect { com.mangareader.DiagTracer.mark(this@MainActivity, "mainActivity: first composition committed") }
                 val nav = rememberNavController()
