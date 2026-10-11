@@ -10,6 +10,10 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
+    <!-- NPU 模型包卸载入口：拉起系统卸载器（ACTION_DELETE，API 28+ 要求声明） -->
+    <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES"/>
+    <!-- NPU 模型插件发现（Android 11+ 包可见性）：扫描 com.mangareader.model.* 纯资产模型包 -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" tools:ignore="QueryAllPackagesPermission"/>
     <!-- Android 17+ LAN socket (SMB/WebDAV) -->
     <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK"/>
     <!-- 批量超分后台任务 -->
@@ -19,8 +23,20 @@
     <uses-permission android:name="android.permission.VIBRATE"/>
     <permission android:name="com.mangareader.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" android:protectionLevel="signature"/>
     <uses-permission android:name="com.mangareader.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"/>
+    <!-- 扫描诊断的对照探测包（区分"逐名查询可用、列表 API 被拦"和"全被拦"） -->
+    <queries>
+        <package android:name="com.android.settings"/>
+    </queries>
 
     <application android:allowBackup="true" android:appComponentFactory="androidx.core.app.CoreComponentFactory" android:icon="@mipmap/ic_launcher" android:label="@string/app_name" android:name="com.mangareader.App" android:largeHeap="true" android:requestLegacyExternalStorage="true" android:roundIcon="@mipmap/ic_launcher_round" android:supportsRtl="true" android:theme="@style/Theme.MangaReader" android:usesCleartextTraffic="true">
+        <!-- ★ NPU(QNN/HTP) 必需（2026-10-03 K80 根因定案）：libcdsprpc.so 是 CDSP FastRPC 驱动库，
+             非 Android 公开 SDK 库——targetSdk≥31 时必须在 manifest 显式声明，否则链接器阻止加载，
+             症状为主机侧 QNN 全部成功而 deviceCreate 建 CDSP 传输即 loadRemoteSymbols 4000/14001。
+             Komiho(ruzhe85) 同款声明可证。required=false：无 CDSP 的设备不阻塞安装。
+             ★ 2026-10-11 复盘：WiFi 传书提交(5a665327)替换 manifest 时丢失本块，致 Android 12+
+             全代 NPU 不可用（含 v79 首报），此处按原样恢复。 -->
+        <uses-native-library android:name="libcdsprpc.so" android:required="false"/>
+        <uses-native-library android:name="libadsprpc.so" android:required="false"/>
         <activity android:exported="true" android:name="com.mangareader.MainActivity" android:theme="@style/Theme.MangaReader" android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
