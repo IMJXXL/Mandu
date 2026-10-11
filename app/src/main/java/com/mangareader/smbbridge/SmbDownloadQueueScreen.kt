@@ -167,12 +167,13 @@ private fun DownloadTaskCard(
     onDelete: () -> Unit,
     onOpen: (() -> Unit)? = null,
 ) {
+    // ★ 快赢 #4：状态色走主题槽位（单色主题靠保留的文字标签区分）
     val statusColor = when (task.status) {
-        DownloadStatus.Downloading -> Color(0xFF4CAF50)
-        DownloadStatus.Paused -> Color(0xFFFF9800)
-        DownloadStatus.Completed -> Color(0xFF2196F3)
-        DownloadStatus.Failed -> Color(0xFFE57373)
-        DownloadStatus.Queued -> Color(0xFF9E9E9E)
+        DownloadStatus.Downloading -> MaterialTheme.colorScheme.primary
+        DownloadStatus.Paused -> MaterialTheme.colorScheme.tertiary
+        DownloadStatus.Completed -> MaterialTheme.colorScheme.secondary
+        DownloadStatus.Failed -> MaterialTheme.colorScheme.error
+        DownloadStatus.Queued -> MaterialTheme.colorScheme.outline
     }
     val statusText = when (task.status) {
         DownloadStatus.Downloading -> "下载中"

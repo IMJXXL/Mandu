@@ -428,7 +428,7 @@ fun ReaderTocSheet(
                                                 text = status.label,
                                                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
                                                 fontSize = 8.sp,
-                                                color = Color.White,
+                                                color = Color(0xFF1A1A1A),  // ★ #3 对比度：同 Library 角标批（浅底深字）
                                                 maxLines = 1
                                             )
                                         }

@@ -1256,7 +1256,8 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                         }
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
+                // ★ 快赢 #5：与其他页统一用 surface（消除跳页"提亮一档"色差）
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
                 actions = {
                     IconButton(onClick = { isMultiSelect = true }) { Icon(Icons.Default.Edit, "编辑") }
                     IconButton(onClick = { showLayoutMenu = true }) { Icon(Icons.Default.GridView, "布局") }
@@ -1457,7 +1458,10 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
             )
 
             if (books == null && shelfItems == null) {
-                Box(Modifier.fillMaxSize())
+                // ★ 快赢 #8：大书库冷启动 1-2s 空屏补加载反馈
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
+                }
             } else if ((shelfItems ?: books!!.map { ShelfItem.Single(it) }).isEmpty()) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -1812,7 +1816,8 @@ private fun BookCard(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, isS
             }
             if (!hideAllBadges) {
                 Surface(Modifier.align(Alignment.TopEnd).padding(4.dp), RoundedCornerShape(6.dp), color = status.second.copy(alpha = 0.9f)) {
-                    Text(text = status.first, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp), fontSize = 10.sp, color = Color.White)
+                    Text(text = status.first, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp), fontSize = 10.sp,
+                        color = Color(0xFF1A1A1A))  // ★ #3 对比度：浅粉彩底配白字 1.7~2.9:1 不达标，改深字（6.6~10:1）
                 }
             }
             // ★ 来源角标（任务A）：远程书显示来源，已下载书显示"已下载"来源
@@ -1918,7 +1923,8 @@ private fun BookListRow(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, 
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (!hideAllBadges) {
                         Surface(shape = RoundedCornerShape(4.dp), color = statusColor.copy(alpha = 0.9f)) {
-                            Text(text = statusText, modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp), fontSize = 10.sp, color = Color.White)
+                            Text(text = statusText, modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp), fontSize = 10.sp,
+                                color = Color(0xFF1A1A1A))  // ★ #3 对比度同上（浅底深字）
                         }
                     }
                     if (b.source == "smb" || b.source == "webdav" || b.source == "komga") {
@@ -2005,7 +2011,8 @@ private fun SeriesCard(series: ShelfItem.Series, engine: ArchiveEngine, decodePx
                 }
                 if (!hideAllBadges) {
                     Surface(Modifier.align(Alignment.TopEnd).padding(4.dp), RoundedCornerShape(6.dp), color = status.second.copy(alpha = 0.9f)) {
-                        Text(text = status.first, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp), fontSize = 10.sp, color = Color.White)
+                        Text(text = status.first, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp), fontSize = 10.sp,
+                        color = Color(0xFF1A1A1A))  // ★ #3 对比度：浅粉彩底配白字 1.7~2.9:1 不达标，改深字（6.6~10:1）
                     }
                 }
                 if (!hideAllBadges) {
@@ -2081,7 +2088,8 @@ private fun SeriesListRow(series: ShelfItem.Series, engine: ArchiveEngine, decod
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (!hideAllBadges) {
                         Surface(shape = RoundedCornerShape(4.dp), color = statusColor.copy(alpha = 0.9f)) {
-                            Text(text = statusText, modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp), fontSize = 10.sp, color = Color.White)
+                            Text(text = statusText, modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp), fontSize = 10.sp,
+                                color = Color(0xFF1A1A1A))  // ★ #3 对比度同上（浅底深字）
                         }
                     }
                     Text(text = "KOMGA", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
