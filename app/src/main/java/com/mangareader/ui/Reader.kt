@@ -3475,7 +3475,18 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     fun hwFlip(dir: Int) {
         val pager = activePagerRef
         if (pager != null && pager.visibility == android.view.View.VISIBLE) {
-            if (dir > 0) pager.nextPage() else pager.prevPage()
+            // ★ RTL 书硬件翻页方向镜像（2026-10-11 用户拍板：硬件"下一页"=阅读序真下一页）：
+            //   RTL 阅读序下一页 = adapter 位次-1，故 dir>0 走 prevPage()；到阅读序末页
+            //   （adapter 0）再按下一页 = 前进尝试（无缝续读触发点，与 LTR 对齐）。
+            //   curl 模式下 activePagerRef 指向隐藏的 pagerView（visibility 检查不过），
+            //   走 go(dir) 按阅读序本就正确，不受本分支影响。
+            if (isRtl) {
+                if (dir > 0) {
+                    if (pager.currentItem > 0) pager.prevPage() else pager.fireChapterEndAttempt()
+                } else pager.nextPage()
+            } else {
+                if (dir > 0) pager.nextPage() else pager.prevPage()
+            }
         } else go(dir)
     }
 

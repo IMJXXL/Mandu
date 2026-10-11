@@ -833,11 +833,13 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     //   产生滚动事件，只能在根分发层观察原始触点）。每手势一次，缩放/平移中不触发。
     private var endAttemptFired = false
     private var endAttemptAccum = 0f
-    private fun fireChapterEndAttempt() {
+    fun fireChapterEndAttempt() {   // public：Reader 硬件键 RTL 分支在阅读序末页调用（无缝续读触发点）
         if (!layoutSwitchPending && !setupAnchoring && pagerAdapter != null) {
             onChapterEnd?.invoke(true)
         }
     }
+    /** 当前 adapter 位次（ViewPager2.currentItem 公开访问器；Reader 硬件键 RTL 分支判边界用） */
+    val currentItem: Int get() = viewPager.currentItem
     private fun isOnReadingLastSlot(): Boolean = try {
         val count = spreadTable.slotCount
         count > 0 && (if (isRtl) viewPager.currentItem == 0 else viewPager.currentItem == count - 1)
