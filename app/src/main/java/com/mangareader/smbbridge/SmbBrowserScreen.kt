@@ -535,7 +535,7 @@ fun SmbBrowserScreen(serverId: Long, onBack: () -> Unit, onOpenBook: (Long, Int)
                 LazyColumn(Modifier.fillMaxSize().wrapContentWidth(Alignment.CenterHorizontally).widthIn(max = CONTENT_MAX_WIDTH_DP).weight(1f)) {
                     item {
                         Text(
-                            "「${searchQuery.trim()}」· ${searchHits.size} 个结果（上限 500）",
+                            "「${searchQuery.trim()}」· ${searchHits.size} 个结果（上限 2000）",
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),

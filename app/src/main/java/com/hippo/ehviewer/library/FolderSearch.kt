@@ -19,8 +19,11 @@ import kotlinx.coroutines.sync.withPermit
  * WebDAV walk with [nameMatches] (same wildcard / contains rules).
  */
 object FolderSearch {
-    const val MAX_RESULTS = 500
-    const val MAX_DIRS = 2000
+    // ★ 2026-10-11 用户反馈「搜索还是不能下探到子文件夹」：旧 500 命中/2000 目录在大树上
+    //   「搜一会儿就停」，深处子文件夹永远搜不到。上限提到 2000/2 万（对齐审查方案），
+    //   取消与流式回调不受影响；命中流仍边搜边出，UI 侧自行截断展示。
+    const val MAX_RESULTS = 2000
+    const val MAX_DIRS = 20000
 
     fun nameMatches(name: String, query: String): Boolean {
         val q = query.trim()
