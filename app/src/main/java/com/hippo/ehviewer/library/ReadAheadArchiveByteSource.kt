@@ -475,8 +475,10 @@ class ReadAheadArchiveByteSource(
         return false
     }
 
-    /** Pipeline only strict continuation at winEnd. Caller holds [lock]. */
-    private fun maybeKickPrefetchLocked(fileSize: Long = size) {
+    /** Pipeline only strict continuation at winEnd. Caller holds [lock].
+     *  ★ 无默认参数：默认取 [size] 会在持锁时发起网络 stat（SMB/WebDAV 的 size 是阻塞探测），
+     *  全部调用点必须显式传已知的 fileSize（审查三轮 P3-5 脚枪拆除） */
+    private fun maybeKickPrefetchLocked(fileSize: Long) {
         if (!pipeline || closed) return
         if (win == null || winLen <= 0) return
         if (fileSize <= 0L) return
@@ -492,17 +494,17 @@ class ReadAheadArchiveByteSource(
         prefFlightOff = nextOff
         prefFlightEnd = nextOff + fetch
         val epoch = prefEpoch.incrementAndGet()
-        PREFETCH_EXECUTOR.execute {
+        PREFETCH_EXECUTOR.execute(PrefetchTask(this, nextOff, Runnable {
             try {
                 if (closed || epoch != prefEpoch.get()) {
                     clearPrefetchFlight(nextOff)
-                    return@execute
+                    return@Runnable
                 }
                 synchronized(lock) {
                     // Main path already paid past this point — abort without network.
                     if (win != null && winStart + winLen > nextOff) {
                         clearPrefetchFlightLocked(nextOff)
-                        return@execute
+                        return@Runnable
                     }
                 }
                 val buf = ByteArray(fetch)
@@ -552,7 +554,16 @@ class ReadAheadArchiveByteSource(
                     lock.notifyAll()
                 }
             }
-        }
+        }))
+    }
+
+    /** 携带 source 与 flight 偏移的预读任务：被线程池拒绝时由拒绝处理器清 flight（见 PREFETCH_EXECUTOR） */
+    private class PrefetchTask(
+        val self: ReadAheadArchiveByteSource,
+        val flightOff: Long,
+        val body: Runnable,
+    ) : Runnable {
+        override fun run() = body.run()
     }
 
     private fun clearPrefetchFlight(flightOff: Long) {
@@ -611,8 +622,12 @@ class ReadAheadArchiveByteSource(
             TimeUnit.SECONDS,
             LinkedBlockingQueue(16),
             { r -> Thread(r, "archive-readahead").apply { isDaemon = true } },
-            // Drop oldest speculative work rather than spawn more threads.
-            ThreadPoolExecutor.DiscardOldestPolicy(),
+            // ★ 队列满=丢弃新任务并当场清它的 flight 标志。任务体清理代码在被拒时永不执行，
+            //   prefInFlight 置位后无人复位 → 该源预读永久失效 + awaitOverlappingPrefetch
+            //   无限自旋（原 DiscardOldest 丢弃的"排队中最老任务"同样无人清理，且句柄不可达）。
+            { r, _ ->
+                if (r is PrefetchTask) r.self.clearPrefetchFlight(r.flightOff)
+            },
         )
     }
 }

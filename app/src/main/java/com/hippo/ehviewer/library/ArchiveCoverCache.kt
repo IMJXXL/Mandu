@@ -850,7 +850,18 @@ object ArchiveCoverCache {
                 bmp.recycle()
                 File(dest.parent!!.toString()).mkdirs()
                 val destFile = File(dest.toString())
-                destFile.writeBytes(bytes)
+                // ★ tmp+rename 原子写（对齐 writeCoverFromExtractedPage 纪律）：直写在崩溃中断时
+                //   留截断 JPEG，isCachedOnDisk 只验 length>0 会永久命中坏图
+                val tmpFile = File(destFile.parent, destFile.name + "-" + System.nanoTime() + ".tmp")
+                try {
+                    tmpFile.writeBytes(bytes)
+                    if (!tmpFile.renameTo(destFile)) {
+                        tmpFile.copyTo(destFile, overwrite = true)
+                        tmpFile.delete()
+                    }
+                } finally {
+                    if (tmpFile.exists()) tmpFile.delete()
+                }
                 if (destFile.isFile && destFile.length() > 0L) {
                     markPresent(dest)
                     OriginDiskCache.scheduleTrim()

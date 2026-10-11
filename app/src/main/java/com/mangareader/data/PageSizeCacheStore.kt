@@ -66,7 +66,14 @@ object PageSizeCacheStore {
                 if (v.size >= 2) sizesObj.put(k, JSONArray().put(v[0]).put(v[1]))
             }
             obj.put("sizes", sizesObj)
-            java.io.File(dir, "$key.json").writeText(obj.toString())
+            // ★ tmp+rename 原子写：直写最终路径在崩溃/并发双写者下会留截断 JSON（损失免探收益）
+            val dest = java.io.File(dir, "$key.json")
+            val tmp = java.io.File(dir, "$key-${System.nanoTime()}.tmp")
+            tmp.writeText(obj.toString())
+            if (!tmp.renameTo(dest)) {
+                tmp.copyTo(dest, overwrite = true)
+                tmp.delete()
+            }
         } catch (_: Exception) {
             // 尺寸表写盘失败静默跳过：仅损失二开免探收益，不影响功能（内存镜像已生效）
         }
