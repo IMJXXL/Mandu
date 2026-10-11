@@ -1,5 +1,6 @@
 package com.mangareader.ui
 
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -15,6 +16,8 @@ data class BottomBarAction(
     val icon: ImageVector,
     val label: String,
     val isActive: Boolean = false,
+    /** 长按动作（2026-10-11：逐格设置挂长按——点击=开关，长按=设置面板）；onClick 保持末位兼容尾随 lambda 调用点 */
+    val onLongClick: (() -> Unit)? = null,
     val onClick: () -> Unit
 )
 
@@ -39,12 +42,11 @@ fun ReaderBottomBar(
         val hPad = if (isTablet) 24.dp else 12.dp
         val vPad = if (isTablet) 10.dp else 6.dp
         Column(Modifier.fillMaxWidth().padding(horizontal = hPad, vertical = vPad)) {
-            // ★ 横屏零影响机制C：竖屏保持 chunked(5) 输出不变；横屏宽度富余，按屏宽算每行容量
-            //   （单按钮占约 56dp，取下限 5 保证任何屏宽下行数只多不少）
-            val rows = if (isLandscapeOrientation()) {
-                val perRow = maxOf(5, (LocalConfiguration.current.screenWidthDp - 24) / 56)
-                actions.chunked(perRow)
-            } else actions.chunked(5)
+            // ★ 底栏换行修复（2026-10-11 用户报"逐格+超分对比出现后图标和设置换行成两行"）：
+            //   旧竖屏恒 chunked(5)——6 个动作必两行。横竖屏统一按屏宽算每行容量
+            //   （单按钮约 56dp，窄屏取下限 5 保证行数只多不少）
+            val perRow = maxOf(5, (LocalConfiguration.current.screenWidthDp - 24) / 56)
+            val rows = actions.chunked(perRow)
             rows.forEach { rowActions ->
                 Row(
                     Modifier.fillMaxWidth(),
@@ -53,16 +55,19 @@ fun ReaderBottomBar(
                     rowActions.forEach { action ->
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-                        ) {
-                            IconButton(onClick = action.onClick, modifier = Modifier.size(40.dp)) {
-                                Icon(
-                                    action.icon,
-                                    contentDescription = action.label,
-                                    tint = if (action.isActive) accentColor else textColor.copy(alpha = 0.8f),
-                                    modifier = Modifier.size(22.dp)
+                            modifier = Modifier
+                                .padding(horizontal = 4.dp, vertical = 2.dp)
+                                .combinedClickable(
+                                    onClick = action.onClick,
+                                    onLongClick = { action.onLongClick?.invoke() },
                                 )
-                            }
+                        ) {
+                            Icon(
+                                action.icon,
+                                contentDescription = action.label,
+                                tint = if (action.isActive) accentColor else textColor.copy(alpha = 0.8f),
+                                modifier = Modifier.size(40.dp).padding(9.dp)
+                            )
                             Text(
                                 action.label,
                                 color = if (action.isActive) accentColor else textColor.copy(alpha = 0.6f),

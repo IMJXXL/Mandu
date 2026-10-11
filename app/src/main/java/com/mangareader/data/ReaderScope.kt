@@ -48,7 +48,7 @@ object ReaderScope {
         "isFlipFlashEnabled", "flipFlashDuration", "flipFlashInterval", "flipFlashColor",
         "clickFlipType", "clickFlipInvertH",
         // ★ 逐格引导（2026-10-11）：算法/观感参数恒全局——书内逐格面板直接 writeGlobal
-        "panelGuideSensitivity", "panelGuideDim", "panelGuideAnim", "panelGuideRtl", "panelGuideVert",
+        "panelGuideSensitivity", "panelGuideDim", "panelGuideAnim", "panelGuideRtl", "panelGuideFocus",
 
     )
 

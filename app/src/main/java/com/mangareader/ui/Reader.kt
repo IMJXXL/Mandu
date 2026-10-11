@@ -285,10 +285,15 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     var showToc by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     var showSrPanel by remember { mutableStateOf(false) }
-    // ★ 逐格引导（Panel-by-Panel）：会话级开关（评估报告 §7）；仅 pager 单页族，NES 生效判定同源
-    var panelGuideActive by remember { mutableStateOf(false) }
-    // ★ 逐格设置面板（2026-10-11 用户拍板"点按钮进面板控制功能与开启"）：按钮恒开面板，
-    //   面板内 开始/退出 + 灵敏度/压暗/动画/方向（全局键，即改即生效）
+    // ★ 逐格引导（Panel-by-Panel）：持久全局开关（2026-10-11 用户拍板，类"全局隐藏漫画"开关）——
+    //   开启后所有书所有页生效、跨书跨进程重启保持，直到手动关；不再有连续降级自动退出。
+    //   仅翻页单页族实际启用覆盖层（NES 判定），不支持的视图静默不启用、开关不清
+    var panelGuideActive by remember { mutableStateOf(prefs.getBoolean("panelGuideActive", false)) }
+    fun setPanelGuideActive(v: Boolean) {
+        panelGuideActive = v
+        prefs.edit().putBoolean("panelGuideActive", v).apply()
+    }
+    // ★ 逐格设置面板：点击按钮=直接开关（不再经面板），长按按钮=打开本面板
     var showPanelGuideSheet by remember { mutableStateOf(false) }
     var showRename by remember { mutableStateOf(false) }
     var renameInput by remember { mutableStateOf("") }
@@ -2619,14 +2624,16 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                             isActive = pageBookmarked
                         ) { toggleBookmark() })
                         add(BottomBarAction(Icons.Default.AutoFixHigh, "画质增强") { showSrPanel = true })
-                        // ★ 逐格阅读（评估报告 §7）：与画质增强并存的功能按钮；激活态换关闭样式
-                        //   2026-10-11：点击恒开设置面板（开启/退出在面板内），不再直接切换
-                        if (panelGuideUsable) {
+                        // ★ 逐格阅读：全局开关按钮——点击直接开/关（用户拍板），长按开设置面板；
+                        //   开关开启后即使本书模式暂不支持也显示（保证能关掉）
+                        if (panelGuideUsable || panelGuideActive) {
                             add(BottomBarAction(
                                 if (panelGuideActive) Icons.Default.Close else Icons.Default.GridView,
                                 if (panelGuideActive) "退出逐格" else "逐格阅读",
                                 isActive = panelGuideActive,
-                            ) { showPanelGuideSheet = true })
+                                onClick = { setPanelGuideActive(!panelGuideActive) },
+                                onLongClick = { showPanelGuideSheet = true },
+                            ))
                         }
                         // 超分作用域已开启 / 离线批量产物 / 本页增强结果（页级产物回填内存）→ 出现"对比"按钮
                         // ★ 2026-10-03：读 srTick 订阅管线事件——emitReady（含产物回填出结果）会
@@ -2819,7 +2826,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                             panelGuideDim = config.panelGuideDim,
                             panelGuideAnim = config.panelGuideAnim,
                             panelGuideRtl = config.panelGuideRtl,
-                            panelGuideVert = config.panelGuideVert,
+                            panelGuideFocus = config.panelGuideFocus,
                             verticalPager = verticalPagerEffective,
                             flipAnimationEnabled = config.isFlipAnimation,
                             pageCurlAnimationEnabled = config.isPageCurlAnimation,
@@ -3107,9 +3114,10 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                         showCompare = com.mangareader.sr.SrUiState.scope.intValue > 0 || com.mangareader.sr.SrPipeline.sessionHasBatch,
                         compareActive = com.mangareader.sr.SrUiState.compareActive.value,
                         pageBookmarked = pageBookmarked,
-                        showPanelGuide = panelGuideUsable,
+                        showPanelGuide = panelGuideUsable || panelGuideActive,
                         panelGuideActive = panelGuideActive,
-                        onPanelGuide = { showPanelGuideSheet = true },
+                        onPanelGuide = { setPanelGuideActive(!panelGuideActive) },
+                        onPanelGuideLong = { showPanelGuideSheet = true },
                         onBack = ::goBack,
                         onRename = {
                             renameInput = book?.title ?: ""
@@ -3347,10 +3355,10 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
 
     // ★ 逐格激活时 Back 退出（先于其他 BackHandler 挂载顺序无碍：Compose 逆序启用）
     if (panelGuideActive) {
-        BackHandler { panelGuideActive = false }
+        BackHandler { setPanelGuideActive(false) }
     }
 
-    // ★ 逐格设置面板（2026-10-11）：点按钮恒开面板；开启/退出 + 四项设置即改即生效
+    // ★ 逐格设置面板（长按按钮进入）：四项设置即改即生效
     if (showPanelGuideSheet) {
         BackHandler { showPanelGuideSheet = false }
         com.mangareader.ui.PanelGuideSheet(
@@ -3358,7 +3366,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             dim = config.panelGuideDim,
             anim = config.panelGuideAnim,
             rtlOverride = config.panelGuideRtl,
-            vertBottomUp = config.panelGuideVert == 1,
+            focusMode = config.panelGuideFocus,
             active = panelGuideActive,
             onSensitivity = { v ->
                 config = config.copy(panelGuideSensitivity = v)
@@ -3380,15 +3388,14 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                 com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideRtl", v)
                 configVersion++
             },
-            onVert = { v ->
-                val iv = if (v) 1 else 0
-                config = config.copy(panelGuideVert = iv)
-                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideVert", iv)
+            onFocus = { v ->
+                config = config.copy(panelGuideFocus = v)
+                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideFocus", v)
                 configVersion++
             },
             onToggleActive = {
                 showPanelGuideSheet = false
-                panelGuideActive = !panelGuideActive
+                setPanelGuideActive(!panelGuideActive)
             },
             onDismiss = { showPanelGuideSheet = false },
         )

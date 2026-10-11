@@ -53,13 +53,13 @@ fun PanelGuideSheet(
     dim: Int,
     anim: Boolean,
     rtlOverride: Int,
-    vertBottomUp: Boolean,
+    focusMode: Int,
     active: Boolean,
     onSensitivity: (Int) -> Unit,
     onDim: (Int) -> Unit,
     onAnim: (Boolean) -> Unit,
     onRtl: (Int) -> Unit,
-    onVert: (Boolean) -> Unit,
+    onFocus: (Int) -> Unit,
     onToggleActive: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -137,11 +137,21 @@ fun PanelGuideSheet(
                         selected = rtlOverride,
                         onSelect = onRtl,
                     )
+
                     PanelChipRow(
-                        title = "纵向顺序",
-                        options = listOf("先上·常规" to 0, "先下·倒序" to 1),
-                        selected = if (vertBottomUp) 1 else 0,
-                        onSelect = { v -> onVert(v == 1) },
+                        title = "选中的图",
+                        options = listOf("放大铺满" to 0, "原位高亮" to 1, "放大压暗" to 2),
+                        selected = focusMode,
+                        onSelect = onFocus,
+                    )
+                    Text(
+                        when (focusMode) {
+                            1 -> "整页保持原位不放大，选中格原位亮显、其余压暗"
+                            2 -> "放大铺满且选中格同步按压暗程度变暗（暗房/夜间护眼）"
+                            else -> "选中格放大铺满全屏（切格时其余区域压暗可见）"
+                        },
+                        style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                        modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 4.dp),
                     )
 
                     Column(Modifier.padding(horizontal = 24.dp, vertical = 8.dp)) {
@@ -190,7 +200,7 @@ fun PanelGuideSheet(
                         Text(if (active) "退出逐格阅读" else "开始逐格阅读")
                     }
                     Text(
-                        "识别不到分格的页面按整页显示并在右下角提示；连续 3 页识别不到自动退出。" +
+                        "识别不到分格的页面按整页显示并在右下角提示，逐格模式保持到你手动关。" +
                             "经典白底黑线分格识别最好，彩漫/满版跨页可能整页降级。",
                         style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
                         modifier = Modifier.padding(horizontal = 24.dp, vertical = 10.dp),

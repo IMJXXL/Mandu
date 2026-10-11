@@ -159,10 +159,10 @@ fun NativeReaderScreen(
     panelGuideDim: Int = 55,
     /** 翻格动画（墨水屏恒关） */
     panelGuideAnim: Boolean = true,
-    /** 阅读方向覆盖：0=跟随阅读模式 1=日漫·右开 2=国漫·左开 */
+    /** 阅读方向覆盖：0=跟随阅读模式 1=日漫·右开 2=国漫·左开；纵向恒先上（用户定则） */
     panelGuideRtl: Int = 0,
-    /** 纵向阅读序：0=先上（常规） 1=先下（行序倒转 下→上） */
-    panelGuideVert: Int = 0,
+    /** 选中格显示模式：0=放大铺满 1=原位高亮（不放大） 2=放大铺满+选中格同步压暗 */
+    panelGuideFocus: Int = 0,
     /** ★ §34.3：VERT_PAGER 模式——竖向翻页走 PagerReaderView（不是 webtoon 连续滚动） */
     verticalPager: Boolean = false,
     flipAnimationEnabled: Boolean = true,
@@ -722,31 +722,47 @@ fun NativeReaderScreen(
     ).toArgb()
     DisposableEffect(panelGuideActive, treePath, isVertical, effectiveUseCurl, tileModeEnabled, pageLayout, panelGuideEink) {
         val overlay = panelOverlayRef
-        if (panelGuideActive) {
-            val d = activeDelegate(isVertical)
-            if (d is PagerReaderView && !isVertical && !effectiveUseCurl && !tileModeEnabled && pageLayout == 0) {
-                overlay?.begin(
-                    com.mangareader.panel.PanelGuideOverlay.Session(
-                        treePath = treePath,
-                        engine = engine,
-                        pages = pages,
-                        rtl = when (panelGuideRtl) { 1 -> true; 2 -> false; else -> isRtl },
-                        eink = panelGuideEink,
-                        nav = panelNav,
-                        accentColor = panelAccent,
-                        dimAlpha = 255 * panelGuideDim / 100,
-                        animEnabled = panelGuideAnim,
-                        minConf = com.mangareader.panel.PanelTunables.confFailFor(panelGuideSensitivity),
-                        vertBottomUp = panelGuideVert == 1,
-                        goToPage = { target -> d.goToPage(target) },
-                        currentPage = { savedPage },
-                        onExit = { panelExitCallback.value() },
-                    )
+        // ★ 全局开关语义（2026-10-11 用户拍板）：开关开启但当前视图/模式不支持时【静默不启用】
+        //   ——不清开关、不弹 Toast；切回翻页单页族（或换到支持的书）自动恢复启用
+        val d = activeDelegate(isVertical)
+        if (panelGuideActive && d is PagerReaderView && !isVertical && !effectiveUseCurl && !tileModeEnabled && pageLayout == 0) {
+            overlay?.begin(
+                com.mangareader.panel.PanelGuideOverlay.Session(
+                    treePath = treePath,
+                    engine = engine,
+                    pages = pages,
+                    rtl = when (panelGuideRtl) { 1 -> true; 2 -> false; else -> isRtl },
+                    eink = panelGuideEink,
+                    nav = panelNav,
+                    accentColor = panelAccent,
+                    dimAlpha = 255 * panelGuideDim / 100,
+                    animEnabled = panelGuideAnim,
+                    minConf = com.mangareader.panel.PanelTunables.confFailFor(panelGuideSensitivity),
+                    focusMode = panelGuideFocus,
+                    // ★ 超分联动（用户定则"分格用超分后的图，没出就等它"）：peekSr 三级取产物；
+                    //   在算/待出结果时挂 pollForResult，就绪回调由覆盖层重载本页。
+                    //   拆分双页：SR 与 engine.loadPage 同页索引空间（均为拆分后页），天然对齐
+                    srSource = { page ->
+                        val sr = runCatching { com.mangareader.sr.SrPipeline.peekSr(page) }
+                            .getOrNull()?.takeIf { !it.isRecycled }
+                        when {
+                            sr != null -> com.mangareader.panel.PanelGuideOverlay.SrPage.Ready(sr)
+                            runCatching {
+                                com.mangareader.sr.SrPipeline.computing(page) ||
+                                    com.mangareader.sr.SrUiState.scope.intValue > 0 ||
+                                    com.mangareader.sr.SrPipeline.sessionHasBatch
+                            }.getOrDefault(false) -> com.mangareader.panel.PanelGuideOverlay.SrPage.Pending
+                            else -> null
+                        }
+                    },
+                    srPoll = { page, onReady ->
+                        runCatching { com.mangareader.sr.SrPipeline.pollForResult(page) { onReady() } }
+                    },
+                    goToPage = { target -> d.goToPage(target) },
+                    currentPage = { savedPage },
+                    onExit = { panelExitCallback.value() },
                 )
-            } else {
-                android.widget.Toast.makeText(ctx, "当前阅读模式不支持逐格阅读", android.widget.Toast.LENGTH_SHORT).show()
-                panelExitCallback.value()
-            }
+            )
         } else {
             overlay?.end()
         }
@@ -756,14 +772,13 @@ fun NativeReaderScreen(
     // ★ 逐格面板即改即生效（2026-10-11）：显示类（压暗/动画）纯绘制热更新；
     //   识别类（灵敏度/方向）清结果缓存重检当前页。begin 时 DisposableEffect 已带全量参数，
     //   这里只处理"会话进行中改设置"——会话未激活时 overlay 内部空转。
-    LaunchedEffect(panelGuideDim, panelGuideAnim) {
-        panelOverlayRef?.onRenderSettingsChanged(255 * panelGuideDim / 100, panelGuideAnim)
+    LaunchedEffect(panelGuideDim, panelGuideAnim, panelGuideFocus) {
+        panelOverlayRef?.onRenderSettingsChanged(255 * panelGuideDim / 100, panelGuideAnim, panelGuideFocus)
     }
-    LaunchedEffect(panelGuideSensitivity, panelGuideRtl, panelGuideVert) {
+    LaunchedEffect(panelGuideSensitivity, panelGuideRtl) {
         panelOverlayRef?.onDetectSettingsChanged(
             com.mangareader.panel.PanelTunables.confFailFor(panelGuideSensitivity),
             when (panelGuideRtl) { 1 -> true; 2 -> false; else -> isRtl },
-            panelGuideVert == 1,
         )
     }
 

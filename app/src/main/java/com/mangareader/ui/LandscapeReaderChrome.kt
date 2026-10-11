@@ -1,6 +1,7 @@
 package com.mangareader.ui
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -57,6 +58,8 @@ fun LandscapeReaderChrome(
     showPanelGuide: Boolean = false,
     panelGuideActive: Boolean = false,
     onPanelGuide: () -> Unit = {},
+    /** ★ 逐格设置面板挂长按（2026-10-11：点击=开关，长按=设置） */
+    onPanelGuideLong: (() -> Unit)? = null,
     onBack: () -> Unit,
     onRename: () -> Unit,
     onAddToShelf: () -> Unit,
@@ -76,8 +79,13 @@ fun LandscapeReaderChrome(
     val railShape = RoundedCornerShape(20.dp)
 
     @Composable
-    fun railButton(icon: ImageVector, label: String, active: Boolean = false, onClick: () -> Unit) {
-        IconButton(onClick = onClick, modifier = Modifier.size(40.dp)) {
+    fun railButton(icon: ImageVector, label: String, active: Boolean = false, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .combinedClickable(onClick = onClick, onLongClick = { onLongClick?.invoke() }),
+            contentAlignment = Alignment.Center,
+        ) {
             Icon(icon, label, tint = if (active) accentColor else textColor.copy(alpha = 0.8f), modifier = Modifier.size(22.dp))
         }
     }
@@ -122,7 +130,9 @@ fun LandscapeReaderChrome(
                     if (panelGuideActive) Icons.Default.Close else Icons.Default.GridView,
                     if (panelGuideActive) "退出逐格" else "逐格阅读",
                     active = panelGuideActive,
-                ) { onPanelGuide() }
+                    onClick = { onPanelGuide() },
+                    onLongClick = onPanelGuideLong,
+                )
                 if (showCompare) railButton(Icons.Default.CompareArrows, if (compareActive) "退出对比" else "对比", active = compareActive) { onCompare() }
                 railButton(Icons.Default.Settings, "设置") { onSettings() }
             }
