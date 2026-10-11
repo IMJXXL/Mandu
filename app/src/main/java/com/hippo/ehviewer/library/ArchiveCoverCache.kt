@@ -88,7 +88,12 @@ object ArchiveCoverCache {
     const val LOCAL_NON_ZIP_SCAN_CAP = 100L * 1024L * 1024L
 
     private const val THUMB_JPEG_QUALITY = 85
-    private const val FORMAT_VERSION = 2
+
+    /**
+     * ★ v3（2026-10-11）：封面提取算法修正（sortEntries=true 页序）之前的旧封面页序是错的，
+     *   文件名是 sha256 无法按版本筛选——bump 键版本让所有旧封面失配，按现行算法惰性重抽自愈。
+     */
+    private const val FORMAT_VERSION = 3
 
     private val extractSlots = Semaphore(1)
 
@@ -170,7 +175,20 @@ object ArchiveCoverCache {
     private val knownPresent = ConcurrentHashMap.newKeySet<String>()
 
     private val thumbRoot: Path by lazy(LazyThreadSafetyMode.PUBLICATION) {
-        File(appCtx.applicationInfo.dataDir, "cache/archive_thumb").toOkioPath()
+        val dir = File(appCtx.applicationInfo.dataDir, "cache/archive_thumb")
+        // ★ v3 自愈配套（2026-10-11）：FORMAT_VERSION bump 让旧封面全部失配成孤儿文件，
+        //   预算清理只按总量淘汰、总量不超就永远不删——升级后首访一次性清空整目录。
+        //   戳文件放目录外，防被封面预算清理当垃圾删掉后每次启动重复清空。
+        //   thumbPathFor 的调用方基本都在 IO 协程，同步删几百个小文件的一次性开销可忽略。
+        runCatching {
+            val stamp = File(appCtx.applicationInfo.dataDir, "cache/.archive_thumb_v3_purged")
+            if (!stamp.exists()) {
+                dir.deleteRecursively()
+                dir.mkdirs()
+                stamp.createNewFile()
+            }
+        }.onFailure { logcat(it) }
+        dir.toOkioPath()
     }
 
     fun thumbPathFor(archivePath: String, mtimeMs: Long = 0L, sizeBytes: Long = 0L): Path {
