@@ -158,9 +158,12 @@ class CurlReaderView(context: Context) : FrameLayout(context), ReaderViewDelegat
             val fx = e.x / width
             val fy = e.y / height
             // RTL 与 pager 同款：区域固定（左 PREV/右 NEXT），RTL 在动作层翻转
+            // ★ 章末同步（2026-10-11）：前进方向的点击在末页上 = 前进尝试（无缝续读触发点）
+            fun forwardTap() { if (currentPage < pageList.size - 1) tapForwardTrigger.intValue++ else onChapterEnd?.invoke(true) }
+            fun backwardTap() { if (currentPage > 0) tapBackwardTrigger.intValue++ else onChapterEnd?.invoke(false) }
             when (navigation.getAction(fx, fy)) {
-                NavigationAction.PREV -> if (isRtl) tapForwardTrigger.intValue++ else tapBackwardTrigger.intValue++
-                NavigationAction.NEXT -> if (isRtl) tapBackwardTrigger.intValue++ else tapForwardTrigger.intValue++
+                NavigationAction.PREV -> if (isRtl) forwardTap() else backwardTap()
+                NavigationAction.NEXT -> if (isRtl) backwardTap() else forwardTap()
                 NavigationAction.MENU -> onToggleUi?.invoke()
             }
             return true
@@ -173,9 +176,32 @@ class CurlReaderView(context: Context) : FrameLayout(context), ReaderViewDelegat
         isFocusableInTouchMode = true
     }
 
+    // ★ 末页前进尝试（与 pager 同款）：左滑（报告 §二.2 统一约定，手势不镜像）累计 28dp，
+    //   缩放中不触发；pagecurl 库在末页前拖被钐制，只能根分发层观察
+    private var endAttemptFired = false
+    private var endAttemptAccum = 0f
+    private var lastEndAttemptRaw = 0f
+
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
         super.dispatchTouchEvent(ev)
         gestureDetector.onTouchEvent(ev)
+        when (ev.actionMasked) {
+            MotionEvent.ACTION_DOWN -> { endAttemptFired = false; endAttemptAccum = 0f; lastEndAttemptRaw = -ev.x }
+            MotionEvent.ACTION_MOVE -> {
+                if (!endAttemptFired && pageList.isNotEmpty() && currentPage >= pageList.size - 1 &&
+                    curlZoomState.scale.floatValue <= 1f
+                ) {
+                    endAttemptAccum += (-ev.x) - lastEndAttemptRaw
+                    lastEndAttemptRaw = -ev.x
+                    if (endAttemptAccum > 28f * resources.displayMetrics.density) {
+                        endAttemptFired = true
+                        onChapterEnd?.invoke(true)
+                    }
+                } else {
+                    lastEndAttemptRaw = -ev.x
+                }
+            }
+        }
         return true
     }
 
@@ -302,7 +328,7 @@ class CurlReaderView(context: Context) : FrameLayout(context), ReaderViewDelegat
                     loader.preloadAround(newPage, pageList.size) { idx ->
                         reloadTrigger.intValue++
                     }
-                    if (newPage == pageList.size - 1) onChapterEnd?.invoke(true)
+                    // ★ 章末触发改"末页上前进尝试"（与 pager 同步）：到达不再触发
                     if (newPage == 0) onChapterEnd?.invoke(false)
                     onPageChanged?.invoke(newPage)
                 },

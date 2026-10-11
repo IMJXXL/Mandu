@@ -43,6 +43,8 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
 
     val recycler = WebtoonRv(context)
     private val webtoonFrame = WebtoonFrame(context).apply {
+        // ★ 条漫到底前进尝试 → 章末（无缝续读触发点，与 pager/curl 同步）
+        onBottomDragAttempt = { onChapterEnd?.invoke(true) }
         addView(recycler, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         onMarginChanged = { applySideMarginToVisible() }
     }
@@ -727,8 +729,9 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
         if (best == RecyclerView.NO_POSITION) best = l
         if (best in pageList.indices && best != currentPage) {
             currentPage = best; onPageChanged?.invoke(currentPage)
-            // ★ N1 条漫到底哨兵：滚到最后一页即章末（竖读无方向歧义）
-            if (best >= pageList.size - 1) onChapterEnd?.invoke(true)
+            // ★ 章末触发改定（2026-10-11 与 pager/curl 同步）：不再在"末页过屏幕中心"时触发，
+            //   改为滚到底后继续下拖才触发（见 dispatchTouchEvent 的到底前进尝试检测）。
+            //   到达检测（canScrollVertically）与回调解耦，不影响末页可达性。
         }
     }
 
@@ -1744,11 +1747,35 @@ private class WebtoonFrame(context: Context) : android.widget.FrameLayout(contex
         }
     })
 
+    // ★ 条漫到底前进尝试（2026-10-11 章末语义同步）：已滚到底（无法再向下）时继续下拖
+    //   累计 28dp = "往下一章翻"。缩放中不触发（放大后拖动是看图不是翻章）。
+    //   到底判据 canScrollVertically(1)=false，与页内容高度无关（高图页也可靠）。
+    //   本类拿不到外层状态，回调由 WebtoonReaderView 接线到 onChapterEnd。
+    var onBottomDragAttempt: (() -> Unit)? = null
+    private var endAttemptFired = false
+    private var endAttemptAccum = 0f
+    private var lastEndAttemptRaw = 0f
+
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
         scaleDetector.onTouchEvent(ev)
         flingDetector.onTouchEvent(ev)
         // Clamp to RecyclerView bounds
         val rv = getChildAt(0) as? WebtoonRv ?: return super.dispatchTouchEvent(ev)
+        when (ev.actionMasked) {
+            MotionEvent.ACTION_DOWN -> { endAttemptFired = false; endAttemptAccum = 0f; lastEndAttemptRaw = ev.y }
+            MotionEvent.ACTION_MOVE -> {
+                if (!endAttemptFired && !rv.canScrollVertically(1) && !rv.isZoomedNow()) {
+                    endAttemptAccum += ev.y - lastEndAttemptRaw
+                    lastEndAttemptRaw = ev.y
+                    if (endAttemptAccum > 28f * resources.displayMetrics.density) {
+                        endAttemptFired = true
+                        onBottomDragAttempt?.invoke()
+                    }
+                } else {
+                    lastEndAttemptRaw = ev.y
+                }
+            }
+        }
         val rect = android.graphics.Rect()
         rv.getHitRect(rect); rect.inset(1, 1)
         if (rect.right >= rect.left && rect.bottom >= rect.top) {
@@ -1774,6 +1801,8 @@ class WebtoonRv(ctx: Context) : RecyclerView(ctx) {
     /** ★ 诊断：当前整体缩放态（留白"幅度不对"取证——放大态下留白被同步放大） */
     fun diagScale(): Float = currentScale
     private var isZooming = false
+    /** ★ 当前是否处于缩放态（条漫到底前进尝试检测用：放大拖动=看图不是翻章） */
+    fun isZoomedNow(): Boolean = isZooming || currentScale > DEFAULT_RATE + 0.01f
     private var halfWidth = 0; private var halfHeight = 0
     var originalHeight = 0; private set
     private var heightSet = false

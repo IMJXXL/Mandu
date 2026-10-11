@@ -841,15 +841,16 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         when (ev.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 endAttemptFired = false; endAttemptAccum = 0f
-                lastEndAttemptRaw = if (verticalPager) ev.y else (if (isRtl) ev.x else -ev.x)
+                lastEndAttemptRaw = if (verticalPager) ev.y else -ev.x
             }
             MotionEvent.ACTION_MOVE -> {
                 if (!endAttemptFired && isOnReadingLastSlot() &&
                     !isCurrentPageZoomed() && !activePagePanning() &&
                     viewPager.scrollState == ViewPager2.SCROLL_STATE_IDLE
                 ) {
-                    val fwd = if (verticalPager) ev.y else (if (isRtl) ev.x else -ev.x)
-                    // 累积量需要相邻 MOVE 间的增量——这里用与上次触点差值累加
+                    // ★ 方向实锤（报告 §二.2）：pager 手势不镜像——左滑永远=下一页（RTL 亦然），
+                    //   此前 RTL 分支写反。竖向 pager 下拖=下一页。
+                    val fwd = if (verticalPager) ev.y else -ev.x
                     endAttemptAccum += fwd - lastEndAttemptRaw
                     lastEndAttemptRaw = fwd
                     if (endAttemptAccum > 28f * resources.displayMetrics.density) {
@@ -857,7 +858,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                         fireChapterEndAttempt()
                     }
                 } else {
-                    lastEndAttemptRaw = if (verticalPager) ev.y else (if (isRtl) ev.x else -ev.x)
+                    lastEndAttemptRaw = if (verticalPager) ev.y else -ev.x
                 }
             }
         }
