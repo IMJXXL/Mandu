@@ -2148,7 +2148,14 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             try { back() } catch (_: Exception) {}
         }
     }
-    BackHandler(enabled = !showSettings && !showSrPanel) { goBack() }
+    // ★ 快赢 #10（2026-10-11）：对比模式激活时系统返回先关对比层而非直接退章
+    BackHandler(enabled = !showSettings && !showSrPanel) {
+        if (com.mangareader.sr.SrUiState.compareActive.value) {
+            com.mangareader.sr.SrUiState.compareActive.value = false
+        } else {
+            goBack()
+        }
+    }
 
     // ★ 3+5 改动5：重写 markAsReadNow —— 改 suspend → 普通 fun，与 save() 对称改造：
     //   appScope 脱钩（不受 Reader dispose 影响）+ 主线程预快照 + 整块 try/catch。
@@ -2974,11 +2981,15 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                                         if (lockAtBottomStart) PaddingValues(start = 10.dp, bottom = 12.dp)
                                         else PaddingValues(top = 80.dp, start = 4.dp)
                                     )
-                                    // 命中区始终 40dp 圆（沉浸态无视觉时点击落此区域也能唤锁图标）
-                                    .size(40.dp)
+                                    // ★ 快赢 #7：命中区 40→44dp（Material 最低触达标准；不再扩——
+                                    //   锁定钮压在翻页区上，扩越大翻页死区越大）+ 解锁轻振动
+                                    .size(44.dp)
                                     .pointerInput(isLocked, showLockIcon) {
                                         detectTapGestures(onTap = {
-                                            if (isLocked && showLockIcon) unlock() else toggleLock()
+                                            if (isLocked && showLockIcon) {
+                                                try { act?.window?.decorView?.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP) } catch (_: Exception) {}
+                                                unlock()
+                                            } else toggleLock()
                                         })
                                     }
                             ) {

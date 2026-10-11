@@ -139,7 +139,9 @@ fun HistoryScreen(onBack: () -> Unit, onOpen: (Long, String?) -> Unit) {
                             )
                         }
                     }
-                    item(key = "p_${s.bookId}_${s.chPath.hashCode()}_$i") {
+                    // ★ 历史 key 去索引尾缀（审查快赢 #9，§4.5 认可方案）：删中间一条时全体
+                    //   key 移位重建；(bookId,chPath) 唯一索引保证此键稳定唯一
+                    item(key = "p_${s.bookId}_${s.chPath.hashCode()}") {
                         HistoryItemRow(
                             s,
                             onDelete = {
