@@ -2512,7 +2512,12 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     }
     Scaffold(
         topBar = {
-            if ((ui || !viewing) && !landscapeReading) {
+            // ★ 快赢 #1：菜单滑入滑出（200ms；墨水屏自动关；不挡触摸——退场后移出命中区）
+            AnimatedSlideVisibility(
+                visible = (ui || !viewing) && !landscapeReading,
+                enterFromBottom = false,
+                animate = !config.isEinkMode,
+            ) {
                 val pageSubtitle = if (viewing && displayPages.isNotEmpty() && cur >= 0) {
                     val totalCount = if (expandedPageCount > 0) expandedPageCount else displayPages.size
                     val p = if (cur < displayPages.size) displayPages[cur] else displayPages.last()
@@ -2579,7 +2584,11 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         },
         containerColor = bgColor,
         bottomBar = {
-            if (viewing && ui && !landscapeReading) {
+            AnimatedSlideVisibility(
+                visible = viewing && ui && !landscapeReading,
+                enterFromBottom = true,
+                animate = !config.isEinkMode,
+            ) {
                 Column(Modifier.fillMaxWidth()) {
                     ReaderBottomBar(actions = buildList {
                         add(BottomBarAction(Icons.Default.Menu, "目录") { showToc = !showToc })

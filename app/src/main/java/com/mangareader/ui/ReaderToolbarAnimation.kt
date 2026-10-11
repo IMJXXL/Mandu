@@ -15,8 +15,14 @@ fun AnimatedSlideVisibility(
     visible: Boolean,
     modifier: Modifier = Modifier,
     enterFromBottom: Boolean = true,
+    /** 墨水屏等场景传 false：不动画直接显隐（墨水屏模式装饰动画一律关规约） */
+    animate: Boolean = true,
     content: @Composable () -> Unit
 ) {
+    if (!animate) {
+        if (visible) androidx.compose.foundation.layout.Box(modifier) { content() }
+        return
+    }
     val enter = slideInVertically(
         initialOffsetY = { if (enterFromBottom) it else -it },
         animationSpec = tween(SLIDE_DURATION_MS, easing = FastOutSlowInEasing)
