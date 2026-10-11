@@ -102,19 +102,22 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     val engine = remember { ArchiveEngine(ctx).apply { scopeBookId = bookId } }
     val scope = rememberCoroutineScope()
     val prefs = remember { ctx.getSharedPreferences("manga_reader", Context.MODE_PRIVATE) }
+    // ★ 生效书 id（P1-3 作用域单点真相）：书内"下一本"跨书 in-place 切换时由 confirmSwitch
+    //   更新为新书 id——所有按书写入点（ReaderScope/BookCropStore/orientation/亮度）与配置
+    //   重载一律以此为准，路由参数 bookId 只作初始值。（此前切书后设置全写到原书头上）
     var currentBookId by remember { mutableLongStateOf(bookId) }
     var config by remember { mutableStateOf(com.mangareader.data.ReaderConfig.load(ctx, bookId)) }
     var configVersion by remember { mutableIntStateOf(0) }
     // ★ 固定四边裁剪（仅本书功能 2026-10-04）：状态在本层持有；书内面板改 → 存 BookCropStore
     //   （刻意不走作用域系统：书的数据，不受「本书改动单独记」总开关影响）+ 下传视图即时生效
-    var fixedCrop by remember(bookId) { mutableStateOf(com.mangareader.data.BookCropStore.load(ctx, bookId)) }
+    var fixedCrop by remember(currentBookId) { mutableStateOf(com.mangareader.data.BookCropStore.load(ctx, currentBookId)) }
     var lastPageCbMarkMs by remember { mutableLongStateOf(0L) }
     // ★ 本地打开耗时锚点（remote 链有 remote: open 系列，本地链补齐）
     var localOpenStartMs by remember { mutableLongStateOf(0L) }
     // 全局类项书内改动的披露 Toast：每次会话（Reader 实例存活期）只弹一次
     var globalWriteToastShown by remember { mutableStateOf(false) }
     // 单本类项首改提示：按书记忆（换书重新提示一次）
-    var bookWriteToastShown by remember(bookId) { mutableStateOf(false) }
+    var bookWriteToastShown by remember(currentBookId) { mutableStateOf(false) }
     var localOpenMarked by remember { mutableStateOf(false) }
 
 
@@ -206,7 +209,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     //   拍回持久值，条漫阅读中拖 侧边留白/亮度/... 就把整个阅读器重建为单页，画面跳回
     //   智能适应不放大的 ~100dp 两侧留白基础（用户描述"在100的基础上开始动/打架"；
     //   重进正常=enterReader 重判 autoWebtoon 又切回条漫）。覆盖期间 mode/scrollMode 均不动
-    var autoWebtoonOverride by remember(bookId) { mutableStateOf(false) }
+    var autoWebtoonOverride by remember(currentBookId) { mutableStateOf(false) }
 
     // ★ 单本单页豁免（2026-10-06）：当前章不参与双页合并的物理页集合。DB page_solo_flags
     //   主键 (chPath, pageIdx)，chPath 与阅读进度同源（navStack 尾/书路径）——按书+章隔离，
@@ -214,14 +217,17 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     var soloPages by remember { mutableStateOf(setOf<Int>()) }
 
     // Reload mode when bookId or config changes
-    LaunchedEffect(bookId, configVersion) {
-        // 二次签名校验（与 MainActivity 互补，任一被移除则崩溃）
+    // ★ 签名校验移出本 effect（审查 R10）：原随 configVersion（每次设置变更+防抖）反复跑
+    //   主线程 PackageManager+SHA-256，拖滑条也验签。改 Reader 会话一次。
+    LaunchedEffect(Unit) {
         com.mangareader.SignatureVerifier.verify(ctx, "F6D95465BE7D17C1B3BE2B0C59969C22")
-        config = com.mangareader.data.ReaderConfig.load(ctx, bookId)
+    }
+    LaunchedEffect(currentBookId, configVersion) {
+        config = com.mangareader.data.ReaderConfig.load(ctx, currentBookId)
         // ★ autoWebtoonOverride 期间不重解析模式、不同步 scrollMode（sync 会把 VERTICAL
         //   落盘=把"静默自动切"变成持久决定，破坏下次进书回全局默认的语义）
         if (!autoWebtoonOverride) {
-            mode = resolveInitialMode(bookId)
+            mode = resolveInitialMode(currentBookId)
             // 同步：确保 scrollMode 和 read_mode 一致
             val expectedScrollMode = when (mode) {
                 Mode.VERT, Mode.WEBTOON_GAP -> com.mangareader.data.ReaderConfig.ScrollMode.VERTICAL
@@ -230,10 +236,12 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             }
             if (config.scrollMode != expectedScrollMode) {
                 config = config.copy(scrollMode = expectedScrollMode)
-                com.mangareader.data.ReaderScope.write(ctx, bookId, "scrollMode", expectedScrollMode.name)
+                com.mangareader.data.ReaderScope.write(ctx, currentBookId, "scrollMode", expectedScrollMode.name)
             }
         }
     }
+    // ★ 引擎书内作用域随生效书更新（pdfQuality 等书级配置按书取值）
+    LaunchedEffect(currentBookId) { engine.scopeBookId = currentBookId }
     LaunchedEffect(config.isEinkMode) {
         com.hippo.ehviewer.Settings.isEinkMode = config.isEinkMode
     }
@@ -396,7 +404,9 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             if (s != null) {
                 activePagerRef?.remotePageSupply = null
                 activeWebtoonRef?.remotePageSupply = null
-                scope.launch(Dispatchers.IO) { runCatching { s.close() } }
+                // ★ 挂 appScope（审查 P2-8）：rememberCoroutineScope 在 composition 销毁时同步
+                //   取消，onDispose 里的 launch 可能未执行 → 远程会话/SMB 句柄泄漏
+                app.appScope.launch(Dispatchers.IO) { runCatching { s.close() } }
             }
         }
     }
@@ -635,11 +645,14 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                     scrollX = cx, scrollY = cy, zoomLevel = zs
                 )
                 withContext(Dispatchers.IO) {
-                    dao.saveReaderProgressBatch(b.id, savedPage + 1, now, chPathSnap, savedPage, done, history, pageListSnap.size)
+                    // ★ 口径统一（审查 R3）：totalPages 用 effectiveSize（展开/合并流位数），
+                    //   与 onDispose 兜底同口径——原 pageListSnap.size（原始表）使展开书
+                    //   Book.totalPages 在两种退出路径间跳变
+                    dao.saveReaderProgressBatch(b.id, savedPage + 1, now, chPathSnap, savedPage, done, history, effectiveSize)
                     // ★ 半页位补写（同事务外单条 UPDATE；lastPage 两半同值，halfRight 区分右半）
                     runCatching { dao.updateProgressHalfRight(b.id, chPathSnap, halfRight, now) }
                 }
-                syncBookStatusFromProgress(b, now, pageListSnap.size)
+                syncBookStatusFromProgress(b, now, effectiveSize)
             } catch (_: Exception) {
                 // CrashHandler 杀进程防护：catch 全部 Exception 不传
             }
@@ -651,8 +664,15 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         if (displayPages.isEmpty()) return
         val pageCount = if (expandedPageCount > 0) expandedPageCount else displayPages.size
         val n = (cur + d).coerceIn(0, pageCount - 1)
-        if (n == cur) return
-        if (n != cur) { cur = n; save() }
+        if (n == cur) {
+            // ★ 已在边界再按同方向（审查 R7）：末页按"下一页"补触发阅读完成对话框——
+            //   原提前 return 使其只在恰好翻到末页那一次可达（onPageChanged 直写 cur 的路径同样不触发）
+            if (d > 0 && cur >= pageCount - 1 && viewing && pageCount > 1 && !showComplete && !hasShownCompleteThisSession) {
+                showComplete = true; hasShownCompleteThisSession = true
+            }
+            return
+        }
+        cur = n; save()
         if (cur >= pageCount - 1 && viewing && pageCount > 1 && !showComplete && !hasShownCompleteThisSession) {
             showComplete = true; hasShownCompleteThisSession = true
         }
@@ -1096,16 +1116,27 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         // ★ 修复：文件系统路径（下载到本地缓存的归档）走 useArchivePageLoader，
         //   ArchiveEngine.listPages 只支持 SAF 路径（a:/d: 前缀），文件系统路径会返回空。
         if (path.startsWith("/")) return enterLocalArchiveReader(b, path, targetPage)
+        // ★ 密码弹窗取消不再吞成"文件暂时找不到"（审查 P2-9）：archivePasswdProvider 取消
+        //   抛 IllegalStateException("…取消…")，原 catch 一切返回空表 → 落缺失弹窗甚至
+        //   误触发"恢复远程书"。识别取消后跳过重试、静默返回（对话框取消本身即用户反馈）。
+        var passwordCancelled = false
+        fun isPasswordCancel(e: Exception) = e is IllegalStateException && e.message?.contains("取消") == true
         var pages = withContext(Dispatchers.IO) {
-            try { engine.listPages(path) } catch (_: Exception) { emptyList() }
+            try { engine.listPages(path) } catch (e: Exception) {
+                if (isPasswordCancel(e)) passwordCancelled = true
+                emptyList()
+            }
         }
         // ★ SD 卡瞬态 IO 失败兜底（Boyue+外置SD 实测报"文件暂时找不到"重进即好）：
-        //   空页表不等同于文件真丢——延迟后重试一次再判缺失
-        if (pages.isEmpty()) {
+        //   空页表不等同于文件真丢——延迟后重试一次再判缺失（密码取消不重试，避免二次弹窗）
+        if (pages.isEmpty() && !passwordCancelled) {
             com.mangareader.DiagTracer.markStatic("listPages retry begin")
             delay(500)
             pages = withContext(Dispatchers.IO) {
-                try { engine.listPages(path) } catch (_: Exception) { emptyList() }
+                try { engine.listPages(path) } catch (e: Exception) {
+                    if (isPasswordCancel(e)) passwordCancelled = true
+                    emptyList()
+                }
             }
             com.mangareader.DiagTracer.markStatic("listPages retry n=${pages.size}")
         }
@@ -1115,6 +1146,16 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         //     - 点「移除本卷进度」才执行 dao.deleteProgress(b.id, path)——避免误删合法 progress（SAF 临时失败等场景）。
         //     - 默认 viewing=false 不进死态。
         if (pages.isEmpty()) {
+            // ★ 密码取消：静默退出（不弹"文件缺失"），loading/viewing 复位
+            if (passwordCancelled) {
+                pageList = emptyList()
+                cur = 0
+                viewing = false
+                loading = false
+                isSwitching = false
+                android.widget.Toast.makeText(ctx, "已取消", android.widget.Toast.LENGTH_SHORT).show()
+                return emptyList()
+            }
             // ★ 已下载书本地文件丢失 → 触发恢复为远程书弹窗（originalPath 存在时可重新下载）
             if (b.originalPath != null) {
                 redownloadBook = b
@@ -1127,10 +1168,11 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             cur = 0
             viewing = false
             loading = false
+            isSwitching = false
             return emptyList()
         }
         if (config.autoWebtoon && pages.size >= 2 && mode != Mode.VERT && mode != Mode.VERT_PAGER && mode != Mode.WEBTOON_GAP) {
-            val userSetMode = if (com.mangareader.data.ReaderScope.hasBookModeChoice(prefs, bookId)) 0 else -1
+            val userSetMode = if (com.mangareader.data.ReaderScope.hasBookModeChoice(prefs, currentBookId)) 0 else -1
             if (userSetMode < 0) {
                 val treeStr = path
                 var totalRatio = 0f
@@ -1474,7 +1516,9 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         val b = book ?: return
         if (!viewing || pageList.isEmpty() || b.id <= 0) return
         val chPath = navStack.lastOrNull() ?: b.filePath
-        val page = cur
+        // ★ 存物理页（审查 P2 口径统一）：展开表下 cur 是流位，展开参数一变跳书签就错页；
+        //   进度链路已统一 progressPhysicalPage，书签同口径
+        val page = progressPhysicalPage(pageList, cur)
         scope.launch(Dispatchers.Main) {
             val exists = withContext(Dispatchers.IO) { dao.countBookmark(b.id, chPath, page) > 0 }
             if (exists) {
@@ -1499,7 +1543,10 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     fun jumpToBookmark(bm: com.mangareader.data.Bookmark) {
         val chNow = navStack.lastOrNull()
         if (bm.chapterPath == chNow && pageList.isNotEmpty()) {
-            cur = bm.page.coerceIn(0, (pageList.size - 1).coerceAtLeast(0))
+            // ★ 书签页=物理页（写侧 progressPhysicalPage）：展开表映射回流位，未展开表恒等
+            val expanded = pageList.any { it.segmentTotal > 0 || it.splitSide != 0 }
+            val mapped = if (expanded) pageList.indexOfFirst { it.originalPageIdx == bm.page } else -1
+            cur = (if (mapped >= 0) mapped else bm.page).coerceIn(0, (pageList.size - 1).coerceAtLeast(0))
             return
         }
         // 跨章：navStack 重建与目录跳章同款（书根 + 目标章完整身份）
@@ -1930,6 +1977,11 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                 val newBook = withContext(Dispatchers.IO) { dao.getBookByPath(switchTargetPath) }
                 if (newBook != null) {
                     book = newBook
+                    // ★ P1-3：生效书 id/引擎作用域/豁免集切到新书——此后所有按书写入点与
+                    //   配置重载都跟随新书（此前只换 book 对象，设置全写到原书头上）
+                    currentBookId = newBook.id
+                    engine.scopeBookId = newBook.id
+                    soloPages = emptySet()
                     persistDavCoverIfGated(newBook)
                     val newBookId = newBook.id
                     config = com.mangareader.data.ReaderConfig.load(ctx, newBookId)
@@ -2118,7 +2170,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
 
     fun saveOrientation(orientation: Int) {
         act?.requestedOrientation = orientation
-        prefs.edit().putInt("orientation_$bookId", orientation).apply()
+        prefs.edit().putInt("orientation_$currentBookId", orientation).apply()
     }
 
     fun toggleUi() {
@@ -2290,9 +2342,8 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     }
 
     // Config refresh - only re-reads config when settings change, does NOT reload book
-    LaunchedEffect(configVersion) {
-        config = com.mangareader.data.ReaderConfig.load(ctx, bookId)
-    }
+    // ★ 已删除（审查 P3 双重加载）：与上方 (currentBookId, configVersion) effect 完全重复，
+    //   每次设置变更各跑一遍 ReaderConfig.load（65 次 prefs 读）
 
     val bgColor = remember(configVersion) {
         val globalBgName = prefs.getString("readBackground", "WHITE") ?: "WHITE"
@@ -2569,7 +2620,9 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                     viewing && displayPages.isNotEmpty() -> {
                     val pageCount = if (expandedPageCount > 0) expandedPageCount else displayPages.size
                     val safeCur = cur.coerceIn(0, (pageCount - 1).coerceAtLeast(0))
-                    if (safeCur != cur) cur = safeCur
+                    // ★ 移出组合期写 state（审查 P3）：切章瞬间 expandedPageCount 残留旧章值时
+                    //   会把 cur 钳错一帧；改挂 effect 下一拍同步
+                    LaunchedEffect(safeCur) { if (cur != safeCur) cur = safeCur }
                     // ★ §34.3：isVertical 仅条漫（VERT/WEBTOON_GAP）走 webtoonView；
                     //   VERT_PAGER 不属于 isVertical，走 pagerView（传 verticalPager=true）。
                     // ★ 2026-10-05 横屏自动条漫：翻页族模式 + 开关 + 横屏 → 按条漫连续滚动进入
@@ -2657,7 +2710,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                         }
                         com.mangareader.native.NativeReaderScreen(
                             engine = engine,
-                            bookId = bookId,
+                            bookId = currentBookId,
                             treePath = navStack.lastOrNull() ?: book?.filePath ?: "",
                             pages = displayPages,
                             startPage = safeCur,
@@ -3212,11 +3265,11 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     if (showSrPanel) {
         BackHandler { showSrPanel = false }
         com.mangareader.ui.SrPanel(
-            // ★ 2026-10-03 关键修复：面板 bookId 用【路由 id】而非 book?.id——实测
+            // ★ 2026-10-03 关键修复：面板 bookId 用【生效书 id】而非 book?.id——实测
             //   GACHIAKUTA 199 章书 book 状态为 null（路由 id 有效、阅读正常），面板却拿到
             //   -1 → 整个离线 Tab 变"未关联书架"兜底卡，用户无法入队。入队器/状态加载
-            //   内部都会按 id 自查 DB，路由 id 才是真实来源。
-            bookId = bookId,
+            //   内部都会按 id 自查 DB，生效 id（随跨书切换更新，P1-3）才是真实来源。
+            bookId = currentBookId,
             bookTitle = book?.title ?: "",
             // ★ 路由 id 查无库条目时（历史入口/重扫重建），面板用当前树路径做锚点解析
             bookPath = book?.filePath ?: navStack.lastOrNull()?.takeIf { it.isNotEmpty() },
@@ -3282,7 +3335,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         mode = newMode
         // ★ 模式记忆走作用域路由（2026-10-04）：预设单本（只记这本书），偏好页可改全局
         //   ——全局层写 default_read_mode 并清本书 read_mode 残留，对所有书生效
-        com.mangareader.data.ReaderScope.write(ctx, bookId, com.mangareader.data.ReaderScope.READ_MODE_KEY, newMode.ordinal)
+        com.mangareader.data.ReaderScope.write(ctx, currentBookId, com.mangareader.data.ReaderScope.READ_MODE_KEY, newMode.ordinal)
         configVersion++
         // 切换模式时显示导航区域提示，3秒后自动消失
         showNavOverlay = true
@@ -3294,7 +3347,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         com.mangareader.ui.ReaderSettingsSheet(
             config = config,
             mode = mode,
-            bookId = bookId,
+            bookId = currentBookId,
 
             onConfigChange = { newConfig ->
                 val changed = com.mangareader.data.ReaderConfig.changedFields(config, newConfig)
@@ -3302,11 +3355,11 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                 val accessor = com.mangareader.data.ReaderConfig.FIELD_ACCESSORS
                 changed.forEach { key ->
                     val v = accessor.first { it.first == key }.second(newConfig)
-                    com.mangareader.data.ReaderScope.write(ctx, bookId, key, v)
+                    com.mangareader.data.ReaderScope.write(ctx, currentBookId, key, v)
                 }
                 // 写入落层披露：按实际落层判断（显式作用域可把预设全局项改单本、反之亦然）
                 val changedLayers = changed.map { key ->
-                    key to com.mangareader.data.ReaderScope.resolveLayer(prefs, bookId, key)
+                    key to com.mangareader.data.ReaderScope.resolveLayer(prefs, currentBookId, key)
                 }
                 if (changedLayers.any { it.second == com.mangareader.data.ReaderScope.Layer.GLOBAL } && !globalWriteToastShown) {
                     globalWriteToastShown = true
@@ -3334,7 +3387,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                     config.pageLayout != com.mangareader.data.ReaderConfig.PageLayout.SINGLE
                 ) {
                     config = config.copy(pageLayout = com.mangareader.data.ReaderConfig.PageLayout.SINGLE)
-                    com.mangareader.data.ReaderScope.write(ctx, bookId, "pageLayout", com.mangareader.data.ReaderConfig.PageLayout.SINGLE.name)
+                    com.mangareader.data.ReaderScope.write(ctx, currentBookId, "pageLayout", com.mangareader.data.ReaderConfig.PageLayout.SINGLE.name)
                     configVersion++
                 }
                 applyModeChange(newMode)
@@ -3342,7 +3395,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             fixedCrop = fixedCrop,
             onCropChange = { c ->
                 fixedCrop = c
-                com.mangareader.data.BookCropStore.save(ctx, bookId, c)
+                com.mangareader.data.BookCropStore.save(ctx, currentBookId, c)
             },
             onOrientationChange = { orientation ->
                 saveOrientation(orientation)
@@ -3386,8 +3439,8 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         val v = (base + delta).coerceIn(-100, 100)
         val nc = config.copy(screenBrightness = v, screenBrightnessEnabled = true)
         config = nc
-        com.mangareader.data.ReaderScope.write(ctx, bookId, "screenBrightness", v)
-        com.mangareader.data.ReaderScope.write(ctx, bookId, "screenBrightnessEnabled", true)
+        com.mangareader.data.ReaderScope.write(ctx, currentBookId, "screenBrightness", v)
+        com.mangareader.data.ReaderScope.write(ctx, currentBookId, "screenBrightnessEnabled", true)
         configVersion++
     }
 
@@ -3514,7 +3567,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                         val nc = config.copy(pageLayout = next)
                         config = nc
                         // 豁免字段：任何状态（含总开关关）都写本书覆盖——"按了就记住"
-                        com.mangareader.data.ReaderScope.write(ctx, bookId, "pageLayout", next.name)
+                        com.mangareader.data.ReaderScope.write(ctx, currentBookId, "pageLayout", next.name)
                         configVersion++
                     }
                     com.mangareader.keys.KeyAction.TOGGLE_AUTO_FLIP -> {
@@ -3528,7 +3581,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                         val nc = config.copy(autoFlipInterval = next)
                         config = nc
                         // 全局语义字段（恒全局项）：写全局键，Toast 带作用域披露
-                        com.mangareader.data.ReaderScope.write(ctx, bookId, "autoFlipInterval", next)
+                        com.mangareader.data.ReaderScope.write(ctx, currentBookId, "autoFlipInterval", next)
                         configVersion++
                         android.widget.Toast.makeText(
                             ctx,
@@ -3570,17 +3623,20 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         }
     }
 
+    // ★ 页豁免随章加载/持久化（双页合并单页豁免，2026-10-06）：chPath 与阅读进度同键，
+    //   切章即换集合；切换/重置落库后更新状态 → NativeReaderScreen 轻量通道实时重排跨页表
+    //   ★ 上提出 if(showToc)（审查 P1-4）：原在目录面板组合内加载——不开目录重进书豁免
+    //   恒不生效、目录内点章（切章+关目录同帧）effect 被移出组合不重跑=新章拿旧章豁免集
+    LaunchedEffect(navStack.lastOrNull(), book?.filePath) {
+        val ch = navStack.lastOrNull() ?: book?.filePath
+        if (ch == null) { soloPages = emptySet(); return@LaunchedEffect }
+        soloPages = withContext(Dispatchers.IO) {
+            runCatching { dao.getSoloPages(ch).toSet() }.getOrDefault(emptySet())
+        }
+    }
+
     if (showToc) {
         val displayItems = if (viewing && tocItems.isNotEmpty()) tocItems else items
-        // ★ 页豁免随章加载/持久化（双页合并单页豁免，2026-10-06）：chPath 与阅读进度同键，
-        //   切章即换集合；切换/重置落库后更新状态 → NativeReaderScreen 轻量通道实时重排跨页表
-        LaunchedEffect(navStack.lastOrNull(), book?.filePath) {
-            val ch = navStack.lastOrNull() ?: book?.filePath
-            if (ch == null) { soloPages = emptySet(); return@LaunchedEffect }
-            soloPages = withContext(Dispatchers.IO) {
-                runCatching { dao.getSoloPages(ch).toSet() }.getOrDefault(emptySet())
-            }
-        }
         ReaderTocSheet(
             displayItems = displayItems,
             currentNavStack = navStack,
@@ -3752,16 +3808,10 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     if (showBookmarkNoteDialog) {
         val b = book
         AlertDialog(
+            // ★ 关闭语义统一（审查 P2）：点外部/返回=取消不插入（原 onDismissRequest 反而
+            //   插入无备注书签，与"取消"按钮相反），只有"保存"才落库
             onDismissRequest = {
                 showBookmarkNoteDialog = false
-                if (b != null && viewing && pageList.isNotEmpty() && b.id > 0) {
-                    val chPath = navStack.lastOrNull() ?: b.filePath
-                    scope.launch(Dispatchers.IO) {
-                        dao.insertBookmark(com.mangareader.data.Bookmark(bookId = b.id, chapterPath = chPath, page = cur))
-                        bookmarkTick++
-                    }
-                    android.widget.Toast.makeText(ctx, "已添加书签（第 ${cur + 1} 页）", android.widget.Toast.LENGTH_SHORT).show()
-                }
             },
             title = { Text("书签备注") },
             text = {
@@ -3778,11 +3828,11 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                     showBookmarkNoteDialog = false
                     if (b != null && viewing && pageList.isNotEmpty() && b.id > 0) {
                         val chPath = navStack.lastOrNull() ?: b.filePath
-                        val note = pendingBookmarkNote.ifEmpty { null }
-                        scope.launch(Dispatchers.IO) {
-                            dao.insertBookmark(com.mangareader.data.Bookmark(bookId = b.id, chapterPath = chPath, page = cur, note = note))
-                            bookmarkTick++
-                        }
+                    val note = pendingBookmarkNote.ifEmpty { null }
+                    scope.launch(Dispatchers.IO) {
+                        dao.insertBookmark(com.mangareader.data.Bookmark(bookId = b.id, chapterPath = chPath, page = progressPhysicalPage(pageList, cur), note = note))
+                        bookmarkTick++
+                    }
                         android.widget.Toast.makeText(ctx, "已添加书签（第 ${cur + 1} 页）", android.widget.Toast.LENGTH_SHORT).show()
                     }
                 }) { Text("保存") }
@@ -3956,7 +4006,7 @@ private fun ItemGrid(
             }
         }
         LazyVerticalGrid(columns = gridCols, contentPadding = PaddingValues(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.weight(1f)) {
-            itemsIndexed(sorted, key = { i, e -> "${e.auth}|${e.doc}_$i" }) { _, e ->
+            itemsIndexed(sorted, key = { _, e -> "${e.auth}|${e.doc}" }) { _, e ->
                 ItemCard(e, engine, bgColor, progress, { tap(e) }, navStack, subVolCovers) { onItemLongPress(e) }
             }
         }
