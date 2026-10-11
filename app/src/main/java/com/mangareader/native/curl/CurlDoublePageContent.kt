@@ -215,8 +215,12 @@ fun CurlDoublePageContent(
                     // ★ 不再插手 landscapeZoom（2026-10-04）：合并跨页天然是宽图，FillHeight
                     //   会水平裁切且无法平移找回——用户要求"4 比 2 宽也不能漏 4"
                     // ★ inset 与 SpreadImage 显示矩形同源（ScalePlan 统一公式+对齐偏置）；
-                    //   跨页档位收敛走 spreadMode（只留 完整显示/铺满）；RTL 左右 inset 换侧
-                    //   （padding 在外层镜像之前，pre-start 落屏 end）
+                    //   跨页档位收敛走 spreadMode（只留 完整显示/铺满）。
+                    //   ★ RTL 交换已删（2026-10-11，与单页 d829770a① 同理）：padding 在
+                    //   graphicsLayer 外层，镜像翻不到它，交换无补偿对象——保留会把 RTL
+                    //   宽跨页自动对齐从右缘（阅读起始缘，正确）翻到左缘。双层镜像与页序
+                    //   XOR/spine 的联动仍按原计划待真机回归，与本交换无关（本交换只影响
+                    //   留白位置，不影响左右页顺序）。
                     val isTablet = androidx.compose.ui.platform.LocalConfiguration.current.smallestScreenWidthDp >= 600
                     val scale = ScalePlan.baseScale(
                         ScalePlan.spreadMode(scaleMode), cw, ch, iw, ih, isTablet,
@@ -227,8 +231,8 @@ fun CurlDoublePageContent(
                         val gaps = ScalePlan.edgeGaps(ScalePlan.alignX(zoomStart, isRtl), cw, dispW)
                         val gy = ScalePlan.edgeGaps(ScalePlan.alignY(zoomStart), ch, dispH)
                         with(LocalDensity.current) {
-                            insetL = (if (isRtl) gaps.second else gaps.first).toDp()
-                            insetR = (if (isRtl) gaps.first else gaps.second).toDp()
+                            insetL = gaps.first.toDp()
+                            insetR = gaps.second.toDp()
                             insetT = gy.first.toDp()
                             insetB = gy.second.toDp()
                         }
