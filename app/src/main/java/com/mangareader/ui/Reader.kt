@@ -2629,7 +2629,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                 when {
                     loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            CircularProgressIndicator(color = Color(0xFF7C8CF8))
+                            CircularProgressIndicator(color = readerAccentColor(bgColor))  // ★ #2 跟随主题
                             Text("正在打开…", color = Color(0xFF888888), fontSize = 13.sp)
                         }
                     }

@@ -171,8 +171,14 @@ fun WifiTransferScreen(onBack: () -> Unit) {
                             if (managed != null) {
                                 Toast.makeText(ctx, "正在刷新文件夹…", Toast.LENGTH_SHORT).show()
                                 scope.launch {
-                                    val (added, _) = Scanner(ctx, db.mangaDao()).rescanAndCommit(managed)
-                                    Toast.makeText(ctx, "刷新完成，新增 $added 本", Toast.LENGTH_SHORT).show()
+                                    // ★ F6（报告 §六）：三态提示对齐 FolderManageScreen——SAF 瞬断不再谎报
+                                    val outcome = Scanner(ctx, db.mangaDao()).rescanAndCommit(managed)
+                                    val msg = when {
+                                        outcome.manifestIncomplete -> "存储瞬时不稳定，本次跳过检查，稍后可重试"
+                                        outcome.added == 0 -> "刷新完成，书架无变化"
+                                        else -> "刷新完成，新增 ${outcome.added} 本"
+                                    }
+                                    Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show()
                                 }
                             }
                         } else {

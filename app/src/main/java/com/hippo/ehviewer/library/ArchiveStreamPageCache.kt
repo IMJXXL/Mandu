@@ -179,8 +179,14 @@ object ArchiveStreamPageCache {
         val idx = runCatching {
             json.decodeFromString(Index.serializer(), f.readText())
         }.getOrNull() ?: return null
-        // ★ 版本不符一律拒绝（含旧版 sortEntries=false 产物）：阅读器回落在线重建
-        if (idx.v != INDEX_VERSION) return null
+        // ★ 版本不符拒绝并 purge（报告 §六 F2）：仅 return null 留下升级首轮两个后果——
+        //   ①有缓存书（含全部下载完的）离线首轮必失败（离线分支拿不到成员表）；
+        //   ②旧封面链（物理序）的页文件在重建后映射到错误逻辑页。
+        //   purge 对齐 remoteSize mismatch 策略：已缓存页随索引作废，联网重建一次。
+        if (idx.v != INDEX_VERSION) {
+            purge(cacheKey)
+            return null
+        }
         return idx
     }
 

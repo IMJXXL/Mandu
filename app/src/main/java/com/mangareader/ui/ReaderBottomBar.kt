@@ -31,6 +31,7 @@ fun ReaderBottomBar(
     // 根据背景亮度决定文字颜色
     val luminance = bgColor.red * 0.299f + bgColor.green * 0.587f + bgColor.blue * 0.114f
     val textColor = if (luminance > 0.5f) Color.Black else Color.White
+    val accentColor = readerAccentColor(bgColor)  // ★ #2：强调色跟随主题+可读性兜底
     val surfaceColor = bgColor.copy(alpha = 0.85f)
 
     Surface(color = surfaceColor, modifier = modifier) {
@@ -58,13 +59,13 @@ fun ReaderBottomBar(
                                 Icon(
                                     action.icon,
                                     contentDescription = action.label,
-                                    tint = if (action.isActive) Color(0xFF7C8CF8) else textColor.copy(alpha = 0.8f),
+                                    tint = if (action.isActive) accentColor else textColor.copy(alpha = 0.8f),
                                     modifier = Modifier.size(22.dp)
                                 )
                             }
                             Text(
                                 action.label,
-                                color = if (action.isActive) Color(0xFF7C8CF8) else textColor.copy(alpha = 0.6f),
+                                color = if (action.isActive) accentColor else textColor.copy(alpha = 0.6f),
                                 fontSize = 9.sp,
                                 maxLines = 1
                             )

@@ -65,13 +65,14 @@ fun LandscapeReaderChrome(
     // 与顶/底栏同款：按背景亮度定字色
     val luminance = bgColor.red * 0.299f + bgColor.green * 0.587f + bgColor.blue * 0.114f
     val textColor = if (luminance > 0.5f) Color.Black else Color.White
+    val accentColor = readerAccentColor(bgColor)  // ★ #2：强调色跟随主题+可读性兜底
     val pillColor = bgColor.copy(alpha = 0.85f)
     val railShape = RoundedCornerShape(20.dp)
 
     @Composable
     fun railButton(icon: ImageVector, label: String, active: Boolean = false, onClick: () -> Unit) {
         IconButton(onClick = onClick, modifier = Modifier.size(40.dp)) {
-            Icon(icon, label, tint = if (active) Color(0xFF7C8CF8) else textColor.copy(alpha = 0.8f), modifier = Modifier.size(22.dp))
+            Icon(icon, label, tint = if (active) accentColor else textColor.copy(alpha = 0.8f), modifier = Modifier.size(22.dp))
         }
     }
 

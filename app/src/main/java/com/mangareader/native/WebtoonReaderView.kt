@@ -1770,19 +1770,21 @@ private class WebtoonFrame(context: Context) : android.widget.FrameLayout(contex
         // Clamp to RecyclerView bounds
         val rv = getChildAt(0) as? WebtoonRv ?: return super.dispatchTouchEvent(ev)
         when (ev.actionMasked) {
-            MotionEvent.ACTION_DOWN -> { endAttemptFired = false; endAttemptAccum = 0f; lastEndAttemptRaw = ev.y }
+            MotionEvent.ACTION_DOWN -> { endAttemptFired = false; endAttemptAccum = 0f; lastEndAttemptRaw = -ev.y }
             MotionEvent.ACTION_MOVE -> {
                 // ★ 多指守卫（审查修复）：底部捏合的初始下拖不算翻章尝试
-                if (ev.pointerCount > 1) { lastEndAttemptRaw = ev.y } else
+                if (ev.pointerCount > 1) { lastEndAttemptRaw = -ev.y } else
                 if (!endAttemptFired && !rv.canScrollVertically(1) && !rv.isZoomedNow()) {
-                    endAttemptAccum += ev.y - lastEndAttemptRaw
-                    lastEndAttemptRaw = ev.y
+                    // ★ F1（报告 §六）：条漫"再往下读"=上滑（内容上移，与点击翻屏同向），
+                    //   手指上移 dy<0 → 累加 -dy 为正；此前 +dy 把自然手势算成负值永不触发。
+                    endAttemptAccum += (-ev.y) - lastEndAttemptRaw
+                    lastEndAttemptRaw = -ev.y
                     if (endAttemptAccum > 28f * resources.displayMetrics.density) {
                         endAttemptFired = true
                         onBottomDragAttempt?.invoke()
                     }
                 } else {
-                    lastEndAttemptRaw = ev.y
+                    lastEndAttemptRaw = -ev.y
                 }
             }
         }

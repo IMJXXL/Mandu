@@ -66,11 +66,12 @@ suspend inline fun <T> usePdfiumPageLoader(
         // ★ 有界探测 + 半缓存离线续读（2026-10-11 审查）：pdfium 探测在最前且无离线路径，
         // 黑洞断网下整本打不开。size 未知时若磁盘有可用索引（渲染页落 DocumentExtractCache），
         // 引擎无关直出已缓存页，未缓存页按页失败；无缓存才干净失败。
+        // ★ F4（报告 §六）：pin 前置到在线/离线分支之外——在线会话渲染页同样落
+        //   DocumentExtractCache，会话期 trim 不能删正在看的页（与 Document 家族完全对齐）
+        DocumentExtractCache.pin(cacheKey)
+        install({ }, { _, _ -> DocumentExtractCache.unpin(cacheKey) })
         val size = remoteSize.takeIf { it > 0L } ?: com.hippo.ehviewer.gallery.boundedRemoteSizeProbe(source).coerceAtLeast(0L)
         if (size <= 0L) {
-            // ★ D1（报告 §4.3）：离线分支补 pin——会话期间后台 trim 不能删正在看的页（与 Document 分支对齐）
-            DocumentExtractCache.pin(cacheKey)
-            install({ }, { _, _ -> DocumentExtractCache.unpin(cacheKey) })
             val partialIdx = DocumentExtractCache.loadUsableIndex(cacheKey, remoteSize = 0L)
             val partialLoader = partialIdx?.let { idx ->
                 val exts = idx.members.associate { it.i to it.ext }

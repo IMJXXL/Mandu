@@ -46,6 +46,7 @@ private fun HorizontalNavigator(
     // 根据背景亮度决定文字颜色
     val luminance = bgColor.red * 0.299f + bgColor.green * 0.587f + bgColor.blue * 0.114f
     val textColor = if (luminance > 0.5f) Color.Black else Color.White
+    val accentColor = readerAccentColor(bgColor)  // ★ #2：强调色跟随主题+可读性兜底
     val surfaceColor = bgColor.copy(alpha = 0.85f)
 
     // ★ 对齐参考项目：无显式节流，无预解码，onValueChange 直接提交
@@ -99,7 +100,7 @@ private fun HorizontalNavigator(
                     },
                     valueRange = 0f..(totalPages - 1).toFloat().coerceAtLeast(1f),
                     modifier = Modifier.fillMaxWidth(),
-                    colors = SliderDefaults.colors(thumbColor = Color(0xFF7C8CF8), activeTrackColor = Color(0xFF7C8CF8))
+                    colors = SliderDefaults.colors(thumbColor = accentColor, activeTrackColor = accentColor)
                 )
             }
             if (isShowPageNum) Text(

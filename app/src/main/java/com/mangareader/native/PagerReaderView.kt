@@ -595,8 +595,17 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             try { com.mangareader.DiagTracer.mark(context, "tap src=${e.source} tool=${e.getToolType(0)} fx=${(fx * 100).toInt()} fy=${(fy * 100).toInt()} act=$action") } catch (_: Throwable) {}
             when (action) {
                 // ★ §34.3：竖向翻页时 PREV/NEXT 不受 RTL 影响（上下方向无 RTL 概念）
-                NavigationAction.PREV -> { if (!verticalPager && isRtl) nextPage() else prevPage() }
-                NavigationAction.NEXT -> { if (!verticalPager && isRtl) prevPage() else nextPage() }
+                // ★ F7（报告 §六）：RTL 书在阅读序末页（adapter 0）点前进区/翻页键此前静默无动作
+                NavigationAction.PREV -> {
+                    if (!verticalPager && isRtl) {
+                        if (viewPager.currentItem < (pagerAdapter?.itemCount ?: 0) - 1) nextPage() else onChapterEnd?.invoke(false)
+                    } else prevPage()
+                }
+                NavigationAction.NEXT -> {
+                    if (!verticalPager && isRtl) {
+                        if (viewPager.currentItem > 0) prevPage() else fireChapterEndAttempt()
+                    } else nextPage()
+                }
                 NavigationAction.MENU -> { onToggleUi?.invoke() }
             }
             return true
@@ -841,18 +850,17 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         when (ev.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 endAttemptFired = false; endAttemptAccum = 0f
-                lastEndAttemptRaw = if (verticalPager) ev.y else -ev.x
+                lastEndAttemptRaw = if (verticalPager) -ev.y else -ev.x
             }
             MotionEvent.ACTION_MOVE -> {
                 // ★ 多指守卫（审查修复）：末页捏合的初始横向漂移不算翻页尝试
-                if (ev.pointerCount > 1) { lastEndAttemptRaw = if (verticalPager) ev.y else -ev.x } else
+                if (ev.pointerCount > 1) { lastEndAttemptRaw = if (verticalPager) -ev.y else -ev.x } else
                 if (!endAttemptFired && isOnReadingLastSlot() &&
                     !isCurrentPageZoomed() && !activePagePanning() &&
                     viewPager.scrollState == ViewPager2.SCROLL_STATE_IDLE
                 ) {
-                    // ★ 方向实锤（报告 §二.2）：pager 手势不镜像——左滑永远=下一页（RTL 亦然），
-                    //   此前 RTL 分支写反。竖向 pager 下拖=下一页。
-                    val fwd = if (verticalPager) ev.y else -ev.x
+                    // ★ 方向实锤（报告 §二.2 + §六 F1）：pager 手势不镜像——左滑永远=下一页（RTL 亦然）；竖向 pager 上滑=下一页（内容上移=向后读，此前 +ev.y 写反）。
+                    val fwd = if (verticalPager) -ev.y else -ev.x
                     endAttemptAccum += fwd - lastEndAttemptRaw
                     lastEndAttemptRaw = fwd
                     if (endAttemptAccum > 28f * resources.displayMetrics.density) {
@@ -860,7 +868,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                         fireChapterEndAttempt()
                     }
                 } else {
-                    lastEndAttemptRaw = if (verticalPager) ev.y else -ev.x
+                    lastEndAttemptRaw = if (verticalPager) -ev.y else -ev.x
                 }
             }
         }
