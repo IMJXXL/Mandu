@@ -2201,7 +2201,11 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             // 有多个目录项 → 回到目录列表
             viewing = false; pageList = emptyList()
             items = tocItems
-            if (navStack.size > 1) navStack = navStack.dropLast(1)
+            if (navStack.size > 1) {
+                val firstZIdx = navStack.indexOfFirst { it.startsWith("z:") }
+                if (firstZIdx >= 0) navStack = navStack.take(firstZIdx + 1)
+                else navStack = navStack.dropLast(1)
+            }
         } else if (navStack.size > 1) {
             // 有上一级 → 回到上一级目录
             viewing = false; pageList = emptyList()
