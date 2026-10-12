@@ -295,6 +295,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     }
     // ★ 逐格设置面板：点击按钮打开（开始/退出与设置都在面板内，持久全局开关语义）
     var showPanelGuideSheet by remember { mutableStateOf(false) }
+    var panelGuideExempted by remember { mutableStateOf<Set<Int>>(emptySet()) }
     var showRename by remember { mutableStateOf(false) }
     var renameInput by remember { mutableStateOf("") }
     var showSrQueue by remember { mutableStateOf(false) }
@@ -2854,14 +2855,20 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                             tileModeEnabled = config.tileModeEnabled,
                             // ★ 逐格引导（2026-10-11）：开关/回执/墨水屏分支
                             panelGuideActive = panelGuideActive,
-                            onPanelGuideExit = { panelGuideActive = false },
+                            onPanelGuideExempt = { page ->
+                                panelGuideExempted = if (page < 0) emptySet() else setOf(page)
+                            },
+                            onPanelGuideChapterEnd = { handleChapterEnd(true) },
+                            onPanelGuideCloseActive = { setPanelGuideActive(false) },
                             panelGuideEink = config.isEinkMode,
                             // ★ 逐格设置（全局键）：面板即改即生效（NES 内热更新到覆盖层）
                             panelGuideSensitivity = config.panelGuideSensitivity,
                             panelGuideDim = config.panelGuideDim,
                             panelGuideAnim = config.panelGuideAnim,
                             panelGuideRtl = config.panelGuideRtl,
-                            panelGuideFocus = config.panelGuideFocus,
+                            panelGuideDimMode = config.panelGuideDimMode,
+                            panelGuideSplitMode = config.panelGuideSplitMode,
+                            panelGuideExemptedPages = panelGuideExempted,
                             verticalPager = verticalPagerEffective,
                             flipAnimationEnabled = config.isFlipAnimation,
                             pageCurlAnimationEnabled = config.isPageCurlAnimation,
@@ -3393,7 +3400,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
 
     // ★ 逐格激活时 Back 退出（先于其他 BackHandler 挂载顺序无碍：Compose 逆序启用）
     if (panelGuideActive) {
-        BackHandler { setPanelGuideActive(false) }
+        BackHandler { panelGuideExempted = setOf(cur) }
     }
 
     // ★ 逐格设置面板（长按按钮进入）：四项设置即改即生效
@@ -3404,7 +3411,8 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             dim = config.panelGuideDim,
             anim = config.panelGuideAnim,
             rtlOverride = config.panelGuideRtl,
-            focusMode = config.panelGuideFocus,
+            dimMode = config.panelGuideDimMode,
+            splitMode = config.panelGuideSplitMode,
             active = panelGuideActive,
             onSensitivity = { v ->
                 config = config.copy(panelGuideSensitivity = v)
@@ -3426,9 +3434,14 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                 com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideRtl", v)
                 configVersion++
             },
-            onFocus = { v ->
-                config = config.copy(panelGuideFocus = v)
-                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideFocus", v)
+            onDimMode = { v ->
+                config = config.copy(panelGuideDimMode = v)
+                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideDimMode", v)
+                configVersion++
+            },
+            onSplitMode = { v ->
+                config = config.copy(panelGuideSplitMode = v)
+                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideSplitMode", v)
                 configVersion++
             },
             onToggleActive = {

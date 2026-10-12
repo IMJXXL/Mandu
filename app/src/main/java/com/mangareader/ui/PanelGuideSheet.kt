@@ -22,6 +22,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.Switch
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -53,13 +54,15 @@ fun PanelGuideSheet(
     dim: Int,
     anim: Boolean,
     rtlOverride: Int,
-    focusMode: Int,
+    dimMode: Int,
+    splitMode: Int,
     active: Boolean,
     onSensitivity: (Int) -> Unit,
     onDim: (Int) -> Unit,
     onAnim: (Boolean) -> Unit,
     onRtl: (Int) -> Unit,
-    onFocus: (Int) -> Unit,
+    onDimMode: (Int) -> Unit,
+    onSplitMode: (Int) -> Unit,
     onToggleActive: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -139,19 +142,16 @@ fun PanelGuideSheet(
                     )
 
                     PanelChipRow(
-                        title = "选中的图",
-                        options = listOf("放大铺满" to 0, "原位高亮" to 1, "放大压暗" to 2),
-                        selected = focusMode,
-                        onSelect = onFocus,
+                        title = "其余画面",
+                        options = listOf("全部一样暗" to 0, "当前格原位稍亮" to 1),
+                        selected = dimMode,
+                        onSelect = onDimMode,
                     )
-                    Text(
-                        when (focusMode) {
-                            1 -> "整页保持原位不放大，选中格原位亮显、其余压暗"
-                            2 -> "放大铺满且选中格同步按压暗程度变暗（暗房/夜间护眼）"
-                            else -> "选中格放大铺满全屏（切格时其余区域压暗可见）"
-                        },
-                        style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
-                        modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 4.dp),
+                    PanelChipRow(
+                        title = "逐格条件",
+                        options = listOf("整页都能分才逐格" to 0, "能分几格分几格" to 1),
+                        selected = splitMode,
+                        onSelect = onSplitMode,
                     )
 
                     Column(Modifier.padding(horizontal = 24.dp, vertical = 8.dp)) {
@@ -191,13 +191,16 @@ fun PanelGuideSheet(
                     }
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
-                    Button(
-                        onClick = onToggleActive,
+                    Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 24.dp, vertical = 4.dp),
+                            .clickable { onToggleActive() }
+                            .padding(horizontal = 24.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
                     ) {
-                        Text(if (active) "退出逐格阅读" else "开始逐格阅读")
+                        Switch(checked = active, onCheckedChange = null)
+                        Text("逐格阅读", style = MaterialTheme.typography.bodyMedium)
                     }
                     Text(
                         "识别不到分格的页面按整页显示并在右下角提示，逐格模式保持到你手动关。" +

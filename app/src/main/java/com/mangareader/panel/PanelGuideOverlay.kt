@@ -27,7 +27,7 @@ import kotlin.math.abs
  * 绘制：整页 fit-center 铺底 → 当前格以外四矩形压暗(55%) → 当前格裁切亮显居中放大 + 描边。
  * 墨水屏（session.eink）：不压暗、不裁切放大、零动画，仅 3px 描边（评估报告 §7.3 墨水屏纪律）。
  * 手势：点按分区走 nav（RTL 语义与 CurlReaderView 同款：PREV 区=前进）；水平滑 ≥64dp 切格
- * （左滑=下一格，与 pager 手势惯例一致，不做 RTL 镜像）；末页末格再前进 = onExit 交回章末流程。
+ * （左滑=下一格，与 pager 手势惯例一致，不做 RTL 镜像）；末页末格再前进 = onChapterEnd 交回章末流程。
  * 识别中沿用上一帧画面 + 右下角"识别中"小字（KOReader 防闪纪律：原位换图不重建）。
  */
 class PanelGuideOverlay(context: Context) : View(context) {
@@ -58,20 +58,16 @@ class PanelGuideOverlay(context: Context) : View(context) {
         val animEnabled: Boolean = true,
         /** 页置信度降级门槛（设置面板灵敏度档位 → PanelTunables.confFailFor） */
         val minConf: Float = PanelTunables.CONF_FAIL,
-        /**
-         * 选中格显示模式（2026-10-11 用户追加"选中的图是否压暗"的选择）：
-         * 0=放大铺满（默认，选中格全亮，其余区域压暗仅在切格动画中可见）
-         * 1=原位高亮（整页不放大，选中格原位亮显+描边，其余压暗——压暗程度滑条在此模式全程可见）
-         * 2=放大铺满+选中格同步压暗（护眼/暗房：放大不变，选中格按压暗程度整体变暗）
-         */
-        val focusMode: Int = 0,
-        /** 超分联动取图（可空=无超分环境），语义见 [SrPage] */
+        val dimMode: Int = 0,
+        val splitMode: Int = 0,
+        val exemptedPages: Set<Int> = emptySet(),
         val srSource: ((Int) -> SrPage?)? = null,
-        /** 超分等待挂轮询：产物就绪后回调（主线程 post 由覆盖层负责） */
         val srPoll: ((Int, () -> Unit) -> Unit)? = null,
         val goToPage: (Int) -> Unit,
         val currentPage: () -> Int,
-        val onExit: () -> Unit,
+        val onExemptCurrentPage: (page: Int) -> Unit = {},
+        val onChapterEnd: () -> Unit = {},
+        val onCloseActive: () -> Unit = {},
     )
 
     private companion object {
@@ -151,29 +147,42 @@ class PanelGuideOverlay(context: Context) : View(context) {
 
     /** host 的 delegate.onPageChanged 桥入口 */
     fun onHostPageChanged(page: Int) {
-        if (session == null || page == shownPage) return
+        val s = session ?: return
+        if (page == shownPage) return
+        if (s.exemptedPages.isNotEmpty() && page !in s.exemptedPages) {
+            session = s.copy(exemptedPages = emptySet())
+            s.onExemptCurrentPage(-1)
+        }
         showPage(page)
     }
 
     // ———— 运行时热更新（设置面板即改即生效，不重开 begin）————
 
     /** 显示类：压暗程度/翻格动画/选中格显示模式——纯绘制参数，即改即生效，不触发重识别 */
-    fun onRenderSettingsChanged(dimAlpha: Int, animEnabled: Boolean, focusMode: Int) {
+    fun onRenderSettingsChanged(dimAlpha: Int, animEnabled: Boolean, dimMode: Int) {
         val s = session ?: return
-        if (s.dimAlpha == dimAlpha && s.animEnabled == animEnabled && s.focusMode == focusMode) return
-        session = s.copy(dimAlpha = dimAlpha, animEnabled = animEnabled, focusMode = focusMode)
+        if (s.dimAlpha == dimAlpha && s.animEnabled == animEnabled && s.dimMode == dimMode) return
+        session = s.copy(dimAlpha = dimAlpha, animEnabled = animEnabled, dimMode = dimMode)
         scrimPaint.alpha = dimAlpha
-        cropRect = null   // 模式切换（含进出原位高亮）重算裁切矩形
+        cropRect = null
         invalidate()
     }
 
     /** 识别类：置信门槛/阅读方向——清本书结果缓存并重检当前页（方向变了阅读序也要重排） */
-    fun onDetectSettingsChanged(minConf: Float, rtl: Boolean) {
+    fun onDetectSettingsChanged(minConf: Float, rtl: Boolean, splitMode: Int) {
         val s = session ?: return
-        if (s.minConf == minConf && s.rtl == rtl) return
-        session = s.copy(minConf = minConf, rtl = rtl)
+        if (s.minConf == minConf && s.rtl == rtl && s.splitMode == splitMode) return
+        session = s.copy(minConf = minConf, rtl = rtl, splitMode = splitMode)
         PanelDetector.Cache.clearBook(s.treePath)
         showPage(shownPage)
+    }
+
+    fun onExemptChanged(exemptedPages: Set<Int>) {
+        val s = session ?: return
+        session = s.copy(exemptedPages = exemptedPages)
+        val exempted = shownPage in exemptedPages
+        visibility = if (exempted) GONE else VISIBLE
+        invalidate()
     }
 
     override fun onDetachedFromWindow() {
@@ -189,6 +198,12 @@ class PanelGuideOverlay(context: Context) : View(context) {
         val s = session ?: return
         if (page !in s.pages.indices) return
         shownPage = page
+        if (page in s.exemptedPages) {
+            visibility = GONE
+            loadJob?.cancel()
+            return
+        }
+        visibility = VISIBLE
         loadJob?.cancel()
         val sCaptured = s
         loadJob = scope.launch {
@@ -262,7 +277,15 @@ class PanelGuideOverlay(context: Context) : View(context) {
             panelIdx++
             animateCropTo(currentCropTarget())
         } else {
-            requestPage((session?.currentPage?.invoke() ?: 0) + 1, 0)
+            val s = session
+            if (s != null && s.splitMode == 1 && r.boxes.size > 1 &&
+                boxesUnionArea(r.boxes) < PanelTunables.FULL_PAGE_AREA
+            ) {
+                visibility = GONE
+                invalidate()
+            } else {
+                requestPage((s?.currentPage?.invoke() ?: 0) + 1, 0)
+            }
         }
     }
 
@@ -280,7 +303,7 @@ class PanelGuideOverlay(context: Context) : View(context) {
         val s = session ?: return
         if (target !in s.pages.indices) {
             // 末页末格再前进 → 退出逐格，交回普通阅读的章末流程；首页首格回退不动作
-            if (target >= s.pages.size) s.onExit()
+            if (target >= s.pages.size) s.onChapterEnd()
             return
         }
         pendingLanding = landing
@@ -326,7 +349,7 @@ class PanelGuideOverlay(context: Context) : View(context) {
         when (s.nav.getAction(x / width, y / height)) {
             com.mangareader.native.NavigationAction.PREV -> if (s.rtl) nextPanel() else prevPanel()
             com.mangareader.native.NavigationAction.NEXT -> if (s.rtl) prevPanel() else nextPanel()
-            com.mangareader.native.NavigationAction.MENU -> s.onExit()
+            com.mangareader.native.NavigationAction.MENU -> s.onCloseActive()
         }
     }
 
@@ -374,7 +397,9 @@ class PanelGuideOverlay(context: Context) : View(context) {
         srcRect.set(0, 0, bmp.width, bmp.height)
         canvas.drawBitmap(bmp, srcRect, fullRect, cropPaint)
 
-        if (r == null || r.fallback || r.boxes.size <= 1 || s.eink) {
+        val partialSkip = s.splitMode == 0 && r != null && !r.fallback && r.boxes.size > 1 &&
+            boxesUnionArea(r.boxes) < PanelTunables.FULL_PAGE_AREA
+        if (r == null || r.fallback || r.boxes.size <= 1 || s.eink || partialSkip) {
             // 降级页/单格页/墨水屏：整页干净显示
             if (r != null && !r.fallback && r.boxes.isNotEmpty() && s.eink) {
                 // 墨水屏：仅描边当前格，不压暗不放大
@@ -388,7 +413,7 @@ class PanelGuideOverlay(context: Context) : View(context) {
                 borderPaint.color = s.accentColor
                 canvas.drawRect(panelRect, einkBorderPaint.apply { color = s.accentColor })
             }
-            drawHint(canvas, r)
+            drawHint(canvas, r, partialSkip)
             return
         }
 
@@ -400,24 +425,12 @@ class PanelGuideOverlay(context: Context) : View(context) {
             fullRect.left + box.right * fullRect.width(),
             fullRect.top + box.bottom * fullRect.height(),
         )
-        dimOutside(canvas, vw, vh)
-
-        when (s.focusMode) {
-            1 -> {
-                // 原位高亮：整页不放大，选中格亮显（不压暗）+ 描边——压暗全程可见
-                canvas.drawRect(panelRect, borderPaint.apply { color = s.accentColor })
-            }
-            2 -> {
-                // 放大铺满 + 选中格同步压暗（护眼）：压暗罩盖在裁切图上，描边最后画保持可见
-                drawCrop(canvas, bmp, box)
-                cropRect?.let { canvas.drawRect(it, scrimPaint) }
-                cropRect?.let { canvas.drawRect(it, borderPaint.apply { color = s.accentColor }) }
-            }
-            else -> {
-                // 默认：选中格裁切放大铺满全屏（全亮），压暗仅在切格动画中可见
-                drawCrop(canvas, bmp, box)
-            }
+        if (s.dimMode == 0) {
+            canvas.drawRect(0f, 0f, vw, vh, scrimPaint)
+        } else {
+            dimOutside(canvas, vw, vh)
         }
+        drawCrop(canvas, bmp, box)
         drawHint(canvas, r)
     }
 
@@ -469,33 +482,43 @@ class PanelGuideOverlay(context: Context) : View(context) {
             invalidate()
             return
         }
-        if (s.focusMode == 1) {
-            // 原位高亮无裁切矩形，切格=描边/压暗区原位跳变
-            cropRect = null
-            invalidate()
-            return
-        }
+
         animFrom = cropRect?.let { RectF(it) }
         animTo = RectF(target)
         animStartAt = System.currentTimeMillis()
         postInvalidateOnAnimation()
     }
 
-    private fun drawHint(canvas: Canvas, r: PanelPageResult?) {
+    private fun drawHint(canvas: Canvas, r: PanelPageResult?, partialSkip: Boolean = false) {
         when {
-            // 识别中（本页结果未到但旧位图还在显示）：右下角小字
             r == null && srWaiting ->
                 canvas.drawText("等待画质增强…", width - hintPaint.textSize * 6.9f, height - hintPaint.textSize * 1.6f, hintPaint)
             r == null ->
                 canvas.drawText("识别中…", width - hintPaint.textSize * 3.6f, height - hintPaint.textSize * 1.6f, hintPaint)
-            // ★ 降级页角标（2026-10-11 用户"经常不行"诊断：让识别失败可见——
-            //   这类页面按整页显示，与"功能没生效"观感相同，角标把两者区分开）
-            r.fallback ->
+            r.fallback || partialSkip ->
                 canvas.drawText(
                     "本页未识别到分格",
                     width - hintPaint.textSize * 8.4f, height - hintPaint.textSize * 1.6f, hintPaint,
                 )
         }
+    }
+
+    private fun boxesUnionArea(boxes: List<PanelBox>): Float {
+        if (boxes.isEmpty()) return 0f
+        var union = 0f
+        for (i in boxes.indices) {
+            val a = boxes[i]
+            var area = a.w * a.h
+            for (j in boxes.indices) {
+                if (j >= i) break
+                val b = boxes[j]
+                val ix = minOf(a.right, b.right) - maxOf(a.x, b.x)
+                val iy = minOf(a.bottom, b.bottom) - maxOf(a.y, b.y)
+                if (ix > 0 && iy > 0) area -= ix * iy
+            }
+            union += maxOf(0f, area)
+        }
+        return union.coerceIn(0f, 1f)
     }
 
     private fun lerp(a: Float, b: Float, t: Float): Float = a + (b - a) * t

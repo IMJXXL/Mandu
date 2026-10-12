@@ -144,6 +144,8 @@ data class ReaderConfig(
     val panelGuideRtl: Int = 0,
     /** 选中格显示模式：0=放大铺满（默认） 1=原位高亮（整页不放大） 2=放大铺满+选中格同步压暗 */
     val panelGuideFocus: Int = 0,
+    val panelGuideDimMode: Int = 0,
+    val panelGuideSplitMode: Int = 0,
 ) {
     enum class ScrollMode { VERTICAL, HORIZONTAL_LEFT, HORIZONTAL_RIGHT }
     @Deprecated("注释过时——clickFlipType.ordinal 正被 Reader/各视图使用；新模式 EDGE/KINDLISH 已接 buildNavigation") enum class ClickFlipType { NO, LEFT_RIGHT, DIAGONAL_LB_RT, DIAGONAL_LT_RB, L_SHAPE, EDGE, KINDLISH }
@@ -255,6 +257,8 @@ data class ReaderConfig(
             putBoolean("panelGuideAnim", panelGuideAnim)
             putInt("panelGuideRtl", panelGuideRtl)
             putInt("panelGuideFocus", panelGuideFocus)
+            putInt("panelGuideDimMode", panelGuideDimMode)
+            putInt("panelGuideSplitMode", panelGuideSplitMode)
             apply()
         }
     }
@@ -378,6 +382,8 @@ data class ReaderConfig(
                 panelGuideAnim = rBoolean("panelGuideAnim", true),
                 panelGuideRtl = rInt("panelGuideRtl", 0).coerceIn(0, 2),
                 panelGuideFocus = rInt("panelGuideFocus", 0).coerceIn(0, 2),
+                panelGuideDimMode = rInt("panelGuideDimMode", 0).coerceIn(0, 1),
+                panelGuideSplitMode = rInt("panelGuideSplitMode", 0).coerceIn(0, 1),
                 downsampleTier = run {
                     when (val raw = rawFor("downsampleTier")) {
                         is String -> try { DownsampleTier.valueOf(raw) } catch (_: Exception) { DownsampleTier.STANDARD }
@@ -543,6 +549,8 @@ data class ReaderConfig(
             "panelGuideAnim" to { it.panelGuideAnim },
             "panelGuideRtl" to { it.panelGuideRtl },
             "panelGuideFocus" to { it.panelGuideFocus },
+            "panelGuideDimMode" to { it.panelGuideDimMode },
+            "panelGuideSplitMode" to { it.panelGuideSplitMode },
         )
 
         /** 书内设置面板 diff：返回真正改动的键名（含全局键——由 ReaderScope 决定写层） */
