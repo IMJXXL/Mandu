@@ -874,8 +874,14 @@ class ArchiveEngine(private val ctx: Context) {
         return entries
     }
 
+    /** ★ 2026-10-12 开卷失败原因提示（真机复现问题2/3）：scan7z/scanEpub 空结果时写原因，
+     *  Reader 的「文件暂时找不到」弹窗读到则用其替换误导文案；listPages 入口清空防串书 */
+    @Volatile
+    var lastOpenHint: String? = null
+
     fun listPages(path: String): List<PageMeta> {
         requireNotRemote(path)
+        lastOpenHint = null
         synchronized(recentListPaths) { recentListPaths[path] = Unit }
         synchronized(pageListCache) {
             val cached = pageListCache[path]
@@ -2622,7 +2628,9 @@ class ArchiveEngine(private val ctx: Context) {
         fun epubFail(stage: String) {
             runCatching { com.mangareader.DiagTracer.markStatic("epub: empty $stage n=${doc.length}") }
         }
-        if (!com.mangareader.native.NativeEngine.isOpenZip(cacheKey)) epubFail("zipopen")
+        // ★ 2026-10-12 问题3 复现：截断下载的 epub 中央目录缺失 → isOpenZip=false，供结尾提示分流
+        val zipOpenNow = com.mangareader.native.NativeEngine.isOpenZip(cacheKey)
+        if (!zipOpenNow) epubFail("zipopen")
 
         // 解析 EPUB spine
         try {
@@ -2764,12 +2772,17 @@ class ArchiveEngine(private val ctx: Context) {
                 // ★ 无图 epub（纯文字书/DRM 乱名）：不缓存空表——旧代码连空表也进
                 //   sortedImageNamesCache，本进程内这本书永远秒回空=反复弹"文件暂时找不到"
                 epubFail("0img entries=${names.size}")
+                lastOpenHint = "此 EPUB 内没有可显示的图片页（可能是纯文字书或内容不受支持）"
                 return emptyList()
             }
             synchronized(sortedImageNamesCache) { sortedImageNamesCache[cacheKey] = sortedNames }
             return sortedNames.mapIndexed { idx, n -> PageMeta(idx, "zip", doc, idx, name = n.substringAfterLast("/").substringBeforeLast(".")) }
         }
         epubFail("namesnull")
+        // ★ 2026-10-12 问题3：zip 句柄都没开成 → 大概率中央目录缺失（截断下载/损坏），别再误报"找不到"
+        if (!zipOpenNow) {
+            lastOpenHint = "压缩包无法打开：文件可能损坏或未下载完整，建议重新下载后再试"
+        }
         return emptyList()
     }
 
@@ -3719,6 +3732,9 @@ class ArchiveEngine(private val ctx: Context) {
 
     private fun scan7z(tree: Uri, doc: String): List<PageMeta> {
         val pages = mutableListOf<PageMeta>()
+        // ★ 真机复现问题2（2026-10-12）：7z 里装的是嵌套分卷（mobi/zip 等）而非图片时，
+        //   两级扫描静默得 0 页 → 开卷误报"文件暂时找不到"。此处统计嵌套包数供提示分流。
+        var nestedComics = 0
         val uri = DocumentsContract.buildDocumentUriUsingTree(tree, doc)
         try {
             // ★ B1：借 fd 缓存列页（不再 detach 泄漏）；失败落下方 commons-compress 兜底链
@@ -3739,30 +3755,38 @@ class ArchiveEngine(private val ctx: Context) {
                     if (!entry.isDirectory && isImg(entry.name)) {
                         pages.add(PageMeta(idx, "7z", doc, idx))
                         idx++
+                    } else if (!entry.isDirectory && isComic(entry.name)) {
+                        nestedComics++
                     }
                     entry = sz.nextEntry
                 }
                 sz.close()
-                return pages
-            }
-            ctx.contentResolver.openInputStream(uri)?.use { input ->
-                val tmpFile = File(ctx.cacheDir, "tmp_7z_${System.currentTimeMillis()}.7z")
-                tmpFile.outputStream().use { out -> input.copyTo(out) }
-                try {
-                    val sz = SevenZFile(tmpFile)
-                    var idx = 0
-                    var entry = sz.nextEntry
-                    while (entry != null) {
-                        if (!entry.isDirectory && isImg(entry.name)) {
-                            pages.add(PageMeta(idx, "7z", doc, idx))
-                            idx++
+                if (pages.isNotEmpty()) return pages
+            } else {
+                ctx.contentResolver.openInputStream(uri)?.use { input ->
+                    val tmpFile = File(ctx.cacheDir, "tmp_7z_${System.currentTimeMillis()}.7z")
+                    tmpFile.outputStream().use { out -> input.copyTo(out) }
+                    try {
+                        val sz = SevenZFile(tmpFile)
+                        var idx = 0
+                        var entry = sz.nextEntry
+                        while (entry != null) {
+                            if (!entry.isDirectory && isImg(entry.name)) {
+                                pages.add(PageMeta(idx, "7z", doc, idx))
+                                idx++
+                            } else if (!entry.isDirectory && isComic(entry.name)) {
+                                nestedComics++
+                            }
+                            entry = sz.nextEntry
                         }
-                        entry = sz.nextEntry
-                    }
-                    sz.close()
-                } finally { tmpFile.delete() }
+                        sz.close()
+                    } finally { tmpFile.delete() }
+                }
             }
         } catch (e: Exception) { Log.e(TAG, "scan7z: ${e.message}") }
+        if (pages.isEmpty() && nestedComics > 0) {
+            lastOpenHint = "此压缩包内是 $nestedComics 个分卷文件（mobi/zip 等嵌套包），暂不支持作为漫画打开"
+        }
         return pages
     }
 

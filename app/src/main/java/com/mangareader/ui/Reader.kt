@@ -3270,12 +3270,16 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     //     清掉书架死条目（删书行=CASCADE 连同全部进度），「移除本卷进度」降级为普通按钮保留
     //     （目录书里只死一卷、其它卷还要读的场景）。
     if (showFileMissingDialog) {
+        // ★ 2026-10-12 问题2/3 复现：0 页 ≠ 文件丢失（7z 嵌套分卷/epub 损坏也走这）。
+        //   扫描器写入 lastOpenHint 的分流原因优先展示；无提示才用原"暂时无法访问"文案。
+        val openHint = try { engine?.lastOpenHint } catch (_: Exception) { null }
         AlertDialog(onDismissRequest = {
             showFileMissingDialog = false
             // 关闭 = 等同返回：不删 progress，留在原处
             viewing = false
-        }, title = { Text("文件暂时找不到") },
-            text = { Text("这一卷的源文件暂时无法访问，可能已被移动、删除，或权限发生变化。\n\n「移除本卷进度」只清这一卷的阅读记录；「从书架移除」会连书带全部进度一起删。") },
+        }, title = { Text(if (openHint != null) "无法打开此文件" else "文件暂时找不到") },
+            text = { Text(openHint
+                ?: "这一卷的源文件暂时无法访问，可能已被移动、删除，或权限发生变化。\n\n「移除本卷进度」只清这一卷的阅读记录；「从书架移除」会连书带全部进度一起删。") },
             confirmButton = {
                 Row {
                     TextButton(onClick = {
