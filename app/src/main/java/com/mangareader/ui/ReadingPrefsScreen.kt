@@ -138,7 +138,7 @@ internal val PREF_ROWS: List<PrefRow> = listOf(
     PrefRow("isDoubleTapZoom", "双击放大", 0, PrefEditor.Toggle(info = "关闭后双击不再缩放，快速连点按两次点击翻页计")),
     PrefRow("isFlipAnimation", "翻页动画", 0, PrefEditor.Group(listOf(
         PrefEditor.Part("isFlipAnimation", "翻页动画（点击翻页过渡）", PrefEditor.Toggle()),
-        PrefEditor.Part("isPageCurlAnimation", "仿真翻页Beta（仅静图左右翻页生效）", PrefEditor.Toggle()),
+        PrefEditor.Part("isPageCurlAnimation", "仿真翻页(Beta)", PrefEditor.Toggle(info = "仅静图左右翻页生效，拆分双页/动图等模式下失效")),
         PrefEditor.Part("isCurlContentAreaOnly", "翻页仅限画面区域", PrefEditor.Toggle()),
         PrefEditor.Part("curlBackContentAlpha", "背面透出程度（默认10%）", PrefEditor.Slider(0f, 1f, 19, pct)),
         PrefEditor.Part("curlShadowAlpha", "翻页阴影浓度（0=关闭，默认20%）", PrefEditor.Slider(0f, 0.5f, 9, pct)),
@@ -173,7 +173,7 @@ internal val PREF_ROWS: List<PrefRow> = listOf(
     // ── Tab 1 常规（顺序=书内面板第二页）──
     PrefRow("isShowPageNum", "显示页码", 1, PrefEditor.Toggle()),
     PrefRow("isImmersiveMode", "沉浸模式", 1, PrefEditor.Toggle()),
-    PrefRow("hideNavBarInReader", "非全面屏阅读时隐藏底部导航栏", 1, PrefEditor.Toggle(info = "仅隐藏底部系统导航栏，保留状态栏；适合非全面屏手势设备")),
+    PrefRow("hideNavBarInReader", "隐藏导航栏(非全面屏)", 1, PrefEditor.Toggle(info = "仅隐藏底部系统导航栏，保留状态栏；适合非全面屏手势设备")),
     PrefRow("isKeepScreenOn", "保持亮屏", 1, PrefEditor.Toggle()),
     PrefRow("seamlessNextVolume", "无缝续读下一卷", 1, PrefEditor.Toggle(info = "读到卷末自动进入同书下一卷，无过渡页")),
     PrefRow("autoWebtoon", "自动进入条漫模式", 1, PrefEditor.Toggle(info = "新书首开按图片宽高比智能判定")),

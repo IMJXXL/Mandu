@@ -443,12 +443,12 @@ private fun ReadingModeTab(config: ReaderConfig, mode: Mode, bookId: Long, onCon
             }
         }
 
-        CheckboxItem("自动放大横向图片（宽图自动贴满高度；仅适应屏幕档生效）", config.landscapeZoom) { onConfigChange(config.copy(landscapeZoom = it)) }
-        CheckboxItem("双击放大（关闭后快速连点=两次点击翻页）", config.isDoubleTapZoom) { onConfigChange(config.copy(isDoubleTapZoom = it)) }
+        CheckboxItem("自动放大横向图片", config.landscapeZoom, info = "宽图自动贴满高度；仅适应屏幕档生效") { onConfigChange(config.copy(landscapeZoom = it)) }
+        CheckboxItem("双击放大", config.isDoubleTapZoom, info = "关闭后快速连点=两次点击翻页") { onConfigChange(config.copy(isDoubleTapZoom = it)) }
         GroupTitle("翻页")
         CheckboxItem("翻页动画（点击翻页过渡）", config.isFlipAnimation) { onConfigChange(config.copy(isFlipAnimation = it)) }
         if (config.isFlipAnimation) {
-            CheckboxItem("仿真翻页Beta（仅静图左右翻页生效，拆分双页/动图等模式下失效）", config.isPageCurlAnimation) { onConfigChange(config.copy(isPageCurlAnimation = it)) }
+            CheckboxItem("仿真翻页(Beta)", config.isPageCurlAnimation) { onConfigChange(config.copy(isPageCurlAnimation = it)) }
             if (config.isPageCurlAnimation) {
                 val sheetCtx = androidx.compose.ui.platform.LocalContext.current
                 var curlSoundOn by remember {
@@ -460,14 +460,14 @@ private fun ReadingModeTab(config: ReaderConfig, mode: Mode, bookId: Long, onCon
                 }
             }
             if (config.isPageCurlAnimation) {
-                CheckboxItem("翻页仅限画面区域（画面外的留边不参与翻页动画）", config.isCurlContentAreaOnly) { onConfigChange(config.copy(isCurlContentAreaOnly = it)) }
-                SliderItem("背面透出程度（翻页背面内容的可见强度，默认10%；双页透出下一页，单页为背面镜像明暗）", config.curlBackContentAlpha, 0f..1f, 19, "${(config.curlBackContentAlpha * 100).toInt()}%") {
+                CheckboxItem("翻页仅限画面区域", config.isCurlContentAreaOnly, info = "画面外的留边不参与翻页动画") { onConfigChange(config.copy(isCurlContentAreaOnly = it)) }
+                SliderItem("背面透出程度", config.curlBackContentAlpha, 0f..1f, 19, "${(config.curlBackContentAlpha * 100).toInt()}%") {
                     onConfigChange(config.copy(curlBackContentAlpha = it))
                 }
-                SliderItem("翻页阴影浓度（0=关闭，默认20%）", config.curlShadowAlpha, 0f..0.5f, 9, "${(config.curlShadowAlpha * 100).toInt()}%") {
+                SliderItem("翻页阴影浓度", config.curlShadowAlpha, 0f..0.5f, 9, "${(config.curlShadowAlpha * 100).toInt()}%") {
                     onConfigChange(config.copy(curlShadowAlpha = it))
                 }
-                SliderItem("书脊阴影浓度（双页书脊装订沟，0=关闭，默认9%）", config.spineShadowAlpha, 0f..0.3f, 29, "${(config.spineShadowAlpha * 100).toInt()}%") {
+                SliderItem("书脊阴影浓度", config.spineShadowAlpha, 0f..0.3f, 29, "${(config.spineShadowAlpha * 100).toInt()}%") {
                     onConfigChange(config.copy(spineShadowAlpha = it))
                 }
             }
@@ -512,7 +512,7 @@ private fun ReadingModeTab(config: ReaderConfig, mode: Mode, bookId: Long, onCon
         // ★ 三态互斥（2026-10-07 用户定则）：拆分优先——开启拆分=退出合并态（回单页布局、
         //   关横屏自动双页），合并状态下不能拆分；关闭拆分无副作用。拆分开关自身恒可点
         //   （若灰显会与横屏自动双页的灰显互相锁死，旧数据两态并存时谁也关不掉）
-        CheckboxItem("拆分双页（跨页图拆成左右两页，翻页/条漫均生效）", config.doublePageSplit) {
+        CheckboxItem("拆分双页", config.doublePageSplit, info = "跨页图拆成左右两页，翻页/条漫均生效") {
             onConfigChange(
                 if (it) config.copy(
                     doublePageSplit = true,
@@ -525,7 +525,7 @@ private fun ReadingModeTab(config: ReaderConfig, mode: Mode, bookId: Long, onCon
         }
         // ★ 上限 49：50% 每侧=两侧合计 100% 画面归零（用户 10-07 实测"50就没了"）；
         //   无负值——负留白是旧 dp 版语义，百分比版 0=贴边
-        SliderItem("侧边留白（屏宽百分比，上限49%）", config.imageMarginH.coerceIn(0, 49).toFloat(), 0f..49f, 49, "${config.imageMarginH.coerceIn(0, 49)}%") {
+        SliderItem("侧边留白", config.imageMarginH.coerceIn(0, 49).toFloat(), 0f..49f, 49, "${config.imageMarginH.coerceIn(0, 49)}%") {
             onConfigChange(config.copy(imageMarginH = it.toInt()))
         }
         SettingsChipRow("双页中缝") {
@@ -569,7 +569,7 @@ private fun ReadingModeTab(config: ReaderConfig, mode: Mode, bookId: Long, onCon
 private fun GeneralTab(config: ReaderConfig, onConfigChange: (ReaderConfig) -> Unit) {
     CheckboxItem("显示页码", config.isShowPageNum) { onConfigChange(config.copy(isShowPageNum = it)) }
     CheckboxItem("沉浸式模式", config.isImmersiveMode) { onConfigChange(config.copy(isImmersiveMode = it)) }
-    CheckboxItem("非全面屏阅读时隐藏底部导航栏", config.hideNavBarInReader) { onConfigChange(config.copy(hideNavBarInReader = it)) }
+    CheckboxItem("隐藏导航栏(非全面屏)", config.hideNavBarInReader) { onConfigChange(config.copy(hideNavBarInReader = it)) }
     CheckboxItem("保持屏幕常亮", config.isKeepScreenOn) { onConfigChange(config.copy(isKeepScreenOn = it)) }
 
     // ★ N1：无缝续读（默认关；仅同本分卷；开启时读到卷末静默进入下一卷，无过渡页无确认弹窗）
