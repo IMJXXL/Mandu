@@ -2585,125 +2585,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         )
     }
     Scaffold(
-        topBar = {
-            // ★ 快赢 #1：菜单滑入滑出（200ms；墨水屏自动关；不挡触摸——退场后移出命中区）
-            //   ★ F8：槽位用 AnimatedBarVisibility——滑出与占位高度塌缩同步，阅读区不再尾帧突跳
-            AnimatedBarVisibility(
-                visible = (ui || !viewing) && !landscapeReading,
-                animate = !config.isEinkMode,
-            ) {
-                val pageSubtitle = if (viewing && displayPages.isNotEmpty() && cur >= 0) {
-                    val totalCount = if (expandedPageCount > 0) expandedPageCount else displayPages.size
-                    val p = if (cur < displayPages.size) displayPages[cur] else displayPages.last()
-                    val name = p.name.ifEmpty { p.ext.substringAfterLast("/").substringBeforeLast(".") }
-                    "${cur + 1}/$totalCount  $name"
-                } else ""
-                val hideAllTitlesPrefs = ctx.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE)
-                val hideAllTitles = hideAllTitlesPrefs.getBoolean("hide_all_titles", false)
-                val inBookContinueOn = prefs.getBoolean("inbook_continue_read", true)
-                val continueTarget = if (inBookContinueOn && !viewing && items.isNotEmpty()) {
-                    remember(items, navStack, progressForToc) {
-                        computeInBookContinueTarget(navStack.lastOrNull(), progressForToc)
-                    }
-                } else null
-                ReaderTopBar(
-                    title = computeReaderTitle(book, navStack, viewing, hideAllTitles),
-                    subtitle = pageSubtitle,
-                    viewing = viewing,
-                    bgColor = if (viewing) bgColor else MaterialTheme.colorScheme.surface,
-                    isFavorite = book?.isFavorite ?: false,
-                    isHidden = book?.isHidden ?: false,
-                    onBack = ::goBack,
-                    onFavoriteClick = {
-                        book?.let { b ->
-                            val newFav = !(b.isFavorite)
-                            scope.launch {
-                                withContext(Dispatchers.IO) { dao.updateBook(b.copy(isFavorite = newFav)) }
-                                book = b.copy(isFavorite = newFav)
-                            }
-                        }
-                    },
-                    onRenameClick = {
-                        renameInput = book?.title ?: ""
-                        showRename = true
-                    },
-                    onAddToShelfClick = {
-                        book?.let { b ->
-                            scope.launch {
-                                withContext(Dispatchers.IO) { dao.setHidden(b.id, false) }
-                                book = b.copy(isHidden = false)
-                            }
-                        }
-                    },
-                    onContinue = if (continueTarget != null) {
-                        {
-                            loading = true; viewing = false; pageList = emptyList(); errorMsg = null
-                            scope.launch {
-                                try {
-                                    val bookRoot = navStack.firstOrNull() ?: book?.filePath
-                                    if (bookRoot != null) {
-                                        val contCtx = buildContinueContext(bookRoot, continueTarget.path)
-                                        navStack = contCtx.navStack
-                                        if (contCtx.tocItems.isNotEmpty()) tocItems = contCtx.tocItems
-                                        enterReader(contCtx.navStack.last())
-                                    }
-                                } catch (e: Exception) { errorMsg = "加载失败: ${e.message}" }
-                                loading = false
-                            }
-                        }
-                    } else null,
-                    continueTargetName = if (continueTarget != null) continueDisplayName(continueTarget.path) else ""
-                )
-            }
-        },
         containerColor = bgColor,
-        bottomBar = {
-            // ★ F8：同顶栏——滑出与高度塌缩同步，阅读区平滑回收
-            AnimatedBarVisibility(
-                visible = viewing && ui && !landscapeReading,
-                animate = !config.isEinkMode,
-            ) {
-                Column(Modifier.fillMaxWidth()) {
-                    ReaderBottomBar(actions = buildList {
-                        add(BottomBarAction(Icons.Default.Menu, "目录") { showToc = !showToc })
-                        add(BottomBarAction(
-                            if (pageBookmarked) Icons.Default.BookmarkAdded else Icons.Default.BookmarkAdd,
-                            if (pageBookmarked) "已书签" else "书签",
-                            isActive = pageBookmarked
-                        ) { toggleBookmark() })
-                        add(BottomBarAction(Icons.Default.AutoFixHigh, "画质增强") { showSrPanel = true })
-                        // ★ 逐格阅读：点击按钮开设置面板（用户定稿：直切不需要）；
-                        //   开关开启后即使本书模式暂不支持也显示（保证能进面板关掉）
-                        if (panelGuideUsable || panelGuideActive) {
-                            add(BottomBarAction(
-                                Icons.Default.GridView,
-                                "逐格阅读",
-                                isActive = panelGuideActive,
-                            ) { showPanelGuideSheet = true })
-                        }
-                        // 超分作用域已开启 / 离线批量产物 / 本页增强结果（页级产物回填内存）→ 出现"对比"按钮
-                        // ★ 2026-10-03：读 srTick 订阅管线事件——emitReady（含产物回填出结果）会
-                        //   bump tick（SrCore.emitReady），按钮在结果落地的同一拍出现
-                        val srCompareVisible = com.mangareader.sr.SrUiState.scope.intValue > 0 ||
-                            com.mangareader.sr.SrPipeline.sessionHasBatch ||
-                            com.mangareader.sr.SrUiState.compareActive.value ||
-                            run {
-                                com.mangareader.sr.SrUiState.srTick.intValue // 订阅节拍
-                                val c = cur
-                                !com.mangareader.sr.SrPipeline.computing(c) && com.mangareader.sr.SrPipeline.peekSrMemory(c) != null
-                            }
-                        if (srCompareVisible) {
-                            add(BottomBarAction(Icons.Default.CompareArrows, if (com.mangareader.sr.SrUiState.compareActive.value) "退出对比" else "对比") {
-                                com.mangareader.sr.SrUiState.compareActive.value = !com.mangareader.sr.SrUiState.compareActive.value
-                            })
-                        }
-                        add(BottomBarAction(Icons.Default.Settings, "设置") { showSettings = true })
-                    }, bgColor = if (viewing) bgColor else MaterialTheme.colorScheme.surface)
-                    // 进度条放在底部（横竖都一样；横屏时由侧边胶囊 chrome 底部胶囊接管）
-                    chapterNav()
-                }
-            }
-        }
     ) { pad ->
         val shouldApplyPadding = !config.isImmersiveMode || ui || !viewing
         Box(Modifier.fillMaxSize().background(if (viewing) bgColor else MaterialTheme.colorScheme.surface)) {
@@ -3200,6 +3082,125 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                         onSettings = { showSettings = true },
                         chapterNavigator = chapterNav
                     )
+                }
+                // REQ-006: chrome overlay - 显隐不改变 content padding
+                Box(Modifier.align(Alignment.TopStart).fillMaxWidth()) {
+                    // ★ 快赢 #1：菜单滑入滑出（200ms；墨水屏自动关；不挡触摸——退场后移出命中区）
+                    //   ★ F8：槽位用 AnimatedBarVisibility——滑出与占位高度塌缩同步，阅读区不再尾帧突跳
+                    AnimatedBarVisibility(
+                        visible = (ui || !viewing) && !landscapeReading,
+                        animate = !config.isEinkMode,
+                    ) {
+                        val pageSubtitle = if (viewing && displayPages.isNotEmpty() && cur >= 0) {
+                            val totalCount = if (expandedPageCount > 0) expandedPageCount else displayPages.size
+                            val p = if (cur < displayPages.size) displayPages[cur] else displayPages.last()
+                            val name = p.name.ifEmpty { p.ext.substringAfterLast("/").substringBeforeLast(".") }
+                            "${cur + 1}/$totalCount  $name"
+                        } else ""
+                        val hideAllTitlesPrefs = ctx.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE)
+                        val hideAllTitles = hideAllTitlesPrefs.getBoolean("hide_all_titles", false)
+                        val inBookContinueOn = prefs.getBoolean("inbook_continue_read", true)
+                        val continueTarget = if (inBookContinueOn && !viewing && items.isNotEmpty()) {
+                            remember(items, navStack, progressForToc) {
+                                computeInBookContinueTarget(navStack.lastOrNull(), progressForToc)
+                            }
+                        } else null
+                        ReaderTopBar(
+                            title = computeReaderTitle(book, navStack, viewing, hideAllTitles),
+                            subtitle = pageSubtitle,
+                            viewing = viewing,
+                            bgColor = if (viewing) bgColor else MaterialTheme.colorScheme.surface,
+                            isFavorite = book?.isFavorite ?: false,
+                            isHidden = book?.isHidden ?: false,
+                            onBack = ::goBack,
+                            onFavoriteClick = {
+                                book?.let { b ->
+                                    val newFav = !(b.isFavorite)
+                                    scope.launch {
+                                        withContext(Dispatchers.IO) { dao.updateBook(b.copy(isFavorite = newFav)) }
+                                        book = b.copy(isFavorite = newFav)
+                                    }
+                                }
+                            },
+                            onRenameClick = {
+                                renameInput = book?.title ?: ""
+                                showRename = true
+                            },
+                            onAddToShelfClick = {
+                                book?.let { b ->
+                                    scope.launch {
+                                        withContext(Dispatchers.IO) { dao.setHidden(b.id, false) }
+                                        book = b.copy(isHidden = false)
+                                    }
+                                }
+                            },
+                            onContinue = if (continueTarget != null) {
+                                {
+                                    loading = true; viewing = false; pageList = emptyList(); errorMsg = null
+                                    scope.launch {
+                                        try {
+                                            val bookRoot = navStack.firstOrNull() ?: book?.filePath
+                                            if (bookRoot != null) {
+                                                val contCtx = buildContinueContext(bookRoot, continueTarget.path)
+                                                navStack = contCtx.navStack
+                                                if (contCtx.tocItems.isNotEmpty()) tocItems = contCtx.tocItems
+                                                enterReader(contCtx.navStack.last())
+                                            }
+                                        } catch (e: Exception) { errorMsg = "加载失败: ${e.message}" }
+                                        loading = false
+                                    }
+                                }
+                            } else null,
+                            continueTargetName = if (continueTarget != null) continueDisplayName(continueTarget.path) else ""
+                        )
+                    }
+                }
+                Box(Modifier.align(Alignment.BottomStart).fillMaxWidth()) {
+                    // ★ F8：同顶栏——滑出与高度塌缩同步，阅读区平滑回收
+                    AnimatedBarVisibility(
+                        visible = viewing && ui && !landscapeReading,
+                        animate = !config.isEinkMode,
+                    ) {
+                        Column(Modifier.fillMaxWidth()) {
+                            ReaderBottomBar(actions = buildList {
+                                add(BottomBarAction(Icons.Default.Menu, "目录") { showToc = !showToc })
+                                add(BottomBarAction(
+                                    if (pageBookmarked) Icons.Default.BookmarkAdded else Icons.Default.BookmarkAdd,
+                                    if (pageBookmarked) "已书签" else "书签",
+                                    isActive = pageBookmarked
+                                ) { toggleBookmark() })
+                                add(BottomBarAction(Icons.Default.AutoFixHigh, "画质增强") { showSrPanel = true })
+                                // ★ 逐格阅读：点击按钮开设置面板（用户定稿：直切不需要）；
+                                //   开关开启后即使本书模式暂不支持也显示（保证能进面板关掉）
+                                if (panelGuideUsable || panelGuideActive) {
+                                    add(BottomBarAction(
+                                        Icons.Default.GridView,
+                                        "逐格阅读",
+                                        isActive = panelGuideActive,
+                                    ) { showPanelGuideSheet = true })
+                                }
+                                // 超分作用域已开启 / 离线批量产物 / 本页增强结果（页级产物回填内存）→ 出现"对比"按钮
+                                // ★ 2026-10-03：读 srTick 订阅管线事件——emitReady（含产物回填出结果）会
+                                //   bump tick（SrCore.emitReady），按钮在结果落地的同一拍出现
+                                val srCompareVisible = com.mangareader.sr.SrUiState.scope.intValue > 0 ||
+                                    com.mangareader.sr.SrPipeline.sessionHasBatch ||
+                                    com.mangareader.sr.SrUiState.compareActive.value ||
+                                    run {
+                                        com.mangareader.sr.SrUiState.srTick.intValue // 订阅节拍
+                                        val c = cur
+                                        !com.mangareader.sr.SrPipeline.computing(c) && com.mangareader.sr.SrPipeline.peekSrMemory(c) != null
+                                    }
+                                if (srCompareVisible) {
+                                    add(BottomBarAction(Icons.Default.CompareArrows, if (com.mangareader.sr.SrUiState.compareActive.value) "退出对比" else "对比") {
+                                        com.mangareader.sr.SrUiState.compareActive.value = !com.mangareader.sr.SrUiState.compareActive.value
+                                    })
+                                }
+                                add(BottomBarAction(Icons.Default.Settings, "设置") { showSettings = true })
+                            }, bgColor = if (viewing) bgColor else MaterialTheme.colorScheme.surface)
+                            // 进度条放在底部（横竖都一样；横屏时由侧边胶囊 chrome 底部胶囊接管）
+                            chapterNav()
+                        }
+                    }
                 }
             }
         }
