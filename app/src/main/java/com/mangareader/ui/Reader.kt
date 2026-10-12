@@ -2670,8 +2670,8 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                         //   开关开启后即使本书模式暂不支持也显示（保证能进面板关掉）
                         if (panelGuideUsable || panelGuideActive) {
                             add(BottomBarAction(
-                                if (panelGuideActive) Icons.Default.Close else Icons.Default.GridView,
-                                if (panelGuideActive) "退出逐格" else "逐格阅读",
+                                Icons.Default.GridView,
+                                "逐格阅读",
                                 isActive = panelGuideActive,
                             ) { showPanelGuideSheet = true })
                         }

@@ -119,8 +119,8 @@ fun LandscapeReaderChrome(
                 railButton(if (pageBookmarked) Icons.Default.BookmarkAdded else Icons.Default.BookmarkAdd, if (pageBookmarked) "已书签" else "书签", active = pageBookmarked) { onBookmark() }
                 railButton(Icons.Default.AutoFixHigh, "画质增强") { onSrPanel() }
                 if (showPanelGuide) railButton(
-                    if (panelGuideActive) Icons.Default.Close else Icons.Default.GridView,
-                    if (panelGuideActive) "退出逐格" else "逐格阅读",
+                    Icons.Default.GridView,
+                    "逐格阅读",
                     active = panelGuideActive,
                 ) { onPanelGuide() }
                 if (showCompare) railButton(Icons.Default.CompareArrows, if (compareActive) "退出对比" else "对比", active = compareActive) { onCompare() }
