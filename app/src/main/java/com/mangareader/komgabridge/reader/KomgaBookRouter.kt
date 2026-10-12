@@ -65,12 +65,13 @@ object KomgaBookRouter {
                     val bookDef = async { apiClient.getBook(ref.bookId) }
                     pagesDef.await() to bookDef.await()
                 }
+                isPdf = book.media.mediaType.startsWith("application/pdf", ignoreCase = true)
                 if (p.isEmpty()) {
                     if (book.media.mediaProfile == "EPUB") return OpenResult.Unsupported
-                    return OpenResult.Failed("该章节无页面")
+                    return OpenResult.Failed(if (isPdf) "PDF页表为空，服务端可能未生成页表" else "该章节无页面")
                 }
                 pages = p
-                isPdf = book.media.mediaType == "application/pdf"
+
                 title = book.metadata.title.ifEmpty { book.name }
                 // ★ 独立审查中#2：缓存有界——超限先清扫过期条目，仍超限整体清空（防无界累积）
                 if (pagesCache.size > 64) {
@@ -110,6 +111,8 @@ object KomgaBookRouter {
             msg.contains("auth") || t is com.mangareader.komgabridge.api.KomgaAuthException -> "认证失败"
             msg.contains("timeout") || msg.contains("connection") -> "连接超时"
             msg.contains("not found") -> "资源不存在"
+            msg.contains("不支持PDF转图") -> "服务端不支持PDF转图，请检查Komga版本或配置"
+            msg.contains("PDF页表为空") -> msg
             else -> msg.ifEmpty { "打开失败" }
         }
     }

@@ -64,6 +64,7 @@ class KomgaApiClient(
         return when (code) {
             401, 403 -> KomgaAuthException("认证失败")
             404 -> KomgaException("资源不存在")
+            406, 415 -> KomgaException("服务端不支持PDF转图($code)")
             in 500..599 -> KomgaException("服务器错误 $code")
             else -> KomgaException("请求失败 $code")
         }

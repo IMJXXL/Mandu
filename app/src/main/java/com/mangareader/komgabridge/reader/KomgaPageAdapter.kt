@@ -32,7 +32,7 @@ class KomgaPageAdapter(
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (t: Throwable) {
-            Log.w(KomgaConstants.LOG_TAG, "loadPageRaw($index) failed: ${t.message}")
+            Log.w(KomgaConstants.LOG_TAG, "loadPageRaw($index) failed${if (isPdf) " [PDF]" else ""}: ${t.message}")
             null
         }
     }
