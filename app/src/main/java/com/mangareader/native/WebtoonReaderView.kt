@@ -1241,6 +1241,7 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
         val cached = synchronized(bitmapCache) { bitmapCache[idx] }
         if (cached != null) return
         val startMs = android.os.SystemClock.uptimeMillis()
+        try {
         val bmp = withContext(Dispatchers.IO) {
             var result: Bitmap? = null
             val meta = meta0
@@ -1274,6 +1275,11 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
             if (cost > 500) diagMark("slow-load idx=$idx ${cost}ms ${bmp.width}x${bmp.height} src=${meta0.source}")
         } else {
             ArchiveEngine.w("WebtoonRV", "preload FAIL idx=$idx src=${pageList.getOrNull(idx)?.source}")
+        }
+        } catch (ce: kotlinx.coroutines.CancellationException) {
+            ArchiveEngine.w("WebtoonRV", "preload CANCELLED idx=$idx（预载被取消）")
+            scheduleGrayRetry(idx)
+            throw ce
         }
     }
 
