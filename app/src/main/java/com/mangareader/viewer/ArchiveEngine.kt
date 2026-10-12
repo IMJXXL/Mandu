@@ -989,6 +989,23 @@ class ArchiveEngine(private val ctx: Context) {
      */
     fun loadPageRaw(meta: PageMeta, treeStr: String): ByteArray? {
         requireNotRemote(treeStr)
+        if (treeStr.startsWith("z:")) {
+            val inner = treeStr.removePrefix("z:")
+            val sepIdx = inner.indexOf("//")
+            if (sepIdx >= 0) {
+                var archPath = inner.substring(0, sepIdx)
+                if (!archPath.startsWith("a:") && !archPath.startsWith("d:")) archPath = "a:$archPath"
+                val subPath = inner.substring(sepIdx + 2)
+                if (subPath.isNotEmpty() && !subPath.endsWith('/') && isNestedArchive(subPath.substringAfterLast('/'))) {
+                    val nestedFile = extractNestedArchive(archPath, subPath)
+                    if (nestedFile != null) {
+                        val nestedExt = subPath.substringAfterLast('.').lowercase()
+                        return readNestedPageRaw(nestedFile, nestedExt, meta.localIdx)
+                    }
+                    return null
+                }
+            }
+        }
         // 一、ZIP + treeStr z:→ NativeEngine.readZipEntry
         if (treeStr.isNotEmpty() && meta.source == "zip") {
 
@@ -1338,6 +1355,29 @@ class ArchiveEngine(private val ctx: Context) {
         requireNotRemote(treeStr)
         // 签名校验：未验证时随机返回 null 导致黑页
         if (!com.mangareader.SignatureVerifier.isVerified && meta.index % 3 == 0) return null
+        if (treeStr.startsWith("z:")) {
+            val inner = treeStr.removePrefix("z:")
+            val sepIdx = inner.indexOf("//")
+            if (sepIdx >= 0) {
+                var archPath = inner.substring(0, sepIdx)
+                if (!archPath.startsWith("a:") && !archPath.startsWith("d:")) archPath = "a:$archPath"
+                val subPath = inner.substring(sepIdx + 2)
+                if (subPath.isNotEmpty() && !subPath.endsWith('/') && isNestedArchive(subPath.substringAfterLast('/'))) {
+                    val key = "$treeStr|${meta.index}|${meta.splitSide}"
+                    cacheGet(key)?.let { return it }
+                    val nestedFile = extractNestedArchive(archPath, subPath)
+                    if (nestedFile != null) {
+                        val nestedExt = subPath.substringAfterLast('.').lowercase()
+                        val rawData = readNestedPageRaw(nestedFile, nestedExt, meta.localIdx)
+                        if (rawData != null) {
+                            val half = applySplitSide(decodeBitmap(rawData), meta)
+                            if (half != null) { cachePut(key, half); return half }
+                        }
+                    }
+                    return null
+                }
+            }
+        }
         // For ZIP/EPUB: go straight to loadFromZip (libzip fd-based, skip getNativeArchive)
         if (treeStr.isNotEmpty() && meta.source == "zip") {
             // z: path — ZIP internal directory
@@ -4509,6 +4549,23 @@ class ArchiveEngine(private val ctx: Context) {
         }
         android.util.Log.d(TAG, "listNestedArchivePages: ext=$lowerExt total=${pages.size}")
         return pages
+    }
+
+    private fun readNestedPageRaw(file: File, ext: String, localIdx: Int): ByteArray? {
+        val lowerExt = ext.lowercase()
+        return try {
+            if (lowerExt in listOf("mobi", "azw", "azw3", "prc", "pdb")) {
+                loadMobiPageFromFile(file, localIdx)
+            } else {
+                android.os.ParcelFileDescriptor.open(file, android.os.ParcelFileDescriptor.MODE_READ_ONLY).use { pfd ->
+                    val got = readArchiveEntriesViaFd(pfd.fd, setOf(localIdx))
+                    got[localIdx]
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "readNestedPageRaw: ${e.message}")
+            null
+        }
     }
 }
 
