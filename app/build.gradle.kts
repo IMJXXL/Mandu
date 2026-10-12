@@ -17,8 +17,8 @@ android {
         applicationId = "com.mangareader"
         minSdk = 24
         targetSdk = 37
-versionCode = 69
-versionName = "1.397"
+versionCode = 70
+versionName = "1.398"
 
         externalNativeBuild {
             cmake {

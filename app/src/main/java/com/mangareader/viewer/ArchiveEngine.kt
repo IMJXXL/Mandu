@@ -176,6 +176,20 @@ class ArchiveEngine(private val ctx: Context) {
             Log.e(tag, msg)
             synchronized(debugLogBuffer) { debugLogBuffer.appendLine("${System.currentTimeMillis()} E/$tag: $msg") }
         }
+
+        internal val NESTED_ARCHIVE_EXTS = setOf(
+            "mobi", "azw", "azw3", "prc", "pdb",
+            "zip", "cbz", "rar", "cbr", "7z", "cb7", "tar", "cbt", "tgz", "txz",
+        )
+
+        internal fun isNestedArchive(n: String): Boolean {
+            val lower = n.lowercase()
+            return NESTED_ARCHIVE_EXTS.any { lower.endsWith(".$it") }
+        }
+
+        internal fun isFlatZip(root: ZipDirNode): Boolean {
+            return root.children.isEmpty() || root.children.all { !it.isDir }
+        }
     }
 
     private val config by lazy { com.mangareader.data.ReaderConfig.load(ctx) }
@@ -4200,15 +4214,6 @@ class ArchiveEngine(private val ctx: Context) {
                 it.endsWith(".tar") || it.endsWith(".cbt") || it.endsWith(".tgz") || it.endsWith(".tbz2") || it.endsWith(".txz")
     }
 
-    private val NESTED_ARCHIVE_EXTS = setOf(
-        "mobi", "azw", "azw3", "prc", "pdb",
-        "zip", "cbz", "rar", "cbr", "7z", "cb7", "tar", "cbt", "tgz", "txz",
-    )
-
-    private fun isNestedArchive(n: String): Boolean {
-        val lower = n.lowercase()
-        return NESTED_ARCHIVE_EXTS.any { lower.endsWith(".$it") }
-    }
 
     // ==================== ZIP目录导航 ====================
 
@@ -4270,9 +4275,6 @@ class ArchiveEngine(private val ctx: Context) {
         }
     }
 
-    private fun isFlatZip(root: ZipDirNode): Boolean {
-        return root.children.isEmpty() || root.children.all { !it.isDir }
-    }
 
     fun hasZipSubDirs(path: String): Boolean {
         android.util.Log.d(TAG, "hasZipSubDirs path=$path")
