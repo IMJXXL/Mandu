@@ -293,7 +293,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         panelGuideActive = v
         prefs.edit().putBoolean("panelGuideActive", v).apply()
     }
-    // ★ 逐格设置面板：点击按钮=直接开关（不再经面板），长按按钮=打开本面板
+    // ★ 逐格设置面板：点击按钮打开（开始/退出与设置都在面板内，持久全局开关语义）
     var showPanelGuideSheet by remember { mutableStateOf(false) }
     var showRename by remember { mutableStateOf(false) }
     var renameInput by remember { mutableStateOf("") }
@@ -2624,16 +2624,14 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                             isActive = pageBookmarked
                         ) { toggleBookmark() })
                         add(BottomBarAction(Icons.Default.AutoFixHigh, "画质增强") { showSrPanel = true })
-                        // ★ 逐格阅读：全局开关按钮——点击直接开/关（用户拍板），长按开设置面板；
-                        //   开关开启后即使本书模式暂不支持也显示（保证能关掉）
+                        // ★ 逐格阅读：点击按钮开设置面板（用户定稿：直切不需要）；
+                        //   开关开启后即使本书模式暂不支持也显示（保证能进面板关掉）
                         if (panelGuideUsable || panelGuideActive) {
                             add(BottomBarAction(
                                 if (panelGuideActive) Icons.Default.Close else Icons.Default.GridView,
                                 if (panelGuideActive) "退出逐格" else "逐格阅读",
                                 isActive = panelGuideActive,
-                                onClick = { setPanelGuideActive(!panelGuideActive) },
-                                onLongClick = { showPanelGuideSheet = true },
-                            ))
+                            ) { showPanelGuideSheet = true })
                         }
                         // 超分作用域已开启 / 离线批量产物 / 本页增强结果（页级产物回填内存）→ 出现"对比"按钮
                         // ★ 2026-10-03：读 srTick 订阅管线事件——emitReady（含产物回填出结果）会
@@ -3116,8 +3114,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                         pageBookmarked = pageBookmarked,
                         showPanelGuide = panelGuideUsable || panelGuideActive,
                         panelGuideActive = panelGuideActive,
-                        onPanelGuide = { setPanelGuideActive(!panelGuideActive) },
-                        onPanelGuideLong = { showPanelGuideSheet = true },
+                        onPanelGuide = { showPanelGuideSheet = true },
                         onBack = ::goBack,
                         onRename = {
                             renameInput = book?.title ?: ""
