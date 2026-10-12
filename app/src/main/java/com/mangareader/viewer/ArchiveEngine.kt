@@ -1775,7 +1775,7 @@ class ArchiveEngine(private val ctx: Context) {
                 val result = listZipDirs(archivePath, subPath.ifEmpty { null })
                 android.util.Log.d(TAG, "children result.size=${result.size}")
                 result
-            } else if (path.startsWith("a:") && isNestedArchive(path.substringAfterLast("|").substringAfterLast("."))) {
+            } else if (path.startsWith("a:") && isNestedArchive(path.substringAfterLast("|"))) {
                 android.util.Log.d(TAG, "children a:container path=$path")
                 listContainerRootItems(path)
             } else {
@@ -1798,20 +1798,26 @@ class ArchiveEngine(private val ctx: Context) {
         if (realFile == null || !realFile.exists()) return emptyList()
         val ext = realFile.name.substringAfterLast('.').lowercase()
         val names = mutableListOf<String>()
+        val dirNames = mutableListOf<String>()
         when (ext) {
             "7z", "cb7" -> {
                 try {
                     SevenZFile(realFile).use { sz ->
                         var entry = sz.nextEntry
                         while (entry != null) {
-                            if (!entry.isDirectory && !entry.name.contains('/')) names.add(entry.name)
+                            if (!entry.name.contains('/')) {
+                                if (entry.isDirectory) {
+                                    val dn = entry.name.trimEnd('/')
+                                    if (dn.isNotEmpty()) dirNames.add(dn)
+                                } else names.add(entry.name)
+                            }
                             entry = sz.nextEntry
                         }
                     }
                 } catch (e: Exception) { Log.e(TAG, "listContainerRootItems 7z: ${e.message}") }
             }
             "zip", "cbz" -> {
-                return listZipDirs(path, null).filter { !it.dir && it.subPath.isNotEmpty() }
+                return listZipDirs(path, null).filter { it.subPath.isNotEmpty() }
             }
             "rar", "cbr", "tar", "cbt", "tgz", "txz" -> {
                 try {
@@ -1829,7 +1835,12 @@ class ArchiveEngine(private val ctx: Context) {
                                 val name = nameBytes?.let { String(it) }
                                 val fileType = me.zhanghai.android.libarchive.ArchiveEntry.filetype(header)
                                 val isDir = fileType == me.zhanghai.android.libarchive.ArchiveEntry.AE_IFDIR
-                                if (name != null && !isDir && !name.contains('/')) names.add(name)
+                                if (name != null && !name.contains('/')) {
+                                    if (isDir) {
+                                        val dn = name.trimEnd('/')
+                                        if (dn.isNotEmpty()) dirNames.add(dn)
+                                    } else names.add(name)
+                                }
                                 header = me.zhanghai.android.libarchive.Archive.readNextHeader(readHandle)
                             }
                             me.zhanghai.android.libarchive.Archive.free(readHandle)
@@ -1841,9 +1852,13 @@ class ArchiveEngine(private val ctx: Context) {
                 } catch (e: Exception) { Log.e(TAG, "listContainerRootItems fd: ${e.message}") }
             }
         }
-        val items = names.filter { isNestedArchive(it) }.sortedWith { a, b ->
-            com.mangareader.zip.CommonsZipHelper.compareNatural(a, b)
-        }.map { Item(it, p.auth, p.tree, p.doc, false, it) }
+        val items = mutableListOf<Item>()
+        for (dn in dirNames.sortedWith { a, b -> com.mangareader.zip.CommonsZipHelper.compareNatural(a, b) }) {
+            items.add(Item(dn, p.auth, p.tree, p.doc, true, "$dn/"))
+        }
+        for (name in names.filter { isNestedArchive(it) }.sortedWith { a, b -> com.mangareader.zip.CommonsZipHelper.compareNatural(a, b) }) {
+            items.add(Item(name, p.auth, p.tree, p.doc, false, name))
+        }
         android.util.Log.d(TAG, "listContainerRootItems ext=$ext total=${items.size}")
         return items
     }
