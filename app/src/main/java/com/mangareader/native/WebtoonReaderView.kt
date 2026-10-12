@@ -91,6 +91,8 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
      *  idx → 入坑时间戳；同页 5s 内已在加载→复用在途任务；坑龄≥5s 视为挂死残留，覆盖放行自愈。
      *  值仍等于自己那次时间戳才 remove（防误删后来者的坑）。 */
     private val inflightLoads = java.util.concurrent.ConcurrentHashMap<Int, Long>()
+    // ★ 2026-10-12 问题4 灰页自愈：失败/被取消的加载按 idx 计数的延时重载（限次防坏页空转）
+    private val grayRetryCounts = java.util.concurrent.ConcurrentHashMap<Int, Int>()
     private var pageList: List<ArchiveEngine.PageMeta> = emptyList()
     private var currentPage = 0
 
@@ -1117,6 +1119,7 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
             var processed = processBitmap(bmp, idx)
             if (processed == null) {
                 ArchiveEngine.w("WebtoonRV", "loadPage FAIL idx=$idx bmpNull=${bmp == null} tile=$tileModeEnabled src=${meta.source}")
+                scheduleGrayRetry(idx)
             }
             if (processed != null) {
                 // 超分：命中缓存直接换成超分图；未命中先显示原图、后台异步超分
@@ -1133,15 +1136,38 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
                 // ★ 纸张纹理烘焙：管线末端、入缓存前（纸随滚动/缩放，替代旧屏幕覆盖层）
                 processed = com.mangareader.filter.PaperPageTexture.apply(processed)
                 synchronized(bitmapCache) { bitmapCache.put(idx, processed) }
+                grayRetryCounts.remove(idx)
                 // ★ 白屏工单任务1：补 webtoon 成功路径观测（与 pager 对齐，消除盲区）
                 ArchiveEngine.d("WebtoonRV", "loaded idx=$idx bmp=${processed.width}x${processed.height}")
                 recycler.post { adapter?.notifyItemChanged(idx, "ld") }
             }
             onResult?.invoke(processed)
+            } catch (ce: kotlinx.coroutines.CancellationException) {
+                // ★ 2026-10-12 问题4：协程取消不进 CoroutineExceptionHandler——读页成功后渲染链
+                //   被静默取消（实测：readMobiPage OK 后零日志、页永久灰）。此处留痕并排自愈重载。
+                ArchiveEngine.w("WebtoonRV", "load CANCELLED idx=$idx（在途加载被取消）")
+                scheduleGrayRetry(idx)
+                throw ce
             } finally {
                 if (myPitTs != -1L && inflightLoads[idx] == myPitTs) inflightLoads.remove(idx)
             }
         }
+    }
+
+    /** ★ 2026-10-12 问题4 灰页自愈：加载失败/渲染链被取消的页，800ms 后缓存仍空则重载。
+     *  每 idx 限 3 次（真坏页不空转），成功即清计数。走 view.postDelayed 不依赖协程状态，
+     *  在途加载被取消后也能复活——实测灰页"反复重进才好"的主修复。 */
+    private fun scheduleGrayRetry(idx: Int) {
+        val n = (grayRetryCounts[idx] ?: 0) + 1
+        grayRetryCounts[idx] = n
+        if (n > 3) return
+        ArchiveEngine.w("WebtoonRV", "gray retry #$n scheduled idx=$idx +800ms")
+        recycler?.postDelayed({
+            val stillEmpty = synchronized(bitmapCache) { bitmapCache[idx] == null }
+            if (stillEmpty && pageList.getOrNull(idx) != null && recycler?.isAttachedToWindow == true) {
+                loadPageAsync(idx)
+            }
+        }, 800)
     }
 
     private fun loadMobiPageAsync(meta: ArchiveEngine.PageMeta): Bitmap? {
@@ -1162,9 +1188,13 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
             pfd.close()
             if (rawData != null) {
                 val sm = maxOf(width, height).coerceAtLeast(1)
-                return com.mangareader.native.NativeEngine.decodeRaw(rawData, sm, sm)
+                // ★ 2026-10-12 问题4：两级解码全 null 是灰页直接死因，必须留痕（此前全程静默）
+                val bmp = com.mangareader.native.NativeEngine.decodeRaw(rawData, sm, sm)
                     ?: android.graphics.BitmapFactory.decodeByteArray(rawData, 0, rawData.size)
+                if (bmp == null) ArchiveEngine.w("WebtoonRV", "mobi decode FAIL localIdx=${meta.localIdx} bytes=${rawData.size}")
+                return bmp
             }
+            ArchiveEngine.w("WebtoonRV", "mobi page bytes NULL localIdx=${meta.localIdx}")
         } catch (_: Exception) {}
         return null
     }
