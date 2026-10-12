@@ -85,6 +85,8 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
      *  idx → 入坑时间戳；同页 5s 内已在加载→复用在途任务；坑龄≥5s 视为挂死残留，覆盖放行自愈。
      *  值仍等于自己那次时间戳才 remove（防误删后来者的坑）。 */
     private val inflightLoads = java.util.concurrent.ConcurrentHashMap<Int, Long>()
+    // ★ 2026-10-12 问题4 灰页自愈：失败/被取消的加载按 idx 计数的延时重载（限次防坏页空转），对齐 WebtoonReaderView
+    private val grayRetryCounts = java.util.concurrent.ConcurrentHashMap<Int, Int>()
     // ★ 2026-09-30：双页丝滑——预载并发 1→2（pageDecode p50≈400ms 串行时一跨页要 0.8s，
     //   快翻必等页；2 路并行把缓冲构建速度翻倍，交互解码仍由 decodeSemaphore(2) 与焦点优先保障）
     private val preloadSemaphore = kotlinx.coroutines.sync.Semaphore(2)
@@ -996,6 +998,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             //     但此 race 在修复前就同样存在，本改动不引入新 race。
             inflightAnimLoads.clear()
             inflightLoads.clear() // ★ 白屏工单任务3：切章清加载坑（对齐 inflightAnimLoads 现有处理）
+            grayRetryCounts.clear()
             scannedDims.clear() // ★ 渐进尺寸随章换身份，残留会把新章表按旧章尺寸排
             synchronized(animRawCache) { animRawCache.clear() }
             viewPager.setPageTransformer(NoOpTransformer())
@@ -1586,6 +1589,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             loadScope.coroutineContext.cancelChildren()
             inflightLoads.clear()
             inflightAnimLoads.clear()
+            grayRetryCounts.clear()
         }
         val pos = positionOf(page)
         val animate = smooth && flipAnimationEnabled && !verticalPager
@@ -1826,6 +1830,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 if (bmp == null || bmp.isRecycled) {
                     bitmapCache.remove(idx)
                     inflightLoads.remove(idx) // ★ 允许立即重试（失败/取消场景不留 5s 去重窗口）
+                    scheduleGrayRetry(idx)
                     return@launch
                 }
                 if (fixedCropActive && bmp.width > 10 && bmp.height > 10) {
@@ -1860,6 +1865,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 // ★ 纸张纹理烘焙：管线末端、入缓存前（纸随页翻动，替代旧屏幕覆盖层）
                 bmp = com.mangareader.filter.PaperPageTexture.apply(bmp)
                 bitmapCache.put(idx, bmp)
+                grayRetryCounts.remove(idx)
                 // ★ F 解码计时：慢书取证（epub/zip 解析慢）——请求→落缓存整链路 >300ms 记诊断
                 inflightLoads[idx]?.let { t0 ->
                     val cost = android.os.SystemClock.uptimeMillis() - t0
@@ -1882,6 +1888,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             if (raw == null) {
                 bitmapCache.remove(idx)
                 inflightLoads.remove(idx) // ★ 让位/失败允许立即重试（新焦点页接管后翻回可重载）
+                scheduleGrayRetry(idx)
                 return@launch
             }
             val loader = coil3.SingletonImageLoader.get(context)
@@ -1952,6 +1959,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 // ★ 纸张纹理烘焙：管线末端、入缓存前
                 bmp = com.mangareader.filter.PaperPageTexture.apply(bmp)
                 bitmapCache.put(idx, bmp)
+                grayRetryCounts.remove(idx)
                 // ★ F 解码计时：慢书取证（epub/zip 解析慢）——请求→落缓存整链路 >300ms 记诊断
                 inflightLoads[idx]?.let { t0 ->
                     val cost = android.os.SystemClock.uptimeMillis() - t0
@@ -1962,6 +1970,10 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                     if (adapterPos >= 0 && adapterPos < (pagerAdapter?.itemCount ?: 0)) pagerAdapter?.notifyItemChanged(adapterPos, "loaded")
                 }
             }
+            } catch (ce: kotlinx.coroutines.CancellationException) {
+                com.mangareader.viewer.ArchiveEngine.w("PagerView", "load CANCELLED idx=$idx（在途加载被取消）")
+                scheduleGrayRetry(idx)
+                throw ce
             } finally {
                 if (acquired) preloadSemaphore.release()
                 if (inflightLoads[idx] == nowTs) inflightLoads.remove(idx)
@@ -1969,6 +1981,21 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             }
         }
         loadJobs[idx] = job
+    }
+
+    /** ★ 2026-10-12 问题4 灰页自愈：加载失败/渲染链被取消的页，800ms 后缓存仍空则重载。
+     *  每 idx 限 3 次（真坏页不空转），成功即清计数。走 view.postDelayed 不依赖协程状态，
+     *  在途加载被取消后也能复活——对齐 WebtoonReaderView.scheduleGrayRetry。 */
+    private fun scheduleGrayRetry(idx: Int) {
+        val n = (grayRetryCounts[idx] ?: 0) + 1
+        grayRetryCounts[idx] = n
+        if (n > 3) return
+        com.mangareader.viewer.ArchiveEngine.w("PagerView", "gray retry #$n scheduled idx=$idx +800ms")
+        viewPager.postDelayed({
+            if (bitmapCache[idx] == null && pageList.getOrNull(idx) != null && viewPager.isAttachedToWindow) {
+                loadPageAsync(idx)
+            }
+        }, 800)
     }
 
     /** ★ 跳页调度（2026-09-09，对齐参考项目 prioritizeDecode/cancelStaleDownloads）：
@@ -2041,6 +2068,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
         loadScope.cancel()
         loadJobs.clear() // ★ 调度修复：release 时注册表同步清空
         inflightLoads.clear() // ★ 白屏工单任务3
+        grayRetryCounts.clear()
         // ★ v102: 不 recycle（SSIV 可能仍持有引用，同 clearBitmapCacheRecycling）；evict 后 GC 自动回收
         bitmapCache.evictAll()
         // ★ 半页/合并页缓存跨 release 残留（同实例 release→re-setup 后旧章图驻留）
