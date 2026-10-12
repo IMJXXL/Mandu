@@ -1172,6 +1172,19 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         //     - 点「移除本卷进度」才执行 dao.deleteProgress(b.id, path)——避免误删合法 progress（SAF 临时失败等场景）。
         //     - 默认 viewing=false 不进死态。
         if (pages.isEmpty()) {
+            if (path.startsWith("a:")) {
+                val containerChildren = withContext(Dispatchers.IO) { runCatching { engine.children(path) }.getOrDefault(emptyList()) }
+                if (containerChildren.isNotEmpty()) {
+                    items = containerChildren
+                    tocItems = containerChildren.filter { !it.dir }
+                        .sortedWith(compareBy(com.mangareader.util.ComicSortUtil.fileNameComparator) { it.name })
+                        .map { it.copy(subPath = "z:${path}//${it.subPath}") }
+                    viewing = false
+                    loading = false
+                    isSwitching = false
+                    return emptyList()
+                }
+            }
             // ★ 密码取消：静默退出（不弹"文件缺失"），loading/viewing 复位
             if (passwordCancelled) {
                 pageList = emptyList()
@@ -1726,6 +1739,29 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             navStack = navStack + "d:${item.auth}|${item.tree}|${item.doc}"
             openFolder(navStack.last())
         } else {
+            if (item.subPath.isNotEmpty()) {
+                val curPath = navStack.lastOrNull()
+                val archivePath = when {
+                    curPath == null -> null
+                    curPath.startsWith("a:") -> curPath
+                    curPath.startsWith("z:") -> {
+                        val zi = curPath.removePrefix("z:")
+                        val si = zi.indexOf("//")
+                        if (si >= 0) zi.substring(0, si) else null
+                    }
+                    else -> null
+                }
+                if (archivePath != null) {
+                    val leafPath = "z:${archivePath}//${item.subPath}"
+                    navStack = navStack + leafPath
+                    loading = true; viewing = false; pageList = emptyList(); errorMsg = null
+                    scope.launch {
+                        try { enterReader(leafPath) } catch (e: Exception) { errorMsg = "加载失败: ${e.message}" }
+                        loading = false
+                    }
+                    return
+                }
+            }
             val currentPath = navStack.lastOrNull()
             if (currentPath?.startsWith("z:") == true) {
                 loading = true; viewing = false; pageList = emptyList(); errorMsg = null
@@ -1981,6 +2017,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             val bookRoot = navStack.firstOrNull { it.startsWith("z:") }
                 ?: navStack.firstOrNull()?.takeIf { it.startsWith("d:") }
                 ?: navStack.firstOrNull()?.takeIf { it.startsWith("smb:") || it.startsWith("webdav:") }
+                ?: navStack.firstOrNull()?.takeIf { it.startsWith("a:") }
                 ?: switchTargetPath
             // ★ 修复白屏：先同步清 pageList+viewing，再更新 navStack，防止 NativeReaderScreen
             //   重建时拿到旧/空 pageList 白屏（navStack 更新触发 key 变→重建，此时 pageList 已空+viewing=false 不显示）
