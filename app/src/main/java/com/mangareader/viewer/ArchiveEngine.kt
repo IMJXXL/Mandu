@@ -931,7 +931,16 @@ class ArchiveEngine(private val ctx: Context) {
                             archivePath = "a:$archivePath"
                         }
                         val subPath = inner.substring(sepIdx + 2)
-                        listZipSubDirPages(archivePath, subPath)
+                        if (subPath.isNotEmpty() && !subPath.endsWith('/') &&
+                            isNestedArchive(subPath.substringAfterLast('/'))) {
+                            val nestedFile = extractNestedArchive(archivePath, subPath)
+                            if (nestedFile != null) {
+                                val nestedExt = subPath.substringAfterLast('.').lowercase()
+                                listNestedArchivePages(nestedFile, nestedExt)
+                            } else emptyList()
+                        } else {
+                            listZipSubDirPages(archivePath, subPath)
+                        }
                     }
                 }
                 else -> {
@@ -1712,6 +1721,9 @@ class ArchiveEngine(private val ctx: Context) {
                 val result = listZipDirs(archivePath, subPath.ifEmpty { null })
                 android.util.Log.d(TAG, "children result.size=${result.size}")
                 result
+            } else if (path.startsWith("a:") && isNestedArchive(path.substringAfterLast("|").substringAfterLast("."))) {
+                android.util.Log.d(TAG, "children a:container path=$path")
+                listContainerRootItems(path)
             } else {
                 val p = parsePath(path) ?: return emptyList()
                 val tree = makeTree(p.auth, p.tree)
@@ -1721,6 +1733,65 @@ class ArchiveEngine(private val ctx: Context) {
             Log.e(TAG, "children: ${e.message}", e)
             emptyList()
         }
+    }
+
+    private fun listContainerRootItems(path: String): List<Item> {
+        val p = parsePath(path) ?: return emptyList()
+        if (p.tag != "a") return emptyList()
+        val tree = makeTree(p.auth, p.tree)
+        val uri = DocumentsContract.buildDocumentUriUsingTree(tree, p.doc)
+        val realFile = getRealFile(uri)
+        if (realFile == null || !realFile.exists()) return emptyList()
+        val ext = realFile.name.substringAfterLast('.').lowercase()
+        val names = mutableListOf<String>()
+        when (ext) {
+            "7z", "cb7" -> {
+                try {
+                    SevenZFile(realFile).use { sz ->
+                        var entry = sz.nextEntry
+                        while (entry != null) {
+                            if (!entry.isDirectory && !entry.name.contains('/')) names.add(entry.name)
+                            entry = sz.nextEntry
+                        }
+                    }
+                } catch (e: Exception) { Log.e(TAG, "listContainerRootItems 7z: ${e.message}") }
+            }
+            "zip", "cbz" -> {
+                return listZipDirs(path, null).filter { !it.dir && it.subPath.isNotEmpty() }
+            }
+            "rar", "cbr", "tar", "cbt", "tgz", "txz" -> {
+                try {
+                    val pfd = ctx.contentResolver.openFileDescriptor(uri, "r") ?: return emptyList()
+                    pfd.use {
+                        val readHandle = me.zhanghai.android.libarchive.Archive.readNew()
+                        try {
+                            me.zhanghai.android.libarchive.Archive.setCharset(readHandle, "UTF-8".toByteArray())
+                            me.zhanghai.android.libarchive.Archive.readSupportFilterAll(readHandle)
+                            me.zhanghai.android.libarchive.Archive.readSupportFormatAll(readHandle)
+                            me.zhanghai.android.libarchive.Archive.readOpenFd(readHandle, it.fd, 10240L)
+                            var header = me.zhanghai.android.libarchive.Archive.readNextHeader(readHandle)
+                            while (header != 0L) {
+                                val nameBytes = me.zhanghai.android.libarchive.ArchiveEntry.pathname(header)
+                                val name = nameBytes?.let { String(it) }
+                                val fileType = me.zhanghai.android.libarchive.ArchiveEntry.filetype(header)
+                                val isDir = fileType == me.zhanghai.android.libarchive.ArchiveEntry.AE_IFDIR
+                                if (name != null && !isDir && !name.contains('/')) names.add(name)
+                                header = me.zhanghai.android.libarchive.Archive.readNextHeader(readHandle)
+                            }
+                            me.zhanghai.android.libarchive.Archive.free(readHandle)
+                        } catch (e: Exception) {
+                            try { me.zhanghai.android.libarchive.Archive.free(readHandle) } catch (_: Exception) {}
+                            Log.e(TAG, "listContainerRootItems libarchive: ${e.message}")
+                        }
+                    }
+                } catch (e: Exception) { Log.e(TAG, "listContainerRootItems fd: ${e.message}") }
+            }
+        }
+        val items = names.filter { isNestedArchive(it) }.sortedWith { a, b ->
+            com.mangareader.zip.CommonsZipHelper.compareNatural(a, b)
+        }.map { Item(it, p.auth, p.tree, p.doc, false, it) }
+        android.util.Log.d(TAG, "listContainerRootItems ext=$ext total=${items.size}")
+        return items
     }
 
     fun collectAllImages(path: String): List<PageMeta> {
@@ -4089,6 +4160,16 @@ class ArchiveEngine(private val ctx: Context) {
                 it.endsWith(".tar") || it.endsWith(".cbt") || it.endsWith(".tgz") || it.endsWith(".tbz2") || it.endsWith(".txz")
     }
 
+    private val NESTED_ARCHIVE_EXTS = setOf(
+        "mobi", "azw", "azw3", "prc", "pdb",
+        "zip", "cbz", "rar", "cbr", "7z", "cb7", "tar", "cbt", "tgz", "txz",
+    )
+
+    private fun isNestedArchive(n: String): Boolean {
+        val lower = n.lowercase()
+        return NESTED_ARCHIVE_EXTS.any { lower.endsWith(".$it") }
+    }
+
     // ==================== ZIP目录导航 ====================
 
     private val zipTreeCache = java.util.concurrent.ConcurrentHashMap<String, ZipDirNode>()
@@ -4224,7 +4305,12 @@ class ArchiveEngine(private val ctx: Context) {
         val result = getZipAllNames(filePath) ?: return emptyList()
         val (cacheKey, allNames) = result
         val root = zipTree(cacheKey) { buildZipTree(allNames.toList()) }
-        if (isFlatZip(root)) return emptyList()
+        if (isFlatZip(root)) {
+            val hasNestedLeaf = allNames.any { n ->
+                !n.contains('/') && isNestedArchive(n) && !isImg(n)
+            }
+            if (!hasNestedLeaf) return emptyList()
+        }
         var current = root
         if (!subPath.isNullOrEmpty()) {
             val pathParts = subPath.split('/').filter { it.isNotEmpty() }
@@ -4234,8 +4320,22 @@ class ArchiveEngine(private val ctx: Context) {
                 else return emptyList()
             }
         }
-        if (current.children.all { !it.isDir } && current.imageIndices.isEmpty()) return emptyList()
-        if (current.children.all { !it.isDir }) return emptyList()
+        if (current.children.all { !it.isDir } && current.imageIndices.isEmpty()) {
+            val base = subPath ?: ""
+            val hasNestedLeaf = allNames.any { n ->
+                val rest = n.removePrefix(base)
+                base.isNotEmpty() && n.startsWith(base) && !rest.contains('/') && rest.isNotEmpty() && isNestedArchive(rest) && !isImg(rest)
+            }
+            if (!hasNestedLeaf) return emptyList()
+        }
+        if (current.children.all { !it.isDir }) {
+            val base = subPath ?: ""
+            val hasNestedLeaf = allNames.any { n ->
+                val rest = n.removePrefix(base)
+                base.isNotEmpty() && n.startsWith(base) && !rest.contains('/') && rest.isNotEmpty() && isNestedArchive(rest) && !isImg(rest)
+            } || (base.isEmpty() && allNames.any { n -> !n.contains('/') && isNestedArchive(n) && !isImg(n) })
+            if (!hasNestedLeaf) return emptyList()
+        }
         val items = mutableListOf<Item>()
         val baseSubPath = subPath ?: ""
         for (child in current.children.filter { it.isDir }) {
@@ -4247,6 +4347,13 @@ class ArchiveEngine(private val ctx: Context) {
                 val imgName = allNames[imgIdx].substringAfterLast('/')
                 items.add(Item(imgName, p.auth, p.tree, p.doc, false))
             }
+        }
+        for (name in allNames) {
+            if (baseSubPath.isNotEmpty() && !name.startsWith(baseSubPath)) continue
+            val rest = name.removePrefix(baseSubPath)
+            if (rest.isEmpty() || rest.contains('/')) continue
+            if (!isNestedArchive(rest) || isImg(rest)) continue
+            items.add(Item(rest, p.auth, p.tree, p.doc, false, baseSubPath + rest))
         }
         return items
     }
@@ -4278,6 +4385,130 @@ class ArchiveEngine(private val ctx: Context) {
         }
         collectImages(current)
         return pageMetas
+    }
+
+    private val nestedCache = java.util.concurrent.ConcurrentHashMap<String, File>()
+
+    private fun extractNestedArchive(archivePath: String, subPath: String): File? {
+        val cacheKey = "$archivePath//$subPath"
+        nestedCache[cacheKey]?.let { if (it.exists() && it.length() > 0) return it }
+        val p = parsePath(archivePath) ?: return null
+        val tree = makeTree(p.auth, p.tree)
+        val uri = DocumentsContract.buildDocumentUriUsingTree(tree, p.doc)
+        val realFile = getRealFile(uri) ?: return null
+        if (!realFile.exists()) return null
+        val parentExt = realFile.name.substringAfterLast('.').lowercase()
+        val nestedName = subPath.substringAfterLast('/')
+        val hash = Integer.toHexString(cacheKey.hashCode()).removePrefix("-")
+        val outDir = File(ctx.cacheDir, "nested/$hash")
+        outDir.mkdirs()
+        val outFile = File(outDir, nestedName)
+        try {
+            when (parentExt) {
+                "zip", "cbz" -> {
+                    val zipResult = getZipAllNames(archivePath) ?: return null
+                    val (zipCacheKey, allNames) = zipResult
+                    val entryIdx = allNames.indexOf(subPath)
+                    if (entryIdx < 0) return null
+                    val data = com.mangareader.native.NativeEngine.readZipEntry(zipCacheKey, entryIdx) ?: return null
+                    outFile.outputStream().use { it.write(data) }
+                }
+                "7z", "cb7" -> {
+                    SevenZFile(realFile).use { sz ->
+                        var entry = sz.nextEntry
+                        while (entry != null) {
+                            if (!entry.isDirectory && entry.name == subPath) {
+                                sz.getInputStream(entry).use { input ->
+                                    outFile.outputStream().use { out -> input.copyTo(out) }
+                                }
+                                break
+                            }
+                            entry = sz.nextEntry
+                        }
+                    }
+                    if (!outFile.exists() || outFile.length() == 0L) return null
+                }
+                "rar", "cbr", "tar", "cbt", "tgz", "txz" -> {
+                    val pfd = ctx.contentResolver.openFileDescriptor(uri, "r") ?: return null
+                    pfd.use {
+                        val data = readArchiveEntryByNameViaFd(it.fd, subPath) ?: return null
+                        outFile.outputStream().use { out -> out.write(data) }
+                    }
+                }
+                else -> return null
+            }
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "extractNestedArchive: ${e.message}")
+            return null
+        }
+        if (!outFile.exists() || outFile.length() == 0L) return null
+        nestedCache[cacheKey] = outFile
+        android.util.Log.d(TAG, "extractNestedArchive: extracted ${outFile.length()} bytes to ${outFile.absolutePath}")
+        return outFile
+    }
+
+    private fun readArchiveEntryByNameViaFd(fd: Int, targetName: String): ByteArray? {
+        val readHandle = me.zhanghai.android.libarchive.Archive.readNew()
+        try {
+            me.zhanghai.android.libarchive.Archive.setCharset(readHandle, "UTF-8".toByteArray())
+            me.zhanghai.android.libarchive.Archive.readSupportFilterAll(readHandle)
+            me.zhanghai.android.libarchive.Archive.readSupportFormatAll(readHandle)
+            me.zhanghai.android.libarchive.Archive.readOpenFd(readHandle, fd, 10240L)
+            var header = me.zhanghai.android.libarchive.Archive.readNextHeader(readHandle)
+            while (header != 0L) {
+                val nameBytes = me.zhanghai.android.libarchive.ArchiveEntry.pathname(header)
+                val name = nameBytes?.let { String(it) }
+                val fileType = me.zhanghai.android.libarchive.ArchiveEntry.filetype(header)
+                val isDir = fileType == me.zhanghai.android.libarchive.ArchiveEntry.AE_IFDIR
+                if (name != null && !isDir && name == targetName) {
+                    val entrySize = me.zhanghai.android.libarchive.ArchiveEntry.size(header)
+                    if (entrySize in 1..(200L * 1024 * 1024)) {
+                        val buf = java.nio.ByteBuffer.allocateDirect(entrySize.toInt())
+                        me.zhanghai.android.libarchive.Archive.readData(readHandle, buf)
+                        val data = ByteArray(entrySize.toInt())
+                        buf.position(0)
+                        buf.get(data)
+                        me.zhanghai.android.libarchive.Archive.free(readHandle)
+                        return data
+                    }
+                    return null
+                }
+                header = me.zhanghai.android.libarchive.Archive.readNextHeader(readHandle)
+            }
+            me.zhanghai.android.libarchive.Archive.free(readHandle)
+        } catch (e: Exception) {
+            try { me.zhanghai.android.libarchive.Archive.free(readHandle) } catch (_: Exception) {}
+            android.util.Log.e(TAG, "readArchiveEntryByNameViaFd: ${e.message}")
+        }
+        return null
+    }
+
+    private fun listNestedArchivePages(file: File, ext: String): List<PageMeta> {
+        val pages = mutableListOf<PageMeta>()
+        val lowerExt = ext.lowercase()
+        try {
+            if (lowerExt in listOf("mobi", "azw", "azw3", "prc", "pdb")) {
+                val cacheKey = file.absolutePath
+                android.os.ParcelFileDescriptor.open(file, android.os.ParcelFileDescriptor.MODE_READ_ONLY).use { pfd ->
+                    try { com.mangareader.native.NativeEngine.openMobiWithFd(cacheKey, pfd.fd) } catch (_: Exception) {}
+                }
+                val count = try { com.mangareader.native.NativeEngine.countMobiPages(cacheKey) } catch (_: Exception) { 0 }
+                for (i in 0 until count) {
+                    pages.add(PageMeta(i, lowerExt, cacheKey, i))
+                }
+            } else {
+                android.os.ParcelFileDescriptor.open(file, android.os.ParcelFileDescriptor.MODE_READ_ONLY).use { pfd ->
+                    val listed = try { listArchiveMetaViaFd(pfd.fd, lowerExt, file.absolutePath) } catch (_: Exception) { emptyList() }
+                    for (meta in listed) {
+                        pages.add(PageMeta(pages.size, lowerExt, file.absolutePath, meta.localIdx))
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "listNestedArchivePages: ${e.message}")
+        }
+        android.util.Log.d(TAG, "listNestedArchivePages: ext=$lowerExt total=${pages.size}")
+        return pages
     }
 }
 
