@@ -791,6 +791,8 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
         } catch (_: Exception) { null }
         if (changed) {
             loadScope.coroutineContext.cancelChildren()
+            inflightLoads.clear()  // ★ 2026-10-12 问题5：切卷不清在途去重表 → 新卷同 idx 被旧时间戳 Dedup 拦截
+            grayRetryCounts.clear()
             clearBitmapCacheRecycling()  // ★ ⑧ 最小修复：切章先 recycle 再 clear
             // ★ §24 二代 Bug#6：切卷时必须清空动图检测状态——否则上一卷的 pageAnimFlags 残留污染新卷 idx 判定、
             //   animatedCount 不归零导致提前误触发"切翻页"对话框
@@ -1077,7 +1079,8 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
                 }
             } catch (_: Exception) {}
         }
-        val sm = maxOf(width, height).coerceAtLeast(1)
+        val sm = maxOf(width, height).takeIf { it > 1 }
+            ?: maxOf(context.resources.displayMetrics.widthPixels, context.resources.displayMetrics.heightPixels)
         loadScope.launch {
             try {
             // ★ 段页不走 tile：tile 按「整图文件+区域」渲染，不认识 segmentIndex，会显示错误区域；
@@ -1187,8 +1190,8 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
             val rawData = com.mangareader.native.NativeEngine.readMobiPage(cacheKey, meta.localIdx)
             pfd.close()
             if (rawData != null) {
-                val sm = maxOf(width, height).coerceAtLeast(1)
-                // ★ 2026-10-12 问题4：两级解码全 null 是灰页直接死因，必须留痕（此前全程静默）
+                val sm = maxOf(width, height).takeIf { it > 1 }
+                    ?: maxOf(context.resources.displayMetrics.widthPixels, context.resources.displayMetrics.heightPixels)
                 val bmp = com.mangareader.native.NativeEngine.decodeRaw(rawData, sm, sm)
                     ?: android.graphics.BitmapFactory.decodeByteArray(rawData, 0, rawData.size)
                 if (bmp == null) ArchiveEngine.w("WebtoonRV", "mobi decode FAIL localIdx=${meta.localIdx} bytes=${rawData.size}")
@@ -1269,12 +1272,15 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
         if (bmp != null) {
             val processed = processBitmap(bmp, idx)
             synchronized(bitmapCache) { bitmapCache.put(idx, processed ?: bmp) }
+            grayRetryCounts.remove(idx)
             recycler.post { adapter?.notifyItemChanged(idx, "ld") }
             val cost = android.os.SystemClock.uptimeMillis() - startMs
+            ArchiveEngine.d("WebtoonRV", "preload OK idx=$idx ${bmp.width}x${bmp.height} ${cost}ms")
             // ★ 慢载取证：>500ms 说明预载跟不上滑动/渲染槽打满（用户侧观感=往后全是没加载的）
             if (cost > 500) diagMark("slow-load idx=$idx ${cost}ms ${bmp.width}x${bmp.height} src=${meta0.source}")
         } else {
             ArchiveEngine.w("WebtoonRV", "preload FAIL idx=$idx src=${pageList.getOrNull(idx)?.source}")
+            scheduleGrayRetry(idx)
         }
         } catch (ce: kotlinx.coroutines.CancellationException) {
             ArchiveEngine.w("WebtoonRV", "preload CANCELLED idx=$idx（预载被取消）")
