@@ -609,6 +609,9 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
     var showShelfDialog by remember { mutableStateOf(false) }
     var showRenameBatch by remember { mutableStateOf(false) }
     var showCreateShelf by remember { mutableStateOf(false) }
+    var showMergeDialog by remember { mutableStateOf(false) }
+    var mergedBookView by remember { mutableStateOf<Book?>(null) }
+    var mergeMembers by remember { mutableStateOf<List<Book>>(emptyList()) }
 
     var newShelfName by remember { mutableStateOf("") }
 
@@ -855,8 +858,11 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
             text = { Text("删除「${b.title}」？不删原始文件。$customNote") },
             confirmButton = { TextButton(onClick = {
                 scope.launch {
-                    withContext(Dispatchers.IO) { b.customCoverPath?.let { engine.deleteCustomCoverByPath(it) } }
-                    dao.deleteBook(b); deleteTarget = null
+                    withContext(Dispatchers.IO) {
+                        b.customCoverPath?.let { engine.deleteCustomCoverByPath(it) }
+                        if (b.source == "merged") dao.dissolveMerge(b.id) else dao.deleteBook(b)
+                    }
+                    deleteTarget = null
                 }
             }) { Text("删除", color = MaterialTheme.colorScheme.error) } },
             dismissButton = { TextButton(onClick = { deleteTarget = null }) { Text("取消") } })
@@ -1009,7 +1015,11 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                             selectedBooks.forEach { bid ->
                                 dao.getBookById(bid)?.customCoverPath?.let { engine.deleteCustomCoverByPath(it) }
                             }
-                            dao.deleteBooksByIds(selectedBooks.toList())
+                            val virtualIds = selectedBooks.filter { id ->
+                                dao.getBookById(id)?.source == "merged"
+                            }
+                            virtualIds.forEach { dao.dissolveMerge(it) }
+                            dao.deleteBooksByIds(selectedBooks.filter { it !in virtualIds }.toList())
                         }
                         selectedBooks = emptySet()
                         isMultiSelect = false
@@ -1066,6 +1076,82 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
             },
             onDismiss = { showRenameBatch = false }
         )
+    }
+
+    if (showMergeDialog) {
+        val selectedBookList = books.orEmpty().filter { it.id in selectedBooks }
+        val defaultName = selectedBookList.firstOrNull()?.title ?: "合并合集"
+        var mergeName by remember(showMergeDialog) { mutableStateOf(defaultName) }
+        AlertDialog(
+            onDismissRequest = { showMergeDialog = false },
+            title = { Text("合并为虚拟书") },
+            text = {
+                OutlinedTextField(
+                    value = mergeName, onValueChange = { mergeName = it },
+                    label = { Text("书名") }, singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val ids = selectedBookList.map { it.id }
+                    scope.launch(Dispatchers.IO) {
+                        val virtualId = dao.mergeBooks(ids, mergeName.trim())
+                        withContext(Dispatchers.Main) {
+                            if (virtualId > 0) {
+                                Toast.makeText(ctx, "已合并", Toast.LENGTH_SHORT).show()
+                            } else {
+                                Toast.makeText(ctx, "合并失败：需至少2本书", Toast.LENGTH_SHORT).show()
+                            }
+                            showMergeDialog = false
+                            isMultiSelect = false; selectedBooks = emptySet()
+                        }
+                    }
+                }) { Text("确认") }
+            },
+            dismissButton = { TextButton(onClick = { showMergeDialog = false }) { Text("取消") } },
+        )
+    }
+
+    if (mergedBookView != null) {
+        val virtualBook = mergedBookView!!
+        LaunchedEffect(virtualBook.id) {
+            mergeMembers = withContext(Dispatchers.IO) { dao.getMergeMembers(virtualBook.id) }
+        }
+        BackHandler { mergedBookView = null }
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { Text(virtualBook.title) },
+                    navigationIcon = { IconButton(onClick = { mergedBookView = null }) { Icon(Icons.Default.ArrowBack, "返回") } },
+                )
+            }
+        ) { pad ->
+            if (mergeMembers.isEmpty()) {
+                Box(Modifier.fillMaxSize().padding(pad), contentAlignment = Alignment.Center) {
+                    Text("暂无成员", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            } else {
+                val memberThumbPx = com.hippo.ehviewer.coil.CoverThumb.gridDecodePx(
+                    LocalConfiguration.current.screenWidthDp, effectiveCols, 12.dp, 8.dp,
+                )
+                LazyVerticalGrid(
+                    columns = gridCols,
+                    contentPadding = PaddingValues(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.padding(pad),
+                ) {
+                    items(mergeMembers, key = { it.id }) { b ->
+                        BookCard(b, engine, false, false, memberThumbPx, layoutMode, hideAllBadges, titleMarquee,
+                            onToggleSelect = {},
+                            onTap = { openBookThrottled(b.id, null) },
+                            onLongClick = { showBookInfo = b },
+                            onDelete = { deleteTarget = b })
+                    }
+                }
+            }
+        }
     }
 
     if (showCreateShelf) {
@@ -1377,6 +1463,50 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                         }
                         isMultiSelect = false; selectedBooks = emptySet()
                     }) { Icon(Icons.Default.AutoFixHigh, "批量增强") }
+                    var srMenu by remember { mutableStateOf(false) }
+                    Box {
+                        IconButton(onClick = { srMenu = true }) { Icon(Icons.Default.MoreVert, "增强") }
+                        DropdownMenu(expanded = srMenu, onDismissRequest = { srMenu = false }) {
+                            val srTargets = books.orEmpty().filter { it.id in selectedBooks }
+                            DropdownMenuItem(
+                                text = { Text("批量增强（已读章节）") },
+                                onClick = {
+                                    srMenu = false
+                                    com.mangareader.sr.SrBatchRunner.enqueueBooks(ctx, srTargets.map { it.id to it.title }, false) { r ->
+                                        (ctx as? android.app.Activity)?.runOnUiThread {
+                                            Toast.makeText(ctx, if (r.chapters > 0) "已加入队列：${r.chapters} 章 ${r.pages} 页" else "没有找到可处理的页面——所选书可能无法离线枚举", Toast.LENGTH_LONG).show()
+                                        }
+                                    }
+                                    isMultiSelect = false; selectedBooks = emptySet()
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("整本增强（含未读章，占用更多存储）") },
+                                onClick = {
+                                    srMenu = false
+                                    com.mangareader.sr.SrBatchRunner.enqueueBooks(ctx, srTargets.map { it.id to it.title }, true) { r ->
+                                        (ctx as? android.app.Activity)?.runOnUiThread {
+                                            Toast.makeText(ctx, if (r.chapters > 0) "已加入队列：${r.chapters} 章 ${r.pages} 页，空闲时自动逐章处理" else "没有找到可处理的页面——所选书可能无法离线枚举", Toast.LENGTH_LONG).show()
+                                        }
+                                    }
+                                    isMultiSelect = false; selectedBooks = emptySet()
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("清除增强产物（不可恢复）", color = MaterialTheme.colorScheme.error) },
+                                onClick = {
+                                    srMenu = false
+                                    kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                                        srTargets.forEach {
+                                            com.mangareader.sr.SrCore.diskCache.removeBatchBook(it.id)
+                                            com.mangareader.sr.SrCore.diskCache.removeArtifacts(it.id)
+                                        }
+                                    }
+                                    Toast.makeText(ctx, "已清除所选书的增强产物", Toast.LENGTH_SHORT).show()
+                                },
+                            )
+                        }
+                    }
                     IconButton(onClick = { selectedBooks = if (selectedBooks.isEmpty()) books.orEmpty().map { it.id }.toSet() else emptySet() }) {
                         Icon(Icons.Default.SelectAll, if (selectedBooks.isEmpty()) "全选" else "取消全选")
                     }
@@ -1463,51 +1593,31 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                 Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
                     TextButton(onClick = { showShelfDialog = true }) { Text("添加到书架", color = MaterialTheme.colorScheme.primary) }
                         TextButton(onClick = { showBatchTagPicker = true }) { Text("打标签", color = MaterialTheme.colorScheme.primary) }
-                    // ★ 增强菜单（2026-10-02）：已读章批量/整本入队（含未读章）/清除增强产物
-                    var srMenu by remember { mutableStateOf(false) }
-                    Box {
-                        TextButton(onClick = { srMenu = true }) { Text("增强 ▾", color = MaterialTheme.colorScheme.primary) }
-                        DropdownMenu(expanded = srMenu, onDismissRequest = { srMenu = false }) {
-                            val targets = books.orEmpty().filter { it.id in selectedBooks }
-                            DropdownMenuItem(
-                                text = { Text("批量增强（已读章节）") },
-                                onClick = {
-                                    srMenu = false
-                                    com.mangareader.sr.SrBatchRunner.enqueueBooks(ctx, targets.map { it.id to it.title }, false) { r ->
-                                        (ctx as? android.app.Activity)?.runOnUiThread {
-                                            Toast.makeText(ctx, if (r.chapters > 0) "已加入队列：${r.chapters} 章 ${r.pages} 页" else "没有找到可处理的页面——所选书可能无法离线枚举", Toast.LENGTH_LONG).show()
+                    {
+                        val selectedBookList = books.orEmpty().filter { it.id in selectedBooks }
+                        val virtualCount = selectedBookList.count { it.source == "merged" }
+                        val normalCount = selectedBookList.size - virtualCount
+                        val canDissolve = virtualCount == 1 && normalCount == 0
+                        val canMerge = !canDissolve && selectedBookList.size >= 2
+                        val mergeLabel = if (canDissolve) "解散" else "合并"
+                        val mergeEnabled = canDissolve || canMerge
+                        TextButton(
+                            onClick = {
+                                if (canDissolve) {
+                                    val virtualId = selectedBookList.first().id
+                                    scope.launch(Dispatchers.IO) {
+                                        dao.dissolveMerge(virtualId)
+                                        withContext(Dispatchers.Main) {
+                                            Toast.makeText(ctx, "已解散", Toast.LENGTH_SHORT).show()
+                                            isMultiSelect = false; selectedBooks = emptySet()
                                         }
                                     }
-                                    isMultiSelect = false; selectedBooks = emptySet()
-                                },
-                            )
-                            DropdownMenuItem(
-                                text = { Text("整本增强（含未读章，占用更多存储）") },
-                                onClick = {
-                                    srMenu = false
-                                    com.mangareader.sr.SrBatchRunner.enqueueBooks(ctx, targets.map { it.id to it.title }, true) { r ->
-                                        (ctx as? android.app.Activity)?.runOnUiThread {
-                                            Toast.makeText(ctx, if (r.chapters > 0) "已加入队列：${r.chapters} 章 ${r.pages} 页，空闲时自动逐章处理" else "没有找到可处理的页面——所选书可能无法离线枚举", Toast.LENGTH_LONG).show()
-                                        }
-                                    }
-                                    isMultiSelect = false; selectedBooks = emptySet()
-                                },
-                            )
-                            DropdownMenuItem(
-                                text = { Text("清除增强产物（不可恢复）", color = MaterialTheme.colorScheme.error) },
-                                onClick = {
-                                    srMenu = false
-                                    kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-                                        targets.forEach {
-                                            com.mangareader.sr.SrCore.diskCache.removeBatchBook(it.id)
-                                            // ★ 同步清页级自动保存产物（2026-10-03 三件套之三）
-                                            com.mangareader.sr.SrCore.diskCache.removeArtifacts(it.id)
-                                        }
-                                    }
-                                    Toast.makeText(ctx, "已清除所选书的增强产物", Toast.LENGTH_SHORT).show()
-                                },
-                            )
-                        }
+                                } else if (canMerge) {
+                                    showMergeDialog = true
+                                }
+                            },
+                            enabled = mergeEnabled,
+                        ) { Text(mergeLabel, color = if (mergeEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }
                     }
                     TextButton(onClick = { showRenameBatch = true }) { Text("重命名", color = MaterialTheme.colorScheme.primary) }
                     TextButton(onClick = { showDeleteConfirm = true }) { Text("删除", color = MaterialTheme.colorScheme.error) }
@@ -1718,7 +1828,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                                 is ShelfItem.Single -> {
                                     val b = item.book
                                     val onToggleSelect = remember(b.id, isMultiSelect) { { selectedBooks = if (b.id in selectedBooks) selectedBooks - b.id else selectedBooks + b.id } }
-                                    val onTap = remember(b.id, isMultiSelect) { { if (isMultiSelect) { selectedBooks = if (b.id in selectedBooks) selectedBooks - b.id else selectedBooks + b.id } else openBookThrottled(b.id, null) } }
+                                    val onTap = remember(b.id, isMultiSelect, b.source) { { if (isMultiSelect) { selectedBooks = if (b.id in selectedBooks) selectedBooks - b.id else selectedBooks + b.id } else if (b.source == "merged") mergedBookView = b else openBookThrottled(b.id, null) } }
                                     val onLongClick = remember(b.id) { { showBookInfo = b } }
                                     val onDelete = remember(b.id) { { deleteTarget = b } }
                                     BookListRow(b, engine, isMultiSelect, b.id in selectedBooks, thumbDecodePx, hideAllBadges,
@@ -1754,7 +1864,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                                 is ShelfItem.Single -> {
                                     val b = item.book
                                     val onToggleSelect = remember(b.id, isMultiSelect) { { selectedBooks = if (b.id in selectedBooks) selectedBooks - b.id else selectedBooks + b.id } }
-                                    val onTap = remember(b.id, isMultiSelect) { { if (isMultiSelect) { selectedBooks = if (b.id in selectedBooks) selectedBooks - b.id else selectedBooks + b.id } else openBookThrottled(b.id, null) } }
+                                    val onTap = remember(b.id, isMultiSelect, b.source) { { if (isMultiSelect) { selectedBooks = if (b.id in selectedBooks) selectedBooks - b.id else selectedBooks + b.id } else if (b.source == "merged") mergedBookView = b else openBookThrottled(b.id, null) } }
                                     val onLongClick = remember(b.id) { { showBookInfo = b } }
                                     val onDelete = remember(b.id) { { deleteTarget = b } }
                                     BookCard(b, engine, isMultiSelect, b.id in selectedBooks, thumbDecodePx, layoutMode, hideAllBadges, titleMarquee,

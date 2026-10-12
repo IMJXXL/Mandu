@@ -22,7 +22,8 @@ fun stableBookId(filePath: String): Long {
         Index("isHidden", "lastReadAt"),
         Index("isHidden", "isFavorite"),
         Index("filePath"),
-        Index("lastReadAt")
+        Index("lastReadAt"),
+        Index("mergedParentId")
     ]
 )
 @Immutable
@@ -50,6 +51,7 @@ data class Book(
     val sourceSizeBytes: Long = 0,
     val seriesId: String? = null,
     val seriesName: String? = null,
+    val mergedParentId: Long? = null,
 ) {
     /** ★ 显示用封面：自定义优先；自定义文件丢失的孤儿由 Library 启动自愈置回 null */
     val displayCoverPath: String? get() = customCoverPath ?: coverPath
@@ -262,7 +264,7 @@ interface MangaDao {
     @Query("SELECT * FROM manga_books WHERE id = :id")
     suspend fun getBookById(id: Long): Book?
 
-    @Query("SELECT * FROM manga_books WHERE isHidden = 0 ORDER BY lastReadAt DESC")
+    @Query("SELECT * FROM manga_books WHERE isHidden = 0 AND mergedParentId IS NULL ORDER BY lastReadAt DESC")
     fun getVisibleBooks(): Flow<List<Book>>
 
     // ★ 继续阅读 FAB（2026-09-26 实测反馈）：去掉 lastPage>0/completed 限制——停在第一页的合法
@@ -273,22 +275,22 @@ interface MangaDao {
     @Query("SELECT * FROM manga_books WHERE isHidden = 1 ORDER BY lastReadAt DESC")
     fun getHiddenBooks(): Flow<List<Book>>
 
-    @Query("SELECT * FROM manga_books WHERE isHidden = 0 AND (title LIKE '%' || :query || '%' OR id IN (SELECT tl.bookId FROM tag_links tl INNER JOIN tags t ON tl.tagId = t.id WHERE t.name LIKE '%' || :query || '%')) ORDER BY lastReadAt DESC")
+    @Query("SELECT * FROM manga_books WHERE isHidden = 0 AND mergedParentId IS NULL AND (title LIKE '%' || :query || '%' OR id IN (SELECT tl.bookId FROM tag_links tl INNER JOIN tags t ON tl.tagId = t.id WHERE t.name LIKE '%' || :query || '%')) ORDER BY lastReadAt DESC")
     fun searchVisibleBooks(query: String): Flow<List<Book>>
 
-    @Query("SELECT * FROM manga_books WHERE isHidden = 0 AND isFavorite = 1 AND title LIKE '%' || :query || '%' ORDER BY lastReadAt DESC")
+    @Query("SELECT * FROM manga_books WHERE isHidden = 0 AND mergedParentId IS NULL AND isFavorite = 1 AND title LIKE '%' || :query || '%' ORDER BY lastReadAt DESC")
     fun searchFavoriteBooks(query: String): Flow<List<Book>>
 
-    @Query("SELECT * FROM manga_books WHERE isHidden = 0 AND (readPages > 0 OR lastReadAt IS NOT NULL) AND title LIKE '%' || :query || '%' ORDER BY lastReadAt DESC")
+    @Query("SELECT * FROM manga_books WHERE isHidden = 0 AND mergedParentId IS NULL AND (readPages > 0 OR lastReadAt IS NOT NULL) AND title LIKE '%' || :query || '%' ORDER BY lastReadAt DESC")
     fun searchReadingBooks(query: String): Flow<List<Book>>
 
-    @Query("SELECT * FROM manga_books WHERE isHidden = 0 AND readPages = 0 AND lastReadAt IS NULL AND title LIKE '%' || :query || '%' ORDER BY lastReadAt DESC")
+    @Query("SELECT * FROM manga_books WHERE isHidden = 0 AND mergedParentId IS NULL AND readPages = 0 AND lastReadAt IS NULL AND title LIKE '%' || :query || '%' ORDER BY lastReadAt DESC")
     fun searchUnreadBooks(query: String): Flow<List<Book>>
 
-    @Query("SELECT * FROM manga_books WHERE isHidden = 0 AND totalPages > 0 AND readPages >= totalPages AND title LIKE '%' || :query || '%' ORDER BY lastReadAt DESC")
+    @Query("SELECT * FROM manga_books WHERE isHidden = 0 AND mergedParentId IS NULL AND totalPages > 0 AND readPages >= totalPages AND title LIKE '%' || :query || '%' ORDER BY lastReadAt DESC")
     fun searchFinishedBooks(query: String): Flow<List<Book>>
 
-    @Query("SELECT * FROM manga_books WHERE isHidden = 0 AND fileType = :type AND title LIKE '%' || :query || '%' ORDER BY lastReadAt DESC")
+    @Query("SELECT * FROM manga_books WHERE isHidden = 0 AND mergedParentId IS NULL AND fileType = :type AND title LIKE '%' || :query || '%' ORDER BY lastReadAt DESC")
     fun searchByType(query: String, type: String): Flow<List<Book>>
 
     @Query("SELECT * FROM manga_books WHERE isHidden = 0 ORDER BY lastReadAt DESC")
@@ -301,25 +303,25 @@ interface MangaDao {
     @Query("SELECT DISTINCT fileType FROM manga_books WHERE isHidden = 0")
     suspend fun getAllFileTypes(): List<String>
 
-    @Query("SELECT * FROM manga_books WHERE isHidden = 0 ORDER BY title ASC")
+    @Query("SELECT * FROM manga_books WHERE isHidden = 0 AND mergedParentId IS NULL ORDER BY title ASC")
     fun getVisibleBooksByName(): Flow<List<Book>>
 
-    @Query("SELECT * FROM manga_books WHERE isHidden = 0 ORDER BY addedAt DESC")
+    @Query("SELECT * FROM manga_books WHERE isHidden = 0 AND mergedParentId IS NULL ORDER BY addedAt DESC")
     fun getVisibleBooksByDateAdded(): Flow<List<Book>>
 
-    @Query("SELECT * FROM manga_books WHERE isHidden = 0 ORDER BY CASE WHEN totalPages > 0 THEN cast(readPages as float) / totalPages ELSE 0 END DESC")
+    @Query("SELECT * FROM manga_books WHERE isHidden = 0 AND mergedParentId IS NULL ORDER BY CASE WHEN totalPages > 0 THEN cast(readPages as float) / totalPages ELSE 0 END DESC")
     fun getVisibleBooksByProgress(): Flow<List<Book>>
 
-    @Query("SELECT * FROM manga_books WHERE isHidden = 0 AND isFavorite = 1 ORDER BY lastReadAt DESC")
+    @Query("SELECT * FROM manga_books WHERE isHidden = 0 AND mergedParentId IS NULL AND isFavorite = 1 ORDER BY lastReadAt DESC")
     fun getVisibleFavoriteBooks(): Flow<List<Book>>
 
-    @Query("SELECT * FROM manga_books WHERE isHidden = 0 AND totalPages > 0 AND readPages >= totalPages ORDER BY lastReadAt DESC")
+    @Query("SELECT * FROM manga_books WHERE isHidden = 0 AND mergedParentId IS NULL AND totalPages > 0 AND readPages >= totalPages ORDER BY lastReadAt DESC")
     fun getVisibleFinishedBooks(): Flow<List<Book>>
 
-    @Query("SELECT * FROM manga_books WHERE isHidden = 0 AND (readPages > 0 OR lastReadAt IS NOT NULL) AND (totalPages = 0 OR readPages < totalPages) ORDER BY lastReadAt DESC")
+    @Query("SELECT * FROM manga_books WHERE isHidden = 0 AND mergedParentId IS NULL AND (readPages > 0 OR lastReadAt IS NOT NULL) AND (totalPages = 0 OR readPages < totalPages) ORDER BY lastReadAt DESC")
     fun getVisibleReadingBooks(): Flow<List<Book>>
 
-    @Query("SELECT * FROM manga_books WHERE isHidden = 0 AND readPages = 0 AND lastReadAt IS NULL ORDER BY lastReadAt DESC")
+    @Query("SELECT * FROM manga_books WHERE isHidden = 0 AND mergedParentId IS NULL AND readPages = 0 AND lastReadAt IS NULL ORDER BY lastReadAt DESC")
     fun getVisibleUnreadBooks(): Flow<List<Book>>
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
@@ -653,7 +655,7 @@ interface MangaDao {
     @Query("SELECT * FROM bookshelf_items WHERE bookId = :bookId")
     suspend fun getShelvesForBook(bookId: Long): List<BookshelfItem>
 
-    @Query("SELECT b.* FROM manga_books b INNER JOIN bookshelf_items bi ON b.id = bi.bookId WHERE bi.bookshelfId = :bookshelfId ORDER BY b.title ASC")
+    @Query("SELECT b.* FROM manga_books b INNER JOIN bookshelf_items bi ON b.id = bi.bookId WHERE bi.bookshelfId = :bookshelfId AND b.mergedParentId IS NULL ORDER BY b.title ASC")
     fun getBooksByShelf(bookshelfId: Long): Flow<List<Book>>
 
     @Query("DELETE FROM manga_books WHERE id IN (:ids)")
@@ -689,7 +691,7 @@ interface MangaDao {
     @Query("SELECT t.* FROM tags t INNER JOIN tag_links tl ON t.id = tl.tagId WHERE tl.bookId = :bookId")
     suspend fun getTagsForBookList(bookId: Long): List<Tag>
 
-    @Query("SELECT b.* FROM manga_books b INNER JOIN tag_links tl ON b.id = tl.bookId WHERE tl.tagId = :tagId AND b.isHidden = 0 ORDER BY b.title ASC")
+    @Query("SELECT b.* FROM manga_books b INNER JOIN tag_links tl ON b.id = tl.bookId WHERE tl.tagId = :tagId AND b.isHidden = 0 AND b.mergedParentId IS NULL ORDER BY b.title ASC")
     fun getBooksByTag(tagId: Long): Flow<List<Book>>
 
     @Query("SELECT COUNT(*) FROM tag_links WHERE tagId = :tagId")
@@ -763,7 +765,7 @@ interface MangaDao {
     @Query(
         """SELECT b.* FROM manga_books b
         INNER JOIN tag_links tl ON b.id = tl.bookId
-        WHERE b.isHidden = 0 AND tl.tagId IN (:tagIds)
+        WHERE b.isHidden = 0 AND b.mergedParentId IS NULL AND tl.tagId IN (:tagIds)
         GROUP BY b.id HAVING COUNT(DISTINCT tl.tagId) = :n"""
     )
     suspend fun getBooksByTagsAnd(tagIds: List<Long>, n: Int): List<Book>
@@ -772,7 +774,7 @@ interface MangaDao {
     @Query(
         """SELECT DISTINCT b.* FROM manga_books b
         INNER JOIN tag_links tl ON b.id = tl.bookId
-        WHERE b.isHidden = 0 AND tl.tagId IN (:tagIds)"""
+        WHERE b.isHidden = 0 AND b.mergedParentId IS NULL AND tl.tagId IN (:tagIds)"""
     )
     suspend fun getBooksByTagsOr(tagIds: List<Long>): List<Book>
 
@@ -1436,6 +1438,50 @@ interface MangaDao {
 
     @Query("UPDATE manga_books SET isFavorite = :isFavorite, isHidden = :isHidden WHERE id = :id")
     suspend fun updateBookShelfFlags(id: Long, isFavorite: Boolean, isHidden: Boolean)
+
+    @Query("SELECT * FROM manga_books WHERE mergedParentId = :parentId ORDER BY addedAt ASC")
+    suspend fun getMergeMembers(parentId: Long): List<Book>
+
+    @Query("UPDATE manga_books SET mergedParentId = :parentId WHERE id IN (:bookIds)")
+    suspend fun setMergedParent(bookIds: List<Long>, parentId: Long?)
+
+    @Transaction
+    suspend fun mergeBooks(memberIds: List<Long>, newName: String): Long {
+        val members = mutableListOf<Book>()
+        val seen = HashSet<Long>()
+        for (id in memberIds) {
+            val b = getBookById(id) ?: continue
+            if (b.source == "merged") {
+                for (m in getMergeMembers(id)) {
+                    if (seen.add(m.id)) members.add(m)
+                }
+            } else {
+                if (seen.add(b.id)) members.add(b)
+            }
+        }
+        if (members.size < 2) return -1L
+        val first = members.first()
+        val virtual = Book(
+            title = newName.ifBlank { "合并合集" },
+            filePath = "merged:${System.currentTimeMillis()}",
+            source = "merged",
+            coverPath = first.displayCoverPath,
+            addedAt = System.currentTimeMillis(),
+        )
+        val virtualId = insertBook(virtual)
+        setMergedParent(members.map { it.id }, virtualId)
+        memberIds.filter { it != virtualId }.forEach { id ->
+            getBookById(id)?.let { if (it.source == "merged") deleteBooksByIds(listOf(id)) }
+        }
+        return virtualId
+    }
+
+    @Transaction
+    suspend fun dissolveMerge(virtualBookId: Long) {
+        val members = getMergeMembers(virtualBookId)
+        if (members.isNotEmpty()) setMergedParent(members.map { it.id }, null)
+        deleteBooksByIds(listOf(virtualBookId))
+    }
 }
 
 data class BookAggregateRow(
@@ -1561,7 +1607,7 @@ abstract class MangaDatabase : com.ehviewer.core.database.LocalLibraryDatabase()
 
     companion object {
         /** ★ 数据库版本唯一事实源（注解与备份导出共用，防硬编码漂移） */
-        const val SCHEMA_VERSION = 27
+        const val SCHEMA_VERSION = 28
 
         @Volatile
         private var INSTANCE: MangaDatabase? = null
@@ -1857,6 +1903,13 @@ abstract class MangaDatabase : com.ehviewer.core.database.LocalLibraryDatabase()
             }
         }
 
+        private val MIGRATION_27_28 = object : androidx.room.migration.Migration(27, 28) {
+            override fun migrate(database: androidx.sqlite.db.SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE manga_books ADD COLUMN mergedParentId INTEGER")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_manga_books_mergedParentId ON manga_books(mergedParentId)")
+            }
+        }
+
         private val MIGRATION_23_24 = object : androidx.room.migration.Migration(23, 24) {
             override fun migrate(database: androidx.sqlite.db.SupportSQLiteDatabase) {
                 database.execSQL("ALTER TABLE tags ADD COLUMN sortOrder INTEGER NOT NULL DEFAULT 0")
@@ -1888,7 +1941,7 @@ abstract class MangaDatabase : com.ehviewer.core.database.LocalLibraryDatabase()
                     context.applicationContext,
                     MangaDatabase::class.java,
                     "manga_reader_db"
-                ).addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27)
+                ).addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28)
                 .fallbackToDestructiveMigrationOnDowngrade()
                 .build()
                 INSTANCE = instance
