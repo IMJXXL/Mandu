@@ -4165,7 +4165,9 @@ private fun ItemGrid(
             }
         }
         LazyVerticalGrid(columns = gridCols, contentPadding = PaddingValues(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.weight(1f)) {
-            itemsIndexed(sorted, key = { _, e -> "${e.auth}|${e.doc}" }) { _, e ->
+            // ★ 2026-10-12 真机复现问题1：zip 内条目 auth|doc 全同（listZipDirs 恒填 zip 自身 docId），
+            //   章节文件夹 ≥2 个即 key 碰撞闪退。补索引后缀，与 ReaderItemGrid 同款防撞。
+            itemsIndexed(sorted, key = { i, e -> "${e.auth}|${e.doc}_$i" }) { _, e ->
                 ItemCard(e, engine, bgColor, progress, { tap(e) }, navStack, subVolCovers) { onItemLongPress(e) }
             }
         }
