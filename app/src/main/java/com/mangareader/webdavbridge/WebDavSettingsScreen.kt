@@ -8,7 +8,7 @@ import com.mangareader.smbbridge.SectionCard
 import com.mangareader.smbbridge.SwitchRow
 import com.mangareader.smbbridge.dirSize
 import com.mangareader.smbbridge.formatSize
-import com.mangareader.smbbridge.showArchivePasswdsDialog
+
 import com.mangareader.smbbridge.showIntInput
 import com.mangareader.smbbridge.unwrapActivity
 
@@ -65,7 +65,9 @@ private val WEBDAV_CACHE_ENTRIES = listOf(
 @Composable
 fun WebDavSettingsScreen(onBack: () -> Unit, onOpenDownloadQueue: () -> Unit = {}) {
     LocalNetworkPermissionEffect()  // Android 17 局域网 socket 运行时授权（本地 WebDAV 同受管制）
-    BackHandler { onBack() }
+    var showArchivePassword by remember { mutableStateOf(false) }
+    var archivePasswds by remember { mutableStateOf(Settings.archivePasswds) }
+    BackHandler { if (showArchivePassword) showArchivePassword = false else onBack() }
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
 
@@ -227,20 +229,14 @@ fun WebDavSettingsScreen(onBack: () -> Unit, onOpenDownloadQueue: () -> Unit = {
 
             item {
             SectionCard("归档密码") {
-                var passwds by remember { mutableStateOf(Settings.archivePasswds) }
                 Row(
                     Modifier.fillMaxWidth().clickable {
-                        (ctx.unwrapActivity())?.let { activity ->
-                            showArchivePasswdsDialog(activity, passwds.sorted()) { newList ->
-                                Settings.archivePasswds = newList.toSet()
-                                passwds = newList.toSet()
-                            }
-                        }
+                        showArchivePassword = true
                     }.padding(vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(Modifier.weight(1f)) {
-                        Text("归档密码 (${passwds.size} 条)", fontSize = 16.sp)
+                        Text("归档密码 (${archivePasswds.size} 条)", fontSize = 16.sp)
                         Text("加密归档打开时按列表自动尝试", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Text("编辑 ›", fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
@@ -254,6 +250,9 @@ fun WebDavSettingsScreen(onBack: () -> Unit, onOpenDownloadQueue: () -> Unit = {
 
             item { Spacer(Modifier.height(24.dp)) }
         }
+    }
+    if (showArchivePassword) {
+        com.mangareader.ui.ArchivePasswordScreen(onBack = { showArchivePassword = false; archivePasswds = Settings.archivePasswds })
     }
 }
 

@@ -39,7 +39,7 @@ import com.mangareader.data.Folder
 import com.mangareader.smbbridge.CacheEntry
 import com.mangareader.smbbridge.CacheManagementCard
 import com.mangareader.smbbridge.SectionCard
-import com.mangareader.smbbridge.showArchivePasswdsDialog
+
 import com.mangareader.smbbridge.unwrapActivity
 import com.hippo.ehviewer.Settings
 import kotlinx.coroutines.Dispatchers
@@ -65,7 +65,9 @@ private val LOCAL_CACHE_ENTRIES = listOf(
 @Composable
 fun FolderManageScreen(onBack: () -> Unit) {
     var showSettings by remember { mutableStateOf(false) }
-    BackHandler { if (showSettings) showSettings = false else onBack() }
+    var showArchivePassword by remember { mutableStateOf(false) }
+    var archivePasswds by remember { mutableStateOf(Settings.archivePasswds) }
+    BackHandler { if (showArchivePassword) showArchivePassword = false else if (showSettings) showSettings = false else onBack() }
     val ctx = LocalContext.current
     val app = ctx.applicationContext as App
     val dao = remember { app.db.mangaDao() }
@@ -524,20 +526,15 @@ fun FolderManageScreen(onBack: () -> Unit) {
                 // ★ 归档密码（0930）：本地/SMB/WebDAV 三路共用的记忆库，加密压缩包打开时
                 //   自动尝试（命中的密码优先），封面提取同样静默尝试
                 SectionCard("归档密码") {
-                    var passwds by remember { mutableStateOf(Settings.archivePasswds) }
+
                     Row(
                         Modifier.fillMaxWidth().clickable {
-                            (ctx.unwrapActivity())?.let { activity ->
-                                showArchivePasswdsDialog(activity, passwds.sorted()) { newList ->
-                                    Settings.archivePasswds = newList.toSet()
-                                    passwds = newList.toSet()
-                                }
-                            }
+                            showArchivePassword = true
                         }.padding(vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Column(Modifier.weight(1f)) {
-                            Text("归档密码 (${passwds.size} 条)", fontSize = 16.sp)
+                            Text("归档密码 (${archivePasswds.size} 条)", fontSize = 16.sp)
                             Text("加密压缩包打开时自动尝试，命中的优先（本地/SMB/WebDAV 通用）", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         Text("编辑 ›", fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
@@ -550,5 +547,8 @@ fun FolderManageScreen(onBack: () -> Unit) {
                 )
             }
         }
+    }
+    if (showArchivePassword) {
+        ArchivePasswordScreen(onBack = { showArchivePassword = false; archivePasswds = Settings.archivePasswds })
     }
 }
