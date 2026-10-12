@@ -1593,7 +1593,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                 Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
                     TextButton(onClick = { showShelfDialog = true }) { Text("添加到书架", color = MaterialTheme.colorScheme.primary) }
                         TextButton(onClick = { showBatchTagPicker = true }) { Text("打标签", color = MaterialTheme.colorScheme.primary) }
-                    {
+                    run {
                         val selectedBookList = books.orEmpty().filter { it.id in selectedBooks }
                         val virtualCount = selectedBookList.count { it.source == "merged" }
                         val normalCount = selectedBookList.size - virtualCount

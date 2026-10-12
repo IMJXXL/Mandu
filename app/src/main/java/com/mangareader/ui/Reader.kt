@@ -1992,6 +1992,12 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         return listOf(bookFilePath) + midPaths + listOf(jumpPath)
     }
 
+    fun resolveOrientation(bookId: Long): Int {
+        val perBook = prefs.getInt("orientation_$bookId", Int.MIN_VALUE)
+        if (perBook != Int.MIN_VALUE) return perBook
+        return prefs.getInt("orientation", ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED)
+    }
+
     suspend fun buildContinueContext(bookFilePath: String, jumpPath: String): ContinueContext {
         val fallbackToc = withContext(Dispatchers.IO) { try { engine.children(bookFilePath) } catch (_: Exception) { emptyList() } }
         if (jumpPath == bookFilePath) return ContinueContext(listOf(bookFilePath), fallbackToc, true)
@@ -2252,11 +2258,6 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         prefs.edit().putInt("orientation_$currentBookId", orientation).apply()
     }
 
-    private fun resolveOrientation(bookId: Long): Int {
-        val perBook = prefs.getInt("orientation_$bookId", Int.MIN_VALUE)
-        if (perBook != Int.MIN_VALUE) return perBook
-        return prefs.getInt("orientation", ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED)
-    }
 
     fun toggleUi() {
         // ★ 1.001 锁定拦截：锁定态下不唤 UI，改为唤出锁图标（3s 自动消失）

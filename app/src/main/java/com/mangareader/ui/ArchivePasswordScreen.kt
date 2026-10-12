@@ -71,7 +71,7 @@ fun ArchivePasswordScreen(onBack: () -> Unit) {
                 "加密压缩包打开时自动尝试，命中的优先（本地/SMB/WebDAV 通用）",
                 fontSize = 12.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 16.dp, bottom = 8.dp),
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
             )
             HorizontalDivider()
             LazyColumn(
