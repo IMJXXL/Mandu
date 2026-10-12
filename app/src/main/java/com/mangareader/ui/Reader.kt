@@ -2053,7 +2053,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                     persistDavCoverIfGated(newBook)
                     val newBookId = newBook.id
                     config = com.mangareader.data.ReaderConfig.load(ctx, newBookId)
-                    act?.requestedOrientation = prefs.getInt("orientation_$newBookId", ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED)
+                    act?.requestedOrientation = resolveOrientation(newBookId)
                     mode = resolveInitialMode(newBookId)
                     // 同步：确保 scrollMode 和 read_mode 一致
                     val expectedScrollMode = when (mode) {
@@ -2252,6 +2252,12 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         prefs.edit().putInt("orientation_$currentBookId", orientation).apply()
     }
 
+    private fun resolveOrientation(bookId: Long): Int {
+        val perBook = prefs.getInt("orientation_$bookId", Int.MIN_VALUE)
+        if (perBook != Int.MIN_VALUE) return perBook
+        return prefs.getInt("orientation", ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED)
+    }
+
     fun toggleUi() {
         // ★ 1.001 锁定拦截：锁定态下不唤 UI，改为唤出锁图标（3s 自动消失）
         if (isLocked) {
@@ -2341,7 +2347,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                 runCatching { com.mangareader.DiagTracer.markStatic("local: open begin src=loc") }
             } else localOpenStartMs = 0L
             loadedBook?.let { b ->
-                act?.requestedOrientation = prefs.getInt("orientation_$bookId", ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED)
+                act?.requestedOrientation = resolveOrientation(bookId)
                 val filePath = b.filePath
 
                 if (!jumpPath.isNullOrEmpty()) {
