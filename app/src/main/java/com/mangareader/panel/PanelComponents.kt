@@ -163,7 +163,16 @@ internal object PanelComponents {
                 } catch (_: Exception) {
                     listOf(b)
                 }
-                out.addAll(split)
+                if (split.size == 1) {
+                    val sheared = try {
+                        PanelShearSplit.tryShear(mask, w, h, b)
+                    } catch (_: Exception) {
+                        listOf(b)
+                    }
+                    out.addAll(sheared)
+                } else {
+                    out.addAll(split)
+                }
             } else {
                 out.add(b)
             }
