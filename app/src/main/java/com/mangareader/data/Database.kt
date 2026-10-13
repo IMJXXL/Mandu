@@ -1076,7 +1076,8 @@ interface MangaDao {
                     readPages = ob.readPages, lastReadAt = ob.lastReadAt,
                     totalPages = ob.totalPages, isFavorite = ob.isFavorite,
                     isHidden = ob.isHidden, addedAt = ob.addedAt,
-                    customTitle = ob.customTitle, customCoverPath = ob.customCoverPath
+                    customTitle = ob.customTitle, customCoverPath = ob.customCoverPath,
+                    mergedParentId = ob.mergedParentId
                 )
             } ?: nb
         }
@@ -1136,7 +1137,16 @@ interface MangaDao {
                 newIdByOldId[bm.bookId]?.let { insertBookmark(bm.copy(id = 0, bookId = it)) }
             }
         }
+
+        val candidateVirtualIds = oldBooks.mapNotNull { it.mergedParentId }.distinct()
+        if (candidateVirtualIds.isNotEmpty()) {
+            val deletedCount = deleteEmptyMergeVirtualBooks(candidateVirtualIds)
+            if (deletedCount > 0) android.util.Log.i("Database", "rescanFolderReplace: cleaned $deletedCount empty merge virtual books")
+        }
     }
+
+    @Query("DELETE FROM manga_books WHERE id IN (:candidateIds) AND source = 'merged' AND id NOT IN (SELECT DISTINCT mergedParentId FROM manga_books WHERE mergedParentId IS NOT NULL)")
+    suspend fun deleteEmptyMergeVirtualBooks(candidateIds: List<Long>): Int
 
     // ==================== ★ 书库一次性去重（DedupBooks） ====================
 
