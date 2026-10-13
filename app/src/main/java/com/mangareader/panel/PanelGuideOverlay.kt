@@ -60,7 +60,7 @@ class PanelGuideOverlay(context: Context) : View(context) {
         val minConf: Float = PanelTunables.CONF_FAIL,
         val dimMode: Int = 0,
         val splitMode: Int = 0,
-        val exemptedPages: Set<Int> = emptySet(),
+
         val transitionMode: Int = 0,
         val displayMode: Int = 0,
         val cropMode: Int = 2,
@@ -71,7 +71,7 @@ class PanelGuideOverlay(context: Context) : View(context) {
         val srPoll: ((Int, () -> Unit) -> Unit)? = null,
         val goToPage: (Int) -> Unit,
         val currentPage: () -> Int,
-        val onExemptCurrentPage: (page: Int) -> Unit = {},
+
         val onChapterEnd: () -> Unit = {},
         val onCloseActive: () -> Unit = {},
     )
@@ -165,10 +165,7 @@ class PanelGuideOverlay(context: Context) : View(context) {
     fun onHostPageChanged(page: Int) {
         val s = session ?: return
         if (page == shownPage) return
-        if (s.exemptedPages.isNotEmpty() && page !in s.exemptedPages) {
-            session = s.copy(exemptedPages = emptySet())
-            s.onExemptCurrentPage(-1)
-        }
+
         showPage(page)
     }
 
@@ -209,13 +206,6 @@ class PanelGuideOverlay(context: Context) : View(context) {
         showPage(shownPage)
     }
 
-    fun onExemptChanged(exemptedPages: Set<Int>) {
-        val s = session ?: return
-        session = s.copy(exemptedPages = exemptedPages)
-        val exempted = shownPage in exemptedPages
-        visibility = if (exempted) GONE else VISIBLE
-        invalidate()
-    }
 
     override fun onDetachedFromWindow() {
         session = null
@@ -230,11 +220,7 @@ class PanelGuideOverlay(context: Context) : View(context) {
         val s = session ?: return
         if (page !in s.pages.indices) return
         shownPage = page
-        if (page in s.exemptedPages) {
-            visibility = GONE
-            loadJob?.cancel()
-            return
-        }
+
         visibility = VISIBLE
         loadJob?.cancel()
         val sCaptured = s

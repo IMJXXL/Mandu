@@ -296,7 +296,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     }
     // ★ 逐格设置面板：点击按钮打开（开始/退出与设置都在面板内，持久全局开关语义）
     var showPanelGuideSheet by remember { mutableStateOf(false) }
-    var panelGuideExempted by remember { mutableStateOf<Set<Int>>(emptySet()) }
+
     var showRename by remember { mutableStateOf(false) }
     var renameInput by remember { mutableStateOf("") }
     var showSrQueue by remember { mutableStateOf(false) }
@@ -2862,9 +2862,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                             tileModeEnabled = config.tileModeEnabled,
                             // ★ 逐格引导（2026-10-11）：开关/回执/墨水屏分支
                             panelGuideActive = panelGuideActive,
-                            onPanelGuideExempt = { page ->
-                                panelGuideExempted = if (page < 0) emptySet() else setOf(page)
-                            },
+
                             onPanelGuideChapterEnd = { handleChapterEnd(true) },
                             onPanelGuideCloseActive = { setPanelGuideActive(false) },
                             panelGuideEink = config.isEinkMode,
@@ -2875,7 +2873,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                             panelGuideRtl = config.panelGuideRtl,
                             panelGuideDimMode = config.panelGuideDimMode,
                             panelGuideSplitMode = config.panelGuideSplitMode,
-                            panelGuideExemptedPages = panelGuideExempted,
+
                             panelGuideTransition = config.panelGuideTransition,
                             panelGuideDisplay = config.panelGuideDisplay,
                             panelGuideCrop = config.panelGuideCrop,
@@ -3415,7 +3413,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
 
     // ★ 逐格激活时 Back 退出（先于其他 BackHandler 挂载顺序无碍：Compose 逆序启用）
     if (panelGuideActive) {
-        BackHandler { panelGuideExempted = setOf(cur) }
+        BackHandler { setPanelGuideActive(false) }
     }
 
     // ★ 逐格设置面板（长按按钮进入）：四项设置即改即生效

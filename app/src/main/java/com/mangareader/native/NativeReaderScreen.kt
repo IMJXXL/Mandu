@@ -149,8 +149,7 @@ fun NativeReaderScreen(
     /** ★ 逐格引导（Panel-by-Panel，2026-10-11）：会话级开关。仅 pager 单页族生效（pageLayout==0、
      *   非竖向/瓦片/仿真翻页）；覆盖层自载页位图（engine.loadPage），与 delegate 视图状态解耦 */
     panelGuideActive: Boolean = false,
-    /** 逐格退出回执（含模式竞态兜底退出）——Reader 侧清 panelGuideActive */
-    onPanelGuideExempt: (Int) -> Unit = {},
+
     onPanelGuideChapterEnd: () -> Unit = {},
     onPanelGuideCloseActive: () -> Unit = {},
     /** 逐格墨水屏分支：不压暗不裁切放大零动画，仅描边当前格 */
@@ -166,7 +165,7 @@ fun NativeReaderScreen(
     /** 选中格显示模式：0=放大铺满 1=原位高亮（不放大） 2=放大铺满+选中格同步压暗 */
     panelGuideDimMode: Int = 0,
     panelGuideSplitMode: Int = 0,
-    panelGuideExemptedPages: Set<Int> = emptySet(),
+
     panelGuideTransition: Int = 0,
     panelGuideDisplay: Int = 0,
     panelGuideCrop: Int = 2,
@@ -724,7 +723,7 @@ fun NativeReaderScreen(
     //   pager + 单页布局(pageLayout==0，横屏自动双页展开后的生效值) + 非竖向/瓦片/仿真翻页。
     //   不满足时立即回执退出（模式竞态兜底）。treePath 入 key：跨章无缝续读换章时重 begin。
     val panelCloseCallback = rememberUpdatedState(onPanelGuideCloseActive)
-    val panelExemptCallback = rememberUpdatedState(onPanelGuideExempt)
+
     val panelChapterEndCallback = rememberUpdatedState(onPanelGuideChapterEnd)
     val panelNav = remember(clickFlip, clickFlipInvert) {
         com.mangareader.native.buildNavigation(clickFlip, clickFlipInvert, verticalPager = false)
@@ -752,7 +751,7 @@ fun NativeReaderScreen(
                     minConf = com.mangareader.panel.PanelTunables.confFailFor(panelGuideSensitivity),
                     dimMode = panelGuideDimMode,
                     splitMode = panelGuideSplitMode,
-                    exemptedPages = panelGuideExemptedPages,
+
                     transitionMode = panelGuideTransition,
                     displayMode = panelGuideDisplay,
                     cropMode = panelGuideCrop,
@@ -780,7 +779,7 @@ fun NativeReaderScreen(
                     },
                     goToPage = { target -> d.goToPage(target) },
                     currentPage = { savedPage },
-                    onExemptCurrentPage = { panelExemptCallback.value(it) },
+
                     onChapterEnd = { panelChapterEndCallback.value() },
                     onCloseActive = { panelCloseCallback.value() },
                 )
@@ -814,9 +813,7 @@ fun NativeReaderScreen(
             panelGuidePrecision,
         )
     }
-    LaunchedEffect(panelGuideExemptedPages) {
-        panelOverlayRef?.onExemptChanged(panelGuideExemptedPages)
-    }
+
 
     AndroidView(
         factory = {
