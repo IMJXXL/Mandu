@@ -145,14 +145,35 @@ internal object PanelComponents {
         }
         if (candidates.isEmpty()) return emptyList()
 
-        val merged = dropContained(candidates)
+        val split = splitLargeCandidates(candidates, mask, w, h, pageArea)
+
+        val merged = dropContained(split)
         val deoverlapped = deoverlap(merged)
         val snapped = snapGutters(deoverlapped, w, h, maxDim)
         return nms(snapped)
     }
 
+    /** 候选生成后对大候选框执行相连框拆分（白色分隔带/黑色共享边框），小框不拆分。 */
+    private fun splitLargeCandidates(candidates: List<Box>, mask: BooleanArray, w: Int, h: Int, pageArea: Float): List<Box> {
+        val out = ArrayList<Box>()
+        for (b in candidates) {
+            if (b.area / pageArea >= PanelTunables.SPLIT_LARGE_AREA_RATIO) {
+                val split = try {
+                    PanelSplitJoined.splitJoined(mask, w, h, b)
+                } catch (_: Exception) {
+                    listOf(b)
+                }
+                out.addAll(split)
+            } else {
+                out.add(b)
+            }
+        }
+        return out
+    }
+
     /** 阶段5：碎片各自外扩 FRAG_GROUP_EXPAND·长边后相交即并（union-find），组框=原始框并集 */
     internal fun groupFragments(frags: List<Box>, maxDim: Float): List<Box> {
+
         if (frags.isEmpty()) return emptyList()
         val ex = frags.map {
             val d = (PanelTunables.FRAG_GROUP_EXPAND * maxDim).toInt()
