@@ -225,7 +225,7 @@ private fun aggregateKomgaSeries(books: List<Book>): List<ShelfItem> {
         if (volumes.size >= 2) {
             val (serverId, seriesId) = key
             val seriesName = volumes.firstOrNull { !it.seriesName.isNullOrEmpty() }?.seriesName
-                ?: volumes.first().title
+                ?: volumes.first().displayTitle
             // 系列卡封面：子卷 displayCoverPath（含自定义封面）优先
             val coverPath = volumes.firstOrNull { !it.displayCoverPath.isNullOrEmpty() }?.displayCoverPath
             result.add(ShelfItem.Series(serverId, seriesId, seriesName, coverPath, volumes.size, volumes))
@@ -251,8 +251,8 @@ private fun sortShelfItems(items: List<ShelfItem>, sort: SortMode): List<ShelfIt
             }
         }
         SortMode.NAME -> items.sortedWith(Comparator { a, b ->
-            val an = when (a) { is ShelfItem.Single -> a.book.title; is ShelfItem.Series -> a.title }
-            val bn = when (b) { is ShelfItem.Single -> b.book.title; is ShelfItem.Series -> b.title }
+            val an = when (a) { is ShelfItem.Single -> a.book.displayTitle; is ShelfItem.Series -> a.title }
+            val bn = when (b) { is ShelfItem.Single -> b.book.displayTitle; is ShelfItem.Series -> b.title }
             naturalCompare(an, bn)
         })
         SortMode.PROGRESS -> items.sortedByDescending { item ->
@@ -405,7 +405,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                         item.dir -> buildChildPath(node.path, item) ?: continue
                         else -> buildLeafPath(item)
                     }
-                    hits.add(DeepSearchHit(book.id, book.title, jump, childRel, item.dir))
+                    hits.add(DeepSearchHit(book.id, book.displayTitle, jump, childRel, item.dir))
                 }
                 if (item.dir && node.depth < 5) {
                     val childPath = if (remote) item.doc else buildChildPath(node.path, item) ?: continue
@@ -796,7 +796,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                 //   用户选了时间排序进书架看到的是书名序=「新旧掺一起」。四键与 sortShelfItems 对齐。
                 val ordered = withContext(Dispatchers.IO) {
                     when (sort) {
-                        SortMode.NAME -> list.sortedWith(Comparator { a, b -> naturalCompare(a.title, b.title) })
+                        SortMode.NAME -> list.sortedWith(Comparator { a, b -> naturalCompare(a.displayTitle, b.displayTitle) })
                         SortMode.LAST -> list.sortedByDescending { it.lastReadAt ?: 0L }
                         SortMode.DATE -> list.sortedByDescending { it.addedAt }
                         SortMode.PROGRESS -> list.sortedByDescending { if (it.totalPages > 0) it.readPages.toFloat() / it.totalPages else 0f }
@@ -835,7 +835,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                     val b = byId[p.bookId] ?: return@forEach
                     val rel = deepProgressRel(b.filePath, p.path) ?: return@forEach
                     if (!rel.contains(q, ignoreCase = true)) return@forEach
-                    push(DeepSearchHit(b.id, b.title, p.path, rel, false))
+                    push(DeepSearchHit(b.id, b.displayTitle, p.path, rel, false))
                 }
             }
         }
@@ -855,7 +855,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
     deleteTarget?.let { b ->
         val customNote = if (b.customCoverPath != null) "已设置的自定义封面将一并删除。" else ""
         AlertDialog(onDismissRequest = { deleteTarget = null }, title = { Text("删除") },
-            text = { Text("删除「${b.title}」？不删原始文件。$customNote") },
+            text = { Text("删除「${b.displayTitle}」？不删原始文件。$customNote") },
             confirmButton = { TextButton(onClick = {
                 scope.launch {
                     withContext(Dispatchers.IO) {
@@ -1001,7 +1001,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                                                     DocumentsContract.deleteDocument(ctx.contentResolver, docUri)
                                                 } catch (e: Exception) {
                                                     withContext(Dispatchers.Main) {
-                                                        Toast.makeText(ctx, "无法删除「${b.title}」: ${e.message}", Toast.LENGTH_SHORT).show()
+                                                        Toast.makeText(ctx, "无法删除「${b.displayTitle}」: ${e.message}", Toast.LENGTH_SHORT).show()
                                                     }
                                                 }
                                                 engine.deleteCoverCache(b.coverPath ?: "")
@@ -1080,7 +1080,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
 
     if (showMergeDialog) {
         val selectedBookList = books.orEmpty().filter { it.id in selectedBooks }
-        val defaultName = selectedBookList.firstOrNull()?.title ?: "合并合集"
+        val defaultName = selectedBookList.firstOrNull()?.displayTitle ?: "合并合集"
         var mergeName by remember(showMergeDialog) { mutableStateOf(defaultName) }
         AlertDialog(
             onDismissRequest = { showMergeDialog = false },
@@ -1146,13 +1146,13 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
         val f = b.totalPages > 0 && b.readPages >= b.totalPages
         val r = !f && (b.readPages > 0 || (b.lastReadAt != null && b.lastReadAt > 0))
         val statusText = when { f -> "已读完"; r -> "阅读中"; else -> "未读" }
-        AlertDialog(onDismissRequest = { showBookInfo = null }, title = { Text(b.title) },
+        AlertDialog(onDismissRequest = { showBookInfo = null }, title = { Text(b.displayTitle) },
             text = {
                 Column(Modifier.heightIn(max = dialogContentMaxHeight()).verticalScroll(rememberScrollState())) {
                     // ★ 原文件名直接放长按弹窗顶部（智能解析改名后书名与原名差异大，用户要能当场对出来）；
                     //   取名走 fileNameOf——SAF 路径末段是 |ext 后缀，不能直接 substringAfterLast('|')
                     val rawName = remember(b.filePath) { com.mangareader.util.BookTitleParser.fileNameOf(b.filePath) }
-                    if (rawName.isNotBlank() && rawName != b.title) {
+                    if (rawName.isNotBlank() && rawName != b.displayTitle) {
                         Text("原文件名: $rawName", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 3, overflow = TextOverflow.Ellipsis)
                         Spacer(Modifier.height(8.dp))
                     }
@@ -1412,7 +1412,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                     IconButton(onClick = {
                         val targets = books.orEmpty().filter { it.id in selectedBooks }
                         // 异步入队（大书 IO 不卡主线程），完成后主线程 Toast
-                        com.mangareader.sr.SrBatchRunner.enqueueBooks(ctx, targets.map { it.id to it.title }) { r ->
+                        com.mangareader.sr.SrBatchRunner.enqueueBooks(ctx, targets.map { it.id to it.displayTitle }) { r ->
                             (ctx as? android.app.Activity)?.runOnUiThread {
                                 android.widget.Toast.makeText(
                                     ctx,
@@ -1432,7 +1432,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                                 text = { Text("批量增强（已读章节）") },
                                 onClick = {
                                     srMenu = false
-                                    com.mangareader.sr.SrBatchRunner.enqueueBooks(ctx, srTargets.map { it.id to it.title }, false) { r ->
+                                    com.mangareader.sr.SrBatchRunner.enqueueBooks(ctx, srTargets.map { it.id to it.displayTitle }, false) { r ->
                                         (ctx as? android.app.Activity)?.runOnUiThread {
                                             Toast.makeText(ctx, if (r.chapters > 0) "已加入队列：${r.chapters} 章 ${r.pages} 页" else "没有找到可处理的页面——所选书可能无法离线枚举", Toast.LENGTH_LONG).show()
                                         }
@@ -1444,7 +1444,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                                 text = { Text("整本增强（含未读章，占用更多存储）") },
                                 onClick = {
                                     srMenu = false
-                                    com.mangareader.sr.SrBatchRunner.enqueueBooks(ctx, srTargets.map { it.id to it.title }, true) { r ->
+                                    com.mangareader.sr.SrBatchRunner.enqueueBooks(ctx, srTargets.map { it.id to it.displayTitle }, true) { r ->
                                         (ctx as? android.app.Activity)?.runOnUiThread {
                                             Toast.makeText(ctx, if (r.chapters > 0) "已加入队列：${r.chapters} 章 ${r.pages} 页，空闲时自动逐章处理" else "没有找到可处理的页面——所选书可能无法离线枚举", Toast.LENGTH_LONG).show()
                                         }
@@ -2158,7 +2158,7 @@ private fun BookCard(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, isS
             }
             if (layoutMode == 0) {
                 Box(Modifier.fillMaxWidth().align(Alignment.BottomCenter).background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xAA000000))))) {
-                    Text(text = b.title, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Color.White, modifier = Modifier.fillMaxWidth().then(if (titleMarquee) Modifier.basicMarquee() else Modifier).padding(horizontal = 6.dp, vertical = 4.dp))
+                    Text(text = b.displayTitle, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Color.White, modifier = Modifier.fillMaxWidth().then(if (titleMarquee) Modifier.basicMarquee() else Modifier).padding(horizontal = 6.dp, vertical = 4.dp))
                 }
             } else {
                 Box(Modifier.fillMaxWidth().height(36.dp).align(Alignment.BottomCenter).background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.5f)))))
@@ -2210,7 +2210,7 @@ private fun BookCard(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, isS
         }
         if (layoutMode == 1) {
             Box(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp)) {
-                Text(text = b.title, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurface)
+                Text(text = b.displayTitle, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurface)
             }
         }
         }
@@ -2267,7 +2267,7 @@ private fun BookListRow(b: Book, engine: ArchiveEngine, isMultiSelect: Boolean, 
             }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text(text = b.title, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Medium)
+                Text(text = b.displayTitle, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Medium)
                 Spacer(Modifier.height(4.dp))
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (!hideAllBadges) {

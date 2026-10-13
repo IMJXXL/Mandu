@@ -300,7 +300,7 @@ internal fun CoverEditDialog(
                     Spacer(Modifier.height(28.dp))
                     Text("设置封面", fontSize = 20.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
                     Spacer(Modifier.height(4.dp))
-                    Text(book.title, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
+                    Text(book.displayTitle, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
                     Spacer(Modifier.height(24.dp))
                     SourceCard("从文件选择", "从文件管理器选择图片，取景框裁剪后设为封面") {
                         pickImage.launch(arrayOf("image/*"))
@@ -311,7 +311,7 @@ internal fun CoverEditDialog(
                             if (isTreeBook) "从本卷内容选择（可进入子文件夹/压缩包）" else "从本卷页面选择",
                             "浏览本书内容，任意一张图设为封面",
                         ) {
-                            pushStage(if (isTreeBook) CoverStage.Browser(book.filePath, book.title) else CoverStage.Pages(book.filePath, book.title))
+                            pushStage(if (isTreeBook) CoverStage.Browser(book.filePath, book.displayTitle) else CoverStage.Pages(book.filePath, book.displayTitle))
                         }
                     } else if (book.source in REMOTE_COVER_SOURCES) {
                         SourceCard("从本卷页面选择", "浏览本书页面，任意一张图设为封面") {
@@ -371,7 +371,7 @@ internal fun CoverEditDialog(
                                 supply = sup,
                                 pageCount = remotePageCount,
                                 komgaThumb = komgaThumbLoader,
-                                title = book.title,
+                                title = book.displayTitle,
                                 thumbCache = remoteThumbCache,
                                 cap = cap,
                                 onPick = { idx ->

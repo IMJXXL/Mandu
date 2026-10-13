@@ -142,7 +142,7 @@ fun SrQueueScreen(onBack: () -> Unit, onOpenBook: ((Long, String) -> Unit)? = nu
                             b.id !in queuedIds && b.id !in doneIds &&
                             !SrCore.diskCache.hasArtifactsForBook(b.id)
                     }
-                    .map { it.id to it.title }
+                    .map { it.id to it.displayTitle }
                 unenhancedBooks = found
                 if (found.isEmpty()) {
                     withContext(Dispatchers.Main) {

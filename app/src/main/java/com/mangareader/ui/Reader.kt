@@ -834,7 +834,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                     is com.mangareader.smbbridge.SmbBookRouter.OpenResult.Supported ->
                         return attachRemoteSession(r.supply, saved, targetPage, path)
                     is com.mangareader.smbbridge.SmbBookRouter.OpenResult.Unsupported -> {
-                        com.mangareader.smbbridge.RemoteDownloadDialogState.showDialog(path, "smb", b.id, b.title)
+                        com.mangareader.smbbridge.RemoteDownloadDialogState.showDialog(path, "smb", b.id, b.displayTitle)
                         viewing = false; loading = false
                         back()
                         return emptyList()
@@ -850,7 +850,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                     is com.mangareader.webdavbridge.WebDavBookRouter.OpenResult.Supported ->
                         return attachRemoteSession(r.supply, saved, targetPage, path)
                     is com.mangareader.webdavbridge.WebDavBookRouter.OpenResult.Unsupported -> {
-                        com.mangareader.smbbridge.RemoteDownloadDialogState.showDialog(path, "webdav", b.id, b.title)
+                        com.mangareader.smbbridge.RemoteDownloadDialogState.showDialog(path, "webdav", b.id, b.displayTitle)
                         viewing = false; loading = false
                         back()
                         return emptyList()
@@ -1915,10 +1915,10 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     ): String {
         if (hideTitles) return ""
         if (b == null) return ""
-        if (!isViewing) return b.title
+        if (!isViewing) return b.displayTitle
         val currentVolumePath = stack.lastOrNull() ?: b.filePath
-        if (currentVolumePath == b.filePath) return b.title
-        return extractVolumeName(currentVolumePath) ?: b.title
+        if (currentVolumePath == b.filePath) return b.displayTitle
+        return extractVolumeName(currentVolumePath) ?: b.displayTitle
     }
 
     data class ContinueContext(val navStack: List<String>, val tocItems: List<ArchiveEngine.Item>, val fellBack: Boolean)
@@ -2104,7 +2104,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                 scope.launch {
                     val nextBook = findAdjacentBook(1)
                     if (nextBook != null) {
-                        switchTargetName = nextBook.title
+                        switchTargetName = nextBook.displayTitle
                         switchTargetPath = nextBook.filePath
                         confirmSwitch()
                     } else {
@@ -2125,7 +2125,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             scope.launch {
                 val nextBook = findAdjacentBook(1)
                 if (nextBook != null) {
-                    switchTargetName = nextBook.title
+                    switchTargetName = nextBook.displayTitle
                     switchTargetPath = nextBook.filePath
                     confirmSwitch()
                 } else {
@@ -2159,7 +2159,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                 scope.launch {
                     val prevBook = findAdjacentBook(-1)
                     if (prevBook != null) {
-                        switchTargetName = prevBook.title
+                        switchTargetName = prevBook.displayTitle
                         switchTargetPath = prevBook.filePath
                         confirmSwitch()
                     } else {
@@ -2180,7 +2180,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             scope.launch {
                 val prevBook = findAdjacentBook(-1)
                 if (prevBook != null) {
-                    switchTargetName = prevBook.title
+                    switchTargetName = prevBook.displayTitle
                     switchTargetPath = prevBook.filePath
                     confirmSwitch()
                 } else {
@@ -2742,7 +2742,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                         val srTreeStr = navStack.lastOrNull() ?: book?.filePath ?: ""
                         LaunchedEffect(srTreeStr, book?.id, viewing) {
                             if (viewing && srTreeStr.isNotEmpty()) {
-                                com.mangareader.sr.SrPipeline.beginSession(ctx, srTreeStr, book?.id ?: -1L, book?.title ?: "", displayPages, cur)
+                                com.mangareader.sr.SrPipeline.beginSession(ctx, srTreeStr, book?.id ?: -1L, book?.displayTitle ?: "", displayPages, cur)
                             } else {
                                 com.mangareader.sr.SrPipeline.endSession()
                             }
@@ -3379,7 +3379,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
 
     if (showComplete) {
         AlertDialog(onDismissRequest = { showComplete = false }, title = { Text("阅读完成") },
-            text = { Text("已读完「${book?.title ?: ""}」的所有页面") },
+            text = { Text("已读完「${book?.displayTitle ?: ""}」的所有页面") },
             confirmButton = {
                 TextButton(onClick = { markAsReadNow(); showComplete = false }) { Text("标记已读") }
             },
@@ -3645,7 +3645,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             //   -1 → 整个离线 Tab 变"未关联书架"兜底卡，用户无法入队。入队器/状态加载
             //   内部都会按 id 自查 DB，生效 id（随跨书切换更新，P1-3）才是真实来源。
             bookId = currentBookId,
-            bookTitle = book?.title ?: "",
+            bookTitle = book?.displayTitle ?: "",
             // ★ 路由 id 查无库条目时（历史入口/重扫重建），面板用当前树路径做锚点解析
             bookPath = book?.filePath ?: navStack.lastOrNull()?.takeIf { it.isNotEmpty() },
             onOpenQueue = {
@@ -3747,7 +3747,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                     val masterNow = com.mangareader.data.ReaderScope.masterOn(prefs)
                     android.widget.Toast.makeText(
                         ctx,
-                        if (masterNow) "已记住，只对《${book?.title ?: "本书"}》生效"
+                        if (masterNow) "已记住，只对《${book?.displayTitle ?: "本书"}》生效"
                         else "本次调整退出阅读后不保留，下次进书回到全局默认",
                         android.widget.Toast.LENGTH_SHORT,
                     ).show()

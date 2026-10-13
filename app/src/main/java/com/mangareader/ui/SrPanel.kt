@@ -245,7 +245,7 @@ private fun SrPanelContent(
                 anchorToastShown = true
                 android.widget.Toast.makeText(
                     ctx,
-                    if (resolved == null) "已自动关联到书库，离线增强可用" else "已关联到书库《${finalBook.title}》，离线增强可用",
+                    if (resolved == null) "已自动关联到书库，离线增强可用" else "已关联到书库《${finalBook.displayTitle}》，离线增强可用",
                     android.widget.Toast.LENGTH_SHORT,
                 ).show()
             }

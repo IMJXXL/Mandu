@@ -81,9 +81,9 @@ fun RenameBatchDialog(
                 onClick = {
                     val updates = when (mode) {
                         0 -> books.mapNotNull { b ->
-                            if (b.title.contains(findText)) b.id to b.title.replace(findText, replaceText) else null
+                            if (b.displayTitle.contains(findText)) b.id to b.displayTitle.replace(findText, replaceText) else null
                         }
-                        1 -> books.map { b -> b.id to (prefix + b.title + suffix) }
+                        1 -> books.map { b -> b.id to (prefix + b.displayTitle + suffix) }
                         2 -> {
                             val start = startNum.toIntOrNull() ?: 1
                             val leadingZeros = if (startNum.length > 1 && startNum.startsWith("0")) startNum.length else 0

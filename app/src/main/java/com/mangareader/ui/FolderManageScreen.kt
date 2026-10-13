@@ -506,9 +506,9 @@ fun FolderManageScreen(onBack: () -> Unit) {
                                                 // 诊断打点（tallSplit 同例）：逐书记录改名前后，排障用——用户日志里能对出哪本没解析好
                                                 com.mangareader.DiagTracer.mark(
                                                     ctx,
-                                                    "retitle #${bk.id} 「${bk.title}」→「$newTitle」 src=${raw.take(80)}"
+                                                    "retitle #${bk.id} 「${bk.displayTitle}」→「$newTitle」 src=${raw.take(80)}"
                                                 )
-                                                if (newTitle.isNotBlank() && newTitle != bk.title) {
+                                                if (newTitle.isNotBlank() && newTitle != bk.displayTitle) {
                                                     d.updateBook(bk.copy(title = newTitle)); n++
                                                 }
                                             }
