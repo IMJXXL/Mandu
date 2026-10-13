@@ -88,6 +88,7 @@ internal object PanelSplitJoined {
         val whiteThr = (span * PanelTunables.SPLIT_BAND_RATIO).toInt()
         val blackThr = (span * PanelTunables.SPLIT_BLACK_LINE_RATIO).toInt()
         val contentMin = (span * PanelTunables.SPLIT_CONTENT_RATIO).toInt()
+        val edgeMargin = (len * PanelTunables.SPLIT_EDGE_MARGIN).toInt()
 
         var bestMid = -1
         var bestBandLen = 0
@@ -101,7 +102,7 @@ internal object PanelSplitJoined {
                 val bandLen = j - i
                 if (bandLen in 1..(len / 3)) {
                     val mid = (i + j) / 2
-                    if (mid > 1 && mid < len - 1) {
+                    if (mid >= edgeMargin && mid < len - edgeMargin) {
                         var before = 0
                         for (k in 0 until i) before += proj[k]
                         var after = 0

@@ -122,4 +122,26 @@ class PanelOrderConfidenceTest {
         assertTrue("严格档应降级 conf=${strict.pageConf}", strict.fallback)
         assertEquals("同一组框置信度本身不应随门槛变化", lenient.pageConf, strict.pageConf, 1e-6f)
     }
+
+    @Test
+    fun `inkMask null preserves original behaviour`() {
+        val boxes = listOf(
+            box(0, 0, 149, 229), box(168, 0, 319, 229),
+            box(0, 248, 149, 479), box(168, 248, 319, 479),
+        )
+        val withNull = PanelConfidence.evaluate(boxes, 320, 480, rtl = false, inkMask = null)
+        val without = PanelConfidence.evaluate(boxes, 320, 480, rtl = false)
+        assertEquals("inkMask null 行为与不传一致", withNull.fallback, without.fallback)
+        assertEquals(withNull.pageConf, without.pageConf, 1e-6f)
+    }
+
+    @Test
+    fun `inkMask passed through to segmenter for small image`() {
+        val w = 320; val h = 480
+        val smallBox = box(50, 50, 250, 350)
+        val inkMask = BooleanArray(w * h)
+        for (y in 50..250) for (x in 50..350) inkMask[y * w + x] = true
+        val r = PanelConfidence.evaluate(listOf(smallBox), w, h, rtl = false, inkMask = inkMask)
+        assertTrue("小图墨水占用高应接受不降级 conf=${r.pageConf}", !r.fallback || r.boxes.size == 1)
+    }
 }

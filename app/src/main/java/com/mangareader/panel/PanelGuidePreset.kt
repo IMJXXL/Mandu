@@ -75,35 +75,42 @@ object PanelGuidePreset {
     private val builtins = listOf(BUILTIN_STANDARD, BUILTIN_LOOSE, BUILTIN_STRICT)
 
     internal object Store {
-        fun loadAll(context: Context): List<Preset> {
-            val user = loadUser(context)
+        fun loadAll(context: Context): List<Preset> = loadAll(context.getSharedPreferences(PREF_FILE, Context.MODE_PRIVATE))
+
+        fun save(context: Context, preset: Preset) = save(context.getSharedPreferences(PREF_FILE, Context.MODE_PRIVATE), preset)
+
+        fun delete(context: Context, id: String) = delete(context.getSharedPreferences(PREF_FILE, Context.MODE_PRIVATE), id)
+
+        fun rename(context: Context, id: String, newName: String) = rename(context.getSharedPreferences(PREF_FILE, Context.MODE_PRIVATE), id, newName)
+
+        internal fun loadAll(prefs: android.content.SharedPreferences): List<Preset> {
+            val user = loadUser(prefs)
             return builtins + user
         }
 
-        fun save(context: Context, preset: Preset) {
-            val user = loadUser(context).toMutableList()
+        internal fun save(prefs: android.content.SharedPreferences, preset: Preset) {
+            val user = loadUser(prefs).toMutableList()
             val idx = user.indexOfFirst { it.id == preset.id || it.name == preset.name }
             if (idx >= 0) user[idx] = preset else user.add(preset)
-            saveUser(context, user)
+            saveUser(prefs, user)
         }
 
-        fun delete(context: Context, id: String) {
+        internal fun delete(prefs: android.content.SharedPreferences, id: String) {
             if (builtins.any { it.id == id }) return
-            val user = loadUser(context).filterNot { it.id == id }
-            saveUser(context, user)
+            val user = loadUser(prefs).filterNot { it.id == id }
+            saveUser(prefs, user)
         }
 
-        fun rename(context: Context, id: String, newName: String) {
+        internal fun rename(prefs: android.content.SharedPreferences, id: String, newName: String) {
             if (builtins.any { it.id == id }) return
-            val user = loadUser(context).map {
+            val user = loadUser(prefs).map {
                 if (it.id == id) it.copy(name = newName) else it
             }
-            saveUser(context, user)
+            saveUser(prefs, user)
         }
 
-        private fun loadUser(context: Context): List<Preset> {
+        private fun loadUser(prefs: android.content.SharedPreferences): List<Preset> {
             return try {
-                val prefs = context.getSharedPreferences(PREF_FILE, Context.MODE_PRIVATE)
                 val json = prefs.getString(PREF_KEY, null) ?: return emptyList()
                 val arr = JSONArray(json)
                 val out = ArrayList<Preset>()
@@ -119,12 +126,11 @@ object PanelGuidePreset {
             }
         }
 
-        private fun saveUser(context: Context, presets: List<Preset>) {
+        private fun saveUser(prefs: android.content.SharedPreferences, presets: List<Preset>) {
             try {
                 val arr = JSONArray()
                 for (p in presets) arr.put(presetToJson(p))
-                context.getSharedPreferences(PREF_FILE, Context.MODE_PRIVATE)
-                    .edit().putString(PREF_KEY, arr.toString()).apply()
+                prefs.edit().putString(PREF_KEY, arr.toString()).apply()
             } catch (_: Exception) {
             }
         }

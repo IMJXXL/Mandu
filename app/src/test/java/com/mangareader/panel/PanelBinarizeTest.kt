@@ -124,4 +124,44 @@ class PanelBinarizeTest {
         val mask = PanelBinarize.buildInkMask(g, 64, 64)
         assertTrue(mask.none { it })
     }
+
+    @Test
+    fun `colour fallback adopts rgb mask when grey fails`() {
+        val w = 96; val h = 64
+        val pinkBg = (250 shl 16) or (200 shl 8) or 200
+        val blueLine = (40 shl 16) or (40 shl 8) or 250
+        val rgb = IntArray(w * h) { pinkBg }
+        for (y in 0 until h) for (x in 44..47) rgb[y * w + x] = blueLine
+        for (y in 8 until h - 8) for (x in 8 until 40) rgb[y * w + x] = blueLine
+        val gray = IntArray(w * h) {
+            val p = rgb[it]
+            (0.299f * ((p shr 16) and 0xFF) + 0.587f * ((p shr 8) and 0xFF) + 0.114f * (p and 0xFF)).toInt()
+        }
+        val mask = PanelBinarize.buildInkMask(gray, w, h, 0.05f, rgb)
+        assertTrue("彩色回退后蓝色分隔线应判为墨水", mask[20 * w + 46])
+    }
+
+    @Test
+    fun `rgb null falls back to grey path`() {
+        val w = 64; val h = 64
+        val g = IntArray(w * h) { 240 }
+        for (y in 0 until h) for (x in 0 until 4) g[y * w + x] = 30
+        val withRgb = PanelBinarize.buildInkMask(g, w, h, 0.05f, null)
+        val without = PanelBinarize.buildInkMask(g, w, h, 0.05f)
+        assertEquals(without.toList(), withRgb.toList())
+    }
+
+    @Test
+    fun `white page with rgb does not trigger colour fallback`() {
+        val w = 64; val h = 64
+        val g = IntArray(w * h) { 240 }
+        val rgb = IntArray(w * h) { (240 shl 16) or (240 shl 8) or 240 }
+        for (y in 0 until h) for (x in 0 until 4) {
+            g[y * w + x] = 30
+            rgb[y * w + x] = (30 shl 16) or (30 shl 8) or 30
+        }
+        val mask = PanelBinarize.buildInkMask(g, w, h, 0.05f, rgb)
+        assertTrue(mask[10 * w + 2])
+        assertFalse(mask[10 * w + 30])
+    }
 }

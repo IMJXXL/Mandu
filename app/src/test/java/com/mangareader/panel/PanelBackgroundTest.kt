@@ -56,5 +56,60 @@ class PanelBackgroundTest {
         assertTrue(PanelBackground.isWhiteBackground(240))
         assertTrue(!PanelBackground.isWhiteBackground(150))
     }
+
+    @Test
+    fun `estimateRgb pink background returns triple`() {
+        val w = 100; val h = 100
+        val rgb = IntArray(w * h) { (255 shl 16) or (200 shl 8) or 200 }
+        val bg = PanelBackground.estimateRgb(rgb, w, h)
+        assertEquals(255, bg.first)
+        assertEquals(200, bg.second)
+        assertEquals(200, bg.third)
+    }
+
+    @Test
+    fun `estimateRgb white page returns white triple`() {
+        val w = 100; val h = 100
+        val rgb = IntArray(w * h) { (255 shl 16) or (255 shl 8) or 255 }
+        val bg = PanelBackground.estimateRgb(rgb, w, h)
+        assertEquals(Triple(255, 255, 255), bg)
+    }
+
+    @Test
+    fun `estimateRgb pure colour returns that colour`() {
+        val w = 80; val h = 80
+        val rgb = IntArray(w * h) { (30 shl 16) or (100 shl 8) or 200 }
+        val bg = PanelBackground.estimateRgb(rgb, w, h)
+        assertEquals(Triple(30, 100, 200), bg)
+    }
+
+    @Test
+    fun `maskRelativeToRgb marks colour differing pixels`() {
+        val w = 10; val h = 10
+        val bgColour = (255 shl 16) or (200 shl 8) or 200
+        val rgb = IntArray(w * h) { bgColour }
+        val blueLine = (50 shl 16) or (50 shl 8) or 255
+        rgb[5 * w + 5] = blueLine
+        val mask = PanelBackground.maskRelativeToRgb(rgb, w, h, Triple(255, 200, 200), 30)
+        assertTrue("RGB 通道差>delta 应为前景", mask[5 * w + 5])
+        assertFalse("与背景一致应非前景", mask[0])
+    }
+
+    @Test
+    fun `maskRelativeToRgb grey page degrades to grey difference`() {
+        val w = 10; val h = 10
+        val rgb = IntArray(w * h) { (200 shl 16) or (200 shl 8) or 200 }
+        rgb[3 * w + 3] = (50 shl 16) or (50 shl 8) or 50
+        val mask = PanelBackground.maskRelativeToRgb(rgb, w, h, Triple(200, 200, 200), 30)
+        assertTrue(mask[3 * w + 3])
+        assertFalse(mask[0])
+    }
+
+    @Test
+    fun `isColourBackground detects colour vs grey`() {
+        assertTrue(PanelBackground.isColourBackground(Triple(255, 200, 200)))
+        assertFalse(PanelBackground.isColourBackground(Triple(200, 200, 200)))
+        assertTrue(PanelBackground.isColourBackground(Triple(30, 100, 200)))
+    }
 }
 

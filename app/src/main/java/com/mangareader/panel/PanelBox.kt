@@ -118,6 +118,8 @@ object PanelTunables {
     const val SPLIT_LARGE_AREA_RATIO = 0.1f
     /** 共享黑色边框判定：投影值 ≥ span×此值视为黑边 */
     const val SPLIT_BLACK_LINE_RATIO = 0.88f
+    /** 分隔带距投影两端的最低裕度（占 len 比例），避免把外边框误判为内部共享边框 */
+    const val SPLIT_EDGE_MARGIN = 0.15f
 
     // —— 倾斜剪切（PanelShearSplit）——
     val SHEAR_ANGLES = listOf(-8, -6, -4, -2, 2, 4, 6, 8)

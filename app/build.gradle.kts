@@ -277,6 +277,7 @@ dependencies {
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
     testImplementation("org.robolectric:robolectric:4.10.3")  // 4.10.3：本机缓存 13/14-i4 可离线引导；4.11.1 在本机引导即静默崩溃
     testImplementation("androidx.test:core-ktx:1.5.0")
+    testImplementation("org.json:json:20231013")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
 }

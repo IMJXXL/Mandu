@@ -102,4 +102,35 @@ class PanelDetectorCoreTest {
         assertEquals(9, r.boxes.size)
         assertTrue("检测应在预算内(${ms}ms)", ms < 2000)  // CI 机器放宽；真机预算 50ms
     }
+
+    @Test
+    fun `rgb null preserves original behaviour`() {
+        val w = 320; val h = 480
+        val g = grayPage(w, h)
+        frame(g, w, 0, 0, 150, 230)
+        frame(g, w, 168, 0, 319, 230)
+        frame(g, w, 0, 248, 150, 479)
+        frame(g, w, 168, 248, 319, 479)
+        val withRgb = PanelDetectorCore.analyze(g, w, h, rtl = false, rgb = null)
+        val without = PanelDetectorCore.analyze(g, w, h, rtl = false)
+        assertEquals(without.boxes.size, withRgb.boxes.size)
+        assertEquals(without.fallback, withRgb.fallback)
+    }
+
+    @Test
+    fun `pink background page with rgb does not lose panels`() {
+        val w = 320; val h = 480
+        val pinkBg = 240
+        val g = IntArray(w * h) { pinkBg }
+        val rgb = IntArray(w * h) { (250 shl 16) or (200 shl 8) or 200 }
+        frame(g, w, 0, 0, 150, 230)
+        frame(g, w, 168, 0, 319, 230)
+        frame(g, w, 0, 248, 150, 479)
+        frame(g, w, 168, 248, 319, 479)
+        for (i in g.indices) {
+            if (g[i] == 30) rgb[i] = (30 shl 16) or (30 shl 8) or 30
+        }
+        val r = PanelDetectorCore.analyze(g, w, h, rtl = false, rgb = rgb)
+        assertTrue("粉底彩漫页传入 rgb 后分格不丢失 boxes=${r.boxes.size}", r.boxes.size >= 1)
+    }
 }

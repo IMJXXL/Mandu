@@ -163,7 +163,7 @@ internal object PanelComponents {
                 } catch (_: Exception) {
                     listOf(b)
                 }
-                if (split.size == 1) {
+                if (split.size == 1 && b.area / pageArea >= 0.4f) {
                     val sheared = try {
                         PanelShearSplit.tryShear(mask, w, h, b)
                     } catch (_: Exception) {
