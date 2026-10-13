@@ -52,9 +52,13 @@ data class Book(
     val seriesId: String? = null,
     val seriesName: String? = null,
     val mergedParentId: Long? = null,
+    /** ★ 自定义书名：用户重命名写入此字段；null=未自定义（恢复文件名=置 null）；空字符串视为未自定义 */
+    val customTitle: String? = null,
 ) {
     /** ★ 显示用封面：自定义优先；自定义文件丢失的孤儿由 Library 启动自愈置回 null */
     val displayCoverPath: String? get() = customCoverPath ?: coverPath
+    /** ★ 显示用书名：自定义优先；null/空白回退 title（文件名解析书名） */
+    val displayTitle: String get() = customTitle?.takeIf { it.isNotBlank() } ?: title
 }
 
 @Entity(tableName = "imported_folders")
@@ -437,13 +441,16 @@ interface MangaDao {
     @Query("UPDATE manga_books SET isHidden = :hidden")
     suspend fun setHiddenAll(hidden: Boolean)
 
-    @Query("UPDATE manga_books SET title = :title WHERE id = :id")
+    @Query("UPDATE manga_books SET customTitle = :title WHERE id = :id")
     suspend fun updateBookTitle(id: Long, title: String)
 
     @Transaction
     suspend fun updateBookTitlesBatch(updates: List<Pair<Long, String>>) {
         updates.forEach { (id, title) -> updateBookTitle(id, title) }
     }
+
+    @Query("UPDATE manga_books SET customTitle = NULL WHERE id = :id")
+    suspend fun clearCustomTitle(id: Long)
 
     // ★ C8 修复：前缀由 Kotlin 侧拼好作为单参传入（旧写法右侧非常量表达式使 filePath 索引失效，
     //   rescan 高频全表扫）。前缀逐字符复刻旧拼接：a/z 带尾 '|'，d 不带。
@@ -521,7 +528,7 @@ interface MangaDao {
     /** 分页倒序：LEFT JOIN 书信息（history 无外键，书被删后记录仍在，标题显示"已删除书籍"）；
      *  子查询取该书最新在读卷 path 与页码（updatedAt>0 过滤 Scanner 占位行），点击续读 jump 用 */
     @Query("""
-        SELECT h.id AS histId, h.bookId AS bookId, b.title AS bookTitle, b.coverPath AS coverPath,
+        SELECT h.id AS histId, h.bookId AS bookId, COALESCE(b.customTitle, b.title) AS bookTitle, b.coverPath AS coverPath,
                h.pagesRead AS pagesRead, h.timestamp AS timestamp,
                (SELECT p.path FROM reading_progress p WHERE p.bookId = h.bookId AND p.updatedAt > 0 ORDER BY p.updatedAt DESC LIMIT 1) AS lastPath,
                (SELECT p.lastPage FROM reading_progress p WHERE p.bookId = h.bookId AND p.updatedAt > 0 ORDER BY p.updatedAt DESC LIMIT 1) AS lastPage,
@@ -546,7 +553,7 @@ interface MangaDao {
 
     /** 每卷一行：(bookId,path) 唯一索引天然保证；updatedAt>0 过滤 Scanner 占位行与"已隐藏"行 */
     @Query("""
-        SELECT p.bookId AS bookId, p.path AS chPath, b.title AS bookTitle, b.coverPath AS coverPath,
+        SELECT p.bookId AS bookId, p.path AS chPath, COALESCE(b.customTitle, b.title) AS bookTitle, b.coverPath AS coverPath,
                p.lastPage AS lastPage, p.totalPages AS totalPages, p.updatedAt AS updatedAt,
                p.completed AS completed
         FROM reading_progress p LEFT JOIN manga_books b ON b.id = p.bookId
@@ -655,7 +662,7 @@ interface MangaDao {
     @Query("SELECT * FROM bookshelf_items WHERE bookId = :bookId")
     suspend fun getShelvesForBook(bookId: Long): List<BookshelfItem>
 
-    @Query("SELECT b.* FROM manga_books b INNER JOIN bookshelf_items bi ON b.id = bi.bookId WHERE bi.bookshelfId = :bookshelfId AND b.mergedParentId IS NULL ORDER BY b.title ASC")
+    @Query("SELECT b.* FROM manga_books b INNER JOIN bookshelf_items bi ON b.id = bi.bookId WHERE bi.bookshelfId = :bookshelfId AND b.mergedParentId IS NULL ORDER BY COALESCE(b.customTitle, b.title) ASC")
     fun getBooksByShelf(bookshelfId: Long): Flow<List<Book>>
 
     @Query("DELETE FROM manga_books WHERE id IN (:ids)")
@@ -691,7 +698,7 @@ interface MangaDao {
     @Query("SELECT t.* FROM tags t INNER JOIN tag_links tl ON t.id = tl.tagId WHERE tl.bookId = :bookId")
     suspend fun getTagsForBookList(bookId: Long): List<Tag>
 
-    @Query("SELECT b.* FROM manga_books b INNER JOIN tag_links tl ON b.id = tl.bookId WHERE tl.tagId = :tagId AND b.isHidden = 0 AND b.mergedParentId IS NULL ORDER BY b.title ASC")
+    @Query("SELECT b.* FROM manga_books b INNER JOIN tag_links tl ON b.id = tl.bookId WHERE tl.tagId = :tagId AND b.isHidden = 0 AND b.mergedParentId IS NULL ORDER BY COALESCE(b.customTitle, b.title) ASC")
     fun getBooksByTag(tagId: Long): Flow<List<Book>>
 
     @Query("SELECT COUNT(*) FROM tag_links WHERE tagId = :tagId")
@@ -1068,7 +1075,8 @@ interface MangaDao {
                 nb.copy(
                     readPages = ob.readPages, lastReadAt = ob.lastReadAt,
                     totalPages = ob.totalPages, isFavorite = ob.isFavorite,
-                    isHidden = ob.isHidden, addedAt = ob.addedAt
+                    isHidden = ob.isHidden, addedAt = ob.addedAt,
+                    customTitle = ob.customTitle, customCoverPath = ob.customCoverPath
                 )
             } ?: nb
         }
@@ -1607,7 +1615,7 @@ abstract class MangaDatabase : com.ehviewer.core.database.LocalLibraryDatabase()
 
     companion object {
         /** ★ 数据库版本唯一事实源（注解与备份导出共用，防硬编码漂移） */
-        const val SCHEMA_VERSION = 28
+        const val SCHEMA_VERSION = 29
 
         @Volatile
         private var INSTANCE: MangaDatabase? = null
@@ -1910,6 +1918,12 @@ abstract class MangaDatabase : com.ehviewer.core.database.LocalLibraryDatabase()
             }
         }
 
+        private val MIGRATION_28_29 = object : androidx.room.migration.Migration(28, 29) {
+            override fun migrate(database: androidx.sqlite.db.SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE manga_books ADD COLUMN customTitle TEXT")
+            }
+        }
+
         private val MIGRATION_23_24 = object : androidx.room.migration.Migration(23, 24) {
             override fun migrate(database: androidx.sqlite.db.SupportSQLiteDatabase) {
                 database.execSQL("ALTER TABLE tags ADD COLUMN sortOrder INTEGER NOT NULL DEFAULT 0")
@@ -1941,7 +1955,7 @@ abstract class MangaDatabase : com.ehviewer.core.database.LocalLibraryDatabase()
                     context.applicationContext,
                     MangaDatabase::class.java,
                     "manga_reader_db"
-                ).addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28)
+                ).addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29)
                 .fallbackToDestructiveMigrationOnDowngrade()
                 .build()
                 INSTANCE = instance
