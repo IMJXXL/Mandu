@@ -236,6 +236,7 @@ class PanelGuideOverlay(context: Context) : View(context) {
         cropRect = null
         if (foldChanged) {
             PanelFoldJoin.Cache.clearBook(s.treePath)
+            PanelDetector.Cache.clearBook(s.treePath)
             showPage(shownPage)
         } else {
             invalidate()
@@ -276,12 +277,13 @@ class PanelGuideOverlay(context: Context) : View(context) {
             val sr = sCaptured.srSource?.invoke(page)
             if (sr is SrPage.Ready) {
                 srWaiting = false
+                val displayBmp = applyFoldJoin(sCaptured, page, sr.bitmap)
                 val res = PanelDetector.Cache.get(sCaptured.treePath, page)
-                    ?: runCatching { PanelDetector.detect(sr.bitmap, sCaptured.rtl, sCaptured.minConf, sCaptured.precision) }
+                    ?: runCatching { PanelDetector.detect(displayBmp, sCaptured.rtl, sCaptured.minConf, sCaptured.precision) }
                         .getOrDefault(PanelDetectorCore.fallbackResult())
                 post {
                     if (session !== sCaptured || shownPage != page) return@post
-                    pageBitmap = sr.bitmap
+                    pageBitmap = displayBmp
                     applyResult(page, res)
                 }
                 return@launch
@@ -292,6 +294,7 @@ class PanelGuideOverlay(context: Context) : View(context) {
             val bmp = withContext(Dispatchers.Default) {
                 runCatching { sCaptured.engine.loadPage(sCaptured.pages[page], sCaptured.treePath) }.getOrNull()
             }
+            val displayBmp = if (bmp != null) applyFoldJoin(sCaptured, page, bmp) else null
             if (waiting) {
                 sCaptured.srPoll?.invoke(page) {
                     post {
@@ -301,16 +304,24 @@ class PanelGuideOverlay(context: Context) : View(context) {
                 }
             }
             val res = if (waiting) null else PanelDetector.Cache.get(sCaptured.treePath, page)
-                ?: (if (bmp == null) PanelDetectorCore.fallbackResult()
-                    else runCatching { PanelDetector.detect(bmp, sCaptured.rtl, sCaptured.minConf, sCaptured.precision) }
+                ?: (if (displayBmp == null) PanelDetectorCore.fallbackResult()
+                    else runCatching { PanelDetector.detect(displayBmp, sCaptured.rtl, sCaptured.minConf, sCaptured.precision) }
                         .getOrDefault(PanelDetectorCore.fallbackResult()))
             post {
                 if (session !== sCaptured || shownPage != page) return@post
                 srWaiting = waiting
-                pageBitmap = bmp
+                pageBitmap = displayBmp
                 if (res != null) applyResult(page, res) else invalidate()
             }
         }
+    }
+
+    private fun applyFoldJoin(s: Session, page: Int, bmp: Bitmap): Bitmap {
+        if (!s.foldJoinEnabled || bmp.width.toFloat() / bmp.height < 1.3f) return bmp
+        PanelFoldJoin.Cache.get(s.treePath, page)?.let { return it }
+        val joined = PanelFoldJoin.joinBitmap(bmp) ?: return bmp
+        PanelFoldJoin.Cache.put(s.treePath, page, joined.first)
+        return joined.first
     }
 
     private fun applyResult(page: Int, r: PanelPageResult) {
