@@ -97,6 +97,7 @@ fun ReaderTopBar(
                 }
             }
         },
-        colors = TopAppBarDefaults.topAppBarColors(containerColor = bgColor)
+        colors = TopAppBarDefaults.topAppBarColors(containerColor = bgColor),
+
     )
 }

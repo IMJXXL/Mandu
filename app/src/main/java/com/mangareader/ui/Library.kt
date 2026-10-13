@@ -2063,6 +2063,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                 TopAppBar(
                     title = { Text(virtualBook.title) },
                     navigationIcon = { IconButton(onClick = { mergedBookView = null }) { Icon(Icons.Default.ArrowBack, "返回") } },
+
                 )
             }
         ) { pad ->
