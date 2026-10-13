@@ -113,8 +113,8 @@ class PanelOrderConfidenceTest {
     fun `sensitivity threshold moves fallback boundary`() {
         // 低覆盖+无中缝的一组框（conf≈0.49）：宽松档(0.35)通过、严格档(0.65)降级
         val boxes = listOf(
-            box(0, 0, 149, 99),      // 150×100
-            box(160, 120, 319, 279), // 160×160，与上框无重叠无缝
+            box(0, 0, 319, 99),      // 320×100
+            box(0, 100, 319, 199),   // 320×100，与上框垂直相邻
         )
         val lenient = PanelConfidence.evaluate(boxes, 320, 480, rtl = false, confFail = 0.35f)
         val strict = PanelConfidence.evaluate(boxes, 320, 480, rtl = false, confFail = 0.65f)
