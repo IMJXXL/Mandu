@@ -2110,7 +2110,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Text(virtualBook.title) },
+                    title = { Text(virtualBook.displayTitle) },
                     navigationIcon = { IconButton(onClick = { mergedBookView = null }) { Icon(Icons.Default.ArrowBack, "返回") } },
 
                 )
