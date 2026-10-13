@@ -3547,6 +3547,93 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                 setPanelGuideActive(!panelGuideActive)
             },
             onDismiss = { showPanelGuideSheet = false },
+            presets = remember { mutableStateOf(com.mangareader.panel.PanelGuidePreset.Store.loadAll(ctx)) }.value,
+            currentPresetId = null,
+            onPresetSelect = { preset ->
+                val oldSens = config.panelGuideSensitivity
+                val oldPrec = config.panelGuidePrecision
+                val oldRtl = config.panelGuideRtl
+                config = config.copy(
+                    panelGuideSensitivity = preset.sensitivity,
+                    panelGuideDim = preset.dim,
+                    panelGuideAnim = preset.anim,
+                    panelGuideRtl = preset.rtl,
+                    panelGuideDimMode = preset.dimMode,
+                    panelGuideSplitMode = preset.splitMode,
+                    panelGuideTransition = preset.transitionMode,
+                    panelGuideDisplay = preset.displayMode,
+                    panelGuideCrop = preset.cropMode,
+                    panelGuideSlideMs = preset.slideMs,
+                    panelGuidePrecision = preset.precision,
+                    panelGuidePreview = preset.previewEnabled,
+                    panelGuideProgress = preset.progressEnabled,
+                    panelGuideSwipeInvert = preset.swipeInvert,
+                    panelGuideTapInvert = preset.tapInvert,
+                    panelGuideFoldJoin = preset.foldJoinEnabled,
+                    panelGuideAutoRotate = preset.autoRotateEnabled,
+                    panelGuideAutoRotateDir = preset.autoRotateDir,
+                    panelGuideCrossPage = preset.crossPageEnabled,
+                )
+                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideSensitivity", preset.sensitivity)
+                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideDim", preset.dim)
+                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideAnim", preset.anim)
+                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideRtl", preset.rtl)
+                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideDimMode", preset.dimMode)
+                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideSplitMode", preset.splitMode)
+                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideTransition", preset.transitionMode)
+                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideDisplay", preset.displayMode)
+                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideCrop", preset.cropMode)
+                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideSlideMs", preset.slideMs)
+                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuidePrecision", preset.precision)
+                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuidePreview", preset.previewEnabled)
+                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideProgress", preset.progressEnabled)
+                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideSwipeInvert", preset.swipeInvert)
+                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideTapInvert", preset.tapInvert)
+                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideFoldJoin", preset.foldJoinEnabled)
+                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideAutoRotate", preset.autoRotateEnabled)
+                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideAutoRotateDir", preset.autoRotateDir)
+                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideCrossPage", preset.crossPageEnabled)
+                if (oldSens != preset.sensitivity || oldPrec != preset.precision || oldRtl != preset.rtl) {
+                    val treePath = navStack.lastOrNull() ?: book?.filePath ?: ""
+                    if (treePath.isNotEmpty()) {
+                        com.mangareader.panel.PanelDetector.Cache.clearBook(treePath)
+                    }
+                }
+                configVersion++
+            },
+            onPresetSave = { name ->
+                val preset = com.mangareader.panel.PanelGuidePreset.Preset(
+                    id = java.util.UUID.randomUUID().toString(),
+                    name = name,
+                    isBuiltin = false,
+                    sensitivity = config.panelGuideSensitivity,
+                    dim = config.panelGuideDim,
+                    anim = config.panelGuideAnim,
+                    rtl = config.panelGuideRtl,
+                    dimMode = config.panelGuideDimMode,
+                    splitMode = config.panelGuideSplitMode,
+                    transitionMode = config.panelGuideTransition,
+                    displayMode = config.panelGuideDisplay,
+                    cropMode = config.panelGuideCrop,
+                    slideMs = config.panelGuideSlideMs,
+                    precision = config.panelGuidePrecision,
+                    previewEnabled = config.panelGuidePreview,
+                    progressEnabled = config.panelGuideProgress,
+                    swipeInvert = config.panelGuideSwipeInvert,
+                    tapInvert = config.panelGuideTapInvert,
+                    foldJoinEnabled = config.panelGuideFoldJoin,
+                    autoRotateEnabled = config.panelGuideAutoRotate,
+                    autoRotateDir = config.panelGuideAutoRotateDir,
+                    crossPageEnabled = config.panelGuideCrossPage,
+                )
+                com.mangareader.panel.PanelGuidePreset.Store.save(ctx, preset)
+            },
+            onPresetDelete = { id ->
+                com.mangareader.panel.PanelGuidePreset.Store.delete(ctx, id)
+            },
+            onPresetRename = { id, newName ->
+                com.mangareader.panel.PanelGuidePreset.Store.rename(ctx, id, newName)
+            },
         )
     }
 

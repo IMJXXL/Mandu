@@ -22,13 +22,24 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.Switch
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -91,6 +102,12 @@ fun PanelGuideSheet(
     onCrossPage: (Boolean) -> Unit,
     onToggleActive: () -> Unit,
     onDismiss: () -> Unit,
+    presets: List<com.mangareader.panel.PanelGuidePreset.Preset> = emptyList(),
+    currentPresetId: String? = null,
+    onPresetSelect: (com.mangareader.panel.PanelGuidePreset.Preset) -> Unit = {},
+    onPresetSave: (String) -> Unit = {},
+    onPresetDelete: (String) -> Unit = {},
+    onPresetRename: (String, String) -> Unit = { _, _ -> },
 ) {
     var visible by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { visible = true }
@@ -408,6 +425,17 @@ fun PanelGuideSheet(
                     }
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
+                    PresetRegion(
+                        presets = presets,
+                        currentPresetId = currentPresetId,
+                        onPresetSelect = onPresetSelect,
+                        onPresetSave = onPresetSave,
+                        onPresetDelete = onPresetDelete,
+                        onPresetRename = onPresetRename,
+                    )
+
+                    HorizontalDivider(Modifier.padding(vertical = 8.dp))
+
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -461,5 +489,144 @@ private fun PanelChipRow(
                 )
             }
         }
+    }
+}
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PresetRegion(
+    presets: List<com.mangareader.panel.PanelGuidePreset.Preset>,
+    currentPresetId: String?,
+    onPresetSelect: (com.mangareader.panel.PanelGuidePreset.Preset) -> Unit,
+    onPresetSave: (String) -> Unit,
+    onPresetDelete: (String) -> Unit,
+    onPresetRename: (String, String) -> Unit,
+) {
+    var dropdownExpanded by remember { mutableStateOf(false) }
+    var saveDialog by remember { mutableStateOf(false) }
+    var renameTarget by remember { mutableStateOf<com.mangareader.panel.PanelGuidePreset.Preset?>(null) }
+    var saveName by remember { mutableStateOf("") }
+    var renameName by remember { mutableStateOf("") }
+
+    Text(
+        "预设",
+        style = MaterialTheme.typography.bodyMedium.copy(
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontWeight = FontWeight.SemiBold,
+        ),
+        modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+    )
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Box {
+            Row(
+                modifier = Modifier
+                    .clickable { dropdownExpanded = true }
+                    .padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                val current = presets.firstOrNull { it.id == currentPresetId }
+                Text(
+                    current?.name ?: "选择预设",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Icon(Icons.Default.ArrowDropDown, contentDescription = "选择")
+            }
+            DropdownMenu(
+                expanded = dropdownExpanded,
+                onDismissRequest = { dropdownExpanded = false },
+            ) {
+                presets.forEach { p ->
+                    DropdownMenuItem(
+                        text = { Text(p.name) },
+                        onClick = {
+                            dropdownExpanded = false
+                            onPresetSelect(p)
+                        },
+                    )
+                }
+            }
+        }
+        TextButton(onClick = { saveName = ""; saveDialog = true }) {
+            Text("存为预设")
+        }
+    }
+    presets.forEach { p ->
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp, vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                p.name,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.weight(1f),
+            )
+            if (!p.isBuiltin) {
+                IconButton(onClick = { renameName = p.name; renameTarget = p }) {
+                    Icon(Icons.Default.Edit, contentDescription = "重命名")
+                }
+                IconButton(onClick = { onPresetDelete(p.id) }) {
+                    Icon(Icons.Default.Delete, contentDescription = "删除")
+                }
+            }
+        }
+    }
+    if (saveDialog) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { saveDialog = false },
+            title = { Text("存为预设") },
+            text = {
+                OutlinedTextField(
+                    value = saveName,
+                    onValueChange = { saveName = it },
+                    label = { Text("预设名称") },
+                    singleLine = true,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        if (saveName.isNotBlank()) {
+                            onPresetSave(saveName.trim())
+                            saveDialog = false
+                        }
+                    },
+                ) { Text("保存") }
+            },
+            dismissButton = { TextButton(onClick = { saveDialog = false }) { Text("取消") } },
+        )
+    }
+    renameTarget?.let { target ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { renameTarget = null },
+            title = { Text("重命名") },
+            text = {
+                OutlinedTextField(
+                    value = renameName,
+                    onValueChange = { renameName = it },
+                    label = { Text("新名称") },
+                    singleLine = true,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        if (renameName.isNotBlank()) {
+                            onPresetRename(target.id, renameName.trim())
+                            renameTarget = null
+                        }
+                    },
+                ) { Text("确定") }
+            },
+            dismissButton = { TextButton(onClick = { renameTarget = null }) { Text("取消") } },
+        )
     }
 }
