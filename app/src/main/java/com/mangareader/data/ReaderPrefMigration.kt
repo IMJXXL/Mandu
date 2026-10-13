@@ -131,7 +131,7 @@ object ReaderPrefMigration {
     }
 
     /** ★ 条漫分割默认值迁移（tallsplit_off_v1，2026-10-05，用户"条漫分割需要默认关闭"）：
-     *  旧版默认开且 save 无条件写全局键——已装设备全部残留 tallSplitEnabled=true，仅改出厂
+     *  旧版默认开且 save 无条件写全局键——已装设备全部残留 tallSplitEnabled=true，仅改初始默认
      *  默认对老用户无效；一次性置回关，之后用户在阅读设置里手动开启照常记住。 */
     fun tallSplitDefaultOffIfNeeded(prefs: SharedPreferences) {
         if (prefs.getBoolean("tallsplit_off_v1_done", false)) return

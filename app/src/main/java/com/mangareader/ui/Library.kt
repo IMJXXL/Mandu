@@ -1113,46 +1113,6 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
         )
     }
 
-    if (mergedBookView != null) {
-        val virtualBook = mergedBookView!!
-        LaunchedEffect(virtualBook.id) {
-            mergeMembers = withContext(Dispatchers.IO) { dao.getMergeMembers(virtualBook.id) }
-        }
-        BackHandler { mergedBookView = null }
-        Scaffold(
-            topBar = {
-                TopAppBar(
-                    title = { Text(virtualBook.title) },
-                    navigationIcon = { IconButton(onClick = { mergedBookView = null }) { Icon(Icons.Default.ArrowBack, "返回") } },
-                )
-            }
-        ) { pad ->
-            if (mergeMembers.isEmpty()) {
-                Box(Modifier.fillMaxSize().padding(pad), contentAlignment = Alignment.Center) {
-                    Text("暂无成员", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            } else {
-                val memberThumbPx = com.hippo.ehviewer.coil.CoverThumb.gridDecodePx(
-                    LocalConfiguration.current.screenWidthDp, effectiveCols, 12.dp, 8.dp,
-                )
-                LazyVerticalGrid(
-                    columns = gridCols,
-                    contentPadding = PaddingValues(12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.padding(pad),
-                ) {
-                    items(mergeMembers, key = { it.id }) { b ->
-                        BookCard(b, engine, false, false, memberThumbPx, layoutMode, hideAllBadges, titleMarquee,
-                            onToggleSelect = {},
-                            onTap = { openBookThrottled(b.id, null) },
-                            onLongClick = { showBookInfo = b },
-                            onDelete = { deleteTarget = b })
-                    }
-                }
-            }
-        }
-    }
 
     if (showCreateShelf) {
         AlertDialog(onDismissRequest = { showCreateShelf = false }, title = { Text("新建书架") },
@@ -2091,6 +2051,47 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
             onDismiss = { showBookSettings = null },
         )
     }
+
+    if (mergedBookView != null) {
+        val virtualBook = mergedBookView!!
+        LaunchedEffect(virtualBook.id) {
+            mergeMembers = withContext(Dispatchers.IO) { dao.getMergeMembers(virtualBook.id) }
+        }
+        BackHandler { mergedBookView = null }
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { Text(virtualBook.title) },
+                    navigationIcon = { IconButton(onClick = { mergedBookView = null }) { Icon(Icons.Default.ArrowBack, "返回") } },
+                )
+            }
+        ) { pad ->
+            if (mergeMembers.isEmpty()) {
+                Box(Modifier.fillMaxSize().padding(pad), contentAlignment = Alignment.Center) {
+                    Text("暂无成员", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            } else {
+                val memberThumbPx = com.hippo.ehviewer.coil.CoverThumb.gridDecodePx(
+                    LocalConfiguration.current.screenWidthDp, effectiveCols, 12.dp, 8.dp,
+                )
+                LazyVerticalGrid(
+                    columns = gridCols,
+                    contentPadding = PaddingValues(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.padding(pad),
+                ) {
+                    items(mergeMembers, key = { it.id }) { b ->
+                        BookCard(b, engine, false, false, memberThumbPx, layoutMode, hideAllBadges, titleMarquee,
+                            onToggleSelect = {},
+                            onTap = { openBookThrottled(b.id, null) },
+                            onLongClick = { showBookInfo = b },
+                            onDelete = { deleteTarget = b })
+                    }
+                }
+            }
+        }
+    }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -2468,6 +2469,7 @@ private fun SeriesListRow(series: ShelfItem.Series, engine: ArchiveEngine, decod
             }
         }
     }
+
 }
 private fun clearSmbPageCache(serverId: Long, remote: String): Long {
     val pagePath = com.hippo.ehviewer.smb.SmbCache.cachePathForRemoteFile(serverId, remote)

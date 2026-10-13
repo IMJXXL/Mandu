@@ -49,7 +49,7 @@ class ReaderScopeModelTest {
 
     @Test
     fun `book scope key ignores global key - factory fallback`() {
-        // 用户定稿：本书作用域的项与全局键彻底脱钩，没调过的书用出厂初始值
+        // 用户定稿：本书作用域的项与全局键彻底脱钩，没调过的书用初始默认值
         putGlobal("brightness", 50)
         assertEquals(0, ReaderConfig.load(prefs, 1L).brightness)
     }
@@ -59,7 +59,7 @@ class ReaderScopeModelTest {
         putGlobal("brightness", 50)
         putGlobal("book_1_brightness", 30)
         assertEquals(30, ReaderConfig.load(prefs, 1L).brightness)
-        // 别的书没调过 → 出厂值（全局键对本书项无效）
+        // 别的书没调过 → 初始默认值（全局键对本书项无效）
         assertEquals(0, ReaderConfig.load(prefs, 2L).brightness)
     }
 
@@ -68,7 +68,7 @@ class ReaderScopeModelTest {
         putGlobal("book_1_brightness", 30)
         ReaderSessionStore.put(1L, "brightness", 10)
         assertEquals(10, ReaderConfig.load(prefs, 1L).brightness)
-        // 会话按书隔离：书 2 无覆盖 → 出厂值
+        // 会话按书隔离：书 2 无覆盖 → 初始默认值
         assertEquals(0, ReaderConfig.load(prefs, 2L).brightness)
     }
 
@@ -212,7 +212,7 @@ class ReaderScopeModelTest {
         ReaderScope.write(prefs, 1L, "imageScaleMode", 0)
         assertEquals(0, prefs.getInt("book_1_imageScaleMode", -1))
         assertEquals(0, ReaderConfig.load(prefs, 1L).imageScaleMode)
-        // 其他书不受影响（出厂默认 0=适应屏幕，2026-10-06 对齐 mihon）
+        // 其他书不受影响（初始默认 0=适应屏幕，2026-10-06 对齐 mihon）
         assertEquals(0, ReaderConfig.load(prefs, 2L).imageScaleMode)
     }
 

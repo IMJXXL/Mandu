@@ -153,7 +153,7 @@ fun KeyMapScreen(onBack: () -> Unit) {
             if (mappings.isEmpty()) {
                 item {
                     Text(
-                        "还没有任何映射。点右下角「添加按键」新建，或点右上角「恢复默认」套用出厂表。",
+                        "还没有任何映射。点右下角「添加按键」新建，或点右上角「恢复默认」套用初始默认表。",
                         fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -188,7 +188,7 @@ fun KeyMapScreen(onBack: () -> Unit) {
         AlertDialog(
             onDismissRequest = { showResetConfirm = false },
             title = { Text("恢复默认映射？") },
-            text = { Text("将清空当前全部按键映射，套用出厂默认表（十字键/OK/翻页键/媒体键/空格/J K）。此操作不可撤销。") },
+            text = { Text("将清空当前全部按键映射，套用初始默认表（十字键/OK/翻页键/媒体键/空格/J K）。此操作不可撤销。") },
             confirmButton = {
                 TextButton(onClick = {
                     showResetConfirm = false

@@ -23,6 +23,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -2209,7 +2210,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             items = tocItems
             if (navStack.size > 1) {
                 val firstZIdx = navStack.indexOfFirst { it.startsWith("z:") }
-                if (firstZIdx >= 0) navStack = navStack.take(firstZIdx + 1)
+                if (firstZIdx >= 0 && firstZIdx < navStack.size - 1) navStack = navStack.take(firstZIdx + 1)
                 else navStack = navStack.dropLast(1)
             }
         } else if (navStack.size > 1) {
@@ -3006,8 +3007,9 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                     }
                 }
                 items.isNotEmpty() -> {
-                    ItemGrid(items, engine, MaterialTheme.colorScheme.surface, progressForToc, { openItem(it) }, Modifier.fillMaxSize(),
+                    ItemGrid(items, engine, MaterialTheme.colorScheme.surface, progressForToc, { openItem(it) }, Modifier.fillMaxSize().padding(top = 56.dp),
                         navStack = navStack,
+                        bookId = book?.id ?: 0L,
                         subVolCovers = subVolCoverMap,
                         onItemLongPress = onSubItemLongPress,
                     )
@@ -4194,6 +4196,7 @@ private fun ItemGrid(
     tap: (ArchiveEngine.Item) -> Unit,
     mod: Modifier,
     navStack: List<String> = emptyList(),
+    bookId: Long = 0L,
     subVolCovers: Map<String, Pair<String, Long>> = emptyMap(),
     onItemLongPress: (ArchiveEngine.Item) -> Unit = {},
 ) {
@@ -4217,6 +4220,18 @@ private fun ItemGrid(
         val base = com.mangareader.util.GroupSortUtil.sortItems(items, config, { it.name }, { it.dir })
         if (sortAsc) base else base.reversed()
     }
+    val gridState = rememberLazyGridState()
+    val scrollKey = "$bookId|${navStack.lastOrNull() ?: ""}"
+    LaunchedEffect(gridState) {
+        snapshotFlow { gridState.firstVisibleItemIndex to gridState.isScrollInProgress }
+            .collect { (idx, scrolling) ->
+                if (!scrolling && idx > 0) TocScrollStore.put(ctx, scrollKey, idx)
+            }
+    }
+    LaunchedEffect(scrollKey, sorted) {
+        val stored = TocScrollStore.get(ctx, scrollKey)
+        if (stored != null && stored < sorted.size) gridState.scrollToItem(stored)
+    }
     Column(mod) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Text("${sorted.size} 项", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -4226,7 +4241,7 @@ private fun ItemGrid(
                 Text(if (sortAsc) "正序" else "倒序", fontSize = 12.sp)
             }
         }
-        LazyVerticalGrid(columns = gridCols, contentPadding = PaddingValues(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.weight(1f)) {
+        LazyVerticalGrid(state = gridState, columns = gridCols, contentPadding = PaddingValues(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.weight(1f)) {
             // ★ 2026-10-12 真机复现问题1：zip 内条目 auth|doc 全同（listZipDirs 恒填 zip 自身 docId），
             //   章节文件夹 ≥2 个即 key 碰撞闪退。补索引后缀，与 ReaderItemGrid 同款防撞。
             itemsIndexed(sorted, key = { i, e -> "${e.auth}|${e.doc}_$i" }) { _, e ->

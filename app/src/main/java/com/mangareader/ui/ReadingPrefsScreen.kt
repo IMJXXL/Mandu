@@ -76,7 +76,7 @@ internal data class PrefRow(
     val allKeys: List<String> get() = listOf(key) + subKeys
 }
 
-/** 全局默认值读取（带出厂默认，类型安全） */
+/** 全局默认值读取（带初始默认，类型安全） */
 internal fun prefGlobalValue(prefs: SharedPreferences, key: String): Any? {
     val def = PREF_DEFAULTS[key] ?: return null
     return try {
@@ -217,11 +217,11 @@ internal val PREF_ROWS: List<PrefRow> = listOf(
     )), subKeys = listOf("texturePresetId", "textureConcentration", "textureScope", "textureAlpha")),
 )
 
-/** 快照取值：缺省回出厂默认（写后由 version 重建快照驱动刷新） */
+/** 快照取值：缺省回初始默认（写后由 version 重建快照驱动刷新） */
 internal fun valueOf(values: Map<String, Any?>, key: String): Any? =
     values[key] ?: PREF_DEFAULTS[key]
 
-/** 单键原始值（书内明细对话框用）：本书键 > 全局键 > null(出厂默认) */
+/** 单键原始值（书内明细对话框用）：本书键 > 全局键 > null(初始默认) */
 internal fun prefRawValue(prefs: SharedPreferences, key: String, bookId: Long? = null): String? {
     val bk = bookId?.let { if (key == ReaderScope.READ_MODE_KEY) "read_mode_$it" else "book_${it}_$key" }
     val raw: Any? = when {
@@ -425,7 +425,7 @@ fun ReadingPrefsScreen(onBack: () -> Unit) {
                     Spacer(Modifier.height(6.dp))
                     Text("· 行尾状态「全局」的项：在书里调它＝所有没单独调过的书都跟着变；这页只是预设默认值", fontSize = 13.sp)
                     Spacer(Modifier.height(4.dp))
-                    Text("· 行尾状态「本书」的项：这页不可设；没单独调过的书用出厂初始值，进书里调成啥算啥", fontSize = 13.sp)
+                    Text("· 行尾状态「本书」的项：这页不可设；没单独调过的书用初始默认值，进书里调成啥算啥", fontSize = 13.sp)
                     Spacer(Modifier.height(4.dp))
                     Text("· 书里调过的项永远优先（行尾挂「单独·N本」），默认值和开关都动不了它", fontSize = 13.sp)
                     Spacer(Modifier.height(4.dp))
@@ -436,7 +436,7 @@ fun ReadingPrefsScreen(onBack: () -> Unit) {
                     Text("举个例子：亮度", fontSize = 14.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Medium)
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        "亮度出厂默认 0，状态「全局」：",
+                        "亮度初始默认 0，状态「全局」：",
                         fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(Modifier.height(8.dp))
@@ -446,7 +446,7 @@ fun ReadingPrefsScreen(onBack: () -> Unit) {
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        "② 把亮度的状态切成「本书」，再在《漫画B》里调到 30。\n→ 只有《漫画B》是 30；其他没单独调过的书回到出厂的 0（「本书」状态不看全局默认值）。",
+                        "② 把亮度的状态切成「本书」，再在《漫画B》里调到 30。\n→ 只有《漫画B》是 30；其他没单独调过的书回到初始默认的 0（「本书」状态不看全局默认值）。",
                         fontSize = 13.sp,
                     )
                     Spacer(Modifier.height(8.dp))
@@ -543,7 +543,7 @@ fun ReadingPrefsScreen(onBack: () -> Unit) {
             title = { Text("恢复默认") },
             text = {
                 Text(
-                    "将回到没有「阅读偏好」这个功能时的状态：本页参数恢复出厂预设、清除所有书里单独调过的设置（共 $bookCount 本书）、作用域回默认、总开关重新打开。\n" +
+                    "将回到没有「阅读偏好」这个功能时的状态：本页参数恢复初始默认、清除所有书里单独调过的设置（共 $bookCount 本书）、作用域回默认、总开关重新打开。\n" +
                         "设置 › 阅读设置 里的全局项（墨水屏、性能与解码等）不受影响。\n" +
                         "改错了可以找回：会保留最近 3 次重置前的设置。\n" +
                         "阅读进度、书签、缓存不受影响。",
@@ -556,7 +556,7 @@ fun ReadingPrefsScreen(onBack: () -> Unit) {
                             com.mangareader.data.ReaderPrefMigration.snapshotNow(ctx)
                             prefs.all.keys.filter { it.startsWith("book_") || it.startsWith("read_mode_") }
                                 .forEach { prefs.edit().remove(it).apply() }
-                            // 恢复到"功能上线前"：删本页全局键 + 作用域回预设 + 总开关回开出厂态
+                            // 恢复到"功能上线前"：删本页全局键 + 作用域回预设 + 总开关回开初始默认态
                             val ed = prefs.edit()
                             PREF_ROWS.flatMap { it.allKeys }.plus(ReaderScope.READ_MODE_GLOBAL_KEY)
                                 .forEach { ed.remove(it) }
@@ -596,13 +596,13 @@ private fun PrefRowBlock(
     onClear: (PrefRow, Int) -> Unit,
 ) {
     // ★ 本书状态：不渲染任何控件（用户定稿 2026-10-04）——本书项没有"这页的默认值"，
-    //   没调过的书用出厂初始值，调过的书用自己的值；灰勾选会让人误以为"默认带着勾"
+    //   没调过的书用初始默认值，调过的书用自己的值；灰勾选会让人误以为"默认带着勾"
     if (isBook) {
         Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(row.label, fontSize = 15.sp)
                 Text(
-                    "参数在书里调，改成啥算啥；没调过的书用出厂初始值",
+                    "参数在书里调，改成啥算啥；没调过的书用初始默认值",
                     fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
