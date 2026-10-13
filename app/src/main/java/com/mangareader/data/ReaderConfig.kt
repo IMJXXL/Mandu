@@ -146,6 +146,12 @@ data class ReaderConfig(
     val panelGuideFocus: Int = 0,
     val panelGuideDimMode: Int = 0,
     val panelGuideSplitMode: Int = 0,
+    val panelGuideTransition: Int = 0,
+    val panelGuideDisplay: Int = 0,
+    val panelGuideCrop: Int = 2,
+    val panelGuideSlideMs: Long = 180L,
+    val panelGuidePrecision: Int = 1,
+    val panelGuidePreview: Boolean = false,
 ) {
     enum class ScrollMode { VERTICAL, HORIZONTAL_LEFT, HORIZONTAL_RIGHT }
     @Deprecated("注释过时——clickFlipType.ordinal 正被 Reader/各视图使用；新模式 EDGE/KINDLISH 已接 buildNavigation") enum class ClickFlipType { NO, LEFT_RIGHT, DIAGONAL_LB_RT, DIAGONAL_LT_RB, L_SHAPE, EDGE, KINDLISH }
@@ -259,6 +265,12 @@ data class ReaderConfig(
             putInt("panelGuideFocus", panelGuideFocus)
             putInt("panelGuideDimMode", panelGuideDimMode)
             putInt("panelGuideSplitMode", panelGuideSplitMode)
+            putInt("panelGuideTransition", panelGuideTransition)
+            putInt("panelGuideDisplay", panelGuideDisplay)
+            putInt("panelGuideCrop", panelGuideCrop)
+            putLong("panelGuideSlideMs", panelGuideSlideMs)
+            putInt("panelGuidePrecision", panelGuidePrecision)
+            putBoolean("panelGuidePreview", panelGuidePreview)
             apply()
         }
     }
@@ -384,6 +396,12 @@ data class ReaderConfig(
                 panelGuideFocus = rInt("panelGuideFocus", 0).coerceIn(0, 2),
                 panelGuideDimMode = rInt("panelGuideDimMode", 0).coerceIn(0, 1),
                 panelGuideSplitMode = rInt("panelGuideSplitMode", 0).coerceIn(0, 1),
+                panelGuideTransition = rInt("panelGuideTransition", 0).coerceIn(0, 2),
+                panelGuideDisplay = rInt("panelGuideDisplay", if (prefs.contains("panelGuideDisplay")) rInt("panelGuideDisplay", 0) else 0).coerceIn(0, 1),
+                panelGuideCrop = rInt("panelGuideCrop", if (prefs.contains("panelGuideCrop")) rInt("panelGuideCrop", 2) else if (rInt("panelGuideFocus", 0) == 0) 2 else 0).coerceIn(0, 3),
+                panelGuideSlideMs = rLong("panelGuideSlideMs", 180L).coerceIn(100L, 500L),
+                panelGuidePrecision = rInt("panelGuidePrecision", 1).coerceIn(0, 1),
+                panelGuidePreview = rBoolean("panelGuidePreview", false),
                 downsampleTier = run {
                     when (val raw = rawFor("downsampleTier")) {
                         is String -> try { DownsampleTier.valueOf(raw) } catch (_: Exception) { DownsampleTier.STANDARD }
@@ -551,6 +569,12 @@ data class ReaderConfig(
             "panelGuideFocus" to { it.panelGuideFocus },
             "panelGuideDimMode" to { it.panelGuideDimMode },
             "panelGuideSplitMode" to { it.panelGuideSplitMode },
+            "panelGuideTransition" to { it.panelGuideTransition },
+            "panelGuideDisplay" to { it.panelGuideDisplay },
+            "panelGuideCrop" to { it.panelGuideCrop },
+            "panelGuideSlideMs" to { it.panelGuideSlideMs },
+            "panelGuidePrecision" to { it.panelGuidePrecision },
+            "panelGuidePreview" to { it.panelGuidePreview },
         )
 
         /** 书内设置面板 diff：返回真正改动的键名（含全局键——由 ReaderScope 决定写层） */

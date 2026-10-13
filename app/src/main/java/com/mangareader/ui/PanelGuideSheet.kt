@@ -57,12 +57,24 @@ fun PanelGuideSheet(
     dimMode: Int,
     splitMode: Int,
     active: Boolean,
+    transitionMode: Int,
+    displayMode: Int,
+    cropMode: Int,
+    slideMs: Long,
+    precision: Int,
+    previewEnabled: Boolean,
     onSensitivity: (Int) -> Unit,
     onDim: (Int) -> Unit,
     onAnim: (Boolean) -> Unit,
     onRtl: (Int) -> Unit,
     onDimMode: (Int) -> Unit,
     onSplitMode: (Int) -> Unit,
+    onTransition: (Int) -> Unit,
+    onDisplay: (Int) -> Unit,
+    onCrop: (Int) -> Unit,
+    onSlideMs: (Long) -> Unit,
+    onPrecision: (Int) -> Unit,
+    onPreview: (Boolean) -> Unit,
     onToggleActive: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -135,6 +147,21 @@ fun PanelGuideSheet(
                     )
 
                     PanelChipRow(
+                        title = "识别精度",
+                        options = listOf("普通" to 0, "精细" to 1),
+                        selected = precision,
+                        onSelect = onPrecision,
+                    )
+                    Text(
+                        when (precision) {
+                            0 -> "更快，适合清晰分格"
+                            else -> "更准，对模糊或低对比度边框识别更好"
+                        },
+                        style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                        modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 6.dp),
+                    )
+
+                    PanelChipRow(
                         title = "横向顺序",
                         options = listOf("跟随模式" to 0, "先右·日漫" to 1, "先左·国漫" to 2),
                         selected = rtlOverride,
@@ -142,11 +169,21 @@ fun PanelGuideSheet(
                     )
 
                     PanelChipRow(
-                        title = "其余画面",
-                        options = listOf("全部一样暗" to 0, "当前格原位稍亮" to 1),
-                        selected = dimMode,
-                        onSelect = onDimMode,
+                        title = "画面显示",
+                        options = listOf("压暗其余" to 0, "隐藏其余" to 1),
+                        selected = displayMode,
+                        onSelect = onDisplay,
                     )
+
+                    if (displayMode == 0) {
+                        PanelChipRow(
+                            title = "其余画面",
+                            options = listOf("全部一样暗" to 0, "当前格原位稍亮" to 1),
+                            selected = dimMode,
+                            onSelect = onDimMode,
+                        )
+                    }
+
                     PanelChipRow(
                         title = "逐格条件",
                         options = listOf("整页都能分才逐格" to 0, "能分几格分几格" to 1),
@@ -154,20 +191,50 @@ fun PanelGuideSheet(
                         onSelect = onSplitMode,
                     )
 
-                    Column(Modifier.padding(horizontal = 24.dp, vertical = 8.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("压暗程度", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                            Text("$dim%", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold))
+                    PanelChipRow(
+                        title = "画面裁切",
+                        options = listOf("紧贴分格" to 0, "放宽边距" to 1, "留固定边距" to 2, "不裁切只高亮" to 3),
+                        selected = cropMode,
+                        onSelect = onCrop,
+                    )
+
+                    if (displayMode == 0) {
+                        Column(Modifier.padding(horizontal = 24.dp, vertical = 8.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("压暗程度", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                                Text("$dim%", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold))
+                            }
+                            Slider(
+                                value = dim.toFloat(),
+                                onValueChange = { onDim((it + 0.5f).toInt()) },
+                                valueRange = 0f..100f,
+                            )
+                            if (dim == 0) {
+                                Text(
+                                    "0% = 不压暗，仅放大当前格",
+                                    style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                                )
+                            }
                         }
-                        Slider(
-                            value = dim.toFloat(),
-                            onValueChange = { onDim((it + 0.5f).toInt()) },
-                            valueRange = 0f..100f,
-                        )
-                        if (dim == 0) {
-                            Text(
-                                "0% = 不压暗，仅放大当前格",
-                                style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                    }
+
+                    PanelChipRow(
+                        title = "切换方式",
+                        options = listOf("直接切换" to 0, "滑动过渡" to 1, "渐隐渐显" to 2),
+                        selected = transitionMode,
+                        onSelect = onTransition,
+                    )
+
+                    if (transitionMode == 1) {
+                        Column(Modifier.padding(horizontal = 24.dp, vertical = 8.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("滑动时长", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                                Text("${slideMs}ms", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold))
+                            }
+                            Slider(
+                                value = slideMs.toFloat(),
+                                onValueChange = { onSlideMs((it + 0.5f).toLong()) },
+                                valueRange = 100f..500f,
                             )
                         }
                     }
@@ -184,7 +251,25 @@ fun PanelGuideSheet(
                         Column {
                             Text("翻格动画", style = MaterialTheme.typography.bodyMedium)
                             Text(
-                                "切格时的缩放过渡（墨水屏自动关闭）",
+                                "切格时的过渡（墨水屏自动关闭）",
+                                style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                            )
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onPreview(!previewEnabled) }
+                            .padding(horizontal = 24.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    ) {
+                        Switch(checked = previewEnabled, onCheckedChange = null)
+                        Column {
+                            Text("分格预览", style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                "进入逐格前先看清本页分了几格",
                                 style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
                             )
                         }

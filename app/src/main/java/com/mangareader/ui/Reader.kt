@@ -2876,6 +2876,12 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                             panelGuideDimMode = config.panelGuideDimMode,
                             panelGuideSplitMode = config.panelGuideSplitMode,
                             panelGuideExemptedPages = panelGuideExempted,
+                            panelGuideTransition = config.panelGuideTransition,
+                            panelGuideDisplay = config.panelGuideDisplay,
+                            panelGuideCrop = config.panelGuideCrop,
+                            panelGuideSlideMs = config.panelGuideSlideMs,
+                            panelGuidePrecision = config.panelGuidePrecision,
+                            panelGuidePreview = config.panelGuidePreview,
                             verticalPager = verticalPagerEffective,
                             flipAnimationEnabled = config.isFlipAnimation,
                             pageCurlAnimationEnabled = config.isPageCurlAnimation,
@@ -3423,6 +3429,12 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             dimMode = config.panelGuideDimMode,
             splitMode = config.panelGuideSplitMode,
             active = panelGuideActive,
+            transitionMode = config.panelGuideTransition,
+            displayMode = config.panelGuideDisplay,
+            cropMode = config.panelGuideCrop,
+            slideMs = config.panelGuideSlideMs,
+            precision = config.panelGuidePrecision,
+            previewEnabled = config.panelGuidePreview,
             onSensitivity = { v ->
                 config = config.copy(panelGuideSensitivity = v)
                 com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideSensitivity", v)
@@ -3451,6 +3463,36 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             onSplitMode = { v ->
                 config = config.copy(panelGuideSplitMode = v)
                 com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideSplitMode", v)
+                configVersion++
+            },
+            onTransition = { v ->
+                config = config.copy(panelGuideTransition = v)
+                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideTransition", v)
+                configVersion++
+            },
+            onDisplay = { v ->
+                config = config.copy(panelGuideDisplay = v)
+                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideDisplay", v)
+                configVersion++
+            },
+            onCrop = { v ->
+                config = config.copy(panelGuideCrop = v)
+                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideCrop", v)
+                configVersion++
+            },
+            onSlideMs = { v ->
+                config = config.copy(panelGuideSlideMs = v)
+                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideSlideMs", v)
+                configVersion++
+            },
+            onPrecision = { v ->
+                config = config.copy(panelGuidePrecision = v)
+                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuidePrecision", v)
+                configVersion++
+            },
+            onPreview = { v ->
+                config = config.copy(panelGuidePreview = v)
+                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuidePreview", v)
                 configVersion++
             },
             onToggleActive = {
