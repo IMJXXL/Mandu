@@ -390,7 +390,10 @@ class PanelGuideOverlay(context: Context) : View(context) {
                     return true
                 }
                 when {
-                    abs(dx) > thr && abs(dx) > abs(dy) -> if (dx < 0) nextPanel() else prevPanel()
+                    abs(dx) > thr && abs(dx) > abs(dy) -> {
+                        val invert = session?.swipeInvert == true
+                        if ((dx < 0) != invert) nextPanel() else prevPanel()
+                    }
                     abs(dx) < thr / 2 && abs(dy) < thr / 2 -> handleTap(event.x, event.y)
                 }
             }
@@ -401,7 +404,13 @@ class PanelGuideOverlay(context: Context) : View(context) {
     private fun handleTap(x: Float, y: Float) {
         val s = session ?: return
         if (width <= 0 || height <= 0) return
-        when (s.nav.getAction(x / width, y / height)) {
+        val raw = s.nav.getAction(x / width, y / height)
+        val act = if (s.tapInvert) when (raw) {
+            com.mangareader.native.NavigationAction.PREV -> com.mangareader.native.NavigationAction.NEXT
+            com.mangareader.native.NavigationAction.NEXT -> com.mangareader.native.NavigationAction.PREV
+            else -> raw
+        } else raw
+        when (act) {
             com.mangareader.native.NavigationAction.PREV -> if (s.rtl) nextPanel() else prevPanel()
             com.mangareader.native.NavigationAction.NEXT -> if (s.rtl) prevPanel() else nextPanel()
             com.mangareader.native.NavigationAction.MENU -> s.onCloseActive()
