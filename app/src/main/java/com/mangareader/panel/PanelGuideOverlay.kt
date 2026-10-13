@@ -492,6 +492,7 @@ class PanelGuideOverlay(context: Context) : View(context) {
             bp.color = s.accentColor
             canvas.drawRect(panelRect, bp)
             drawHint(canvas, r)
+            drawProgress(canvas)
             return
         }
 
@@ -512,6 +513,7 @@ class PanelGuideOverlay(context: Context) : View(context) {
         }
         drawCrop(canvas, bmp, box)
         drawHint(canvas, r)
+        drawProgress(canvas)
     }
 
     /** 当前格以外四矩形压暗（scrimPaint.alpha=dimAlpha） */
@@ -617,6 +619,17 @@ class PanelGuideOverlay(context: Context) : View(context) {
                     width - hintPaint.textSize * 8.4f, height - hintPaint.textSize * 1.6f, hintPaint,
                 )
         }
+    }
+
+    private fun drawProgress(canvas: Canvas) {
+        val s = session ?: return
+        val r = result ?: return
+        if (!s.progressEnabled || r.fallback || r.boxes.size <= 1) return
+        val text = "${panelIdx + 1}/${r.boxes.size}"
+        val oldAlpha = hintPaint.alpha
+        hintPaint.alpha = 128
+        canvas.drawText(text, width / 2f - hintPaint.measureText(text) / 2f, height - hintPaint.textSize * 1.6f, hintPaint)
+        hintPaint.alpha = oldAlpha
     }
 
     private fun boxesUnionArea(boxes: List<PanelBox>): Float {
