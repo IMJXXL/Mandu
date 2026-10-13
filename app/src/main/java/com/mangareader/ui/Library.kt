@@ -608,6 +608,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var showShelfDialog by remember { mutableStateOf(false) }
     var showRenameBatch by remember { mutableStateOf(false) }
+    var showRenameSingle by remember { mutableStateOf(false) }
     var showCreateShelf by remember { mutableStateOf(false) }
     var showMergeDialog by remember { mutableStateOf(false) }
     var mergedBookView by remember { mutableStateOf<Book?>(null) }
@@ -1076,6 +1077,51 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
             },
             onDismiss = { showRenameBatch = false }
         )
+    }
+
+    if (showRenameSingle) {
+        val selectedBook = books.orEmpty().firstOrNull { it.id in selectedBooks }
+        selectedBook?.let { sb ->
+            val initialName = sb.displayTitle
+            var renameInput by remember(showRenameSingle, sb.id) { mutableStateOf(initialName) }
+            AlertDialog(
+                onDismissRequest = { showRenameSingle = false },
+                title = { Text("重命名") },
+                text = {
+                    Column {
+                        OutlinedTextField(
+                            value = renameInput,
+                            onValueChange = { renameInput = it },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        TextButton(onClick = {
+                            scope.launch {
+                                withContext(Dispatchers.IO) { dao.clearCustomTitle(sb.id) }
+                                showRenameSingle = false
+                                isMultiSelect = false
+                                selectedBooks = emptySet()
+                            }
+                        }) { Text("恢复文件名", color = MaterialTheme.colorScheme.error) }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        val newTitle = renameInput.trim()
+                        if (newTitle.isEmpty()) return@TextButton
+                        scope.launch {
+                            if (newTitle != initialName) {
+                                withContext(Dispatchers.IO) { dao.updateBookTitle(sb.id, newTitle) }
+                            }
+                            showRenameSingle = false
+                            isMultiSelect = false
+                            selectedBooks = emptySet()
+                        }
+                    }) { Text("保存") }
+                },
+                dismissButton = { TextButton(onClick = { showRenameSingle = false }) { Text("取消") } }
+            )
+        }
     }
 
     if (showMergeDialog) {
@@ -1579,7 +1625,10 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                             enabled = mergeEnabled,
                         ) { Text(mergeLabel, color = if (mergeEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }
                     }
-                    TextButton(onClick = { showRenameBatch = true }) { Text("重命名", color = MaterialTheme.colorScheme.primary) }
+                    TextButton(onClick = {
+                        if (selectedBooks.size == 1) showRenameSingle = true
+                        else showRenameBatch = true
+                    }) { Text("重命名", color = MaterialTheme.colorScheme.primary) }
                     TextButton(onClick = { showDeleteConfirm = true }) { Text("删除", color = MaterialTheme.colorScheme.error) }
                 }
             }
