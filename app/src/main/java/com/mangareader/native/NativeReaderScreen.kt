@@ -172,6 +172,13 @@ fun NativeReaderScreen(
     panelGuideSlideMs: Long = 180L,
     panelGuidePrecision: Int = 1,
     panelGuidePreview: Boolean = false,
+    panelGuideProgress: Boolean = false,
+    panelGuideSwipeInvert: Boolean = false,
+    panelGuideTapInvert: Boolean = false,
+    panelGuideFoldJoin: Boolean = false,
+    panelGuideAutoRotate: Boolean = false,
+    panelGuideAutoRotateDir: Int = 2,
+    panelGuideCrossPage: Boolean = false,
     /** ★ §34.3：VERT_PAGER 模式——竖向翻页走 PagerReaderView（不是 webtoon 连续滚动） */
     verticalPager: Boolean = false,
     flipAnimationEnabled: Boolean = true,
@@ -758,6 +765,13 @@ fun NativeReaderScreen(
                     slideMs = panelGuideSlideMs,
                     precision = panelGuidePrecision,
                     previewEnabled = panelGuidePreview,
+                    progressEnabled = panelGuideProgress,
+                    swipeInvert = panelGuideSwipeInvert,
+                    tapInvert = panelGuideTapInvert,
+                    foldJoinEnabled = panelGuideFoldJoin,
+                    autoRotateEnabled = panelGuideAutoRotate,
+                    autoRotateDir = panelGuideAutoRotateDir,
+                    crossPageEnabled = panelGuideCrossPage,
                     // ★ 超分联动（用户定则"分格用超分后的图，没出就等它"）：peekSr 三级取产物；
                     //   在算/待出结果时挂 pollForResult，就绪回调由覆盖层重载本页。
                     //   拆分双页：SR 与 engine.loadPage 同页索引空间（均为拆分后页），天然对齐
@@ -793,7 +807,7 @@ fun NativeReaderScreen(
     // ★ 逐格面板即改即生效（2026-10-11）：显示类（压暗/动画）纯绘制热更新；
     //   识别类（灵敏度/方向）清结果缓存重检当前页。begin 时 DisposableEffect 已带全量参数，
     //   这里只处理"会话进行中改设置"——会话未激活时 overlay 内部空转。
-    LaunchedEffect(panelGuideDim, panelGuideAnim, panelGuideDimMode, panelGuideTransition, panelGuideDisplay, panelGuideCrop, panelGuideSlideMs, panelGuidePreview) {
+    LaunchedEffect(panelGuideDim, panelGuideAnim, panelGuideDimMode, panelGuideTransition, panelGuideDisplay, panelGuideCrop, panelGuideSlideMs, panelGuidePreview, panelGuideProgress, panelGuideSwipeInvert, panelGuideTapInvert, panelGuideFoldJoin, panelGuideAutoRotate, panelGuideAutoRotateDir, panelGuideCrossPage) {
         panelOverlayRef?.onRenderSettingsChanged(
             255 * panelGuideDim / 100,
             panelGuideAnim,
@@ -803,6 +817,13 @@ fun NativeReaderScreen(
             panelGuideCrop,
             panelGuideSlideMs,
             panelGuidePreview,
+            panelGuideProgress,
+            panelGuideSwipeInvert,
+            panelGuideTapInvert,
+            panelGuideFoldJoin,
+            panelGuideAutoRotate,
+            panelGuideAutoRotateDir,
+            panelGuideCrossPage,
         )
     }
     LaunchedEffect(panelGuideSensitivity, panelGuideRtl, panelGuideSplitMode, panelGuidePrecision) {

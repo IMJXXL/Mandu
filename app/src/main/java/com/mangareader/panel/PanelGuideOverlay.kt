@@ -74,6 +74,13 @@ class PanelGuideOverlay(context: Context) : View(context) {
 
         val onChapterEnd: () -> Unit = {},
         val onCloseActive: () -> Unit = {},
+        val progressEnabled: Boolean = false,
+        val swipeInvert: Boolean = false,
+        val tapInvert: Boolean = false,
+        val foldJoinEnabled: Boolean = false,
+        val autoRotateEnabled: Boolean = false,
+        val autoRotateDir: Int = 2,
+        val crossPageEnabled: Boolean = false,
     )
 
     private companion object {
@@ -181,20 +188,41 @@ class PanelGuideOverlay(context: Context) : View(context) {
         cropMode: Int = 2,
         slideMs: Long = 180L,
         previewEnabled: Boolean = false,
+        progressEnabled: Boolean = false,
+        swipeInvert: Boolean = false,
+        tapInvert: Boolean = false,
+        foldJoinEnabled: Boolean = false,
+        autoRotateEnabled: Boolean = false,
+        autoRotateDir: Int = 2,
+        crossPageEnabled: Boolean = false,
     ) {
         val s = session ?: return
         if (s.dimAlpha == dimAlpha && s.animEnabled == animEnabled && s.dimMode == dimMode &&
             s.transitionMode == transitionMode && s.displayMode == displayMode &&
-            s.cropMode == cropMode && s.slideMs == slideMs && s.previewEnabled == previewEnabled
+            s.cropMode == cropMode && s.slideMs == slideMs && s.previewEnabled == previewEnabled &&
+            s.progressEnabled == progressEnabled && s.swipeInvert == swipeInvert &&
+            s.tapInvert == tapInvert && s.foldJoinEnabled == foldJoinEnabled &&
+            s.autoRotateEnabled == autoRotateEnabled && s.autoRotateDir == autoRotateDir &&
+            s.crossPageEnabled == crossPageEnabled
         ) return
+        val foldChanged = s.foldJoinEnabled != foldJoinEnabled
         session = s.copy(
             dimAlpha = dimAlpha, animEnabled = animEnabled, dimMode = dimMode,
             transitionMode = transitionMode, displayMode = displayMode,
             cropMode = cropMode, slideMs = slideMs, previewEnabled = previewEnabled,
+            progressEnabled = progressEnabled, swipeInvert = swipeInvert,
+            tapInvert = tapInvert, foldJoinEnabled = foldJoinEnabled,
+            autoRotateEnabled = autoRotateEnabled, autoRotateDir = autoRotateDir,
+            crossPageEnabled = crossPageEnabled,
         )
         scrimPaint.alpha = dimAlpha
         cropRect = null
-        invalidate()
+        if (foldChanged) {
+            PanelFoldJoin.Cache.clearBook(s.treePath)
+            showPage(shownPage)
+        } else {
+            invalidate()
+        }
     }
 
     /** 识别类：置信门槛/阅读方向——清本书结果缓存并重检当前页（方向变了阅读序也要重排） */

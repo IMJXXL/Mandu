@@ -63,6 +63,13 @@ fun PanelGuideSheet(
     slideMs: Long,
     precision: Int,
     previewEnabled: Boolean,
+    progressEnabled: Boolean,
+    swipeInvert: Boolean,
+    tapInvert: Boolean,
+    foldJoinEnabled: Boolean,
+    autoRotateEnabled: Boolean,
+    autoRotateDir: Int,
+    crossPageEnabled: Boolean,
     onSensitivity: (Int) -> Unit,
     onDim: (Int) -> Unit,
     onAnim: (Boolean) -> Unit,
@@ -75,6 +82,13 @@ fun PanelGuideSheet(
     onSlideMs: (Long) -> Unit,
     onPrecision: (Int) -> Unit,
     onPreview: (Boolean) -> Unit,
+    onProgress: (Boolean) -> Unit,
+    onSwipeInvert: (Boolean) -> Unit,
+    onTapInvert: (Boolean) -> Unit,
+    onFoldJoin: (Boolean) -> Unit,
+    onAutoRotate: (Boolean) -> Unit,
+    onAutoRotateDir: (Int) -> Unit,
+    onCrossPage: (Boolean) -> Unit,
     onToggleActive: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -270,6 +284,124 @@ fun PanelGuideSheet(
                             Text("分格预览", style = MaterialTheme.typography.bodyMedium)
                             Text(
                                 "进入逐格前先看清本页分了几格",
+                                style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                            )
+                        }
+                    }
+                    HorizontalDivider(Modifier.padding(vertical = 8.dp))
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onProgress(!progressEnabled) }
+                            .padding(horizontal = 24.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    ) {
+                        Switch(checked = progressEnabled, onCheckedChange = null)
+                        Column {
+                            Text("格进度", style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                "底部显示当前第几格",
+                                style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                            )
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onSwipeInvert(!swipeInvert) }
+                            .padding(horizontal = 24.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    ) {
+                        Switch(checked = swipeInvert, onCheckedChange = null)
+                        Column {
+                            Text("滑动反转", style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                "左滑切上一格",
+                                style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                            )
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onTapInvert(!tapInvert) }
+                            .padding(horizontal = 24.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    ) {
+                        Switch(checked = tapInvert, onCheckedChange = null)
+                        Column {
+                            Text("点按反转", style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                "左右点按互换",
+                                style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                            )
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onFoldJoin(!foldJoinEnabled) }
+                            .padding(horizontal = 24.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    ) {
+                        Switch(checked = foldJoinEnabled, onCheckedChange = null)
+                        Column {
+                            Text("折痕移除", style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                "跨页扫描件去折痕拼接",
+                                style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                            )
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onAutoRotate(!autoRotateEnabled) }
+                            .padding(horizontal = 24.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    ) {
+                        Switch(checked = autoRotateEnabled, onCheckedChange = null)
+                        Column {
+                            Text("跨页大图旋转", style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                "竖屏旋转铺开看",
+                                style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                            )
+                        }
+                    }
+
+                    if (autoRotateEnabled) {
+                        PanelChipRow(
+                            title = "旋转方向",
+                            options = listOf("顺时针" to 0, "逆时针" to 1, "自动" to 2),
+                            selected = autoRotateDir,
+                            onSelect = onAutoRotateDir,
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onCrossPage(!crossPageEnabled) }
+                            .padding(horizontal = 24.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    ) {
+                        Switch(checked = crossPageEnabled, onCheckedChange = null)
+                        Column {
+                            Text("跨页连续过渡", style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                "末格前进连续滑动",
                                 style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
                             )
                         }

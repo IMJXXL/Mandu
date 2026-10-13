@@ -152,6 +152,13 @@ data class ReaderConfig(
     val panelGuideSlideMs: Long = 180L,
     val panelGuidePrecision: Int = 1,
     val panelGuidePreview: Boolean = false,
+    val panelGuideProgress: Boolean = false,
+    val panelGuideSwipeInvert: Boolean = false,
+    val panelGuideTapInvert: Boolean = false,
+    val panelGuideFoldJoin: Boolean = false,
+    val panelGuideAutoRotate: Boolean = false,
+    val panelGuideAutoRotateDir: Int = 2,
+    val panelGuideCrossPage: Boolean = false,
 ) {
     enum class ScrollMode { VERTICAL, HORIZONTAL_LEFT, HORIZONTAL_RIGHT }
     @Deprecated("注释过时——clickFlipType.ordinal 正被 Reader/各视图使用；新模式 EDGE/KINDLISH 已接 buildNavigation") enum class ClickFlipType { NO, LEFT_RIGHT, DIAGONAL_LB_RT, DIAGONAL_LT_RB, L_SHAPE, EDGE, KINDLISH }
@@ -271,6 +278,13 @@ data class ReaderConfig(
             putLong("panelGuideSlideMs", panelGuideSlideMs)
             putInt("panelGuidePrecision", panelGuidePrecision)
             putBoolean("panelGuidePreview", panelGuidePreview)
+            putBoolean("panelGuideProgress", panelGuideProgress)
+            putBoolean("panelGuideSwipeInvert", panelGuideSwipeInvert)
+            putBoolean("panelGuideTapInvert", panelGuideTapInvert)
+            putBoolean("panelGuideFoldJoin", panelGuideFoldJoin)
+            putBoolean("panelGuideAutoRotate", panelGuideAutoRotate)
+            putInt("panelGuideAutoRotateDir", panelGuideAutoRotateDir)
+            putBoolean("panelGuideCrossPage", panelGuideCrossPage)
             apply()
         }
     }
@@ -402,6 +416,13 @@ data class ReaderConfig(
                 panelGuideSlideMs = rLong("panelGuideSlideMs", 180L).coerceIn(100L, 500L),
                 panelGuidePrecision = rInt("panelGuidePrecision", 1).coerceIn(0, 1),
                 panelGuidePreview = rBoolean("panelGuidePreview", false),
+                panelGuideProgress = rBoolean("panelGuideProgress", false),
+                panelGuideSwipeInvert = rBoolean("panelGuideSwipeInvert", false),
+                panelGuideTapInvert = rBoolean("panelGuideTapInvert", false),
+                panelGuideFoldJoin = rBoolean("panelGuideFoldJoin", false),
+                panelGuideAutoRotate = rBoolean("panelGuideAutoRotate", false),
+                panelGuideAutoRotateDir = rInt("panelGuideAutoRotateDir", 2).coerceIn(0, 2),
+                panelGuideCrossPage = rBoolean("panelGuideCrossPage", false),
                 downsampleTier = run {
                     when (val raw = rawFor("downsampleTier")) {
                         is String -> try { DownsampleTier.valueOf(raw) } catch (_: Exception) { DownsampleTier.STANDARD }

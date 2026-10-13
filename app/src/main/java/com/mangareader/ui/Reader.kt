@@ -2880,6 +2880,13 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                             panelGuideSlideMs = config.panelGuideSlideMs,
                             panelGuidePrecision = config.panelGuidePrecision,
                             panelGuidePreview = config.panelGuidePreview,
+                            panelGuideProgress = config.panelGuideProgress,
+                            panelGuideSwipeInvert = config.panelGuideSwipeInvert,
+                            panelGuideTapInvert = config.panelGuideTapInvert,
+                            panelGuideFoldJoin = config.panelGuideFoldJoin,
+                            panelGuideAutoRotate = config.panelGuideAutoRotate,
+                            panelGuideAutoRotateDir = config.panelGuideAutoRotateDir,
+                            panelGuideCrossPage = config.panelGuideCrossPage,
                             verticalPager = verticalPagerEffective,
                             flipAnimationEnabled = config.isFlipAnimation,
                             pageCurlAnimationEnabled = config.isPageCurlAnimation,
@@ -3433,6 +3440,13 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             slideMs = config.panelGuideSlideMs,
             precision = config.panelGuidePrecision,
             previewEnabled = config.panelGuidePreview,
+            progressEnabled = config.panelGuideProgress,
+            swipeInvert = config.panelGuideSwipeInvert,
+            tapInvert = config.panelGuideTapInvert,
+            foldJoinEnabled = config.panelGuideFoldJoin,
+            autoRotateEnabled = config.panelGuideAutoRotate,
+            autoRotateDir = config.panelGuideAutoRotateDir,
+            crossPageEnabled = config.panelGuideCrossPage,
             onSensitivity = { v ->
                 config = config.copy(panelGuideSensitivity = v)
                 com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideSensitivity", v)
@@ -3491,6 +3505,41 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             onPreview = { v ->
                 config = config.copy(panelGuidePreview = v)
                 com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuidePreview", v)
+                configVersion++
+            },
+            onProgress = { v ->
+                config = config.copy(panelGuideProgress = v)
+                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideProgress", v)
+                configVersion++
+            },
+            onSwipeInvert = { v ->
+                config = config.copy(panelGuideSwipeInvert = v)
+                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideSwipeInvert", v)
+                configVersion++
+            },
+            onTapInvert = { v ->
+                config = config.copy(panelGuideTapInvert = v)
+                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideTapInvert", v)
+                configVersion++
+            },
+            onFoldJoin = { v ->
+                config = config.copy(panelGuideFoldJoin = v)
+                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideFoldJoin", v)
+                configVersion++
+            },
+            onAutoRotate = { v ->
+                config = config.copy(panelGuideAutoRotate = v)
+                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideAutoRotate", v)
+                configVersion++
+            },
+            onAutoRotateDir = { v ->
+                config = config.copy(panelGuideAutoRotateDir = v)
+                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideAutoRotateDir", v)
+                configVersion++
+            },
+            onCrossPage = { v ->
+                config = config.copy(panelGuideCrossPage = v)
+                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideCrossPage", v)
                 configVersion++
             },
             onToggleActive = {
