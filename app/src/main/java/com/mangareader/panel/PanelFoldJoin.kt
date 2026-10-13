@@ -64,6 +64,7 @@ internal object PanelFoldJoin {
         val rightW = w - x1 - 1
         val newW = leftW + pad * 2 + rightW
         if (newW <= 0 || h <= 0) return null
+        trimEdges(src, x0, x1, PanelTunables.FOLD_TRIM_COLUMNS)
         return try {
             val result = Bitmap.createBitmap(newW, h, Bitmap.Config.ARGB_8888)
             result.eraseColor(Color.WHITE)
@@ -82,6 +83,43 @@ internal object PanelFoldJoin {
         } catch (_: Exception) {
             null
         }
+    }
+
+    /**
+     * 折痕条带边缘修剪：对左边界左侧 trimColumns 列用更左侧邻近画面列复制覆盖，
+     * 右边界右侧 trimColumns 列同理。越界时跳过越界列仅修剪存在邻近列的一侧。
+     * 直接修改 src 像素。返回 true=修剪成功，false=越界无法修剪（调用方回退未修剪）。
+     */
+    private fun trimEdges(src: Bitmap, bandX0: Int, bandX1: Int, trimColumns: Int = PanelTunables.FOLD_TRIM_COLUMNS): Boolean {
+        if (src.isRecycled) return false
+        val w = src.width
+        val h = src.height
+        if (trimColumns <= 0 || h <= 0 || w <= 0) return false
+        var trimmed = false
+        try {
+            val step = trimColumns + 1
+            for (i in 1..trimColumns) {
+                val leftEdge = bandX0 - i
+                val leftSrc = leftEdge - step
+                if (leftEdge >= 0 && leftSrc >= 0) {
+                    for (y in 0 until h) {
+                        src.setPixel(leftEdge, y, src.getPixel(leftSrc, y))
+                    }
+                    trimmed = true
+                }
+                val rightEdge = bandX1 + i
+                val rightSrc = rightEdge + step
+                if (rightEdge < w && rightSrc < w) {
+                    for (y in 0 until h) {
+                        src.setPixel(rightEdge, y, src.getPixel(rightSrc, y))
+                    }
+                    trimmed = true
+                }
+            }
+        } catch (_: Exception) {
+            return false
+        }
+        return trimmed
     }
 
     internal object Cache {
