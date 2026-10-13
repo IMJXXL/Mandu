@@ -150,6 +150,14 @@ class PanelGuideOverlay(context: Context) : View(context) {
         }
     })
 
+    private var crossActive = false
+    private var crossBmpNext: Bitmap? = null
+    private var crossResultNext: PanelPageResult? = null
+    private var crossStartAt = 0L
+    private var crossDuration = 180L
+    private var crossTargetPage = -1
+    private var crossForward = true
+
     // ———— 生命周期 ————
 
     fun begin(s: Session) {
@@ -165,6 +173,9 @@ class PanelGuideOverlay(context: Context) : View(context) {
         prevBox = null
         prevCropRect = null
         resetZoom()
+        crossActive = false
+        crossBmpNext = null
+        crossResultNext = null
         scrimPaint.alpha = s.dimAlpha
         visibility = VISIBLE
         showPage(s.currentPage())
@@ -181,6 +192,9 @@ class PanelGuideOverlay(context: Context) : View(context) {
         inPreview = false
         prevBox = null
         prevCropRect = null
+        crossActive = false
+        crossBmpNext = null
+        crossResultNext = null
         visibility = GONE
         invalidate()
     }
@@ -362,6 +376,7 @@ class PanelGuideOverlay(context: Context) : View(context) {
                 visibility = GONE
                 invalidate()
             } else {
+                if (tryStartCrossPage(true)) return
                 requestPage((s?.currentPage?.invoke() ?: 0) + 1, 0)
             }
         }
@@ -375,8 +390,35 @@ class PanelGuideOverlay(context: Context) : View(context) {
             resetZoom()
             animateCropTo(currentCropTarget(), prev)
         } else {
+            if (tryStartCrossPage(false)) return
             requestPage((session?.currentPage?.invoke() ?: 0) - 1, LANDING_LAST)
         }
+    }
+
+    private fun tryStartCrossPage(forward: Boolean): Boolean {
+        val s = session ?: return false
+        if (!s.crossPageEnabled || s.eink || s.transitionMode != 1) return false
+        val cur = s.currentPage()
+        val target = if (forward) cur + 1 else cur - 1
+        if (target !in s.pages.indices) return false
+        val nextResult = PanelDetector.Cache.get(s.treePath, target) ?: return false
+        scope.launch {
+            val nextBmp = withContext(Dispatchers.Default) {
+                runCatching { s.engine.loadPage(s.pages[target], s.treePath) }.getOrNull()
+            }
+            post {
+                if (session !== s || nextBmp == null) return@post
+                crossActive = true
+                crossBmpNext = nextBmp
+                crossResultNext = nextResult
+                crossStartAt = System.currentTimeMillis()
+                crossDuration = if (s.slideMs > 0) s.slideMs else ANIM_MS
+                crossTargetPage = target
+                crossForward = forward
+                postInvalidateOnAnimation()
+            }
+        }
+        return true
     }
 
     private fun requestPage(target: Int, landing: Int) {
@@ -409,6 +451,12 @@ class PanelGuideOverlay(context: Context) : View(context) {
         if (s != null && !s.eink) scaleDetector.onTouchEvent(event)
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                if (crossActive) {
+                    crossActive = false
+                    crossBmpNext = null
+                    crossResultNext = null
+                    invalidate()
+                }
                 downX = event.x
                 downY = event.y
                 pointerCount = 1
@@ -500,6 +548,7 @@ class PanelGuideOverlay(context: Context) : View(context) {
 
     private fun drawContent(canvas: Canvas) {
         val s = session ?: return
+        if (crossActive) { drawCrossPage(canvas); return }
         val r = result
         val bmp = pageBitmap
         val vw = width.toFloat()
@@ -755,6 +804,49 @@ class PanelGuideOverlay(context: Context) : View(context) {
         hintPaint.alpha = 128
         canvas.drawText(text, width / 2f - hintPaint.measureText(text) / 2f, height - hintPaint.textSize * 1.6f, hintPaint)
         hintPaint.alpha = oldAlpha
+    }
+
+    private fun drawCrossPage(canvas: Canvas) {
+        val bmpCur = pageBitmap
+        val bmpNext = crossBmpNext
+        val rCur = result
+        val rNext = crossResultNext
+        if (bmpCur == null || bmpCur.isRecycled || bmpNext == null || bmpNext.isRecycled ||
+            rCur == null || rNext == null || rCur.boxes.isEmpty() || rNext.boxes.isEmpty()) {
+            crossActive = false
+            crossBmpNext = null
+            crossResultNext = null
+            return
+        }
+        val vw = width.toFloat()
+        val t = ((System.currentTimeMillis() - crossStartAt).toFloat() / crossDuration).coerceIn(0f, 1f)
+        val base = currentCropBaseRect()
+        val boxCur = rCur.boxes[panelIdx.coerceIn(0, rCur.boxes.size - 1)]
+        srcRect.set(
+            (boxCur.x * bmpCur.width).toInt().coerceIn(0, bmpCur.width - 1),
+            (boxCur.y * bmpCur.height).toInt().coerceIn(0, bmpCur.height - 1),
+            (boxCur.right * bmpCur.width).toInt().coerceIn(1, bmpCur.width),
+            (boxCur.bottom * bmpCur.height).toInt().coerceIn(1, bmpCur.height),
+        )
+        val curOffset = if (crossForward) lerp(0f, -vw, t) else lerp(0f, vw, t)
+        canvas.drawBitmap(bmpCur, srcRect, RectF(base.left + curOffset, base.top, base.right + curOffset, base.bottom), cropPaint)
+        val boxNext = if (crossForward) rNext.boxes[0] else rNext.boxes[rNext.boxes.size - 1]
+        srcRect.set(
+            (boxNext.x * bmpNext.width).toInt().coerceIn(0, bmpNext.width - 1),
+            (boxNext.y * bmpNext.height).toInt().coerceIn(0, bmpNext.height - 1),
+            (boxNext.right * bmpNext.width).toInt().coerceIn(1, bmpNext.width),
+            (boxNext.bottom * bmpNext.height).toInt().coerceIn(1, bmpNext.height),
+        )
+        val nextOffset = if (crossForward) lerp(vw, 0f, t) else lerp(-vw, 0f, t)
+        canvas.drawBitmap(bmpNext, srcRect, RectF(base.left + nextOffset, base.top, base.right + nextOffset, base.bottom), cropPaint)
+        if (t >= 1f) {
+            crossActive = false
+            crossBmpNext = null
+            crossResultNext = null
+            requestPage(crossTargetPage, if (crossForward) 0 else LANDING_LAST)
+        } else {
+            postInvalidateOnAnimation()
+        }
     }
 
     private fun boxesUnionArea(boxes: List<PanelBox>): Float {
