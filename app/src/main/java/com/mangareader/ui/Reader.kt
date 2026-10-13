@@ -2628,7 +2628,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                         }
                     },
                     onRenameClick = {
-                        renameInput = book?.title ?: ""
+                        renameInput = book?.displayTitle ?: ""
                         showRename = true
                     },
                     onAddToShelfClick = {
@@ -3180,7 +3180,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                         onPanelGuide = { showPanelGuideSheet = true },
                         onBack = ::goBack,
                         onRename = {
-                            renameInput = book?.title ?: ""
+                            renameInput = book?.displayTitle ?: ""
                             showRename = true
                         },
                         onAddToShelf = {
@@ -3401,18 +3401,29 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             confirmButton = {
                 TextButton(onClick = {
                     val newTitle = renameInput.trim()
-                    if (newTitle.isNotEmpty() && newTitle != book?.title) {
+                    if (newTitle.isNotEmpty() && newTitle != book?.displayTitle) {
                         book?.let { b ->
                             scope.launch {
                                 withContext(Dispatchers.IO) { dao.updateBookTitle(b.id, newTitle) }
-                                book = b.copy(title = newTitle)
+                                book = b.copy(customTitle = newTitle)
                                 showRename = false
                             }
                         }
                     }
                 }) { Text("保存") }
             },
-            dismissButton = { TextButton(onClick = { showRename = false }) { Text("取消") } }
+            dismissButton = {
+                TextButton(onClick = {
+                    book?.let { b ->
+                        scope.launch {
+                            withContext(Dispatchers.IO) { dao.clearCustomTitle(b.id) }
+                            book = b.copy(customTitle = null)
+                            showRename = false
+                        }
+                    }
+                }) { Text("恢复文件名", color = MaterialTheme.colorScheme.error) }
+                TextButton(onClick = { showRename = false }) { Text("取消") }
+            }
         )
     }
 
