@@ -64,7 +64,7 @@ internal object PanelSegmenter {
             }
         }
         if (dominant == null) return false
-        val d = dominant!!
+        val d = dominant
         val stripMid = d.x0 + d.w / 2f
         val stripOnLeft = stripMid < pw / 2
         for (i in boxes.indices) {
