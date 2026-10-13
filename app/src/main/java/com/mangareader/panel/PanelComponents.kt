@@ -24,7 +24,7 @@ internal object PanelComponents {
         }
     }
 
-    internal data class Component(val x0: Int, val y0: Int, val x1: Int, val y1: Int, val area: Int) {
+    internal data class Component(val x0: Int, val y0: Int, val x1: Int, val y1: Int, val area: Int, val pixels: IntArray = IntArray(0)) {
         fun toBox() = Box(x0, y0, x1, y1)
     }
 
@@ -93,7 +93,24 @@ internal object PanelComponents {
                 a.area++
             }
         }
-        return accs.map { (_, a) -> Component(a.x0, a.y0, a.x1, a.y1, a.area) }
+        val pixelsByRoot = HashMap<Int, IntArray>()
+        for ((root, a) in accs) {
+            val arr = IntArray(a.area)
+            pixelsByRoot[root] = arr
+        }
+        val offsets = HashMap<Int, Int>()
+        for (y in 0 until h) {
+            for (x in 0 until w) {
+                val l = labels[y * w + x]
+                if (l == 0) continue
+                val root = find(l)
+                val arr = pixelsByRoot[root]!!
+                val off = offsets.getOrPut(root) { 0 }
+                arr[off] = y * w + x
+                offsets[root] = off + 1
+            }
+        }
+        return accs.map { (root, a) -> Component(a.x0, a.y0, a.x1, a.y1, a.area, pixelsByRoot[root]!!) }
     }
 
     /**
@@ -101,7 +118,7 @@ internal object PanelComponents {
      * 候选(≥1/8 双维且≥2%面积)直接收；小连通域进碎片池按外扩相交归组（无边框格聚合）；
      * 然后包含合并→去重叠→中缝外扩→NMS。
      */
-    fun toPanelRects(mask: BooleanArray, w: Int, h: Int): List<Box> {
+    fun toPanelRects(mask: BooleanArray, w: Int, h: Int, frameTolerance: Int = 3, frameMinSides: Int = 4): List<Box> {
         val comps = connectedComponents(mask, w, h)
         if (comps.isEmpty()) return emptyList()
         val pageArea = w.toFloat() * h
@@ -114,7 +131,10 @@ internal object PanelComponents {
             val areaRatio = box.area / pageArea
             val dimOk = box.w >= w * PanelTunables.MIN_DIM_RATIO && box.h >= h * PanelTunables.MIN_DIM_RATIO
             if (dimOk && areaRatio >= PanelTunables.MIN_AREA_RATIO) {
-                candidates.add(box)
+                val sides = PanelFrameEvidence.frameSides(c.pixels, c.area, w, box, frameTolerance)
+                val isLarge = areaRatio >= 0.1f
+                val sidesOk = if (isLarge) sides >= 1 else sides >= frameMinSides
+                if (sidesOk) candidates.add(box)
             } else if (areaRatio >= PanelTunables.FRAG_KEEP_AREA) {
                 fragments.add(box)
             }

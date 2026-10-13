@@ -56,8 +56,13 @@ internal object PanelBinarize {
      * 注：白占比健康判定针对"二值化质量"而非"页面疏密"——稀疏页（墨 <15%）Otsu 依旧正确，
      * 此处宁可放过交给后续连通域过滤，也不让自适应在白纸上造噪。
      */
-    fun buildInkMask(gray: IntArray, w: Int, h: Int): BooleanArray {
+    fun buildInkMask(gray: IntArray, w: Int, h: Int, bgSampleRatio: Float = 0.05f): BooleanArray {
         val n = gray.size
+        val bg = PanelBackground.estimate(gray, w, h, bgSampleRatio)
+        if (!PanelBackground.isWhiteBackground(bg)) {
+            val relMask = PanelBackground.maskRelativeTo(gray, w, h, bg)
+            if (isHealthy(relMask)) return relMask
+        }
         val coarse = otsuThreshold(gray)
         var below = 0
         for (g in gray) if (g <= coarse) below++
@@ -103,9 +108,13 @@ internal object PanelBinarize {
         return out
     }
 
-    /** 闭运算核边长（DPI 无关：0.3%·短边，CPE 思路） */
-    fun closeKernelSize(w: Int, h: Int): Int =
-        maxOf(3, kotlin.math.round(PanelTunables.CLOSE_KERNEL_RATIO * minOf(w, h)).toInt())
+    /** 闭运算核边长（DPI 无关：0.3%·短边，CPE 思路；宽高比偏离 1 时微调以容忍倾斜分隔线断裂） */
+    fun closeKernelSize(w: Int, h: Int): Int {
+        val base = PanelTunables.CLOSE_KERNEL_RATIO * minOf(w, h)
+        val aspect = maxOf(w, h).toFloat() / minOf(w, h)
+        val tiltBoost = if (aspect > 1.3f) 0.001f * minOf(w, h) else 0f
+        return maxOf(3, kotlin.math.round(base + tiltBoost).toInt())
+    }
 
     // ———— 内部实现 ————
 

@@ -17,6 +17,7 @@ internal object PanelConfidence {
     ): PanelPageResult {
         val pageArea = w.toFloat() * h
         if (boxes.isEmpty()) return fallbackResult()
+        if (!PanelSegmenter.accept(boxes, w, h)) return fallbackResult()
 
         val coverage = minOf(1f, boxes.sumOf { it.area.toDouble() }.toFloat() / pageArea)
 

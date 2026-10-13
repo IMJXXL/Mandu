@@ -92,4 +92,16 @@ object PanelTunables {
     /** 矩形健康宽高比区间（CPE） */
     const val ASPECT_LO = 0.15f
     const val ASPECT_HI = 6.5f
+
+    data class PrecisionParams(
+        val maxSide: Int,
+        val bgSampleRatio: Float,
+        val frameTolerance: Int,
+        val frameMinSides: Int,
+    )
+
+    fun precisionParams(precision: Int): PrecisionParams = when (precision) {
+        0 -> PrecisionParams(maxSide = 720, bgSampleRatio = 0.05f, frameTolerance = 3, frameMinSides = 3)
+        else -> PrecisionParams(maxSide = 960, bgSampleRatio = 0.02f, frameTolerance = 2, frameMinSides = 4)
+    }
 }

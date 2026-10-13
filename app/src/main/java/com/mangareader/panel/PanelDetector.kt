@@ -21,12 +21,14 @@ object PanelDetector {
         src: Bitmap,
         rtl: Boolean,
         confFail: Float = PanelTunables.CONF_FAIL,
+        precision: Int = 1,
     ): PanelPageResult = withContext(Dispatchers.Default) {
         val t0 = android.os.SystemClock.elapsedRealtime()
+        val pp = PanelTunables.precisionParams(precision)
         val sw = if (src.config == Bitmap.Config.HARDWARE) src.copy(Bitmap.Config.ARGB_8888, false) else src
         try {
             val longSide = maxOf(sw.width, sw.height)
-            val scale = if (longSide > PanelTunables.MAX_SIDE) PanelTunables.MAX_SIDE / longSide.toFloat() else 1f
+            val scale = if (longSide > pp.maxSide) pp.maxSide / longSide.toFloat() else 1f
             val dw = kotlin.math.round(sw.width * scale).toInt().coerceAtLeast(1)
             val dh = kotlin.math.round(sw.height * scale).toInt().coerceAtLeast(1)
             val small = if (scale < 1f) Bitmap.createScaledBitmap(sw, dw, dh, true) else sw
@@ -40,7 +42,7 @@ object PanelDetector {
                     0.587f * ((p shr 8) and 0xFF) +
                     0.114f * (p and 0xFF)).toInt()
             }
-            val r = PanelDetectorCore.analyze(gray, dw, dh, rtl, confFail)
+            val r = PanelDetectorCore.analyze(gray, dw, dh, rtl, confFail, precision)
             Log.d(
                 "PanelDetector",
                 "detect ${dw}x${dh} boxes=${r.boxes.size} conf=${r.pageConf} fallback=${r.fallback} ${android.os.SystemClock.elapsedRealtime() - t0}ms",
