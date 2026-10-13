@@ -482,6 +482,24 @@ class PanelGuideOverlay(context: Context) : View(context) {
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         val s = session ?: return
+        val bmp = pageBitmap
+        val vw = width.toFloat()
+        val vh = height.toFloat()
+        val rotated = s.autoRotateEnabled && bmp != null && !bmp.isRecycled &&
+            PanelSpreadRotate.shouldRotate(bmp.width, bmp.height, width, height)
+        if (rotated) {
+            canvas.save()
+            canvas.rotate(PanelSpreadRotate.imageAngle(s.autoRotateDir, s.rtl).toFloat(), vw / 2, vh / 2)
+        }
+        try {
+            drawContent(canvas)
+        } finally {
+            if (rotated) canvas.restore()
+        }
+    }
+
+    private fun drawContent(canvas: Canvas) {
+        val s = session ?: return
         val r = result
         val bmp = pageBitmap
         val vw = width.toFloat()
