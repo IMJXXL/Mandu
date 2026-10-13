@@ -61,6 +61,12 @@ class PanelGuideOverlay(context: Context) : View(context) {
         val dimMode: Int = 0,
         val splitMode: Int = 0,
         val exemptedPages: Set<Int> = emptySet(),
+        val transitionMode: Int = 0,
+        val displayMode: Int = 0,
+        val cropMode: Int = 2,
+        val slideMs: Long = 180L,
+        val precision: Int = 1,
+        val previewEnabled: Boolean = false,
         val srSource: ((Int) -> SrPage?)? = null,
         val srPoll: ((Int, () -> Unit) -> Unit)? = null,
         val goToPage: (Int) -> Unit,
@@ -116,6 +122,10 @@ class PanelGuideOverlay(context: Context) : View(context) {
 
     private var downX = 0f
     private var downY = 0f
+    private var inPreview = false
+    private var prevBox: PanelBox? = null
+    private var prevCropRect: RectF? = null
+    private val fadePaint = Paint(Paint.FILTER_BITMAP_FLAG)
 
     // ———— 生命周期 ————
 
@@ -128,6 +138,9 @@ class PanelGuideOverlay(context: Context) : View(context) {
         pendingLanding = null
         srWaiting = false
         cropRect = null
+        inPreview = false
+        prevBox = null
+        prevCropRect = null
         scrimPaint.alpha = s.dimAlpha
         visibility = VISIBLE
         showPage(s.currentPage())
@@ -141,6 +154,9 @@ class PanelGuideOverlay(context: Context) : View(context) {
         animFrom = null
         result = null
         pageBitmap = null
+        inPreview = false
+        prevBox = null
+        prevCropRect = null
         visibility = GONE
         invalidate()
     }
@@ -159,20 +175,36 @@ class PanelGuideOverlay(context: Context) : View(context) {
     // ———— 运行时热更新（设置面板即改即生效，不重开 begin）————
 
     /** 显示类：压暗程度/翻格动画/选中格显示模式——纯绘制参数，即改即生效，不触发重识别 */
-    fun onRenderSettingsChanged(dimAlpha: Int, animEnabled: Boolean, dimMode: Int) {
+    fun onRenderSettingsChanged(
+        dimAlpha: Int,
+        animEnabled: Boolean,
+        dimMode: Int,
+        transitionMode: Int = 0,
+        displayMode: Int = 0,
+        cropMode: Int = 2,
+        slideMs: Long = 180L,
+        previewEnabled: Boolean = false,
+    ) {
         val s = session ?: return
-        if (s.dimAlpha == dimAlpha && s.animEnabled == animEnabled && s.dimMode == dimMode) return
-        session = s.copy(dimAlpha = dimAlpha, animEnabled = animEnabled, dimMode = dimMode)
+        if (s.dimAlpha == dimAlpha && s.animEnabled == animEnabled && s.dimMode == dimMode &&
+            s.transitionMode == transitionMode && s.displayMode == displayMode &&
+            s.cropMode == cropMode && s.slideMs == slideMs && s.previewEnabled == previewEnabled
+        ) return
+        session = s.copy(
+            dimAlpha = dimAlpha, animEnabled = animEnabled, dimMode = dimMode,
+            transitionMode = transitionMode, displayMode = displayMode,
+            cropMode = cropMode, slideMs = slideMs, previewEnabled = previewEnabled,
+        )
         scrimPaint.alpha = dimAlpha
         cropRect = null
         invalidate()
     }
 
     /** 识别类：置信门槛/阅读方向——清本书结果缓存并重检当前页（方向变了阅读序也要重排） */
-    fun onDetectSettingsChanged(minConf: Float, rtl: Boolean, splitMode: Int) {
+    fun onDetectSettingsChanged(minConf: Float, rtl: Boolean, splitMode: Int, precision: Int = 1) {
         val s = session ?: return
-        if (s.minConf == minConf && s.rtl == rtl && s.splitMode == splitMode) return
-        session = s.copy(minConf = minConf, rtl = rtl, splitMode = splitMode)
+        if (s.minConf == minConf && s.rtl == rtl && s.splitMode == splitMode && s.precision == precision) return
+        session = s.copy(minConf = minConf, rtl = rtl, splitMode = splitMode, precision = precision)
         PanelDetector.Cache.clearBook(s.treePath)
         showPage(shownPage)
     }
@@ -214,7 +246,7 @@ class PanelGuideOverlay(context: Context) : View(context) {
             if (sr is SrPage.Ready) {
                 srWaiting = false
                 val res = PanelDetector.Cache.get(sCaptured.treePath, page)
-                    ?: runCatching { PanelDetector.detect(sr.bitmap, sCaptured.rtl, sCaptured.minConf) }
+                    ?: runCatching { PanelDetector.detect(sr.bitmap, sCaptured.rtl, sCaptured.minConf, sCaptured.precision) }
                         .getOrDefault(PanelDetectorCore.fallbackResult())
                 post {
                     if (session !== sCaptured || shownPage != page) return@post
@@ -239,7 +271,7 @@ class PanelGuideOverlay(context: Context) : View(context) {
             }
             val res = if (waiting) null else PanelDetector.Cache.get(sCaptured.treePath, page)
                 ?: (if (bmp == null) PanelDetectorCore.fallbackResult()
-                    else runCatching { PanelDetector.detect(bmp, sCaptured.rtl, sCaptured.minConf) }
+                    else runCatching { PanelDetector.detect(bmp, sCaptured.rtl, sCaptured.minConf, sCaptured.precision) }
                         .getOrDefault(PanelDetectorCore.fallbackResult()))
             post {
                 if (session !== sCaptured || shownPage != page) return@post
@@ -263,9 +295,10 @@ class PanelGuideOverlay(context: Context) : View(context) {
             else -> landing.coerceIn(0, r.boxes.size - 1)
         }
         cropRect = null
+        prevBox = null
+        prevCropRect = null
+        inPreview = s.previewEnabled && !r.fallback && r.boxes.size > 1
         invalidate()
-        // ★ 全局开关语义（2026-10-11 用户拍板）：不再有"连续降级自动退出"——
-        // 降级页整页显示+右下角标提示，逐格模式保持到用户手动关
         if (!r.fallback) prefetchNextPage()
     }
 
@@ -274,8 +307,9 @@ class PanelGuideOverlay(context: Context) : View(context) {
     private fun nextPanel() {
         val r = result ?: return
         if (panelIdx < r.boxes.size - 1) {
+            val prev = r.boxes[panelIdx]
             panelIdx++
-            animateCropTo(currentCropTarget())
+            animateCropTo(currentCropTarget(), prev)
         } else {
             val s = session
             if (s != null && s.splitMode == 1 && r.boxes.size > 1 &&
@@ -292,8 +326,9 @@ class PanelGuideOverlay(context: Context) : View(context) {
     private fun prevPanel() {
         val r = result ?: return
         if (panelIdx > 0) {
+            val prev = r.boxes[panelIdx]
             panelIdx--
-            animateCropTo(currentCropTarget())
+            animateCropTo(currentCropTarget(), prev)
         } else {
             requestPage((session?.currentPage?.invoke() ?: 0) - 1, LANDING_LAST)
         }
@@ -317,7 +352,7 @@ class PanelGuideOverlay(context: Context) : View(context) {
         if (next !in s.pages.indices || PanelDetector.Cache.get(s.treePath, next) != null) return
         scope.launch {
             val bmp = runCatching { s.engine.loadPage(s.pages[next], s.treePath) }.getOrNull() ?: return@launch
-            val r = runCatching { PanelDetector.detect(bmp, s.rtl, s.minConf) }.getOrNull() ?: return@launch
+            val r = runCatching { PanelDetector.detect(bmp, s.rtl, s.minConf, s.precision) }.getOrNull() ?: return@launch
             post { if (session === s) PanelDetector.Cache.put(s.treePath, next, r) }
         }
     }
@@ -334,6 +369,12 @@ class PanelGuideOverlay(context: Context) : View(context) {
                 val dx = event.x - downX
                 val dy = event.y - downY
                 val thr = SWIPE_DP * resources.displayMetrics.density
+                if (inPreview) {
+                    inPreview = false
+                    cropRect = null
+                    invalidate()
+                    return true
+                }
                 when {
                     abs(dx) > thr && abs(dx) > abs(dy) -> if (dx < 0) nextPanel() else prevPanel()
                     abs(dx) < thr / 2 && abs(dy) < thr / 2 -> handleTap(event.x, event.y)
@@ -363,19 +404,24 @@ class PanelGuideOverlay(context: Context) : View(context) {
         val vw = width.toFloat()
         val vh = height.toFloat()
 
-        // 步骤动画推进（非墨水屏）
         val animTarget = animTo
         if (animTarget != null) {
-            val t = ((System.currentTimeMillis() - animStartAt).toFloat() / ANIM_MS).coerceIn(0f, 1f)
-            val e = 1f - (1f - t) * (1f - t)   // ease-out quad
+            val duration = if (s.slideMs > 0) s.slideMs else ANIM_MS
+            val t = ((System.currentTimeMillis() - animStartAt).toFloat() / duration).coerceIn(0f, 1f)
             val f = animFrom ?: animTarget
-            cropRect = RectF(
-                lerp(f.left, animTarget.left, e), lerp(f.top, animTarget.top, e),
-                lerp(f.right, animTarget.right, e), lerp(f.bottom, animTarget.bottom, e),
-            )
+            if (s.transitionMode == 2) {
+                cropRect = RectF(animTarget)
+            } else {
+                cropRect = RectF(
+                    lerp(f.left, animTarget.left, t), lerp(f.top, animTarget.top, t),
+                    lerp(f.right, animTarget.right, t), lerp(f.bottom, animTarget.bottom, t),
+                )
+            }
             if (t >= 1f) {
                 animTo = null
                 animFrom = null
+                prevBox = null
+                prevCropRect = null
             } else {
                 postInvalidateOnAnimation()
             }
@@ -383,41 +429,58 @@ class PanelGuideOverlay(context: Context) : View(context) {
 
         if (bmp == null || bmp.isRecycled) {
             canvas.drawColor(Color.BLACK)
-            // result 已到但位图没载到 = 解码失败；result 未到 = 正常识别中
             val msg = if (result != null) "页面加载失败，点击中键退出" else "分格识别中…"
             canvas.drawText(msg, vw / 2 - hintPaint.textSize * msg.length / 2.2f, vh / 2, hintPaint)
             return
         }
 
-        // 整页 fit-center
         val m = minOf(vw / bmp.width, vh / bmp.height)
         val fw = bmp.width * m
         val fh = bmp.height * m
         fullRect.set((vw - fw) / 2, (vh - fh) / 2, (vw + fw) / 2, (vh + fh) / 2)
         srcRect.set(0, 0, bmp.width, bmp.height)
-        canvas.drawBitmap(bmp, srcRect, fullRect, cropPaint)
 
         val partialSkip = s.splitMode == 0 && r != null && !r.fallback && r.boxes.size > 1 &&
             boxesUnionArea(r.boxes) < PanelTunables.FULL_PAGE_AREA
-        if (r == null || r.fallback || r.boxes.size <= 1 || s.eink || partialSkip) {
-            // 降级页/单格页/墨水屏：整页干净显示
-            if (r != null && !r.fallback && r.boxes.isNotEmpty() && s.eink) {
-                // 墨水屏：仅描边当前格，不压暗不放大
-                val box = r.boxes[panelIdx.coerceIn(0, r.boxes.size - 1)]
+
+        if (inPreview && r != null && !r.fallback && r.boxes.size > 1) {
+            canvas.drawBitmap(bmp, srcRect, fullRect, cropPaint)
+            borderPaint.color = s.accentColor
+            for (box in r.boxes) {
                 panelRect.set(
                     fullRect.left + box.x * fullRect.width(),
                     fullRect.top + box.y * fullRect.height(),
                     fullRect.left + box.right * fullRect.width(),
                     fullRect.top + box.bottom * fullRect.height(),
                 )
-                borderPaint.color = s.accentColor
-                canvas.drawRect(panelRect, einkBorderPaint.apply { color = s.accentColor })
+                canvas.drawRect(panelRect, borderPaint)
             }
+            drawHint(canvas, r)
+            return
+        }
+
+        if (r == null || r.fallback || r.boxes.size <= 1 || partialSkip) {
+            canvas.drawBitmap(bmp, srcRect, fullRect, cropPaint)
             drawHint(canvas, r, partialSkip)
             return
         }
 
-        // 当前格区域（整页 fit-center 坐标系）
+        if (s.eink || s.cropMode == 3) {
+            canvas.drawBitmap(bmp, srcRect, fullRect, cropPaint)
+            val box = r.boxes[panelIdx.coerceIn(0, r.boxes.size - 1)]
+            panelRect.set(
+                fullRect.left + box.x * fullRect.width(),
+                fullRect.top + box.y * fullRect.height(),
+                fullRect.left + box.right * fullRect.width(),
+                fullRect.top + box.bottom * fullRect.height(),
+            )
+            val bp = if (s.eink) einkBorderPaint else borderPaint
+            bp.color = s.accentColor
+            canvas.drawRect(panelRect, bp)
+            drawHint(canvas, r)
+            return
+        }
+
         val box = r.boxes[panelIdx.coerceIn(0, r.boxes.size - 1)]
         panelRect.set(
             fullRect.left + box.x * fullRect.width(),
@@ -425,10 +488,13 @@ class PanelGuideOverlay(context: Context) : View(context) {
             fullRect.left + box.right * fullRect.width(),
             fullRect.top + box.bottom * fullRect.height(),
         )
-        if (s.dimMode == 0) {
-            canvas.drawRect(0f, 0f, vw, vh, scrimPaint)
-        } else {
-            dimOutside(canvas, vw, vh)
+        if (s.displayMode == 0) {
+            canvas.drawBitmap(bmp, srcRect, fullRect, cropPaint)
+            if (s.dimMode == 0) {
+                canvas.drawRect(0f, 0f, vw, vh, scrimPaint)
+            } else {
+                dimOutside(canvas, vw, vh)
+            }
         }
         drawCrop(canvas, bmp, box)
         drawHint(canvas, r)
@@ -442,10 +508,36 @@ class PanelGuideOverlay(context: Context) : View(context) {
         canvas.drawRect(panelRect.right, panelRect.top, vw, panelRect.bottom, scrimPaint)
     }
 
-    /** 当前格裁切放大居中（含切格动画矩形推进） */
     private fun drawCrop(canvas: Canvas, bmp: Bitmap, box: PanelBox) {
         val target = currentCropTarget()
         if (cropRect == null) cropRect = target
+        val s = session
+        val animTarget = animTo
+        val pb = prevBox
+        val pcr = prevCropRect
+        if (s != null && s.transitionMode == 2 && animTarget != null && pb != null && pcr != null && cropRect != null) {
+            val duration = if (s.slideMs > 0) s.slideMs else ANIM_MS
+            val t = ((System.currentTimeMillis() - animStartAt).toFloat() / duration).coerceIn(0f, 1f)
+            srcRect.set(
+                (pb.x * bmp.width).toInt().coerceIn(0, bmp.width - 1),
+                (pb.y * bmp.height).toInt().coerceIn(0, bmp.height - 1),
+                (pb.right * bmp.width).toInt().coerceIn(1, bmp.width),
+                (pb.bottom * bmp.height).toInt().coerceIn(1, bmp.height),
+            )
+            fadePaint.alpha = ((1f - t) * 255).toInt()
+            canvas.drawBitmap(bmp, srcRect, pcr, fadePaint)
+            srcRect.set(
+                (box.x * bmp.width).toInt().coerceIn(0, bmp.width - 1),
+                (box.y * bmp.height).toInt().coerceIn(0, bmp.height - 1),
+                (box.right * bmp.width).toInt().coerceIn(1, bmp.width),
+                (box.bottom * bmp.height).toInt().coerceIn(1, bmp.height),
+            )
+            fadePaint.alpha = (t * 255).toInt()
+            canvas.drawBitmap(bmp, srcRect, cropRect!!, fadePaint)
+            borderPaint.color = s.accentColor
+            canvas.drawRect(cropRect!!, borderPaint)
+            return
+        }
         cropRect?.let { cr ->
             srcRect.set(
                 (box.x * bmp.width).toInt().coerceIn(0, bmp.width - 1),
@@ -462,27 +554,37 @@ class PanelGuideOverlay(context: Context) : View(context) {
     private fun currentCropTarget(): RectF {
         val r = result
         val bmp = pageBitmap
+        val s = session
         val vw = width.toFloat()
         val vh = height.toFloat()
-        if (r == null || bmp == null || vw <= 0 || vh <= 0) return RectF()
+        if (r == null || bmp == null || vw <= 0 || vh <= 0 || s == null) return RectF()
         val box = r.boxes[panelIdx.coerceIn(0, r.boxes.size - 1)]
         val sw = box.w * bmp.width
         val sh = box.h * bmp.height
-        val margin = CROP_MARGIN_DP * resources.displayMetrics.density
+        val margin = when (s.cropMode) {
+            0 -> 0f
+            1 -> 0.05f * maxOf(sw, sh)
+            else -> CROP_MARGIN_DP * resources.displayMetrics.density
+        }
         val m = minOf((vw - margin * 2) / sw, (vh - margin * 2) / sh)
         val cw = sw * m
         val ch = sh * m
         return RectF((vw - cw) / 2, (vh - ch) / 2, (vw + cw) / 2, (vh + ch) / 2)
     }
 
-    private fun animateCropTo(target: RectF) {
+    private fun animateCropTo(target: RectF, prev: PanelBox? = null) {
         val s = session ?: return
-        if (s.eink || !s.animEnabled) {
+        if (s.eink || !s.animEnabled || s.transitionMode == 0) {
             cropRect = target
+            prevBox = null
+            prevCropRect = null
             invalidate()
             return
         }
-
+        if (s.transitionMode == 2 && prev != null) {
+            prevBox = prev
+            prevCropRect = cropRect?.let { RectF(it) }
+        }
         animFrom = cropRect?.let { RectF(it) }
         animTo = RectF(target)
         animStartAt = System.currentTimeMillis()
