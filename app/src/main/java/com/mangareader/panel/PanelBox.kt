@@ -104,4 +104,34 @@ object PanelTunables {
         0 -> PrecisionParams(maxSide = 720, bgSampleRatio = 0.05f, frameTolerance = 3, frameMinSides = 3)
         else -> PrecisionParams(maxSide = 960, bgSampleRatio = 0.02f, frameTolerance = 2, frameMinSides = 4)
     }
+
+    // —— 彩色背景估计（PanelBackground RGB 三通道中位数 + 最大通道差）——
+    const val RGB_DELTA = 30
+    const val RGB_SAMPLE_RATIO = 0.05f
+    /** 彩色背景判定：三通道极差 ≥ 此值视为彩色背景（非灰度页） */
+    const val RGB_COLOUR_SPREAD = 18
+
+    // —— 相连框拆分（PanelSplitJoined）——
+    const val SPLIT_MAX_DEPTH = 4
+    const val SPLIT_BAND_RATIO = 0.035f
+    const val SPLIT_CONTENT_RATIO = 0.75f
+    const val SPLIT_LARGE_AREA_RATIO = 0.1f
+    /** 共享黑色边框判定：投影值 ≥ span×此值视为黑边 */
+    const val SPLIT_BLACK_LINE_RATIO = 0.88f
+
+    // —— 倾斜剪切（PanelShearSplit）——
+    val SHEAR_ANGLES = listOf(-8, -6, -4, -2, 2, 4, 6, 8)
+    const val SHEAR_CHILD_AREA_MIN = 0.15f
+    /** 剪切后空白带投影阈值（占 span 比例） */
+    const val SHEAR_BAND_RATIO = 0.06f
+
+    // —— 小图满版接受（PanelSegmenter ink 占用）——
+    const val INK_AREA_THRESHOLD = 0.6f
+    const val INK_OCCUPY_THRESHOLD = 0.7f
+
+    // —— 家具页密度对比（PanelSegmenter looksLikeFurniture）——
+    const val FURNITURE_DENSITY_RATIO = 2.5f
+
+    // —— 折痕边缘修剪（PanelFoldJoin trimEdges）——
+    const val FOLD_TRIM_COLUMNS = 3
 }

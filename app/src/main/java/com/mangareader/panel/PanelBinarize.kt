@@ -43,11 +43,7 @@ internal object PanelBinarize {
     }
 
     /**
-     * 构建墨水掩码（true=墨水）。
-     * 注：白占比健康判定针对"二值化质量"而非"页面疏密"——稀疏页（墨 <15%）Otsu 依旧正确，
-     * 此处宁可放过交给后续连通域过滤，也不让自适应在白纸上造噪。
-     */
-    /**
+
      * 构建墨水掩码（true=墨水=内容载体）。
      *
      * 极性先行：先用 Otsu 粗分出暗类/亮类，内容=少数类；黑底页（涂黑满版/反色）内容是亮类，
@@ -56,12 +52,16 @@ internal object PanelBinarize {
      * 注：白占比健康判定针对"二值化质量"而非"页面疏密"——稀疏页（墨 <15%）Otsu 依旧正确，
      * 此处宁可放过交给后续连通域过滤，也不让自适应在白纸上造噪。
      */
-    fun buildInkMask(gray: IntArray, w: Int, h: Int, bgSampleRatio: Float = 0.05f): BooleanArray {
+    fun buildInkMask(gray: IntArray, w: Int, h: Int, bgSampleRatio: Float = 0.05f, rgb: IntArray? = null): BooleanArray {
         val n = gray.size
         val bg = PanelBackground.estimate(gray, w, h, bgSampleRatio)
         if (!PanelBackground.isWhiteBackground(bg)) {
             val relMask = PanelBackground.maskRelativeTo(gray, w, h, bg)
             if (isHealthy(relMask)) return relMask
+            if (rgb != null && rgb.size == n) {
+                val colourMask = tryColourFallback(rgb, w, h, bgSampleRatio)
+                if (colourMask != null && isHealthy(colourMask)) return colourMask
+            }
         }
         val coarse = otsuThreshold(gray)
         var below = 0
@@ -117,6 +117,17 @@ internal object PanelBinarize {
     }
 
     // ———— 内部实现 ————
+
+    /** 彩色回退：RGB 三通道中位数背景估计 + 最大通道差判定。异常返回 null 由调用方走四级回退。 */
+    private fun tryColourFallback(rgb: IntArray, w: Int, h: Int, bgSampleRatio: Float): BooleanArray? {
+        return try {
+            val bgRgb = PanelBackground.estimateRgb(rgb, w, h, bgSampleRatio)
+            if (!PanelBackground.isColourBackground(bgRgb)) return null
+            PanelBackground.maskRelativeToRgb(rgb, w, h, bgRgb)
+        } catch (_: Exception) {
+            null
+        }
+    }
 
     private fun isHealthy(mask: BooleanArray): Boolean {
         val ratio = whiteness(mask)

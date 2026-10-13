@@ -36,13 +36,15 @@ object PanelDetector {
             small.getPixels(px, 0, dw, 0, 0, dw, dh)
             if (small !== sw) small.recycle()
             val gray = IntArray(dw * dh)
+            val rgb = IntArray(dw * dh)
             for (i in gray.indices) {
                 val p = px[i]
                 gray[i] = (0.299f * ((p shr 16) and 0xFF) +
                     0.587f * ((p shr 8) and 0xFF) +
                     0.114f * (p and 0xFF)).toInt()
+                rgb[i] = p and 0x00FFFFFF
             }
-            val r = PanelDetectorCore.analyze(gray, dw, dh, rtl, confFail, precision)
+            val r = PanelDetectorCore.analyze(gray, dw, dh, rtl, confFail, precision, rgb)
             Log.d(
                 "PanelDetector",
                 "detect ${dw}x${dh} boxes=${r.boxes.size} conf=${r.pageConf} fallback=${r.fallback} ${android.os.SystemClock.elapsedRealtime() - t0}ms",

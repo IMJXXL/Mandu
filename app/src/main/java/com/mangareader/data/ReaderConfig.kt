@@ -411,7 +411,7 @@ data class ReaderConfig(
                 panelGuideDimMode = rInt("panelGuideDimMode", 0).coerceIn(0, 1),
                 panelGuideSplitMode = rInt("panelGuideSplitMode", 0).coerceIn(0, 1),
                 panelGuideTransition = rInt("panelGuideTransition", 0).coerceIn(0, 2),
-                panelGuideDisplay = rInt("panelGuideDisplay", if (prefs.contains("panelGuideDisplay")) rInt("panelGuideDisplay", 0) else 0).coerceIn(0, 1),
+                panelGuideDisplay = rInt("panelGuideDisplay", 0).coerceIn(0, 1),
                 panelGuideCrop = rInt("panelGuideCrop", if (prefs.contains("panelGuideCrop")) rInt("panelGuideCrop", 2) else if (rInt("panelGuideFocus", 0) == 0) 2 else 0).coerceIn(0, 3),
                 panelGuideSlideMs = rLong("panelGuideSlideMs", 180L).coerceIn(100L, 500L),
                 panelGuidePrecision = rInt("panelGuidePrecision", 1).coerceIn(0, 1),

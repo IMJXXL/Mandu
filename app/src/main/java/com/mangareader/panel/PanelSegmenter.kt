@@ -12,14 +12,19 @@ internal object PanelSegmenter {
     private const val FURNITURE_STRIP_W_HI = 0.5f
     private const val FURNITURE_MINOR_AREA_RATIO = 0.3f
 
-    internal fun accept(boxes: List<PanelComponents.Box>, w: Int, h: Int): Boolean {
+    internal fun accept(boxes: List<PanelComponents.Box>, w: Int, h: Int, inkMask: BooleanArray? = null): Boolean {
         if (boxes.isEmpty()) return false
         if (boxes.size > MAX_CANDIDATES) return false
         val pageArea = w.toFloat() * h
         if (boxes.size == 1) {
-            return boxes[0].area / pageArea >= SINGLE_COVER_RATIO
+            val areaRatio = boxes[0].area / pageArea
+            if (areaRatio >= SINGLE_COVER_RATIO) return true
+            if (inkMask != null && inkMask.size == w * h && areaRatio < PanelTunables.INK_AREA_THRESHOLD) {
+                return inkOccupation(boxes[0], w, inkMask) >= PanelTunables.INK_OCCUPY_THRESHOLD
+            }
+            return false
         }
-        if (looksLikeFurniture(boxes, w, h)) return false
+        if (looksLikeFurniture(boxes, w, h, inkMask)) return false
         var minX = Int.MAX_VALUE
         var minY = Int.MAX_VALUE
         var maxX = Int.MIN_VALUE
@@ -40,7 +45,7 @@ internal object PanelSegmenter {
         return true
     }
 
-    private fun looksLikeFurniture(boxes: List<PanelComponents.Box>, w: Int, h: Int): Boolean {
+    private fun looksLikeFurniture(boxes: List<PanelComponents.Box>, w: Int, h: Int, inkMask: BooleanArray? = null): Boolean {
         if (boxes.size < FURNITURE_MIN_COUNT) return false
         val pw = w.toFloat()
         val ph = h.toFloat()
@@ -75,6 +80,29 @@ internal object PanelSegmenter {
         for (i in boxes.indices) {
             if (i != dominantIndex) minorArea += boxes[i].area
         }
-        return minorArea.toFloat() / d.area < FURNITURE_MINOR_AREA_RATIO
+        if (minorArea.toFloat() / d.area >= FURNITURE_MINOR_AREA_RATIO) return false
+        if (inkMask != null && inkMask.size == w * h) {
+            val dDensity = inkDensity(d, w, inkMask)
+            if (dDensity <= 0f) return false
+            for (i in boxes.indices) {
+                if (i == dominantIndex) continue
+                val mDensity = inkDensity(boxes[i], w, inkMask)
+                if (mDensity > 0f && dDensity < mDensity * PanelTunables.FURNITURE_DENSITY_RATIO) return false
+            }
+        }
+        return true
+    }
+
+    private fun inkOccupation(box: PanelComponents.Box, w: Int, inkMask: BooleanArray): Float {
+        var ink = 0
+        for (y in box.y0..box.y1) {
+            val row = y * w
+            for (x in box.x0..box.x1) if (inkMask[row + x]) ink++
+        }
+        return ink.toFloat() / box.area
+    }
+
+    private fun inkDensity(box: PanelComponents.Box, w: Int, inkMask: BooleanArray): Float {
+        return inkOccupation(box, w, inkMask)
     }
 }
