@@ -134,6 +134,22 @@ class PanelGuideOverlay(context: Context) : View(context) {
     private var prevCropRect: RectF? = null
     private val fadePaint = Paint(Paint.FILTER_BITMAP_FLAG)
 
+    private var zoomCurrent = 1f
+    private var zoomPanX = 0f
+    private var zoomPanY = 0f
+    private var zoomOrigScale = 1f
+    private var pointerCount = 0
+    private var lastTapTime = 0L
+    private val scaleDetector = android.view.ScaleGestureDetector(context, object : android.view.ScaleGestureDetector.SimpleOnScaleGestureListener() {
+        override fun onScaleBegin(detector: android.view.ScaleGestureDetector): Boolean = session?.eink != true
+        override fun onScale(detector: android.view.ScaleGestureDetector): Boolean {
+            zoomCurrent = (zoomCurrent * detector.scaleFactor).coerceIn(1f, zoomOrigScale)
+            if (zoomCurrent == 1f) { zoomPanX = 0f; zoomPanY = 0f }
+            invalidate()
+            return true
+        }
+    })
+
     // ———— 生命周期 ————
 
     fun begin(s: Session) {
@@ -148,6 +164,7 @@ class PanelGuideOverlay(context: Context) : View(context) {
         inPreview = false
         prevBox = null
         prevCropRect = null
+        resetZoom()
         scrimPaint.alpha = s.dimAlpha
         visibility = VISIBLE
         showPage(s.currentPage())
@@ -312,6 +329,7 @@ class PanelGuideOverlay(context: Context) : View(context) {
         prevBox = null
         prevCropRect = null
         inPreview = s.previewEnabled && !r.fallback && r.boxes.size > 1
+        resetZoom()
         invalidate()
         if (!r.fallback) prefetchNextPage()
     }
@@ -323,6 +341,7 @@ class PanelGuideOverlay(context: Context) : View(context) {
         if (panelIdx < r.boxes.size - 1) {
             val prev = r.boxes[panelIdx]
             panelIdx++
+            resetZoom()
             animateCropTo(currentCropTarget(), prev)
         } else {
             val s = session
@@ -342,6 +361,7 @@ class PanelGuideOverlay(context: Context) : View(context) {
         if (panelIdx > 0) {
             val prev = r.boxes[panelIdx]
             panelIdx--
+            resetZoom()
             animateCropTo(currentCropTarget(), prev)
         } else {
             requestPage((session?.currentPage?.invoke() ?: 0) - 1, LANDING_LAST)
@@ -374,28 +394,57 @@ class PanelGuideOverlay(context: Context) : View(context) {
     // ———— 触摸 ————
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        val s = session
+        if (s != null && !s.eink) scaleDetector.onTouchEvent(event)
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 downX = event.x
                 downY = event.y
+                pointerCount = 1
+            }
+            MotionEvent.ACTION_POINTER_DOWN -> pointerCount = event.pointerCount
+            MotionEvent.ACTION_POINTER_UP -> pointerCount = event.pointerCount - 1
+            MotionEvent.ACTION_MOVE -> {
+                if (pointerCount == 1 && zoomCurrent > 1f) {
+                    val dx = event.x - downX
+                    val dy = event.y - downY
+                    zoomPanX += dx
+                    zoomPanY += dy
+                    clampPan()
+                    downX = event.x
+                    downY = event.y
+                    invalidate()
+                }
             }
             MotionEvent.ACTION_UP -> {
-                val dx = event.x - downX
-                val dy = event.y - downY
-                val thr = SWIPE_DP * resources.displayMetrics.density
                 if (inPreview) {
                     inPreview = false
                     cropRect = null
                     invalidate()
                     return true
                 }
+                if (pointerCount >= 2) {
+                    pointerCount = 0
+                    return true
+                }
+                val dx = event.x - downX
+                val dy = event.y - downY
+                val thr = SWIPE_DP * resources.displayMetrics.density
+                val now = System.currentTimeMillis()
+                val isTap = abs(dx) < thr / 2 && abs(dy) < thr / 2
+                if (isTap && now - lastTapTime < 300) {
+                    toggleZoom()
+                    lastTapTime = 0
+                    return true
+                }
                 when {
                     abs(dx) > thr && abs(dx) > abs(dy) -> {
-                        val invert = session?.swipeInvert == true
+                        val invert = s?.swipeInvert == true
                         if ((dx < 0) != invert) nextPanel() else prevPanel()
                     }
-                    abs(dx) < thr / 2 && abs(dy) < thr / 2 -> handleTap(event.x, event.y)
+                    isTap -> handleTap(event.x, event.y)
                 }
+                lastTapTime = if (isTap) now else 0
             }
         }
         return true
@@ -577,6 +626,16 @@ class PanelGuideOverlay(context: Context) : View(context) {
 
     /** 当前格的裁切目标矩形（视图坐标，适配居中 + 8dp 边距） */
     private fun currentCropTarget(): RectF {
+        val base = currentCropBaseRect()
+        if (zoomCurrent == 1f && zoomPanX == 0f && zoomPanY == 0f) return base
+        val cx = base.centerX() + zoomPanX
+        val cy = base.centerY() + zoomPanY
+        val zw = base.width() * zoomCurrent
+        val zh = base.height() * zoomCurrent
+        return RectF(cx - zw / 2, cy - zh / 2, cx + zw / 2, cy + zh / 2)
+    }
+
+    private fun currentCropBaseRect(): RectF {
         val r = result
         val bmp = pageBitmap
         val s = session
@@ -592,9 +651,37 @@ class PanelGuideOverlay(context: Context) : View(context) {
             else -> CROP_MARGIN_DP * resources.displayMetrics.density
         }
         val m = minOf((vw - margin * 2) / sw, (vh - margin * 2) / sh)
+        zoomOrigScale = maxOf(1f, 1f / m)
         val cw = sw * m
         val ch = sh * m
         return RectF((vw - cw) / 2, (vh - ch) / 2, (vw + cw) / 2, (vh + ch) / 2)
+    }
+
+    private fun toggleZoom() {
+        if (zoomCurrent > 1f) {
+            zoomCurrent = 1f
+            zoomPanX = 0f
+            zoomPanY = 0f
+        } else if (zoomOrigScale > 1f) {
+            zoomCurrent = zoomOrigScale
+        }
+        invalidate()
+    }
+
+    private fun resetZoom() {
+        zoomCurrent = 1f
+        zoomPanX = 0f
+        zoomPanY = 0f
+    }
+
+    private fun clampPan() {
+        val base = currentCropBaseRect()
+        val zw = base.width() * zoomCurrent
+        val zh = base.height() * zoomCurrent
+        val maxX = ((zw - width) / 2f).coerceAtLeast(0f)
+        val maxY = ((zh - height) / 2f).coerceAtLeast(0f)
+        zoomPanX = zoomPanX.coerceIn(-maxX, maxX)
+        zoomPanY = zoomPanY.coerceIn(-maxY, maxY)
     }
 
     private fun animateCropTo(target: RectF, prev: PanelBox? = null) {
