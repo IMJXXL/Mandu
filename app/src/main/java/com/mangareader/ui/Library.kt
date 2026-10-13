@@ -37,6 +37,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -611,8 +612,16 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
     var showRenameSingle by remember { mutableStateOf(false) }
     var showCreateShelf by remember { mutableStateOf(false) }
     var showMergeDialog by remember { mutableStateOf(false) }
+    var mergedBookId by rememberSaveable { mutableStateOf<Long?>(null) }
     var mergedBookView by remember { mutableStateOf<Book?>(null) }
     var mergeMembers by remember { mutableStateOf<List<Book>>(emptyList()) }
+    LaunchedEffect(mergedBookId, books) {
+        if (mergedBookId != null && mergedBookView == null) {
+            val found = books?.find { it.id == mergedBookId }
+            if (found != null) mergedBookView = found
+            else if (books != null) mergedBookId = null
+        }
+    }
 
     var newShelfName by remember { mutableStateOf("") }
 
@@ -1837,7 +1846,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                                 is ShelfItem.Single -> {
                                     val b = item.book
                                     val onToggleSelect = remember(b.id, isMultiSelect) { { selectedBooks = if (b.id in selectedBooks) selectedBooks - b.id else selectedBooks + b.id } }
-                                    val onTap = remember(b.id, isMultiSelect, b.source) { { if (isMultiSelect) { selectedBooks = if (b.id in selectedBooks) selectedBooks - b.id else selectedBooks + b.id } else if (b.source == "merged") mergedBookView = b else openBookThrottled(b.id, null) } }
+                                    val onTap = remember(b.id, isMultiSelect, b.source) { { if (isMultiSelect) { selectedBooks = if (b.id in selectedBooks) selectedBooks - b.id else selectedBooks + b.id } else if (b.source == "merged") { mergedBookView = b; mergedBookId = b.id } else openBookThrottled(b.id, null) } }
                                     val onLongClick = remember(b.id) { { showBookInfo = b } }
                                     val onDelete = remember(b.id) { { deleteTarget = b } }
                                     BookListRow(b, engine, isMultiSelect, b.id in selectedBooks, thumbDecodePx, hideAllBadges,
@@ -1873,7 +1882,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                                 is ShelfItem.Single -> {
                                     val b = item.book
                                     val onToggleSelect = remember(b.id, isMultiSelect) { { selectedBooks = if (b.id in selectedBooks) selectedBooks - b.id else selectedBooks + b.id } }
-                                    val onTap = remember(b.id, isMultiSelect, b.source) { { if (isMultiSelect) { selectedBooks = if (b.id in selectedBooks) selectedBooks - b.id else selectedBooks + b.id } else if (b.source == "merged") mergedBookView = b else openBookThrottled(b.id, null) } }
+                                    val onTap = remember(b.id, isMultiSelect, b.source) { { if (isMultiSelect) { selectedBooks = if (b.id in selectedBooks) selectedBooks - b.id else selectedBooks + b.id } else if (b.source == "merged") { mergedBookView = b; mergedBookId = b.id } else openBookThrottled(b.id, null) } }
                                     val onLongClick = remember(b.id) { { showBookInfo = b } }
                                     val onDelete = remember(b.id) { { deleteTarget = b } }
                                     BookCard(b, engine, isMultiSelect, b.id in selectedBooks, thumbDecodePx, layoutMode, hideAllBadges, titleMarquee,
@@ -2106,12 +2115,12 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
         LaunchedEffect(virtualBook.id) {
             mergeMembers = withContext(Dispatchers.IO) { dao.getMergeMembers(virtualBook.id) }
         }
-        BackHandler { mergedBookView = null }
+        BackHandler { mergedBookView = null; mergedBookId = null }
         Scaffold(
             topBar = {
                 TopAppBar(
                     title = { Text(virtualBook.displayTitle) },
-                    navigationIcon = { IconButton(onClick = { mergedBookView = null }) { Icon(Icons.Default.ArrowBack, "返回") } },
+                    navigationIcon = { IconButton(onClick = { mergedBookView = null; mergedBookId = null }) { Icon(Icons.Default.ArrowBack, "返回") } },
 
                 )
             }
