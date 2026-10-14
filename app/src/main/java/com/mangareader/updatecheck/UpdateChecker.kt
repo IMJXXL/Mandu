@@ -110,6 +110,9 @@ object UpdateChecker {
         v.trim().removePrefix("v").removePrefix("V")
 
     private fun compareVersions(a: String, b: String): Int {
+        val da = a.toDoubleOrNull()
+        val db = b.toDoubleOrNull()
+        if (da != null && db != null) return da.compareTo(db)
         val num = Regex("\\d+")
         val pa = a.split(".").map { num.find(it)?.value?.toIntOrNull() ?: 0 }
         val pb = b.split(".").map { num.find(it)?.value?.toIntOrNull() ?: 0 }
