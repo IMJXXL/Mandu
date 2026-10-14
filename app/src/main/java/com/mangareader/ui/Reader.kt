@@ -2001,7 +2001,70 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         return prefs.getInt("orientation", ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED)
     }
 
+    fun resolveRemoteParentPath(path: String): String? {
+        val prefix = when {
+            path.startsWith("smb:") -> "smb:"
+            path.startsWith("webdav:") -> "webdav:"
+            else -> return null
+        }
+        val body = path.removePrefix(prefix)
+        val idPart = body.substringBefore(':')
+        val rest = body.substringAfter(':', "").trim('/')
+        if (rest.isEmpty()) return null
+        val lastSlash = rest.lastIndexOf('/')
+        if (lastSlash < 0) return null
+        val parentRel = rest.substring(0, lastSlash)
+        return "$prefix$idPart:$parentRel"
+    }
+
+    fun isRemoteParentUnderBookRoot(parentPath: String, bookFilePath: String): Boolean {
+        val prefix = when {
+            parentPath.startsWith("smb:") && bookFilePath.startsWith("smb:") -> "smb:"
+            parentPath.startsWith("webdav:") && bookFilePath.startsWith("webdav:") -> "webdav:"
+            else -> return false
+        }
+        val parentBody = parentPath.removePrefix(prefix).substringAfter(':', "").trim('/')
+        val bookBody = bookFilePath.removePrefix(prefix).substringAfter(':', "").trim('/')
+        if (bookBody.isEmpty()) return true
+        return parentBody == bookBody || parentBody.startsWith("$bookBody/")
+    }
+
+    fun buildRemoteNavStack(bookFilePath: String, parentPath: String, jumpPath: String): List<String> {
+        val prefix = when {
+            bookFilePath.startsWith("smb:") -> "smb:"
+            bookFilePath.startsWith("webdav:") -> "webdav:"
+            else -> return listOf(bookFilePath, jumpPath)
+        }
+        val idPart = bookFilePath.removePrefix(prefix).substringBefore(':')
+        val bookBody = bookFilePath.removePrefix(prefix).substringAfter(':', "").trim('/')
+        val parentBody = parentPath.removePrefix(prefix).substringAfter(':', "").trim('/')
+        val midPaths = mutableListOf<String>()
+        if (parentBody.length > bookBody.length) {
+            val rel = if (bookBody.isEmpty()) parentBody else parentBody.removePrefix("$bookBody/")
+            val segments = rel.split('/').filter { it.isNotEmpty() }
+            var acc = bookBody
+            for (seg in segments) {
+                acc = if (acc.isEmpty()) seg else "$acc/$seg"
+                midPaths.add("$prefix$idPart:$acc")
+            }
+        }
+        return listOf(bookFilePath) + midPaths + listOf(jumpPath)
+    }
+
     suspend fun buildContinueContext(bookFilePath: String, jumpPath: String): ContinueContext {
+        val isRemote = bookFilePath.startsWith("smb:") || bookFilePath.startsWith("webdav:")
+        if (isRemote) {
+            val fallbackToc = listRemoteFolderAsItems(bookFilePath) ?: emptyList()
+            if (jumpPath == bookFilePath) return ContinueContext(listOf(bookFilePath), fallbackToc, true)
+            if (fallbackToc.isEmpty()) return ContinueContext(listOf(bookFilePath, jumpPath), fallbackToc, true)
+            val parentPath = resolveRemoteParentPath(jumpPath)
+            val fallbackNav = listOf(bookFilePath, jumpPath)
+            if (parentPath == null) return ContinueContext(fallbackNav, fallbackToc, true)
+            if (!isRemoteParentUnderBookRoot(parentPath, bookFilePath)) return ContinueContext(fallbackNav, fallbackToc, true)
+            val siblings = listRemoteFolderAsItems(parentPath) ?: emptyList()
+            if (siblings.isEmpty()) return ContinueContext(fallbackNav, fallbackToc, true)
+            return ContinueContext(buildRemoteNavStack(bookFilePath, parentPath, jumpPath), siblings, false)
+        }
         val fallbackToc = withContext(Dispatchers.IO) { try { engine.children(bookFilePath) } catch (_: Exception) { emptyList() } }
         if (jumpPath == bookFilePath || fallbackToc.isEmpty()) return ContinueContext(listOf(bookFilePath), fallbackToc, true)
         val parentPath = engine.resolveParentPath(jumpPath)
