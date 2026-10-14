@@ -11,13 +11,17 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -69,7 +73,7 @@ import androidx.compose.ui.unit.dp
 fun PanelGuideSheet(
     sensitivity: Int,
     dim: Int,
-    anim: Boolean,
+
     rtlOverride: Int,
     dimMode: Int,
     splitMode: Int,
@@ -87,10 +91,12 @@ fun PanelGuideSheet(
     autoRotateEnabled: Boolean,
     autoRotateDir: Int,
     crossPageEnabled: Boolean,
-    isEinkMode: Boolean = false,
+    bubbleMergeEnabled: Boolean,
+    engineMode: Int,
+
     onSensitivity: (Int) -> Unit,
     onDim: (Int) -> Unit,
-    onAnim: (Boolean) -> Unit,
+
     onRtl: (Int) -> Unit,
     onDimMode: (Int) -> Unit,
     onSplitMode: (Int) -> Unit,
@@ -107,6 +113,8 @@ fun PanelGuideSheet(
     onAutoRotate: (Boolean) -> Unit,
     onAutoRotateDir: (Int) -> Unit,
     onCrossPage: (Boolean) -> Unit,
+    onBubbleMerge: (Boolean) -> Unit,
+    onEngineMode: (Int) -> Unit,
     onToggleActive: () -> Unit,
     onDismiss: () -> Unit,
     presets: List<com.mangareader.panel.PanelGuidePreset.Preset> = emptyList(),
@@ -118,7 +126,7 @@ fun PanelGuideSheet(
 ) {
     var visible by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { visible = true }
-    LaunchedEffect(isEinkMode) { if (isEinkMode && anim) onAnim(false) }
+
 
     var groupRecognize by rememberSaveable { mutableStateOf(true) }
     var groupDisplay by rememberSaveable { mutableStateOf(true) }
@@ -146,12 +154,14 @@ fun PanelGuideSheet(
             Surface(
                 modifier = if (landscape) {
                     Modifier
-                        .width(400.dp)
+                        .width(440.dp)
                         .fillMaxHeight()
                         .clickable(interactionSource = null, indication = null, onClick = {})
                 } else {
                     Modifier
                         .fillMaxWidth()
+                        .widthIn(max = 520.dp)
+                        .heightIn(max = (LocalConfiguration.current.screenHeightDp * 0.60f).dp)
                         .clickable(interactionSource = null, indication = null, onClick = {})
                 },
                 shape = if (landscape) RoundedCornerShape(topStart = 28.dp, bottomStart = 28.dp)
@@ -169,7 +179,7 @@ fun PanelGuideSheet(
                         modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
                     )
                     Text(
-                        "自动识别漫画分格，逐格放大浏览。其余区域压暗，滑切/点按切格；点中间区退出。",
+                        "该功能还在开发中，尚不完善，仅供测试体验",
                         style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
                         modifier = Modifier.padding(horizontal = 24.dp),
                     )
@@ -187,14 +197,115 @@ fun PanelGuideSheet(
                         Text("开启逐格阅读", style = MaterialTheme.typography.bodyMedium)
                     }
                     Text(
-                        "识别不到分格的页面按整页显示并在右下角提示，逐格模式保持到你手动关。" +
-                            "经典白底黑线分格识别最好，彩漫/满版跨页可能整页降级。",
+                        "识别不到分格的页面按整页显示。白底黑线分格识别最好，彩漫/满版跨页可能整页降级。",
                         style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
                         modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp),
                     )
                     HorizontalDivider(Modifier.padding(vertical = 4.dp))
 
-                    GroupSection(
+                    PanelChipRow(
+                        title = "引擎模式",
+                        options = listOf("框选法" to 0, "坐标法" to 1),
+                        selected = engineMode,
+                        onSelect = onEngineMode,
+                    )
+                    Text(
+                        when (engineMode) {
+                            0 -> "以框为基准的算法"
+                            else -> "以坐标为基准的算法"
+                        },
+                        style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                        modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 6.dp),
+                    )
+                    HorizontalDivider(Modifier.padding(vertical = 4.dp))
+
+                    if (engineMode == 0) {
+                        PanelChipRow(
+                            title = "检测灵敏度",
+                            options = listOf("宽松" to 0, "标准" to 1, "严格" to 2),
+                            selected = sensitivity,
+                            onSelect = onSensitivity,
+                        )
+                        PanelChipRow(
+                            title = "横向顺序",
+                            options = listOf("跟随模式" to 0, "先右·日漫" to 1, "先左·国漫" to 2),
+                            selected = rtlOverride,
+                            onSelect = onRtl,
+                        )
+                        PanelChipRow(
+                            title = "显示模式",
+                            options = listOf("压暗其余" to 0, "隐藏其余" to 1),
+                            selected = displayMode,
+                            onSelect = onDisplay,
+                        )
+                        if (displayMode == 0) {
+                            Column(Modifier.padding(horizontal = 24.dp, vertical = 8.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text("压暗程度", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                                    Text("$dim%", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold))
+                                }
+                                Slider(
+                                    value = dim.toFloat(),
+                                    onValueChange = { onDim((it + 0.5f).toInt()) },
+                                    valueRange = 0f..100f,
+                                )
+                            }
+                        }
+                        PanelChipRow(
+                            title = "切换方式",
+                            options = listOf("直接切换" to 0, "追焦" to 1),
+                            selected = transitionMode,
+                            onSelect = onTransition,
+                        )
+                        Text(
+                            when (transitionMode) {
+                                0 -> "无过渡，直接跳到下一格"
+                                else -> "镜头追焦当前格，平滑滑动"
+                            },
+                            style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                            modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 6.dp),
+                        )
+                        if (transitionMode == 1) {
+                            Column(Modifier.padding(horizontal = 24.dp, vertical = 8.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text("追焦时长", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                                    Text("${slideMs}ms", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold))
+                                }
+                                Slider(
+                                    value = slideMs.toFloat().coerceIn(1000f, 8000f),
+                                    onValueChange = { onSlideMs((it + 0.5f).toLong()) },
+                                    valueRange = 1000f..8000f,
+                                    steps = 13,
+                                )
+                            }
+                        }
+                        HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                        CheckboxRow(
+                            checked = previewEnabled,
+                            onCheckedChange = onPreview,
+                            title = "分格预览",
+                            info = "进入逐格前预览本页分格",
+                        )
+                        CheckboxRow(
+                            checked = progressEnabled,
+                            onCheckedChange = onProgress,
+                            title = "格进度",
+                            info = "底部显示当前第几格",
+                        )
+                        CheckboxRow(
+                            checked = swipeInvert,
+                            onCheckedChange = onSwipeInvert,
+                            title = "滑动反转",
+                            info = "左滑切上一格",
+                        )
+                        CheckboxRow(
+                            checked = tapInvert,
+                            onCheckedChange = onTapInvert,
+                            title = "点按反转",
+                            info = "左右点按互换",
+                        )
+                    } else {
+                        GroupSection(
                         title = "识别设置",
                         expanded = groupRecognize,
                         onToggle = { groupRecognize = !groupRecognize },
@@ -207,9 +318,9 @@ fun PanelGuideSheet(
                         )
                         Text(
                             when (sensitivity) {
-                                0 -> "弱分格/彩漫页更容易识别出分格，可能偶尔误分"
-                                2 -> "更保守：拿不准就整页显示"
-                                else -> "白底黑线分格漫画的推荐档位"
+                                0 -> "弱分格和彩漫更易通过，可能偶尔误分"
+                                2 -> "拿不准就整页显示"
+                                else -> "白底黑线分格推荐档位"
                             },
                             style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
                             modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 6.dp),
@@ -223,8 +334,8 @@ fun PanelGuideSheet(
                         )
                         Text(
                             when (precision) {
-                                0 -> "更快，适合清晰分格"
-                                else -> "更准，对模糊或低对比度边框识别更好"
+                                0 -> "快，适合清晰分格"
+                                else -> "准，适合模糊或低对比度边框"
                             },
                             style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
                             modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 6.dp),
@@ -295,32 +406,50 @@ fun PanelGuideSheet(
 
                         PanelChipRow(
                             title = "切换方式",
-                            options = listOf("直接切换" to 0, "滑动过渡" to 1, "渐隐渐显" to 2),
+                            options = listOf("直接切换" to 0, "平滑平移" to 1, "渐隐渐显" to 2, "追焦" to 3),
                             selected = transitionMode,
                             onSelect = onTransition,
+                        )
+                        Text(
+                            when (transitionMode) {
+                                0 -> "无过渡，直接跳到下一格"
+                                1 -> "整页放大，画面平移到下一格"
+                                2 -> "渐隐渐显切换，墨水屏友好"
+                                else -> "镜头追焦当前格，平滑滑动"
+                            },
+                            style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                            modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 6.dp),
                         )
 
                         if (transitionMode == 1) {
                             Column(Modifier.padding(horizontal = 24.dp, vertical = 8.dp)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text("滑动时长", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                                    Text("过渡时长", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                                     Text("${slideMs}ms", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold))
                                 }
                                 Slider(
-                                    value = slideMs.toFloat(),
+                                    value = slideMs.toFloat().coerceIn(100f, 500f),
                                     onValueChange = { onSlideMs((it + 0.5f).toLong()) },
                                     valueRange = 100f..500f,
                                 )
                             }
                         }
+                        if (transitionMode == 3) {
+                            Column(Modifier.padding(horizontal = 24.dp, vertical = 8.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text("追焦时长", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                                    Text("${slideMs}ms", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold))
+                                }
+                                Slider(
+                                    value = slideMs.toFloat().coerceIn(1000f, 8000f),
+                                    onValueChange = { onSlideMs((it + 0.5f).toLong()) },
+                                    valueRange = 1000f..8000f,
+                                    steps = 13,
+                                )
+                            }
+                        }
 
-                        CheckboxRow(
-                            checked = anim,
-                            onCheckedChange = onAnim,
-                            title = "翻格动画",
-                            info = if (isEinkMode) "墨水屏下自动关闭" else "切格时的过渡动画",
-                            enabled = !isEinkMode,
-                        )
+
                     }
 
                     GroupSection(
@@ -332,7 +461,7 @@ fun PanelGuideSheet(
                             checked = previewEnabled,
                             onCheckedChange = onPreview,
                             title = "分格预览",
-                            info = "进入逐格前先看清本页分了几格",
+                            info = "进入逐格前预览本页分格",
                         )
                         CheckboxRow(
                             checked = progressEnabled,
@@ -385,6 +514,12 @@ fun PanelGuideSheet(
                             title = "跨页连续过渡",
                             info = "末格前进连续滑动",
                         )
+                        CheckboxRow(
+                            checked = bubbleMergeEnabled,
+                            onCheckedChange = onBubbleMerge,
+                            title = "跨格气泡合并",
+                            info = "气泡跨越分格时同组显示",
+                        )
                     }
 
                     GroupSection(
@@ -401,12 +536,14 @@ fun PanelGuideSheet(
                             onPresetRename = onPresetRename,
                         )
                     }
+                    }
                 }
             }
         }
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun PanelChipRow(
     title: String,
@@ -425,9 +562,10 @@ private fun PanelChipRow(
                 .fillMaxWidth()
                 .padding(horizontal = 24.dp, vertical = 8.dp),
         )
-        Row(
+        FlowRow(
             Modifier.padding(start = 24.dp, end = 24.dp, bottom = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             options.forEach { (label, value) ->
                 FilterChip(

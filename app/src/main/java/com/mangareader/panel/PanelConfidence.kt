@@ -15,10 +15,12 @@ internal object PanelConfidence {
         rtl: Boolean,
         confFail: Float = PanelTunables.CONF_FAIL,
         inkMask: BooleanArray? = null,
+        fullPageArea: Float = PanelTunables.FULL_PAGE_AREA,
+        engineMode: Int = 1,
     ): PanelPageResult {
         val pageArea = w.toFloat() * h
         if (boxes.isEmpty()) return fallbackResult()
-        if (!PanelSegmenter.accept(boxes, w, h, inkMask)) return fallbackResult()
+        if (engineMode != 0 && !PanelSegmenter.accept(boxes, w, h, inkMask)) return fallbackResult()
 
         val coverage = minOf(1f, boxes.sumOf { it.area.toDouble() }.toFloat() / pageArea)
 
@@ -41,7 +43,7 @@ internal object PanelConfidence {
         val conf = 0.45f * covScore + 0.20f * gutterScore + 0.20f * countScore + 0.15f * aspectScore
 
         // 整页规则：唯一框覆盖 ≥85% → 满版/跨页大图，属正常单格，不降级
-        val isFullPageSingle = boxes.size == 1 && boxes[0].area / pageArea >= PanelTunables.FULL_PAGE_AREA
+        val isFullPageSingle = boxes.size == 1 && boxes[0].area / pageArea >= fullPageArea
         val fail = conf < confFail && !isFullPageSingle
         if (fail) return fallbackResult(conf)
 

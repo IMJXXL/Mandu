@@ -196,10 +196,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     //   仅双页布局未展开表有实际效果；展开表（宽图二分）下视图交替休眠无影响。
     fun setInitialSplitHalfRight(v: Boolean) {
         if (!v) return
-        splitHalfRight = true
-        // 双页模式就位的落地事件（setDoublePageModeAndShift 的 post setCurrentItem →
-        // onPageSelected）会用 pendingLandingSplitHalfRight 重写本位——恢复位必须同时
-        // 登记为落地意图，否则停在跨页第二半的书重进后被落地清回第一半
+
         pendingLandingSplitHalfRight = true
         // 防御：若首个绑定先于本调用发生，重绑一次让右半生效（同一主线程帧内通常尚未绑定，空操作）
         val pos = positionOf(currentPage)
@@ -646,7 +643,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     //   集合（位图未就绪时的判定兜底）；pendingLandingSplitHalfRight=跨页回退时预挂的半页位，
     //   onPageSelected 落地时消费——回退进上一跨页应从其右半继续阅读序，而落地回调无条件
     //   重置会把它清掉（回退显示左半=顺序错乱感的根源），改由 pending 精确传达。
-    private var splitHalfRight = false
+
     private var pendingLandingSplitHalfRight = false
     private val splitActivePositions = java.util.Collections.newSetFromMap(java.util.concurrent.ConcurrentHashMap<Int, Boolean>())
 
@@ -726,7 +723,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                         // ★ 跨页落地半页位（2026-10-04）：按 pending 恢复——前进/跳页=左半，
                         //   拆分回退=右半（从上一跨页右半继续阅读序）。旧逻辑无条件 reset
                         //   把回退的右半意图清掉，回退恒显示左半
-                        splitHalfRight = pendingLandingSplitHalfRight
+
                         pendingLandingSplitHalfRight = false
                         currentPage = realPos; onPageChanged?.invoke(currentPage)
 
@@ -1612,7 +1609,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
 
     /** 跨页/页变更即重置半页交替（半页状态只在同一跨页内有效） */
     private fun resetSplitHalf() {
-        splitHalfRight = false
+
         pendingLandingSplitHalfRight = false
     }
 
@@ -1627,7 +1624,12 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     }
 
     /** 当前半页位（仅拆分跨页激活时有语义）：true=正显示右半。进度保存采集用（恢复时精确落回看过的那半页） */
-    val currentHalfRight: Boolean get() = splitHalfRight
+    val currentHalfRight: Boolean get() {
+        val pos = positionOf(currentPage)
+        val slotPos = if (isRtl) spreadTable.slotCount - 1 - pos else pos
+        val half = spreadTable.slotHalf(slotPos)
+        return if (half != 0) half == 2 else pendingLandingSplitHalfRight
+    }
 
     private fun rebindCurrent() {
         val pos = positionOf(currentPage)
@@ -1635,24 +1637,16 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
     }
 
     fun nextPage() {
-        // navigateToPan: 缩放时先平移到边缘再翻页
         if (panNavigation && tryPanIfZoomed(forward = !isRtl)) return
-        // ★ v1.384 slot 级翻页（Komiho 跟进）：半页/跨页全在表内表达（横宽页双 slot、
-        //   smart solo、起始豁免），点翻=物理 slot +1，onPageSelected 兜章末/页号锚定。
-        //   旧 splitHalfRight 半页交替状态机随引擎层展开一并退役
         val count = pagerAdapter?.itemCount ?: 0
-        val next = viewPager.currentItem + 1
+        val next = positionOf(currentPage) + 1
         if (next < count) viewPager.setCurrentItem(next, flipAnimationEnabled && !verticalPager)
-        else fireChapterEndAttempt()  // ★ 末页上再点下一页区/翻页键 = 前进尝试
+        else fireChapterEndAttempt()
     }
     fun prevPage() {
-        // navigateToPan: 缩放时先平移到边缘再翻页
         if (panNavigation && tryPanIfZoomed(forward = isRtl)) return
-        // ★ v1.384 slot 级翻页：物理 slot -1（对称 nextPage，半页位由表表达）
-        val prev = viewPager.currentItem - 1
+        val prev = positionOf(currentPage) - 1
         if (prev >= 0) viewPager.setCurrentItem(prev, flipAnimationEnabled && !verticalPager)
-        // ★ 首页上再点后退区/翻页键 = 后退尝试（上一章，对称 nextPage 的末页前进尝试；
-        //   报告 §6.4 遗留项：此前 LTR 静默无动作，RTL 已由 F7 覆盖）
         else fireChapterEndAttempt(forward = false)
     }
 
@@ -1678,7 +1672,9 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             ssiv.getPanRemaining(remaining)
             val canPan = if (forward) remaining.right > 1f else remaining.left > 1f
             if (canPan) {
-                val targetX = ssiv.center!!.x + if (forward) ssiv.width.toFloat() / ssiv.scale else -ssiv.width.toFloat() / ssiv.scale
+                val viewportSpan = ssiv.width.toFloat() / ssiv.scale
+                val panAmount = if (forward) minOf(viewportSpan, remaining.right) else -minOf(viewportSpan, remaining.left)
+                val targetX = ssiv.center!!.x + panAmount
                 val target = PointF(targetX, ssiv.center!!.y)
                 ssiv.animateCenter(target)
                     ?.withDuration(250)
@@ -2337,7 +2333,7 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                         if (half == 0) post { collectPageDim(realIdx, bmp.width, bmp.height) }
                         val showRight = if (half != 0) half == 2
                         else (isRtl != doublePageReverseEnabled) xor
-                            (splitHalfRight && realIdx == currentPage)
+                            (pendingLandingSplitHalfRight && realIdx == currentPage)
                         // ★ v1.385 Komiho 真对齐：半页实体化（裁成真实位图）走全普通管线——
                         //   缩放/手势/旋转/双击全是普通页行为，"整图+视口取半"模拟层退役
                         val halfBmp = halfBitmap(realIdx, showRight, bmp)

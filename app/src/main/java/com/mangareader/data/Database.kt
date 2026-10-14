@@ -1500,6 +1500,15 @@ interface MangaDao {
         if (members.isNotEmpty()) setMergedParent(members.map { it.id }, null)
         deleteBooksByIds(listOf(virtualBookId))
     }
+
+    @Transaction
+    suspend fun deleteMergeGroup(virtualBookId: Long) {
+        val members = getMergeMembers(virtualBookId)
+        val allIds = members.map { it.id } + virtualBookId
+        deleteShelfItemsForBookIds(allIds)
+        deleteHistoryForBookIds(allIds)
+        deleteBooksByIds(allIds)
+    }
 }
 
 data class BookAggregateRow(

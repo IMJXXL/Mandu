@@ -24,13 +24,13 @@ class PanelGuidePresetTest {
         val prefs = FakeSharedPreferences()
         val preset = PanelGuidePreset.Preset(
             id = "test1", name = "我的预设", isBuiltin = false,
-            sensitivity = 2, dim = 70, anim = false, rtl = 1,
+            sensitivity = 2, dim = 70, rtl = 1,
             dimMode = 1, splitMode = 1, transitionMode = 2, displayMode = 1,
             cropMode = 0, slideMs = 300L, precision = 0,
             previewEnabled = true, progressEnabled = true,
             swipeInvert = true, tapInvert = true,
             foldJoinEnabled = true, autoRotateEnabled = true,
-            autoRotateDir = 0, crossPageEnabled = true,
+            autoRotateDir = 0, crossPageEnabled = true, bubbleMergeEnabled = false,
         )
         PanelGuidePreset.Store.save(prefs, preset)
         val all = PanelGuidePreset.Store.loadAll(prefs)
@@ -47,13 +47,13 @@ class PanelGuidePresetTest {
         val prefs = FakeSharedPreferences()
         val preset = PanelGuidePreset.Preset(
             id = "del1", name = "待删", isBuiltin = false,
-            sensitivity = 1, dim = 55, anim = true, rtl = 0,
+            sensitivity = 1, dim = 55, rtl = 0,
             dimMode = 0, splitMode = 0, transitionMode = 0, displayMode = 0,
             cropMode = 2, slideMs = 180L, precision = 1,
             previewEnabled = false, progressEnabled = false,
             swipeInvert = false, tapInvert = false,
             foldJoinEnabled = false, autoRotateEnabled = false,
-            autoRotateDir = 2, crossPageEnabled = false,
+            autoRotateDir = 2, crossPageEnabled = false, bubbleMergeEnabled = false,
         )
         PanelGuidePreset.Store.save(prefs, preset)
         PanelGuidePreset.Store.delete(prefs, "del1")
@@ -75,13 +75,13 @@ class PanelGuidePresetTest {
         val prefs = FakeSharedPreferences()
         val preset = PanelGuidePreset.Preset(
             id = "ren1", name = "原名", isBuiltin = false,
-            sensitivity = 1, dim = 55, anim = true, rtl = 0,
+            sensitivity = 1, dim = 55, rtl = 0,
             dimMode = 0, splitMode = 0, transitionMode = 0, displayMode = 0,
             cropMode = 2, slideMs = 180L, precision = 1,
             previewEnabled = false, progressEnabled = false,
             swipeInvert = false, tapInvert = false,
             foldJoinEnabled = false, autoRotateEnabled = false,
-            autoRotateDir = 2, crossPageEnabled = false,
+            autoRotateDir = 2, crossPageEnabled = false, bubbleMergeEnabled = false,
         )
         PanelGuidePreset.Store.save(prefs, preset)
         PanelGuidePreset.Store.rename(prefs, "ren1", "新名")
@@ -123,13 +123,13 @@ class PanelGuidePresetTest {
         val prefs = FakeSharedPreferences()
         val p1 = PanelGuidePreset.Preset(
             id = "p1", name = "同 名", isBuiltin = false,
-            sensitivity = 0, dim = 55, anim = true, rtl = 0,
+            sensitivity = 0, dim = 55, rtl = 0,
             dimMode = 0, splitMode = 0, transitionMode = 0, displayMode = 0,
             cropMode = 2, slideMs = 180L, precision = 1,
             previewEnabled = false, progressEnabled = false,
             swipeInvert = false, tapInvert = false,
             foldJoinEnabled = false, autoRotateEnabled = false,
-            autoRotateDir = 2, crossPageEnabled = false,
+            autoRotateDir = 2, crossPageEnabled = false, bubbleMergeEnabled = false,
         )
         PanelGuidePreset.Store.save(prefs, p1)
         val p2 = p1.copy(id = "p2", sensitivity = 2)

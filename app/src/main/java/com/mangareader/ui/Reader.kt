@@ -2871,7 +2871,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                             // ★ 逐格设置（全局键）：面板即改即生效（NES 内热更新到覆盖层）
                             panelGuideSensitivity = config.panelGuideSensitivity,
                             panelGuideDim = config.panelGuideDim,
-                            panelGuideAnim = config.panelGuideAnim,
+
                             panelGuideRtl = config.panelGuideRtl,
                             panelGuideDimMode = config.panelGuideDimMode,
                             panelGuideSplitMode = config.panelGuideSplitMode,
@@ -2889,6 +2889,8 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                             panelGuideAutoRotate = config.panelGuideAutoRotate,
                             panelGuideAutoRotateDir = config.panelGuideAutoRotateDir,
                             panelGuideCrossPage = config.panelGuideCrossPage,
+                            panelGuideBubbleMerge = config.panelGuideBubbleMerge,
+                            panelGuideEngineMode = config.panelGuideEngineMode,
                             verticalPager = verticalPagerEffective,
                             flipAnimationEnabled = config.isFlipAnimation,
                             pageCurlAnimationEnabled = config.isPageCurlAnimation,
@@ -3442,7 +3444,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         com.mangareader.ui.PanelGuideSheet(
             sensitivity = config.panelGuideSensitivity,
             dim = config.panelGuideDim,
-            anim = config.panelGuideAnim,
+
             rtlOverride = config.panelGuideRtl,
             dimMode = config.panelGuideDimMode,
             splitMode = config.panelGuideSplitMode,
@@ -3460,106 +3462,116 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             autoRotateEnabled = config.panelGuideAutoRotate,
             autoRotateDir = config.panelGuideAutoRotateDir,
             crossPageEnabled = config.panelGuideCrossPage,
-            isEinkMode = config.isEinkMode,
+            bubbleMergeEnabled = config.panelGuideBubbleMerge,
+            engineMode = config.panelGuideEngineMode,
+
             onSensitivity = { v ->
                 config = config.copy(panelGuideSensitivity = v)
-                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideSensitivity", v)
+                com.mangareader.data.ReaderScope.write(ctx, currentBookId, "panelGuideSensitivity", v)
                 val tp = navStack.lastOrNull() ?: book?.filePath ?: ""
                 if (tp.isNotEmpty()) com.mangareader.panel.PanelDetector.Cache.clearBook(tp)
                 configVersion++
             },
             onDim = { v ->
                 config = config.copy(panelGuideDim = v)
-                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideDim", v)
+                com.mangareader.data.ReaderScope.write(ctx, currentBookId, "panelGuideDim", v)
                 configVersion++
             },
-            onAnim = { v ->
-                config = config.copy(panelGuideAnim = v)
-                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideAnim", v)
-                configVersion++
-            },
+
             onRtl = { v ->
                 config = config.copy(panelGuideRtl = v)
-                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideRtl", v)
+                com.mangareader.data.ReaderScope.write(ctx, currentBookId, "panelGuideRtl", v)
                 val tp = navStack.lastOrNull() ?: book?.filePath ?: ""
                 if (tp.isNotEmpty()) com.mangareader.panel.PanelDetector.Cache.clearBook(tp)
                 configVersion++
             },
             onDimMode = { v ->
                 config = config.copy(panelGuideDimMode = v)
-                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideDimMode", v)
+                com.mangareader.data.ReaderScope.write(ctx, currentBookId, "panelGuideDimMode", v)
                 configVersion++
             },
             onSplitMode = { v ->
                 config = config.copy(panelGuideSplitMode = v)
-                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideSplitMode", v)
+                com.mangareader.data.ReaderScope.write(ctx, currentBookId, "panelGuideSplitMode", v)
                 configVersion++
             },
             onTransition = { v ->
                 config = config.copy(panelGuideTransition = v)
-                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideTransition", v)
+                com.mangareader.data.ReaderScope.write(ctx, currentBookId, "panelGuideTransition", v)
                 configVersion++
             },
             onDisplay = { v ->
                 config = config.copy(panelGuideDisplay = v)
-                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideDisplay", v)
+                com.mangareader.data.ReaderScope.write(ctx, currentBookId, "panelGuideDisplay", v)
                 configVersion++
             },
             onCrop = { v ->
                 config = config.copy(panelGuideCrop = v)
-                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideCrop", v)
+                com.mangareader.data.ReaderScope.write(ctx, currentBookId, "panelGuideCrop", v)
                 configVersion++
             },
             onSlideMs = { v ->
                 config = config.copy(panelGuideSlideMs = v)
-                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideSlideMs", v)
+                com.mangareader.data.ReaderScope.write(ctx, currentBookId, "panelGuideSlideMs", v)
                 configVersion++
             },
             onPrecision = { v ->
                 config = config.copy(panelGuidePrecision = v)
-                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuidePrecision", v)
+                com.mangareader.data.ReaderScope.write(ctx, currentBookId, "panelGuidePrecision", v)
                 val tp = navStack.lastOrNull() ?: book?.filePath ?: ""
                 if (tp.isNotEmpty()) com.mangareader.panel.PanelDetector.Cache.clearBook(tp)
                 configVersion++
             },
             onPreview = { v ->
                 config = config.copy(panelGuidePreview = v)
-                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuidePreview", v)
+                com.mangareader.data.ReaderScope.write(ctx, currentBookId, "panelGuidePreview", v)
                 configVersion++
             },
             onProgress = { v ->
                 config = config.copy(panelGuideProgress = v)
-                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideProgress", v)
+                com.mangareader.data.ReaderScope.write(ctx, currentBookId, "panelGuideProgress", v)
                 configVersion++
             },
             onSwipeInvert = { v ->
                 config = config.copy(panelGuideSwipeInvert = v)
-                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideSwipeInvert", v)
+                com.mangareader.data.ReaderScope.write(ctx, currentBookId, "panelGuideSwipeInvert", v)
                 configVersion++
             },
             onTapInvert = { v ->
                 config = config.copy(panelGuideTapInvert = v)
-                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideTapInvert", v)
+                com.mangareader.data.ReaderScope.write(ctx, currentBookId, "panelGuideTapInvert", v)
                 configVersion++
             },
             onFoldJoin = { v ->
                 config = config.copy(panelGuideFoldJoin = v)
-                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideFoldJoin", v)
+                com.mangareader.data.ReaderScope.write(ctx, currentBookId, "panelGuideFoldJoin", v)
                 configVersion++
             },
             onAutoRotate = { v ->
                 config = config.copy(panelGuideAutoRotate = v)
-                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideAutoRotate", v)
+                com.mangareader.data.ReaderScope.write(ctx, currentBookId, "panelGuideAutoRotate", v)
                 configVersion++
             },
             onAutoRotateDir = { v ->
                 config = config.copy(panelGuideAutoRotateDir = v)
-                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideAutoRotateDir", v)
+                com.mangareader.data.ReaderScope.write(ctx, currentBookId, "panelGuideAutoRotateDir", v)
                 configVersion++
             },
             onCrossPage = { v ->
                 config = config.copy(panelGuideCrossPage = v)
-                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideCrossPage", v)
+                com.mangareader.data.ReaderScope.write(ctx, currentBookId, "panelGuideCrossPage", v)
+                configVersion++
+            },
+            onBubbleMerge = { v ->
+                config = config.copy(panelGuideBubbleMerge = v)
+                com.mangareader.data.ReaderScope.write(ctx, currentBookId, "panelGuideBubbleMerge", v)
+                configVersion++
+            },
+            onEngineMode = { v ->
+                config = config.copy(panelGuideEngineMode = v)
+                com.mangareader.data.ReaderScope.write(ctx, currentBookId, "panelGuideEngineMode", v)
+                val tp = navStack.lastOrNull() ?: book?.filePath ?: ""
+                if (tp.isNotEmpty()) com.mangareader.panel.PanelDetector.Cache.clearBook(tp)
                 configVersion++
             },
             onToggleActive = {
@@ -3576,7 +3588,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                 config = config.copy(
                     panelGuideSensitivity = preset.sensitivity,
                     panelGuideDim = preset.dim,
-                    panelGuideAnim = preset.anim,
+
                     panelGuideRtl = preset.rtl,
                     panelGuideDimMode = preset.dimMode,
                     panelGuideSplitMode = preset.splitMode,
@@ -3593,27 +3605,31 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                     panelGuideAutoRotate = preset.autoRotateEnabled,
                     panelGuideAutoRotateDir = preset.autoRotateDir,
                     panelGuideCrossPage = preset.crossPageEnabled,
+                    panelGuideBubbleMerge = preset.bubbleMergeEnabled,
+                    panelGuideEngineMode = preset.engineMode,
                 )
-                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideSensitivity", preset.sensitivity)
-                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideDim", preset.dim)
-                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideAnim", preset.anim)
-                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideRtl", preset.rtl)
-                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideDimMode", preset.dimMode)
-                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideSplitMode", preset.splitMode)
-                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideTransition", preset.transitionMode)
-                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideDisplay", preset.displayMode)
-                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideCrop", preset.cropMode)
-                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideSlideMs", preset.slideMs)
-                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuidePrecision", preset.precision)
-                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuidePreview", preset.previewEnabled)
-                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideProgress", preset.progressEnabled)
-                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideSwipeInvert", preset.swipeInvert)
-                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideTapInvert", preset.tapInvert)
-                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideFoldJoin", preset.foldJoinEnabled)
-                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideAutoRotate", preset.autoRotateEnabled)
-                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideAutoRotateDir", preset.autoRotateDir)
-                com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideCrossPage", preset.crossPageEnabled)
-                if (oldSens != preset.sensitivity || oldPrec != preset.precision || oldRtl != preset.rtl) {
+                com.mangareader.data.ReaderScope.write(ctx, currentBookId, "panelGuideSensitivity", preset.sensitivity)
+                com.mangareader.data.ReaderScope.write(ctx, currentBookId, "panelGuideDim", preset.dim)
+
+                com.mangareader.data.ReaderScope.write(ctx, currentBookId, "panelGuideRtl", preset.rtl)
+                com.mangareader.data.ReaderScope.write(ctx, currentBookId, "panelGuideDimMode", preset.dimMode)
+                com.mangareader.data.ReaderScope.write(ctx, currentBookId, "panelGuideSplitMode", preset.splitMode)
+                com.mangareader.data.ReaderScope.write(ctx, currentBookId, "panelGuideTransition", preset.transitionMode)
+                com.mangareader.data.ReaderScope.write(ctx, currentBookId, "panelGuideDisplay", preset.displayMode)
+                com.mangareader.data.ReaderScope.write(ctx, currentBookId, "panelGuideCrop", preset.cropMode)
+                com.mangareader.data.ReaderScope.write(ctx, currentBookId, "panelGuideSlideMs", preset.slideMs)
+                com.mangareader.data.ReaderScope.write(ctx, currentBookId, "panelGuidePrecision", preset.precision)
+                com.mangareader.data.ReaderScope.write(ctx, currentBookId, "panelGuidePreview", preset.previewEnabled)
+                com.mangareader.data.ReaderScope.write(ctx, currentBookId, "panelGuideProgress", preset.progressEnabled)
+                com.mangareader.data.ReaderScope.write(ctx, currentBookId, "panelGuideSwipeInvert", preset.swipeInvert)
+                com.mangareader.data.ReaderScope.write(ctx, currentBookId, "panelGuideTapInvert", preset.tapInvert)
+                com.mangareader.data.ReaderScope.write(ctx, currentBookId, "panelGuideFoldJoin", preset.foldJoinEnabled)
+                com.mangareader.data.ReaderScope.write(ctx, currentBookId, "panelGuideAutoRotate", preset.autoRotateEnabled)
+                com.mangareader.data.ReaderScope.write(ctx, currentBookId, "panelGuideAutoRotateDir", preset.autoRotateDir)
+                com.mangareader.data.ReaderScope.write(ctx, currentBookId, "panelGuideCrossPage", preset.crossPageEnabled)
+                com.mangareader.data.ReaderScope.write(ctx, currentBookId, "panelGuideBubbleMerge", preset.bubbleMergeEnabled)
+                com.mangareader.data.ReaderScope.write(ctx, currentBookId, "panelGuideEngineMode", preset.engineMode)
+                if (oldSens != preset.sensitivity || oldPrec != preset.precision || oldRtl != preset.rtl || config.panelGuideEngineMode != preset.engineMode) {
                     val treePath = navStack.lastOrNull() ?: book?.filePath ?: ""
                     if (treePath.isNotEmpty()) {
                         com.mangareader.panel.PanelDetector.Cache.clearBook(treePath)
@@ -3629,7 +3645,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                     isBuiltin = false,
                     sensitivity = config.panelGuideSensitivity,
                     dim = config.panelGuideDim,
-                    anim = config.panelGuideAnim,
+
                     rtl = config.panelGuideRtl,
                     dimMode = config.panelGuideDimMode,
                     splitMode = config.panelGuideSplitMode,
@@ -3646,6 +3662,8 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                     autoRotateEnabled = config.panelGuideAutoRotate,
                     autoRotateDir = config.panelGuideAutoRotateDir,
                     crossPageEnabled = config.panelGuideCrossPage,
+                    bubbleMergeEnabled = config.panelGuideBubbleMerge,
+                    engineMode = config.panelGuideEngineMode,
                 )
                 com.mangareader.panel.PanelGuidePreset.Store.save(ctx, preset)
                 panelGuidePresets = com.mangareader.panel.PanelGuidePreset.Store.loadAll(ctx)

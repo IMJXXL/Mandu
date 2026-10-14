@@ -13,6 +13,8 @@ data class PanelBox(
     val order: Int,
     /** 格级置信度 0~1 */
     val conf: Float,
+    /** 跨格气泡合并组号：同组分格属于同一气泡跨越，显示时一起呈现；null=独立 */
+    val group: Int? = null,
 ) {
     val right: Float get() = x + w
     val bottom: Float get() = y + h
@@ -68,9 +70,13 @@ object PanelTunables {
 
     // —— 整页规则与置信度（PanelConfidence）——
     /** 唯一框面积 ≥ 此比例 → 整页单格（满版/跨页大图保护，不视为失败） */
-    const val FULL_PAGE_AREA = 0.85f
+    const val FULL_PAGE_AREA = 0.92f
+    /** 自研模式整页判定阈值（b4648d9 旧值） */
+    const val FULL_PAGE_AREA_SELF = 0.85f
     /** 页置信度低于此值 → 整页单格降级 */
     const val CONF_FAIL = 0.5f
+
+    fun fullPageArea(engineMode: Int): Float = if (engineMode == 0) FULL_PAGE_AREA_SELF else FULL_PAGE_AREA
 
     /**
      * ★ 灵敏度档位 → 页置信度门槛（设置面板映射，唯一出处）：
@@ -112,7 +118,11 @@ object PanelTunables {
     const val RGB_COLOUR_SPREAD = 18
 
     // —— 相连框拆分（PanelSplitJoined）——
-    const val SPLIT_MAX_DEPTH = 4
+    const val SPLIT_MAX_DEPTH = 6
+    /** 自研模式拆分深度上限（b4648d9 旧值） */
+    const val SPLIT_MAX_DEPTH_SELF = 4
+
+    fun splitMaxDepth(engineMode: Int): Int = if (engineMode == 0) SPLIT_MAX_DEPTH_SELF else SPLIT_MAX_DEPTH
     const val SPLIT_BAND_RATIO = 0.035f
     const val SPLIT_CONTENT_RATIO = 0.75f
     const val SPLIT_LARGE_AREA_RATIO = 0.1f
@@ -136,4 +146,32 @@ object PanelTunables {
 
     // —— 折痕边缘修剪（PanelFoldJoin trimEdges）——
     const val FOLD_TRIM_COLUMNS = 3
+
+    // —— 分段器参数（PanelsPlus segment_* 对齐）——
+    /** 单页面板数上限，超出降为整页单格 */
+    const val SEGMENT_MAX_PANELS = 40
+    /** 窄长条判定：宽高比 ≥ 此值视为 sliver（竖条/横条面板） */
+    const val SEGMENT_SLIVER_ASPECT = 4
+    /** sliver 墨水占比下限，低于此值视为空白缝隙而非面板 */
+    const val SEGMENT_SLIVER_INK = 0.02f
+    /** 面板合集覆盖页面面积下限，低于此值触发降级 */
+    const val SEGMENT_PAGE_COVERAGE_MIN = 0.4f
+    /** 单面板面积 ≥ 此比例 → 直接整页单格（跳过分割） */
+    const val SEGMENT_SINGLE_PANEL_RATIO = 0.6f
+    /** 装订沟宽度占页宽比例（跨页中缝检测） */
+    const val SEGMENT_GUTTER_RATIO = 0.005f
+    /** 沟内墨水占比上限，低于此值确认为空白沟 */
+    const val SEGMENT_GUTTER_INK_RATIO = 0.05f
+    /** 面板最小边长占短边比例（PanelsPlus segment_min_panel_side） */
+    const val SEGMENT_MIN_PANEL_SIDE = 0.03f
+    /** 面板最小面积占比（PanelsPlus segment_min_panel_area） */
+    const val SEGMENT_MIN_PANEL_AREA = 0.01f
+
+    // —— 边框分割（PanelsPlus border split pass，T6）——
+    /** 边框像素亮度上限（0~255），低于此值视为黑边框 */
+    const val SEGMENT_BORDER_LUMINANCE_MAX = 60
+    /** 边框线投影占比下限，≥ 此值确认为连续边框线 */
+    const val SEGMENT_BORDER_LINE_RATIO = 0.97f
+    /** 边框宽度占短边比例（估算框线粗细） */
+    const val SEGMENT_BORDER_WIDTH_RATIO = 0.01f
 }

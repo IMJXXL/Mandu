@@ -20,7 +20,7 @@ object PanelGuidePreset {
         val isBuiltin: Boolean,
         val sensitivity: Int,
         val dim: Int,
-        val anim: Boolean,
+
         val rtl: Int,
         val dimMode: Int,
         val splitMode: Int,
@@ -37,42 +37,44 @@ object PanelGuidePreset {
         val autoRotateEnabled: Boolean,
         val autoRotateDir: Int,
         val crossPageEnabled: Boolean,
+        val bubbleMergeEnabled: Boolean,
+        val engineMode: Int = 0,
     )
 
     val BUILTIN_STANDARD = Preset(
         id = "builtin_standard", name = "标准", isBuiltin = true,
-        sensitivity = 1, dim = 55, anim = true, rtl = 0,
+        sensitivity = 1, dim = 55, rtl = 0,
         dimMode = 0, splitMode = 0, transitionMode = 0, displayMode = 0,
         cropMode = 2, slideMs = 180L, precision = 1,
         previewEnabled = false, progressEnabled = false,
         swipeInvert = false, tapInvert = false,
         foldJoinEnabled = false, autoRotateEnabled = false,
-        autoRotateDir = 2, crossPageEnabled = false,
+        autoRotateDir = 2, crossPageEnabled = false, bubbleMergeEnabled = false,
     )
 
     val BUILTIN_LOOSE = Preset(
         id = "builtin_loose", name = "宽松", isBuiltin = true,
-        sensitivity = 0, dim = 55, anim = true, rtl = 0,
+        sensitivity = 0, dim = 55, rtl = 0,
         dimMode = 0, splitMode = 0, transitionMode = 0, displayMode = 0,
         cropMode = 2, slideMs = 180L, precision = 0,
         previewEnabled = false, progressEnabled = false,
         swipeInvert = false, tapInvert = false,
         foldJoinEnabled = false, autoRotateEnabled = false,
-        autoRotateDir = 2, crossPageEnabled = false,
+        autoRotateDir = 2, crossPageEnabled = false, bubbleMergeEnabled = false,
     )
 
     val BUILTIN_STRICT = Preset(
         id = "builtin_strict", name = "严格", isBuiltin = true,
-        sensitivity = 2, dim = 55, anim = true, rtl = 0,
+        sensitivity = 2, dim = 55, rtl = 0,
         dimMode = 0, splitMode = 0, transitionMode = 0, displayMode = 0,
         cropMode = 2, slideMs = 180L, precision = 1,
         previewEnabled = false, progressEnabled = false,
         swipeInvert = false, tapInvert = false,
         foldJoinEnabled = false, autoRotateEnabled = false,
-        autoRotateDir = 2, crossPageEnabled = false,
+        autoRotateDir = 2, crossPageEnabled = false, bubbleMergeEnabled = false,
     )
 
-    private val builtins = listOf(BUILTIN_STANDARD, BUILTIN_LOOSE, BUILTIN_STRICT)
+    private val builtins = emptyList<Preset>()
 
     internal object Store {
         fun loadAll(context: Context): List<Preset> = loadAll(context.getSharedPreferences(PREF_FILE, Context.MODE_PRIVATE))
@@ -141,7 +143,7 @@ object PanelGuidePreset {
                 put("name", p.name)
                 put("sensitivity", p.sensitivity)
                 put("dim", p.dim)
-                put("anim", p.anim)
+
                 put("rtl", p.rtl)
                 put("dimMode", p.dimMode)
                 put("splitMode", p.splitMode)
@@ -158,6 +160,8 @@ object PanelGuidePreset {
                 put("autoRotateEnabled", p.autoRotateEnabled)
                 put("autoRotateDir", p.autoRotateDir)
                 put("crossPageEnabled", p.crossPageEnabled)
+                put("bubbleMergeEnabled", p.bubbleMergeEnabled)
+                put("engineMode", p.engineMode)
             }
         }
 
@@ -168,7 +172,7 @@ object PanelGuidePreset {
                 isBuiltin = false,
                 sensitivity = o.optInt("sensitivity", 1),
                 dim = o.optInt("dim", 55),
-                anim = o.optBoolean("anim", true),
+
                 rtl = o.optInt("rtl", 0),
                 dimMode = o.optInt("dimMode", 0),
                 splitMode = o.optInt("splitMode", 0),
@@ -185,6 +189,8 @@ object PanelGuidePreset {
                 autoRotateEnabled = o.optBoolean("autoRotateEnabled", false),
                 autoRotateDir = o.optInt("autoRotateDir", 2),
                 crossPageEnabled = o.optBoolean("crossPageEnabled", false),
+                bubbleMergeEnabled = o.optBoolean("bubbleMergeEnabled", false),
+                engineMode = o.optInt("engineMode", 0).coerceIn(0, 1),
             )
         }
     }

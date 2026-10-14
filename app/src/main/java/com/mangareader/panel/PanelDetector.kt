@@ -22,13 +22,15 @@ object PanelDetector {
         rtl: Boolean,
         confFail: Float = PanelTunables.CONF_FAIL,
         precision: Int = 1,
+        bubbleMerge: Boolean = false,
+        engineMode: Int = 0,
     ): PanelPageResult = withContext(Dispatchers.Default) {
         val t0 = android.os.SystemClock.elapsedRealtime()
-        val pp = PanelTunables.precisionParams(precision)
+        val maxSide = if (engineMode == 0) PanelTunables.MAX_SIDE else PanelTunables.precisionParams(precision).maxSide
         val sw = if (src.config == Bitmap.Config.HARDWARE) src.copy(Bitmap.Config.ARGB_8888, false) else src
         try {
             val longSide = maxOf(sw.width, sw.height)
-            val scale = if (longSide > pp.maxSide) pp.maxSide / longSide.toFloat() else 1f
+            val scale = if (longSide > maxSide) maxSide / longSide.toFloat() else 1f
             val dw = kotlin.math.round(sw.width * scale).toInt().coerceAtLeast(1)
             val dh = kotlin.math.round(sw.height * scale).toInt().coerceAtLeast(1)
             val small = if (scale < 1f) Bitmap.createScaledBitmap(sw, dw, dh, true) else sw
@@ -36,15 +38,15 @@ object PanelDetector {
             small.getPixels(px, 0, dw, 0, 0, dw, dh)
             if (small !== sw) small.recycle()
             val gray = IntArray(dw * dh)
-            val rgb = IntArray(dw * dh)
+            val rgb = if (engineMode == 0) null else IntArray(dw * dh)
             for (i in gray.indices) {
                 val p = px[i]
                 gray[i] = (0.299f * ((p shr 16) and 0xFF) +
                     0.587f * ((p shr 8) and 0xFF) +
                     0.114f * (p and 0xFF)).toInt()
-                rgb[i] = p and 0x00FFFFFF
+                if (rgb != null) rgb[i] = p and 0x00FFFFFF
             }
-            val r = PanelDetectorCore.analyze(gray, dw, dh, rtl, confFail, precision, rgb)
+            val r = PanelDetectorCore.analyze(gray, dw, dh, rtl, confFail, precision, rgb, bubbleMerge, engineMode)
             Log.d(
                 "PanelDetector",
                 "detect ${dw}x${dh} boxes=${r.boxes.size} conf=${r.pageConf} fallback=${r.fallback} ${android.os.SystemClock.elapsedRealtime() - t0}ms",

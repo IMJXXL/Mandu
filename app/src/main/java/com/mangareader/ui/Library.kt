@@ -870,7 +870,12 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                 scope.launch {
                     withContext(Dispatchers.IO) {
                         b.customCoverPath?.let { engine.deleteCustomCoverByPath(it) }
-                        if (b.source == "merged") dao.dissolveMerge(b.id) else dao.deleteBook(b)
+                        if (b.source == "merged") {
+                            dao.getMergeMembers(b.id).forEach { m ->
+                                m.customCoverPath?.let { engine.deleteCustomCoverByPath(it) }
+                            }
+                            dao.deleteMergeGroup(b.id)
+                        } else dao.deleteBook(b)
                     }
                     deleteTarget = null
                 }
@@ -1028,7 +1033,12 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                             val virtualIds = selectedBooks.filter { id ->
                                 dao.getBookById(id)?.source == "merged"
                             }
-                            virtualIds.forEach { dao.dissolveMerge(it) }
+                            virtualIds.forEach { vid ->
+                                dao.getMergeMembers(vid).forEach { m ->
+                                    m.customCoverPath?.let { engine.deleteCustomCoverByPath(it) }
+                                }
+                                dao.deleteMergeGroup(vid)
+                            }
                             dao.deleteBooksByIds(selectedBooks.filter { it !in virtualIds }.toList())
                         }
                         selectedBooks = emptySet()

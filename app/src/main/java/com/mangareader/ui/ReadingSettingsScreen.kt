@@ -480,6 +480,7 @@ fun ReadingSettingsScreen(onBack: () -> Unit, onOpenKeyMap: (() -> Unit)? = null
                         // 画质增强（sr 模块）全套：全局键 + sr_book_<id>_* 单作品覆盖 + 引擎/降噪/黑白等
                         // （超分设置此前一直游离在恢复默认之外，2026-10 NPU 引入时一并纳管）
                         prefs.all.keys.filter { it.startsWith("sr_") }.forEach { remove(it) }
+                        prefs.all.keys.filter { it.startsWith("panelGuide") }.forEach { remove(it) }
                         prefs.all.keys.filter { it.startsWith("book_") || it.startsWith("read_mode_") || it.startsWith("orientation_") }.forEach { remove(it) }
                         apply()
                     }

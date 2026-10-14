@@ -118,7 +118,7 @@ internal object PanelComponents {
      * 候选(≥1/8 双维且≥2%面积)直接收；小连通域进碎片池按外扩相交归组（无边框格聚合）；
      * 然后包含合并→去重叠→中缝外扩→NMS。
      */
-    fun toPanelRects(mask: BooleanArray, w: Int, h: Int, frameTolerance: Int = 3, frameMinSides: Int = 4): List<Box> {
+    fun toPanelRects(mask: BooleanArray, w: Int, h: Int, frameTolerance: Int = 3, frameMinSides: Int = 4, gray: IntArray? = null, maxDepth: Int = PanelTunables.SPLIT_MAX_DEPTH, engineMode: Int = 1): List<Box> {
         val comps = connectedComponents(mask, w, h)
         if (comps.isEmpty()) return emptyList()
         val pageArea = w.toFloat() * h
@@ -131,10 +131,14 @@ internal object PanelComponents {
             val areaRatio = box.area / pageArea
             val dimOk = box.w >= w * PanelTunables.MIN_DIM_RATIO && box.h >= h * PanelTunables.MIN_DIM_RATIO
             if (dimOk && areaRatio >= PanelTunables.MIN_AREA_RATIO) {
-                val sides = PanelFrameEvidence.frameSides(c.pixels, c.area, w, box, frameTolerance)
-                val isLarge = areaRatio >= 0.1f
-                val sidesOk = if (isLarge) sides >= 1 else sides >= frameMinSides
-                if (sidesOk) candidates.add(box)
+                if (engineMode == 0) {
+                    candidates.add(box)
+                } else {
+                    val sides = PanelFrameEvidence.frameSides(c.pixels, c.area, w, box, frameTolerance)
+                    val isLarge = areaRatio >= 0.1f
+                    val sidesOk = if (isLarge) sides >= 1 else sides >= frameMinSides
+                    if (sidesOk) candidates.add(box)
+                }
             } else if (areaRatio >= PanelTunables.FRAG_KEEP_AREA) {
                 fragments.add(box)
             }
@@ -145,21 +149,21 @@ internal object PanelComponents {
         }
         if (candidates.isEmpty()) return emptyList()
 
-        val split = splitLargeCandidates(candidates, mask, w, h, pageArea)
+        val afterSplit = if (engineMode == 0) candidates else splitLargeCandidates(candidates, mask, w, h, pageArea, gray, maxDepth)
 
-        val merged = dropContained(split)
+        val merged = dropContained(afterSplit)
         val deoverlapped = deoverlap(merged)
         val snapped = snapGutters(deoverlapped, w, h, maxDim)
         return nms(snapped)
     }
 
-    /** 候选生成后对大候选框执行相连框拆分（白色分隔带/黑色共享边框），小框不拆分。 */
-    private fun splitLargeCandidates(candidates: List<Box>, mask: BooleanArray, w: Int, h: Int, pageArea: Float): List<Box> {
+    /** 候选生成后对大候选框执行相连框拆分（白色分隔带/黑色共享边框/边框线），小框不拆分。 */
+    private fun splitLargeCandidates(candidates: List<Box>, mask: BooleanArray, w: Int, h: Int, pageArea: Float, gray: IntArray? = null, maxDepth: Int = PanelTunables.SPLIT_MAX_DEPTH): List<Box> {
         val out = ArrayList<Box>()
         for (b in candidates) {
             if (b.area / pageArea >= PanelTunables.SPLIT_LARGE_AREA_RATIO) {
                 val split = try {
-                    PanelSplitJoined.splitJoined(mask, w, h, b)
+                    PanelSplitJoined.splitJoined(mask, w, h, b, gray = gray, maxDepth = maxDepth)
                 } catch (_: Exception) {
                     listOf(b)
                 }

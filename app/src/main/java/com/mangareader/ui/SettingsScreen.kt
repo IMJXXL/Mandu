@@ -105,40 +105,13 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?, Int) -> Unit
         }
     ) { padding ->
         var showAbout by remember { mutableStateOf(false) }
-        var diagExportMsg by remember { mutableStateOf<String?>(null) }
-        var diagExportBusy by remember { mutableStateOf(false) }
+
         LazyColumn(modifier = Modifier.padding(padding).fillMaxSize().wrapContentWidth(Alignment.CenterHorizontally).widthIn(max = CONTENT_MAX_WIDTH_DP).padding(16.dp)) {
             item {
             Spacer(Modifier.height(12.dp))
             }
             item {
-            // 【临时功能，用完整体删除】全量日志导出（含本进程 logcat，已脱敏）——远端排障用
-            // ★ 2026-10-11 修"点不动"：原实现点击后在主线程同步跑 logcat 抓取+crash buffer
-            //   正则切块+多轮正则脱敏，日志大时界面冻结数秒（ANR 体感=不能用了）——
-            //   改 IO 协程 + 忙态提示，导出期间禁点防重入
-            val ctx = androidx.compose.ui.platform.LocalContext.current
-            Card(Modifier.fillMaxWidth().clickable(enabled = !diagExportBusy) {
-                diagExportBusy = true
-                scope.launch {
-                    diagExportMsg = withContext(Dispatchers.IO) { com.mangareader.sr.DiagLogExporter.export(ctx) }
-                    diagExportBusy = false
-                }
-            }) {
-                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Info, null, modifier = Modifier.size(24.dp))
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text("导出全部日志（临时）", fontSize = 16.sp)
-                        Text(
-                            if (diagExportBusy) "正在导出，请稍候…" else diagExportMsg ?: "含引擎初始化细节，供排障分析",
-                            fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-            Spacer(Modifier.height(8.dp))
-            }
-            item {
+
 
 
             Spacer(Modifier.height(8.dp))
@@ -420,6 +393,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?, Int) -> Unit
                                 LicenseLink("Arrow", "https://github.com/arrow-kt/arrow")
                                 LicenseLink("TachiyomiSY", "https://github.com/NightstarTeam/TachiyomiSY")
                                 LicenseLink("Mihon", "https://github.com/mihonapp/mihon")
+                                LicenseLink("PanelsPlus (MIT)", "https://github.com/KristanLaimon/PanelsPlus")
                                 LicenseLink("LocalViewer (GPL v3)", "https://github.com/zmz125000/LocalViewer")
                                 LicenseLink("ncnn (Tencent)", "https://github.com/Tencent/ncnn")
                                 LicenseLink("Real-CUGAN 模型 (bilibili/ailab)", "https://github.com/bilibili/ailab")

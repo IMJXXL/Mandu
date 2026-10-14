@@ -50,13 +50,9 @@ class PanelGuideOverlay(context: Context) : View(context) {
         val rtl: Boolean,
         val eink: Boolean,
         val nav: com.mangareader.native.ViewerNavigation,
-        /** 描边/高亮用强调色（NES 侧经 readerAccentColor 推导后传 int） */
         val accentColor: Int,
-        /** 非当前格压暗 alpha 0~255（设置面板"压暗程度"，0=不压暗纯放大） */
         val dimAlpha: Int = DIM_ALPHA,
-        /** 翻格动画（设置面板可关；墨水屏恒关） */
-        val animEnabled: Boolean = true,
-        /** 页置信度降级门槛（设置面板灵敏度档位 → PanelTunables.confFailFor） */
+
         val minConf: Float = PanelTunables.CONF_FAIL,
         val dimMode: Int = 0,
         val splitMode: Int = 0,
@@ -81,6 +77,8 @@ class PanelGuideOverlay(context: Context) : View(context) {
         val autoRotateEnabled: Boolean = false,
         val autoRotateDir: Int = 2,
         val crossPageEnabled: Boolean = false,
+        val bubbleMergeEnabled: Boolean = false,
+        val engineMode: Int = 0,
     )
 
     private companion object {
@@ -126,6 +124,25 @@ class PanelGuideOverlay(context: Context) : View(context) {
     private var animFrom: RectF? = null
     private var animTo: RectF? = null
     private var animStartAt = 0L
+    private var panOffsetX = 0f
+    private var panOffsetY = 0f
+    private var panFromX = 0f
+    private var panFromY = 0f
+    private var panToX = 0f
+    private var panToY = 0f
+    private var panAnimating = false
+    private val panSrcRect = Rect()
+
+    private var focusScale = 1f
+    private var focusOffsetX = 0f
+    private var focusOffsetY = 0f
+    private var focusFromScale = 1f
+    private var focusFromX = 0f
+    private var focusFromY = 0f
+    private var focusToScale = 1f
+    private var focusToX = 0f
+    private var focusToY = 0f
+    private var focusAnimating = false
 
     private var downX = 0f
     private var downY = 0f
@@ -172,6 +189,13 @@ class PanelGuideOverlay(context: Context) : View(context) {
         inPreview = false
         prevBox = null
         prevCropRect = null
+        panAnimating = false
+        panOffsetX = 0f
+        panOffsetY = 0f
+        focusAnimating = false
+        focusScale = 1f
+        focusOffsetX = 0f
+        focusOffsetY = 0f
         resetZoom()
         crossActive = false
         crossBmpNext = null
@@ -192,6 +216,8 @@ class PanelGuideOverlay(context: Context) : View(context) {
         inPreview = false
         prevBox = null
         prevCropRect = null
+        panAnimating = false
+        focusAnimating = false
         crossActive = false
         crossBmpNext = null
         crossResultNext = null
@@ -212,7 +238,7 @@ class PanelGuideOverlay(context: Context) : View(context) {
     /** 显示类：压暗程度/翻格动画/选中格显示模式——纯绘制参数，即改即生效，不触发重识别 */
     fun onRenderSettingsChanged(
         dimAlpha: Int,
-        animEnabled: Boolean,
+
         dimMode: Int,
         transitionMode: Int = 0,
         displayMode: Int = 0,
@@ -228,7 +254,7 @@ class PanelGuideOverlay(context: Context) : View(context) {
         crossPageEnabled: Boolean = false,
     ) {
         val s = session ?: return
-        if (s.dimAlpha == dimAlpha && s.animEnabled == animEnabled && s.dimMode == dimMode &&
+        if (s.dimAlpha == dimAlpha && s.dimMode == dimMode &&
             s.transitionMode == transitionMode && s.displayMode == displayMode &&
             s.cropMode == cropMode && s.slideMs == slideMs && s.previewEnabled == previewEnabled &&
             s.progressEnabled == progressEnabled && s.swipeInvert == swipeInvert &&
@@ -238,7 +264,7 @@ class PanelGuideOverlay(context: Context) : View(context) {
         ) return
         val foldChanged = s.foldJoinEnabled != foldJoinEnabled
         session = s.copy(
-            dimAlpha = dimAlpha, animEnabled = animEnabled, dimMode = dimMode,
+            dimAlpha = dimAlpha, dimMode = dimMode,
             transitionMode = transitionMode, displayMode = displayMode,
             cropMode = cropMode, slideMs = slideMs, previewEnabled = previewEnabled,
             progressEnabled = progressEnabled, swipeInvert = swipeInvert,
@@ -258,10 +284,10 @@ class PanelGuideOverlay(context: Context) : View(context) {
     }
 
     /** 识别类：置信门槛/阅读方向——清本书结果缓存并重检当前页（方向变了阅读序也要重排） */
-    fun onDetectSettingsChanged(minConf: Float, rtl: Boolean, splitMode: Int, precision: Int = 1) {
+    fun onDetectSettingsChanged(minConf: Float, rtl: Boolean, splitMode: Int, precision: Int = 1, bubbleMerge: Boolean = false, engineMode: Int = 0) {
         val s = session ?: return
-        if (s.minConf == minConf && s.rtl == rtl && s.splitMode == splitMode && s.precision == precision) return
-        session = s.copy(minConf = minConf, rtl = rtl, splitMode = splitMode, precision = precision)
+        if (s.minConf == minConf && s.rtl == rtl && s.splitMode == splitMode && s.precision == precision && s.bubbleMergeEnabled == bubbleMerge && s.engineMode == engineMode) return
+        session = s.copy(minConf = minConf, rtl = rtl, splitMode = splitMode, precision = precision, bubbleMergeEnabled = bubbleMerge, engineMode = engineMode)
         PanelDetector.Cache.clearBook(s.treePath)
         showPage(shownPage)
     }
@@ -293,7 +319,10 @@ class PanelGuideOverlay(context: Context) : View(context) {
                 srWaiting = false
                 val displayBmp = applyFoldJoin(sCaptured, page, sr.bitmap)
                 val res = PanelDetector.Cache.get(sCaptured.treePath, page)
-                    ?: runCatching { PanelDetector.detect(displayBmp, sCaptured.rtl, sCaptured.minConf, sCaptured.precision) }
+                    ?: runCatching {
+                        if (sCaptured.engineMode == 0) PanelDetector.detect(displayBmp, sCaptured.rtl, sCaptured.minConf, engineMode = 0)
+                        else PanelDetector.detect(displayBmp, sCaptured.rtl, sCaptured.minConf, sCaptured.precision, sCaptured.bubbleMergeEnabled, engineMode = 1)
+                    }
                         .getOrDefault(PanelDetectorCore.fallbackResult())
                 post {
                     if (session !== sCaptured || shownPage != page) return@post
@@ -319,7 +348,10 @@ class PanelGuideOverlay(context: Context) : View(context) {
             }
             val res = if (waiting) null else PanelDetector.Cache.get(sCaptured.treePath, page)
                 ?: (if (displayBmp == null) PanelDetectorCore.fallbackResult()
-                    else runCatching { PanelDetector.detect(displayBmp, sCaptured.rtl, sCaptured.minConf, sCaptured.precision) }
+                    else runCatching {
+                        if (sCaptured.engineMode == 0) PanelDetector.detect(displayBmp, sCaptured.rtl, sCaptured.minConf, engineMode = 0)
+                        else PanelDetector.detect(displayBmp, sCaptured.rtl, sCaptured.minConf, sCaptured.precision, sCaptured.bubbleMergeEnabled, engineMode = 1)
+                    }
                         .getOrDefault(PanelDetectorCore.fallbackResult()))
             post {
                 if (session !== sCaptured || shownPage != page) return@post
@@ -353,6 +385,11 @@ class PanelGuideOverlay(context: Context) : View(context) {
         cropRect = null
         prevBox = null
         prevCropRect = null
+        panAnimating = false
+        focusAnimating = false
+        focusScale = 1f
+        focusOffsetX = 0f
+        focusOffsetY = 0f
         inPreview = s.previewEnabled && !r.fallback && r.boxes.size > 1
         resetZoom()
         invalidate()
@@ -367,11 +404,19 @@ class PanelGuideOverlay(context: Context) : View(context) {
             val prev = r.boxes[panelIdx]
             panelIdx++
             resetZoom()
-            animateCropTo(currentCropTarget(), prev)
+            val s = session
+            if (s == null) { animateCropTo(currentCropTarget(), prev); return }
+            val isFocus = (s.engineMode == 0 && s.transitionMode == 1) ||
+                (s.engineMode == 1 && s.transitionMode == 3)
+            when {
+                isFocus && !s.eink -> animateFocusTo(r.boxes[panelIdx])
+                s.engineMode == 1 && s.transitionMode == 1 && !s.eink -> animatePanTo(r.boxes[panelIdx])
+                else -> animateCropTo(currentCropTarget(), prev)
+            }
         } else {
             val s = session
             if (s != null && s.splitMode == 1 && r.boxes.size > 1 &&
-                boxesUnionArea(r.boxes) < PanelTunables.FULL_PAGE_AREA
+                boxesUnionArea(r.boxes) < PanelTunables.fullPageArea(s.engineMode)
             ) {
                 visibility = GONE
                 invalidate()
@@ -388,7 +433,15 @@ class PanelGuideOverlay(context: Context) : View(context) {
             val prev = r.boxes[panelIdx]
             panelIdx--
             resetZoom()
-            animateCropTo(currentCropTarget(), prev)
+            val s = session
+            if (s == null) { animateCropTo(currentCropTarget(), prev); return }
+            val isFocus = (s.engineMode == 0 && s.transitionMode == 1) ||
+                (s.engineMode == 1 && s.transitionMode == 3)
+            when {
+                isFocus && !s.eink -> animateFocusTo(r.boxes[panelIdx])
+                s.engineMode == 1 && s.transitionMode == 1 && !s.eink -> animatePanTo(r.boxes[panelIdx])
+                else -> animateCropTo(currentCropTarget(), prev)
+            }
         } else {
             if (tryStartCrossPage(false)) return
             requestPage((session?.currentPage?.invoke() ?: 0) - 1, LANDING_LAST)
@@ -397,7 +450,8 @@ class PanelGuideOverlay(context: Context) : View(context) {
 
     private fun tryStartCrossPage(forward: Boolean): Boolean {
         val s = session ?: return false
-        if (!s.crossPageEnabled || s.eink || s.transitionMode != 1) return false
+        val crossCompatible = s.transitionMode == 1 || (s.engineMode == 1 && s.transitionMode == 3)
+        if (!s.crossPageEnabled || s.eink || !crossCompatible) return false
         val cur = s.currentPage()
         val target = if (forward) cur + 1 else cur - 1
         if (target !in s.pages.indices) return false
@@ -439,7 +493,7 @@ class PanelGuideOverlay(context: Context) : View(context) {
         if (next !in s.pages.indices || PanelDetector.Cache.get(s.treePath, next) != null) return
         scope.launch {
             val bmp = runCatching { s.engine.loadPage(s.pages[next], s.treePath) }.getOrNull() ?: return@launch
-            val r = runCatching { PanelDetector.detect(bmp, s.rtl, s.minConf, s.precision) }.getOrNull() ?: return@launch
+            val r = runCatching { PanelDetector.detect(bmp, s.rtl, s.minConf, s.precision, s.bubbleMergeEnabled, s.engineMode) }.getOrNull() ?: return@launch
             post { if (session === s) PanelDetector.Cache.put(s.treePath, next, r) }
         }
     }
@@ -577,6 +631,38 @@ class PanelGuideOverlay(context: Context) : View(context) {
             }
         }
 
+        if (panAnimating) {
+            val s2 = session
+            if (s2 != null) {
+                val duration = if (s2.slideMs > 0) s2.slideMs else ANIM_MS
+                val t = ((System.currentTimeMillis() - animStartAt).toFloat() / duration).coerceIn(0f, 1f)
+                panOffsetX = lerp(panFromX, panToX, t)
+                panOffsetY = lerp(panFromY, panToY, t)
+                if (t >= 1f) {
+                    panAnimating = false
+                } else {
+                    postInvalidateOnAnimation()
+                }
+            }
+        }
+
+        if (focusAnimating) {
+            val s2 = session
+            if (s2 != null) {
+                val duration = if (s2.slideMs > 0) s2.slideMs else ANIM_MS
+                val t = ((System.currentTimeMillis() - animStartAt).toFloat() / duration).coerceIn(0f, 1f)
+                val e = 1f - (1f - t) * (1f - t)
+                focusScale = lerp(focusFromScale, focusToScale, e)
+                focusOffsetX = lerp(focusFromX, focusToX, e)
+                focusOffsetY = lerp(focusFromY, focusToY, e)
+                if (t >= 1f) {
+                    focusAnimating = false
+                } else {
+                    postInvalidateOnAnimation()
+                }
+            }
+        }
+
         if (bmp == null || bmp.isRecycled) {
             canvas.drawColor(Color.BLACK)
             val msg = if (result != null) "页面加载失败，点击中键退出" else "分格识别中…"
@@ -591,7 +677,7 @@ class PanelGuideOverlay(context: Context) : View(context) {
         srcRect.set(0, 0, bmp.width, bmp.height)
 
         val partialSkip = s.splitMode == 0 && r != null && !r.fallback && r.boxes.size > 1 &&
-            boxesUnionArea(r.boxes) < PanelTunables.FULL_PAGE_AREA
+            boxesUnionArea(r.boxes) < PanelTunables.fullPageArea(s.engineMode)
 
         if (inPreview && r != null && !r.fallback && r.boxes.size > 1) {
             canvas.drawBitmap(bmp, srcRect, fullRect, cropPaint)
@@ -612,6 +698,38 @@ class PanelGuideOverlay(context: Context) : View(context) {
         if (r == null || r.fallback || r.boxes.size <= 1 || partialSkip) {
             canvas.drawBitmap(bmp, srcRect, fullRect, cropPaint)
             drawHint(canvas, r, partialSkip)
+            return
+        }
+
+        val isFocusPan = (s.engineMode == 0 && s.transitionMode == 1) ||
+            (s.engineMode == 1 && s.transitionMode == 3)
+        if (isFocusPan && !s.eink) {
+            drawFocusPan(canvas, bmp, r, vw, vh)
+            return
+        }
+
+        if (s.engineMode == 0) {
+            val box = r.boxes[panelIdx.coerceIn(0, r.boxes.size - 1)]
+            panelRect.set(
+                fullRect.left + box.x * fullRect.width(),
+                fullRect.top + box.y * fullRect.height(),
+                fullRect.left + box.right * fullRect.width(),
+                fullRect.top + box.bottom * fullRect.height(),
+            )
+            if (s.displayMode == 0) {
+                canvas.drawBitmap(bmp, srcRect, fullRect, cropPaint)
+                dimOutside(canvas, vw, vh)
+            } else {
+                canvas.drawColor(Color.WHITE)
+            }
+            drawCrop(canvas, bmp, box)
+            drawHint(canvas, r)
+            drawProgress(canvas)
+            return
+        }
+
+        if (s.transitionMode == 1 && !s.eink) {
+            drawEnlargedPan(canvas, bmp, r, vw, vh)
             return
         }
 
@@ -658,6 +776,114 @@ class PanelGuideOverlay(context: Context) : View(context) {
         canvas.drawRect(0f, panelRect.bottom, vw, vh, scrimPaint)
         canvas.drawRect(0f, panelRect.top, panelRect.left, panelRect.bottom, scrimPaint)
         canvas.drawRect(panelRect.right, panelRect.top, vw, panelRect.bottom, scrimPaint)
+    }
+
+    private fun drawEnlargedPan(canvas: Canvas, bmp: Bitmap, r: PanelPageResult, vw: Float, vh: Float) {
+        val s = session ?: return
+        val box = r.boxes[panelIdx.coerceIn(0, r.boxes.size - 1)]
+        val scale = vw / bmp.width
+        val scaledH = bmp.height * scale
+        if (!panAnimating) {
+            val targetY = (box.y + box.h / 2f) * scaledH - vh / 2f
+            val maxY = ((scaledH - vh).coerceAtLeast(0f))
+            panOffsetX = 0f
+            panOffsetY = targetY.coerceIn(0f, maxY)
+        }
+        if (scaledH <= vh) {
+            srcRect.set(0, 0, bmp.width, bmp.height)
+            fullRect.set(0f, (vh - scaledH) / 2f, vw, (vh + scaledH) / 2f)
+            canvas.drawBitmap(bmp, srcRect, fullRect, cropPaint)
+        } else {
+            val srcTop = (panOffsetY / scale).toInt().coerceIn(0, bmp.height - 1)
+            val srcBot = ((panOffsetY + vh) / scale).toInt().coerceIn(1, bmp.height)
+            panSrcRect.set(0, srcTop, bmp.width, srcBot)
+            canvas.drawBitmap(bmp, panSrcRect, RectF(0f, 0f, vw, vh), cropPaint)
+        }
+        borderPaint.color = s.accentColor
+        val bx = box.x * vw
+        val by = box.y * scaledH - panOffsetY
+        val bw = box.w * vw
+        val bh = box.h * scaledH
+        if (scaledH <= vh) {
+            panelRect.set(bx, by + (vh - scaledH) / 2f, bx + bw, by + bh + (vh - scaledH) / 2f)
+        } else {
+            panelRect.set(bx, by, bx + bw, by + bh)
+        }
+        canvas.drawRect(panelRect, borderPaint)
+        drawHint(canvas, r)
+        drawProgress(canvas)
+    }
+
+    private fun animatePanTo(box: PanelBox) {
+        val s = session ?: return
+        val bmp = pageBitmap ?: return
+        val vw = width.toFloat()
+        val vh = height.toFloat()
+        val scale = vw / bmp.width
+        val scaledH = bmp.height * scale
+        val targetY = (box.y + box.h / 2f) * scaledH - vh / 2f
+        val maxY = ((scaledH - vh).coerceAtLeast(0f))
+        panFromX = panOffsetX
+        panFromY = panOffsetY
+        panToX = 0f
+        panToY = targetY.coerceIn(0f, maxY)
+        panAnimating = true
+        animStartAt = System.currentTimeMillis()
+        postInvalidateOnAnimation()
+    }
+
+    private fun calcFocusTransform(box: PanelBox, bmp: Bitmap, vw: Float, vh: Float): Triple<Float, Float, Float> {
+        val margin = CROP_MARGIN_DP * resources.displayMetrics.density
+        val availW = vw - margin * 2
+        val availH = vh - margin * 2
+        val panelW = box.w * bmp.width
+        val panelH = box.h * bmp.height
+        val scale = minOf(availW / panelW, availH / panelH) * 0.9f
+        val tx = vw / (2f * scale) - (box.x + box.w / 2f) * bmp.width
+        val ty = vh / (2f * scale) - (box.y + box.h / 2f) * bmp.height
+        return Triple(scale, tx, ty)
+    }
+
+    private fun drawFocusPan(canvas: Canvas, bmp: Bitmap, r: PanelPageResult, vw: Float, vh: Float) {
+        val s = session ?: return
+        val box = r.boxes[panelIdx.coerceIn(0, r.boxes.size - 1)]
+        if (!focusAnimating) {
+            val t = calcFocusTransform(box, bmp, vw, vh)
+            focusScale = t.first
+            focusOffsetX = t.second
+            focusOffsetY = t.third
+        }
+        canvas.save()
+        canvas.scale(focusScale, focusScale)
+        canvas.translate(focusOffsetX, focusOffsetY)
+        srcRect.set(0, 0, bmp.width, bmp.height)
+        canvas.drawBitmap(bmp, srcRect, RectF(0f, 0f, bmp.width.toFloat(), bmp.height.toFloat()), cropPaint)
+        canvas.restore()
+        borderPaint.color = s.accentColor
+        val bx = focusScale * (box.x * bmp.width + focusOffsetX)
+        val by = focusScale * (box.y * bmp.height + focusOffsetY)
+        val bw = box.w * bmp.width * focusScale
+        val bh = box.h * bmp.height * focusScale
+        panelRect.set(bx, by, bx + bw, by + bh)
+        canvas.drawRect(panelRect, borderPaint)
+        drawHint(canvas, r)
+        drawProgress(canvas)
+    }
+
+    private fun animateFocusTo(box: PanelBox) {
+        val bmp = pageBitmap ?: return
+        val vw = width.toFloat()
+        val vh = height.toFloat()
+        val target = calcFocusTransform(box, bmp, vw, vh)
+        focusFromScale = focusScale
+        focusFromX = focusOffsetX
+        focusFromY = focusOffsetY
+        focusToScale = target.first
+        focusToX = target.second
+        focusToY = target.third
+        focusAnimating = true
+        animStartAt = System.currentTimeMillis()
+        postInvalidateOnAnimation()
     }
 
     private fun drawCrop(canvas: Canvas, bmp: Bitmap, box: PanelBox) {
@@ -764,7 +990,7 @@ class PanelGuideOverlay(context: Context) : View(context) {
 
     private fun animateCropTo(target: RectF, prev: PanelBox? = null) {
         val s = session ?: return
-        if (s.eink || !s.animEnabled || s.transitionMode == 0) {
+        if (s.transitionMode == 0 || (s.eink && s.transitionMode == 1)) {
             cropRect = target
             prevBox = null
             prevCropRect = null

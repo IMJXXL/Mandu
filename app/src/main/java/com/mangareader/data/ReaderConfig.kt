@@ -136,10 +136,11 @@ data class ReaderConfig(
     // ★ 逐格引导设置（2026-10-11，全局语义——算法参数属设备级偏好，不按书记忆）：
     /** 检测灵敏度：0=宽松(置信门槛0.35，弱分格/彩漫页更易通过) 1=标准(0.5) 2=严格(0.65) */
     val panelGuideSensitivity: Int = 1,
+    /** 逐格引擎模式：0=自研 1=实验(PanelsPlus对齐) */
+    val panelGuideEngineMode: Int = 0,
     /** 非当前格压暗程度 0~100（百分比，默认 55 ≈ 255 级中的 140） */
     val panelGuideDim: Int = 55,
-    /** 翻格动画（墨水屏恒关） */
-    val panelGuideAnim: Boolean = true,
+
     /** 阅读方向覆盖：0=跟随阅读模式 1=日漫·右开(RTL) 2=国漫·左开(LTR)；纵向恒 先上→下（用户定则，无此设置） */
     val panelGuideRtl: Int = 0,
     /** 选中格显示模式：0=放大铺满（默认） 1=原位高亮（整页不放大） 2=放大铺满+选中格同步压暗 */
@@ -159,6 +160,7 @@ data class ReaderConfig(
     val panelGuideAutoRotate: Boolean = false,
     val panelGuideAutoRotateDir: Int = 2,
     val panelGuideCrossPage: Boolean = false,
+    val panelGuideBubbleMerge: Boolean = false,
 ) {
     enum class ScrollMode { VERTICAL, HORIZONTAL_LEFT, HORIZONTAL_RIGHT }
     @Deprecated("注释过时——clickFlipType.ordinal 正被 Reader/各视图使用；新模式 EDGE/KINDLISH 已接 buildNavigation") enum class ClickFlipType { NO, LEFT_RIGHT, DIAGONAL_LB_RT, DIAGONAL_LT_RB, L_SHAPE, EDGE, KINDLISH }
@@ -266,8 +268,9 @@ data class ReaderConfig(
             putInt("${prefix}ambienceVolume", ambienceVolume)
             // ★ 逐格引导设置恒全局键（无前缀），与 load/presetScope 全局语义闭环
             putInt("panelGuideSensitivity", panelGuideSensitivity)
+            putInt("panelGuideEngineMode", panelGuideEngineMode)
             putInt("panelGuideDim", panelGuideDim)
-            putBoolean("panelGuideAnim", panelGuideAnim)
+
             putInt("panelGuideRtl", panelGuideRtl)
             putInt("panelGuideFocus", panelGuideFocus)
             putInt("panelGuideDimMode", panelGuideDimMode)
@@ -285,6 +288,7 @@ data class ReaderConfig(
             putBoolean("panelGuideAutoRotate", panelGuideAutoRotate)
             putInt("panelGuideAutoRotateDir", panelGuideAutoRotateDir)
             putBoolean("panelGuideCrossPage", panelGuideCrossPage)
+            putBoolean("panelGuideBubbleMerge", panelGuideBubbleMerge)
             apply()
         }
     }
@@ -405,15 +409,16 @@ data class ReaderConfig(
                 ambienceVolume = rInt("ambienceVolume", 60).coerceIn(0, 100),
                 panelGuideSensitivity = rInt("panelGuideSensitivity", 1).coerceIn(0, 2),
                 panelGuideDim = rInt("panelGuideDim", 55).coerceIn(0, 100),
-                panelGuideAnim = rBoolean("panelGuideAnim", true),
+                panelGuideEngineMode = rInt("panelGuideEngineMode", 0).coerceIn(0, 1),
+
                 panelGuideRtl = rInt("panelGuideRtl", 0).coerceIn(0, 2),
                 panelGuideFocus = rInt("panelGuideFocus", 0).coerceIn(0, 2),
                 panelGuideDimMode = rInt("panelGuideDimMode", 0).coerceIn(0, 1),
                 panelGuideSplitMode = rInt("panelGuideSplitMode", 0).coerceIn(0, 1),
-                panelGuideTransition = rInt("panelGuideTransition", 0).coerceIn(0, 2),
+                panelGuideTransition = rInt("panelGuideTransition", 0).coerceIn(0, 3),
                 panelGuideDisplay = rInt("panelGuideDisplay", 0).coerceIn(0, 1),
                 panelGuideCrop = rInt("panelGuideCrop", if (prefs.contains("panelGuideCrop")) rInt("panelGuideCrop", 2) else if (rInt("panelGuideFocus", 0) == 0) 2 else 0).coerceIn(0, 3),
-                panelGuideSlideMs = rLong("panelGuideSlideMs", 180L).coerceIn(100L, 500L),
+                panelGuideSlideMs = rLong("panelGuideSlideMs", 180L).coerceIn(100L, 8000L),
                 panelGuidePrecision = rInt("panelGuidePrecision", 1).coerceIn(0, 1),
                 panelGuidePreview = rBoolean("panelGuidePreview", false),
                 panelGuideProgress = rBoolean("panelGuideProgress", false),
@@ -423,6 +428,7 @@ data class ReaderConfig(
                 panelGuideAutoRotate = rBoolean("panelGuideAutoRotate", false),
                 panelGuideAutoRotateDir = rInt("panelGuideAutoRotateDir", 2).coerceIn(0, 2),
                 panelGuideCrossPage = rBoolean("panelGuideCrossPage", false),
+                panelGuideBubbleMerge = rBoolean("panelGuideBubbleMerge", false),
                 downsampleTier = run {
                     when (val raw = rawFor("downsampleTier")) {
                         is String -> try { DownsampleTier.valueOf(raw) } catch (_: Exception) { DownsampleTier.STANDARD }
@@ -585,7 +591,7 @@ data class ReaderConfig(
             "tallSplitSensitivity" to { it.tallSplitSensitivity },
             "panelGuideSensitivity" to { it.panelGuideSensitivity },
             "panelGuideDim" to { it.panelGuideDim },
-            "panelGuideAnim" to { it.panelGuideAnim },
+
             "panelGuideRtl" to { it.panelGuideRtl },
             "panelGuideFocus" to { it.panelGuideFocus },
             "panelGuideDimMode" to { it.panelGuideDimMode },
@@ -596,6 +602,7 @@ data class ReaderConfig(
             "panelGuideSlideMs" to { it.panelGuideSlideMs },
             "panelGuidePrecision" to { it.panelGuidePrecision },
             "panelGuidePreview" to { it.panelGuidePreview },
+            "panelGuideEngineMode" to { it.panelGuideEngineMode },
         )
 
         /** 书内设置面板 diff：返回真正改动的键名（含全局键——由 ReaderScope 决定写层） */
