@@ -142,7 +142,7 @@ private fun UpdateDialog(
                 Text(
                     info.changelog,
                     fontSize = 13.sp,
-                    modifier = Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).heightIn(max = 200.dp)
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 200.dp).verticalScroll(rememberScrollState())
                 )
                 Spacer(Modifier.height(16.dp))
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
