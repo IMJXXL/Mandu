@@ -33,6 +33,17 @@ object ApkDownloader {
         } catch (_: Exception) {}
     }
 
+    private fun isZipFile(file: File): Boolean = try {
+        val header = ByteArray(4)
+        java.io.RandomAccessFile(file, "r").use { raf ->
+            raf.readFully(header)
+        }
+        header[0] == 0x50.toByte() && header[1] == 0x4B.toByte() &&
+            header[2] == 0x03.toByte() && header[3] == 0x04.toByte()
+    } catch (_: Exception) {
+        false
+    }
+
     /**
      * ★ 下载包与当前应用签名比对：不一致/解析失败一律 false。
      * 防线：镜像侧或公共 Downloads/漫读/ 被塞假包时，不同包名的 APK 会被系统当"新应用"装成功——
@@ -125,6 +136,7 @@ object ApkDownloader {
                 response.body?.byteStream()?.use { input ->
                     val buf = ByteArray(8192)
                     while (true) {
+                        kotlinx.coroutines.yield()
                         val n = input.read(buf)
                         if (n <= 0) break
                         out.write(buf, 0, n)
@@ -138,6 +150,11 @@ object ApkDownloader {
             if (!tmpFile.renameTo(apkFile)) {
                 android.util.Log.e("ApkDownloader", "rename FAILED, tmp=${tmpFile.length()} bytes")
                 try { tmpFile.delete() } catch (_: Exception) {}
+                return@withContext null
+            }
+            if (apkFile.length() < 4 || !isZipFile(apkFile)) {
+                android.util.Log.e("ApkDownloader", "downloaded file is not a valid ZIP/APK, size=${apkFile.length()}")
+                apkFile.delete()
                 return@withContext null
             }
             // 下载后签名校验：镜像侧篡改/截断在此拦截（不同包名的假包系统安装器拦不住）
