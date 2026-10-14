@@ -16,11 +16,11 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -38,16 +38,21 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
@@ -58,6 +63,7 @@ import androidx.compose.ui.unit.dp
  * 骨架与 [ReaderSettingsSheet] 同款：Box 遮罩 + AnimatedVisibility——竖屏底部面板 / 横屏右侧全高抽屉。
  * 即改即生效：显示类（压暗/动画）纯绘制热更新；识别类（灵敏度/方向）清缓存重检当前页
  * （链路：Reader → NES LaunchedEffect → PanelGuideOverlay.onRenderSettingsChanged / onDetectSettingsChanged）。
+ * 2026-10-14 重构：五功能域分组折叠 + Switch→Checkbox 统一风格 + 总开关置顶 + 翻格动画墨水屏联动。
  */
 @Composable
 fun PanelGuideSheet(
@@ -81,6 +87,7 @@ fun PanelGuideSheet(
     autoRotateEnabled: Boolean,
     autoRotateDir: Int,
     crossPageEnabled: Boolean,
+    isEinkMode: Boolean = false,
     onSensitivity: (Int) -> Unit,
     onDim: (Int) -> Unit,
     onAnim: (Boolean) -> Unit,
@@ -111,6 +118,13 @@ fun PanelGuideSheet(
 ) {
     var visible by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { visible = true }
+    LaunchedEffect(isEinkMode) { if (isEinkMode && anim) onAnim(false) }
+
+    var groupRecognize by rememberSaveable { mutableStateOf(true) }
+    var groupDisplay by rememberSaveable { mutableStateOf(true) }
+    var groupAux by rememberSaveable { mutableStateOf(false) }
+    var groupAdvanced by rememberSaveable { mutableStateOf(false) }
+    var groupPreset by rememberSaveable { mutableStateOf(false) }
 
     val landscape = LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
     Box(
@@ -161,281 +175,6 @@ fun PanelGuideSheet(
                     )
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
-                    PanelChipRow(
-                        title = "检测灵敏度",
-                        options = listOf("宽松" to 0, "标准" to 1, "严格" to 2),
-                        selected = sensitivity,
-                        onSelect = onSensitivity,
-                    )
-                    Text(
-                        when (sensitivity) {
-                            0 -> "弱分格/彩漫页更容易识别出分格，可能偶尔误分"
-                            2 -> "更保守：拿不准就整页显示"
-                            else -> "白底黑线分格漫画的推荐档位"
-                        },
-                        style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
-                        modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 6.dp),
-                    )
-
-                    PanelChipRow(
-                        title = "识别精度",
-                        options = listOf("普通" to 0, "精细" to 1),
-                        selected = precision,
-                        onSelect = onPrecision,
-                    )
-                    Text(
-                        when (precision) {
-                            0 -> "更快，适合清晰分格"
-                            else -> "更准，对模糊或低对比度边框识别更好"
-                        },
-                        style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
-                        modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 6.dp),
-                    )
-
-                    PanelChipRow(
-                        title = "横向顺序",
-                        options = listOf("跟随模式" to 0, "先右·日漫" to 1, "先左·国漫" to 2),
-                        selected = rtlOverride,
-                        onSelect = onRtl,
-                    )
-
-                    PanelChipRow(
-                        title = "画面显示",
-                        options = listOf("压暗其余" to 0, "隐藏其余" to 1),
-                        selected = displayMode,
-                        onSelect = onDisplay,
-                    )
-
-                    if (displayMode == 0) {
-                        PanelChipRow(
-                            title = "其余画面",
-                            options = listOf("全部一样暗" to 0, "当前格原位稍亮" to 1),
-                            selected = dimMode,
-                            onSelect = onDimMode,
-                        )
-                    }
-
-                    PanelChipRow(
-                        title = "逐格条件",
-                        options = listOf("整页都能分才逐格" to 0, "能分几格分几格" to 1),
-                        selected = splitMode,
-                        onSelect = onSplitMode,
-                    )
-
-                    PanelChipRow(
-                        title = "画面裁切",
-                        options = listOf("紧贴分格" to 0, "放宽边距" to 1, "留固定边距" to 2, "不裁切只高亮" to 3),
-                        selected = cropMode,
-                        onSelect = onCrop,
-                    )
-
-                    if (displayMode == 0) {
-                        Column(Modifier.padding(horizontal = 24.dp, vertical = 8.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("压暗程度", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                                Text("$dim%", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold))
-                            }
-                            Slider(
-                                value = dim.toFloat(),
-                                onValueChange = { onDim((it + 0.5f).toInt()) },
-                                valueRange = 0f..100f,
-                            )
-                            if (dim == 0) {
-                                Text(
-                                    "0% = 不压暗，仅放大当前格",
-                                    style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
-                                )
-                            }
-                        }
-                    }
-
-                    PanelChipRow(
-                        title = "切换方式",
-                        options = listOf("直接切换" to 0, "滑动过渡" to 1, "渐隐渐显" to 2),
-                        selected = transitionMode,
-                        onSelect = onTransition,
-                    )
-
-                    if (transitionMode == 1) {
-                        Column(Modifier.padding(horizontal = 24.dp, vertical = 8.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("滑动时长", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                                Text("${slideMs}ms", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold))
-                            }
-                            Slider(
-                                value = slideMs.toFloat(),
-                                onValueChange = { onSlideMs((it + 0.5f).toLong()) },
-                                valueRange = 100f..500f,
-                            )
-                        }
-                    }
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onAnim(!anim) }
-                            .padding(horizontal = 24.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    ) {
-                        Checkbox(checked = anim, onCheckedChange = null)
-                        Column {
-                            Text("翻格动画", style = MaterialTheme.typography.bodyMedium)
-                            Text(
-                                "切格时的过渡（墨水屏自动关闭）",
-                                style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
-                            )
-                        }
-                    }
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onPreview(!previewEnabled) }
-                            .padding(horizontal = 24.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    ) {
-                        Switch(checked = previewEnabled, onCheckedChange = null)
-                        Column {
-                            Text("分格预览", style = MaterialTheme.typography.bodyMedium)
-                            Text(
-                                "进入逐格前先看清本页分了几格",
-                                style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
-                            )
-                        }
-                    }
-                    HorizontalDivider(Modifier.padding(vertical = 8.dp))
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onProgress(!progressEnabled) }
-                            .padding(horizontal = 24.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    ) {
-                        Switch(checked = progressEnabled, onCheckedChange = null)
-                        Column {
-                            Text("格进度", style = MaterialTheme.typography.bodyMedium)
-                            Text(
-                                "底部显示当前第几格",
-                                style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
-                            )
-                        }
-                    }
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onSwipeInvert(!swipeInvert) }
-                            .padding(horizontal = 24.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    ) {
-                        Switch(checked = swipeInvert, onCheckedChange = null)
-                        Column {
-                            Text("滑动反转", style = MaterialTheme.typography.bodyMedium)
-                            Text(
-                                "左滑切上一格",
-                                style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
-                            )
-                        }
-                    }
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onTapInvert(!tapInvert) }
-                            .padding(horizontal = 24.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    ) {
-                        Switch(checked = tapInvert, onCheckedChange = null)
-                        Column {
-                            Text("点按反转", style = MaterialTheme.typography.bodyMedium)
-                            Text(
-                                "左右点按互换",
-                                style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
-                            )
-                        }
-                    }
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onFoldJoin(!foldJoinEnabled) }
-                            .padding(horizontal = 24.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    ) {
-                        Switch(checked = foldJoinEnabled, onCheckedChange = null)
-                        Column {
-                            Text("折痕移除", style = MaterialTheme.typography.bodyMedium)
-                            Text(
-                                "跨页扫描件去折痕拼接",
-                                style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
-                            )
-                        }
-                    }
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onAutoRotate(!autoRotateEnabled) }
-                            .padding(horizontal = 24.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    ) {
-                        Switch(checked = autoRotateEnabled, onCheckedChange = null)
-                        Column {
-                            Text("跨页大图旋转", style = MaterialTheme.typography.bodyMedium)
-                            Text(
-                                "竖屏旋转铺开看",
-                                style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
-                            )
-                        }
-                    }
-
-                    if (autoRotateEnabled) {
-                        PanelChipRow(
-                            title = "旋转方向",
-                            options = listOf("顺时针" to 0, "逆时针" to 1, "自动" to 2),
-                            selected = autoRotateDir,
-                            onSelect = onAutoRotateDir,
-                        )
-                    }
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onCrossPage(!crossPageEnabled) }
-                            .padding(horizontal = 24.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    ) {
-                        Switch(checked = crossPageEnabled, onCheckedChange = null)
-                        Column {
-                            Text("跨页连续过渡", style = MaterialTheme.typography.bodyMedium)
-                            Text(
-                                "末格前进连续滑动",
-                                style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
-                            )
-                        }
-                    }
-                    HorizontalDivider(Modifier.padding(vertical = 8.dp))
-
-                    PresetRegion(
-                        presets = presets,
-                        currentPresetId = currentPresetId,
-                        onPresetSelect = onPresetSelect,
-                        onPresetSave = onPresetSave,
-                        onPresetDelete = onPresetDelete,
-                        onPresetRename = onPresetRename,
-                    )
-
-                    HorizontalDivider(Modifier.padding(vertical = 8.dp))
-
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -445,14 +184,223 @@ fun PanelGuideSheet(
                         horizontalArrangement = Arrangement.spacedBy(16.dp),
                     ) {
                         Switch(checked = active, onCheckedChange = null)
-                        Text("逐格阅读", style = MaterialTheme.typography.bodyMedium)
+                        Text("开启逐格阅读", style = MaterialTheme.typography.bodyMedium)
                     }
                     Text(
                         "识别不到分格的页面按整页显示并在右下角提示，逐格模式保持到你手动关。" +
                             "经典白底黑线分格识别最好，彩漫/满版跨页可能整页降级。",
                         style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
-                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 10.dp),
+                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp),
                     )
+                    HorizontalDivider(Modifier.padding(vertical = 4.dp))
+
+                    GroupSection(
+                        title = "识别设置",
+                        expanded = groupRecognize,
+                        onToggle = { groupRecognize = !groupRecognize },
+                    ) {
+                        PanelChipRow(
+                            title = "检测灵敏度",
+                            options = listOf("宽松" to 0, "标准" to 1, "严格" to 2),
+                            selected = sensitivity,
+                            onSelect = onSensitivity,
+                        )
+                        Text(
+                            when (sensitivity) {
+                                0 -> "弱分格/彩漫页更容易识别出分格，可能偶尔误分"
+                                2 -> "更保守：拿不准就整页显示"
+                                else -> "白底黑线分格漫画的推荐档位"
+                            },
+                            style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                            modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 6.dp),
+                        )
+
+                        PanelChipRow(
+                            title = "识别精度",
+                            options = listOf("普通" to 0, "精细" to 1),
+                            selected = precision,
+                            onSelect = onPrecision,
+                        )
+                        Text(
+                            when (precision) {
+                                0 -> "更快，适合清晰分格"
+                                else -> "更准，对模糊或低对比度边框识别更好"
+                            },
+                            style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                            modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 6.dp),
+                        )
+
+                        PanelChipRow(
+                            title = "横向顺序",
+                            options = listOf("跟随模式" to 0, "先右·日漫" to 1, "先左·国漫" to 2),
+                            selected = rtlOverride,
+                            onSelect = onRtl,
+                        )
+
+                        PanelChipRow(
+                            title = "逐格条件",
+                            options = listOf("整页都能分才逐格" to 0, "能分几格分几格" to 1),
+                            selected = splitMode,
+                            onSelect = onSplitMode,
+                        )
+                    }
+
+                    GroupSection(
+                        title = "显示设置",
+                        expanded = groupDisplay,
+                        onToggle = { groupDisplay = !groupDisplay },
+                    ) {
+                        PanelChipRow(
+                            title = "画面显示",
+                            options = listOf("压暗其余" to 0, "隐藏其余" to 1),
+                            selected = displayMode,
+                            onSelect = onDisplay,
+                        )
+
+                        if (displayMode == 0) {
+                            PanelChipRow(
+                                title = "其余画面",
+                                options = listOf("全部一样暗" to 0, "当前格原位稍亮" to 1),
+                                selected = dimMode,
+                                onSelect = onDimMode,
+                            )
+                        }
+
+                        PanelChipRow(
+                            title = "画面裁切",
+                            options = listOf("紧贴分格" to 0, "放宽边距" to 1, "留固定边距" to 2, "不裁切只高亮" to 3),
+                            selected = cropMode,
+                            onSelect = onCrop,
+                        )
+
+                        if (displayMode == 0) {
+                            Column(Modifier.padding(horizontal = 24.dp, vertical = 8.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text("压暗程度", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                                    Text("$dim%", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold))
+                                }
+                                Slider(
+                                    value = dim.toFloat(),
+                                    onValueChange = { onDim((it + 0.5f).toInt()) },
+                                    valueRange = 0f..100f,
+                                )
+                                if (dim == 0) {
+                                    Text(
+                                        "0% = 不压暗，仅放大当前格",
+                                        style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                                    )
+                                }
+                            }
+                        }
+
+                        PanelChipRow(
+                            title = "切换方式",
+                            options = listOf("直接切换" to 0, "滑动过渡" to 1, "渐隐渐显" to 2),
+                            selected = transitionMode,
+                            onSelect = onTransition,
+                        )
+
+                        if (transitionMode == 1) {
+                            Column(Modifier.padding(horizontal = 24.dp, vertical = 8.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text("滑动时长", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                                    Text("${slideMs}ms", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold))
+                                }
+                                Slider(
+                                    value = slideMs.toFloat(),
+                                    onValueChange = { onSlideMs((it + 0.5f).toLong()) },
+                                    valueRange = 100f..500f,
+                                )
+                            }
+                        }
+
+                        CheckboxRow(
+                            checked = anim,
+                            onCheckedChange = onAnim,
+                            title = "翻格动画",
+                            info = if (isEinkMode) "墨水屏下自动关闭" else "切格时的过渡动画",
+                            enabled = !isEinkMode,
+                        )
+                    }
+
+                    GroupSection(
+                        title = "辅助功能",
+                        expanded = groupAux,
+                        onToggle = { groupAux = !groupAux },
+                    ) {
+                        CheckboxRow(
+                            checked = previewEnabled,
+                            onCheckedChange = onPreview,
+                            title = "分格预览",
+                            info = "进入逐格前先看清本页分了几格",
+                        )
+                        CheckboxRow(
+                            checked = progressEnabled,
+                            onCheckedChange = onProgress,
+                            title = "格进度",
+                            info = "底部显示当前第几格",
+                        )
+                        CheckboxRow(
+                            checked = swipeInvert,
+                            onCheckedChange = onSwipeInvert,
+                            title = "滑动反转",
+                            info = "左滑切上一格",
+                        )
+                        CheckboxRow(
+                            checked = tapInvert,
+                            onCheckedChange = onTapInvert,
+                            title = "点按反转",
+                            info = "左右点按互换",
+                        )
+                    }
+
+                    GroupSection(
+                        title = "高级功能",
+                        expanded = groupAdvanced,
+                        onToggle = { groupAdvanced = !groupAdvanced },
+                    ) {
+                        CheckboxRow(
+                            checked = foldJoinEnabled,
+                            onCheckedChange = onFoldJoin,
+                            title = "折痕移除",
+                            info = "跨页扫描件去折痕拼接",
+                        )
+                        CheckboxRow(
+                            checked = autoRotateEnabled,
+                            onCheckedChange = onAutoRotate,
+                            title = "跨页大图旋转",
+                            info = "竖屏旋转铺开看",
+                        )
+                        if (autoRotateEnabled) {
+                            PanelChipRow(
+                                title = "旋转方向",
+                                options = listOf("顺时针" to 0, "逆时针" to 1, "自动" to 2),
+                                selected = autoRotateDir,
+                                onSelect = onAutoRotateDir,
+                            )
+                        }
+                        CheckboxRow(
+                            checked = crossPageEnabled,
+                            onCheckedChange = onCrossPage,
+                            title = "跨页连续过渡",
+                            info = "末格前进连续滑动",
+                        )
+                    }
+
+                    GroupSection(
+                        title = "预设管理",
+                        expanded = groupPreset,
+                        onToggle = { groupPreset = !groupPreset },
+                    ) {
+                        PresetRegion(
+                            presets = presets,
+                            currentPresetId = currentPresetId,
+                            onPresetSelect = onPresetSelect,
+                            onPresetSave = onPresetSave,
+                            onPresetDelete = onPresetDelete,
+                            onPresetRename = onPresetRename,
+                        )
+                    }
                 }
             }
         }
@@ -491,6 +439,69 @@ private fun PanelChipRow(
         }
     }
 }
+
+@Composable
+private fun GroupSection(
+    title: String,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    Column {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onToggle() }
+                .padding(horizontal = 24.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                title,
+                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                modifier = Modifier.weight(1f),
+            )
+            Icon(
+                if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                contentDescription = if (expanded) "收起" else "展开",
+            )
+        }
+        AnimatedVisibility(visible = expanded) {
+            Column { content() }
+        }
+        HorizontalDivider(Modifier.padding(vertical = 4.dp))
+    }
+}
+
+@Composable
+private fun CheckboxRow(
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    title: String,
+    info: String? = null,
+    enabled: Boolean = true,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = enabled) { onCheckedChange(!checked) }
+            .padding(horizontal = 24.dp, vertical = 6.dp)
+            .alpha(if (enabled) 1f else 0.38f),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Checkbox(checked = checked, onCheckedChange = null, enabled = enabled)
+        Column {
+            Text(title, style = MaterialTheme.typography.bodyMedium)
+            if (info != null) {
+                Text(
+                    info,
+                    style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                )
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun PresetRegion(
@@ -543,7 +554,19 @@ private fun PresetRegion(
             ) {
                 presets.forEach { p ->
                     DropdownMenuItem(
-                        text = { Text(p.name) },
+                        text = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(p.name)
+                                if (p.id == currentPresetId) {
+                                    Icon(
+                                        Icons.Default.Check,
+                                        contentDescription = "当前",
+                                        modifier = Modifier.size(16.dp).padding(start = 4.dp),
+                                        tint = MaterialTheme.colorScheme.primary,
+                                    )
+                                }
+                            }
+                        },
                         onClick = {
                             dropdownExpanded = false
                             onPresetSelect(p)
@@ -564,9 +587,19 @@ private fun PresetRegion(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            if (p.id == currentPresetId) {
+                Icon(
+                    Icons.Default.Check,
+                    contentDescription = "当前",
+                    modifier = Modifier.size(18.dp),
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+            }
             Text(
                 p.name,
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.bodySmall.copy(
+                    fontWeight = if (p.id == currentPresetId) FontWeight.SemiBold else FontWeight.Normal,
+                ),
                 modifier = Modifier.weight(1f),
             )
             if (!p.isBuiltin) {

@@ -296,6 +296,8 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     }
     // ★ 逐格设置面板：点击按钮打开（开始/退出与设置都在面板内，持久全局开关语义）
     var showPanelGuideSheet by remember { mutableStateOf(false) }
+    var currentPresetId by remember { mutableStateOf<String?>(null) }
+    var panelGuidePresets by remember { mutableStateOf(com.mangareader.panel.PanelGuidePreset.Store.loadAll(ctx)) }
 
     var showRename by remember { mutableStateOf(false) }
     var renameInput by remember { mutableStateOf("") }
@@ -3458,9 +3460,12 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             autoRotateEnabled = config.panelGuideAutoRotate,
             autoRotateDir = config.panelGuideAutoRotateDir,
             crossPageEnabled = config.panelGuideCrossPage,
+            isEinkMode = config.isEinkMode,
             onSensitivity = { v ->
                 config = config.copy(panelGuideSensitivity = v)
                 com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideSensitivity", v)
+                val tp = navStack.lastOrNull() ?: book?.filePath ?: ""
+                if (tp.isNotEmpty()) com.mangareader.panel.PanelDetector.Cache.clearBook(tp)
                 configVersion++
             },
             onDim = { v ->
@@ -3476,6 +3481,8 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             onRtl = { v ->
                 config = config.copy(panelGuideRtl = v)
                 com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuideRtl", v)
+                val tp = navStack.lastOrNull() ?: book?.filePath ?: ""
+                if (tp.isNotEmpty()) com.mangareader.panel.PanelDetector.Cache.clearBook(tp)
                 configVersion++
             },
             onDimMode = { v ->
@@ -3511,6 +3518,8 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             onPrecision = { v ->
                 config = config.copy(panelGuidePrecision = v)
                 com.mangareader.data.ReaderScope.writeGlobal(ctx, "panelGuidePrecision", v)
+                val tp = navStack.lastOrNull() ?: book?.filePath ?: ""
+                if (tp.isNotEmpty()) com.mangareader.panel.PanelDetector.Cache.clearBook(tp)
                 configVersion++
             },
             onPreview = { v ->
@@ -3558,8 +3567,8 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                 setPanelGuideActive(!panelGuideActive)
             },
             onDismiss = { showPanelGuideSheet = false },
-            presets = remember { mutableStateOf(com.mangareader.panel.PanelGuidePreset.Store.loadAll(ctx)) }.value,
-            currentPresetId = null,
+            presets = panelGuidePresets,
+            currentPresetId = currentPresetId,
             onPresetSelect = { preset ->
                 val oldSens = config.panelGuideSensitivity
                 val oldPrec = config.panelGuidePrecision
@@ -3610,6 +3619,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                         com.mangareader.panel.PanelDetector.Cache.clearBook(treePath)
                     }
                 }
+                currentPresetId = preset.id
                 configVersion++
             },
             onPresetSave = { name ->
@@ -3638,12 +3648,16 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                     crossPageEnabled = config.panelGuideCrossPage,
                 )
                 com.mangareader.panel.PanelGuidePreset.Store.save(ctx, preset)
+                panelGuidePresets = com.mangareader.panel.PanelGuidePreset.Store.loadAll(ctx)
             },
             onPresetDelete = { id ->
                 com.mangareader.panel.PanelGuidePreset.Store.delete(ctx, id)
+                panelGuidePresets = com.mangareader.panel.PanelGuidePreset.Store.loadAll(ctx)
+                if (id == currentPresetId) currentPresetId = null
             },
             onPresetRename = { id, newName ->
                 com.mangareader.panel.PanelGuidePreset.Store.rename(ctx, id, newName)
+                panelGuidePresets = com.mangareader.panel.PanelGuidePreset.Store.loadAll(ctx)
             },
         )
     }
