@@ -138,6 +138,7 @@ data class ReaderConfig(
     val panelGuideSensitivity: Int = 1,
     /** 逐格引擎模式：0=自研 1=实验(PanelsPlus对齐) */
     val panelGuideEngineMode: Int = 0,
+    val panelGuideBorderWidth: Int = 2,
     /** 非当前格压暗程度 0~100（百分比，默认 55 ≈ 255 级中的 140） */
     val panelGuideDim: Int = 55,
 
@@ -269,6 +270,7 @@ data class ReaderConfig(
             // ★ 逐格引导设置恒全局键（无前缀），与 load/presetScope 全局语义闭环
             putInt("panelGuideSensitivity", panelGuideSensitivity)
             putInt("panelGuideEngineMode", panelGuideEngineMode)
+            putInt("panelGuideBorderWidth", panelGuideBorderWidth)
             putInt("panelGuideDim", panelGuideDim)
 
             putInt("panelGuideRtl", panelGuideRtl)
@@ -410,6 +412,7 @@ data class ReaderConfig(
                 panelGuideSensitivity = rInt("panelGuideSensitivity", 1).coerceIn(0, 2),
                 panelGuideDim = rInt("panelGuideDim", 55).coerceIn(0, 100),
                 panelGuideEngineMode = rInt("panelGuideEngineMode", 0).coerceIn(0, 1),
+                panelGuideBorderWidth = rInt("panelGuideBorderWidth", 2).coerceIn(0, 6),
 
                 panelGuideRtl = rInt("panelGuideRtl", 0).coerceIn(0, 2),
                 panelGuideFocus = rInt("panelGuideFocus", 0).coerceIn(0, 2),
@@ -603,6 +606,7 @@ data class ReaderConfig(
             "panelGuidePrecision" to { it.panelGuidePrecision },
             "panelGuidePreview" to { it.panelGuidePreview },
             "panelGuideEngineMode" to { it.panelGuideEngineMode },
+            "panelGuideBorderWidth" to { it.panelGuideBorderWidth },
         )
 
         /** 书内设置面板 diff：返回真正改动的键名（含全局键——由 ReaderScope 决定写层） */

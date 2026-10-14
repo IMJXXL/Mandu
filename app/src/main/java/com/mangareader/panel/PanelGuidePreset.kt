@@ -39,6 +39,7 @@ object PanelGuidePreset {
         val crossPageEnabled: Boolean,
         val bubbleMergeEnabled: Boolean,
         val engineMode: Int = 0,
+        val borderWidth: Int = 2,
     )
 
     val BUILTIN_STANDARD = Preset(
@@ -50,6 +51,7 @@ object PanelGuidePreset {
         swipeInvert = false, tapInvert = false,
         foldJoinEnabled = false, autoRotateEnabled = false,
         autoRotateDir = 2, crossPageEnabled = false, bubbleMergeEnabled = false,
+        borderWidth = 2,
     )
 
     val BUILTIN_LOOSE = Preset(
@@ -61,6 +63,7 @@ object PanelGuidePreset {
         swipeInvert = false, tapInvert = false,
         foldJoinEnabled = false, autoRotateEnabled = false,
         autoRotateDir = 2, crossPageEnabled = false, bubbleMergeEnabled = false,
+        borderWidth = 2,
     )
 
     val BUILTIN_STRICT = Preset(
@@ -72,6 +75,7 @@ object PanelGuidePreset {
         swipeInvert = false, tapInvert = false,
         foldJoinEnabled = false, autoRotateEnabled = false,
         autoRotateDir = 2, crossPageEnabled = false, bubbleMergeEnabled = false,
+        borderWidth = 2,
     )
 
     private val builtins = emptyList<Preset>()
@@ -162,6 +166,7 @@ object PanelGuidePreset {
                 put("crossPageEnabled", p.crossPageEnabled)
                 put("bubbleMergeEnabled", p.bubbleMergeEnabled)
                 put("engineMode", p.engineMode)
+                put("borderWidth", p.borderWidth)
             }
         }
 
@@ -191,6 +196,7 @@ object PanelGuidePreset {
                 crossPageEnabled = o.optBoolean("crossPageEnabled", false),
                 bubbleMergeEnabled = o.optBoolean("bubbleMergeEnabled", false),
                 engineMode = o.optInt("engineMode", 0).coerceIn(0, 1),
+                borderWidth = o.optInt("borderWidth", 2).coerceIn(0, 6),
             )
         }
     }

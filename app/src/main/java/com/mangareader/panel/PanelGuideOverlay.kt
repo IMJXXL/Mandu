@@ -79,6 +79,8 @@ class PanelGuideOverlay(context: Context) : View(context) {
         val crossPageEnabled: Boolean = false,
         val bubbleMergeEnabled: Boolean = false,
         val engineMode: Int = 0,
+        val borderWidth: Int = 2,
+        val bgColor: Int = android.graphics.Color.WHITE,
     )
 
     private companion object {
@@ -252,6 +254,7 @@ class PanelGuideOverlay(context: Context) : View(context) {
         autoRotateEnabled: Boolean = false,
         autoRotateDir: Int = 2,
         crossPageEnabled: Boolean = false,
+        borderWidth: Int = 2,
     ) {
         val s = session ?: return
         if (s.dimAlpha == dimAlpha && s.dimMode == dimMode &&
@@ -260,7 +263,7 @@ class PanelGuideOverlay(context: Context) : View(context) {
             s.progressEnabled == progressEnabled && s.swipeInvert == swipeInvert &&
             s.tapInvert == tapInvert && s.foldJoinEnabled == foldJoinEnabled &&
             s.autoRotateEnabled == autoRotateEnabled && s.autoRotateDir == autoRotateDir &&
-            s.crossPageEnabled == crossPageEnabled
+            s.crossPageEnabled == crossPageEnabled && s.borderWidth == borderWidth
         ) return
         val foldChanged = s.foldJoinEnabled != foldJoinEnabled
         session = s.copy(
@@ -271,6 +274,7 @@ class PanelGuideOverlay(context: Context) : View(context) {
             tapInvert = tapInvert, foldJoinEnabled = foldJoinEnabled,
             autoRotateEnabled = autoRotateEnabled, autoRotateDir = autoRotateDir,
             crossPageEnabled = crossPageEnabled,
+            borderWidth = borderWidth,
         )
         scrimPaint.alpha = dimAlpha
         cropRect = null
@@ -681,7 +685,6 @@ class PanelGuideOverlay(context: Context) : View(context) {
 
         if (inPreview && r != null && !r.fallback && r.boxes.size > 1) {
             canvas.drawBitmap(bmp, srcRect, fullRect, cropPaint)
-            borderPaint.color = s.accentColor
             for (box in r.boxes) {
                 panelRect.set(
                     fullRect.left + box.x * fullRect.width(),
@@ -689,7 +692,7 @@ class PanelGuideOverlay(context: Context) : View(context) {
                     fullRect.left + box.right * fullRect.width(),
                     fullRect.top + box.bottom * fullRect.height(),
                 )
-                canvas.drawRect(panelRect, borderPaint)
+                drawPanelBorder(canvas, panelRect)
             }
             drawHint(canvas, r)
             return
@@ -742,9 +745,8 @@ class PanelGuideOverlay(context: Context) : View(context) {
                 fullRect.left + box.right * fullRect.width(),
                 fullRect.top + box.bottom * fullRect.height(),
             )
-            val bp = if (s.eink) einkBorderPaint else borderPaint
-            bp.color = s.accentColor
-            canvas.drawRect(panelRect, bp)
+
+            drawPanelBorder(canvas, panelRect)
             drawHint(canvas, r)
             drawProgress(canvas)
             return
@@ -799,7 +801,6 @@ class PanelGuideOverlay(context: Context) : View(context) {
             panSrcRect.set(0, srcTop, bmp.width, srcBot)
             canvas.drawBitmap(bmp, panSrcRect, RectF(0f, 0f, vw, vh), cropPaint)
         }
-        borderPaint.color = s.accentColor
         val bx = box.x * vw
         val by = box.y * scaledH - panOffsetY
         val bw = box.w * vw
@@ -809,7 +810,7 @@ class PanelGuideOverlay(context: Context) : View(context) {
         } else {
             panelRect.set(bx, by, bx + bw, by + bh)
         }
-        canvas.drawRect(panelRect, borderPaint)
+        drawPanelBorder(canvas, panelRect)
         drawHint(canvas, r)
         drawProgress(canvas)
     }
@@ -844,8 +845,18 @@ class PanelGuideOverlay(context: Context) : View(context) {
         return Triple(scale, tx, ty)
     }
 
+    private fun drawPanelBorder(canvas: Canvas, rect: RectF) {
+        val s = session ?: return
+        if (s.borderWidth <= 0) return
+        val bp = if (s.eink) einkBorderPaint else borderPaint
+        bp.color = s.accentColor
+        bp.strokeWidth = resources.displayMetrics.density * s.borderWidth
+        canvas.drawRect(rect, bp)
+    }
+
     private fun drawFocusPan(canvas: Canvas, bmp: Bitmap, r: PanelPageResult, vw: Float, vh: Float) {
         val s = session ?: return
+        canvas.drawColor(s.bgColor)
         val box = r.boxes[panelIdx.coerceIn(0, r.boxes.size - 1)]
         if (!focusAnimating) {
             val t = calcFocusTransform(box, bmp, vw, vh)
@@ -859,13 +870,12 @@ class PanelGuideOverlay(context: Context) : View(context) {
         srcRect.set(0, 0, bmp.width, bmp.height)
         canvas.drawBitmap(bmp, srcRect, RectF(0f, 0f, bmp.width.toFloat(), bmp.height.toFloat()), cropPaint)
         canvas.restore()
-        borderPaint.color = s.accentColor
         val bx = focusScale * (box.x * bmp.width + focusOffsetX)
         val by = focusScale * (box.y * bmp.height + focusOffsetY)
         val bw = box.w * bmp.width * focusScale
         val bh = box.h * bmp.height * focusScale
         panelRect.set(bx, by, bx + bw, by + bh)
-        canvas.drawRect(panelRect, borderPaint)
+        drawPanelBorder(canvas, panelRect)
         drawHint(canvas, r)
         drawProgress(canvas)
     }
@@ -912,8 +922,7 @@ class PanelGuideOverlay(context: Context) : View(context) {
             )
             fadePaint.alpha = (t * 255).toInt()
             canvas.drawBitmap(bmp, srcRect, cropRect!!, fadePaint)
-            borderPaint.color = s.accentColor
-            canvas.drawRect(cropRect!!, borderPaint)
+            drawPanelBorder(canvas, cropRect!!)
             return
         }
         cropRect?.let { cr ->
@@ -924,7 +933,7 @@ class PanelGuideOverlay(context: Context) : View(context) {
                 (box.bottom * bmp.height).toInt().coerceIn(1, bmp.height),
             )
             canvas.drawBitmap(bmp, srcRect, cr, cropPaint)
-            canvas.drawRect(cr, borderPaint.apply { color = session?.accentColor ?: 0 })
+            drawPanelBorder(canvas, cr)
         }
     }
 

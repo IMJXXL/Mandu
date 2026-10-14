@@ -2891,6 +2891,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                             panelGuideCrossPage = config.panelGuideCrossPage,
                             panelGuideBubbleMerge = config.panelGuideBubbleMerge,
                             panelGuideEngineMode = config.panelGuideEngineMode,
+                            panelGuideBorderWidth = config.panelGuideBorderWidth,
                             verticalPager = verticalPagerEffective,
                             flipAnimationEnabled = config.isFlipAnimation,
                             pageCurlAnimationEnabled = config.isPageCurlAnimation,
@@ -3464,6 +3465,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             crossPageEnabled = config.panelGuideCrossPage,
             bubbleMergeEnabled = config.panelGuideBubbleMerge,
             engineMode = config.panelGuideEngineMode,
+            borderWidth = config.panelGuideBorderWidth,
 
             onSensitivity = { v ->
                 config = config.copy(panelGuideSensitivity = v)
@@ -3574,6 +3576,11 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                 if (tp.isNotEmpty()) com.mangareader.panel.PanelDetector.Cache.clearBook(tp)
                 configVersion++
             },
+            onBorderWidth = { v ->
+                config = config.copy(panelGuideBorderWidth = v)
+                com.mangareader.data.ReaderScope.write(ctx, currentBookId, "panelGuideBorderWidth", v)
+                configVersion++
+            },
             onToggleActive = {
                 showPanelGuideSheet = false
                 setPanelGuideActive(!panelGuideActive)
@@ -3607,6 +3614,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                     panelGuideCrossPage = preset.crossPageEnabled,
                     panelGuideBubbleMerge = preset.bubbleMergeEnabled,
                     panelGuideEngineMode = preset.engineMode,
+                    panelGuideBorderWidth = preset.borderWidth,
                 )
                 com.mangareader.data.ReaderScope.write(ctx, currentBookId, "panelGuideSensitivity", preset.sensitivity)
                 com.mangareader.data.ReaderScope.write(ctx, currentBookId, "panelGuideDim", preset.dim)
@@ -3629,6 +3637,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                 com.mangareader.data.ReaderScope.write(ctx, currentBookId, "panelGuideCrossPage", preset.crossPageEnabled)
                 com.mangareader.data.ReaderScope.write(ctx, currentBookId, "panelGuideBubbleMerge", preset.bubbleMergeEnabled)
                 com.mangareader.data.ReaderScope.write(ctx, currentBookId, "panelGuideEngineMode", preset.engineMode)
+                com.mangareader.data.ReaderScope.write(ctx, currentBookId, "panelGuideBorderWidth", preset.borderWidth)
                 if (oldSens != preset.sensitivity || oldPrec != preset.precision || oldRtl != preset.rtl || config.panelGuideEngineMode != preset.engineMode) {
                     val treePath = navStack.lastOrNull() ?: book?.filePath ?: ""
                     if (treePath.isNotEmpty()) {
@@ -3664,6 +3673,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                     crossPageEnabled = config.panelGuideCrossPage,
                     bubbleMergeEnabled = config.panelGuideBubbleMerge,
                     engineMode = config.panelGuideEngineMode,
+                    borderWidth = config.panelGuideBorderWidth,
                 )
                 com.mangareader.panel.PanelGuidePreset.Store.save(ctx, preset)
                 panelGuidePresets = com.mangareader.panel.PanelGuidePreset.Store.loadAll(ctx)

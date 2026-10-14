@@ -93,6 +93,7 @@ fun PanelGuideSheet(
     crossPageEnabled: Boolean,
     bubbleMergeEnabled: Boolean,
     engineMode: Int,
+    borderWidth: Int,
 
     onSensitivity: (Int) -> Unit,
     onDim: (Int) -> Unit,
@@ -115,6 +116,7 @@ fun PanelGuideSheet(
     onCrossPage: (Boolean) -> Unit,
     onBubbleMerge: (Boolean) -> Unit,
     onEngineMode: (Int) -> Unit,
+    onBorderWidth: (Int) -> Unit,
     onToggleActive: () -> Unit,
     onDismiss: () -> Unit,
     presets: List<com.mangareader.panel.PanelGuidePreset.Preset> = emptyList(),
@@ -304,6 +306,18 @@ fun PanelGuideSheet(
                             title = "点按反转",
                             info = "左右点按互换",
                         )
+                        Column(Modifier.padding(horizontal = 24.dp, vertical = 8.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("框线粗细", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                                Text(if (borderWidth == 0) "隐藏" else "${borderWidth}dp", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold))
+                            }
+                            Slider(
+                                value = borderWidth.toFloat(),
+                                onValueChange = { onBorderWidth((it + 0.5f).toInt()) },
+                                valueRange = 0f..6f,
+                                steps = 5,
+                            )
+                        }
                     } else {
                         GroupSection(
                         title = "识别设置",
@@ -463,6 +477,18 @@ fun PanelGuideSheet(
                             title = "分格预览",
                             info = "进入逐格前预览本页分格",
                         )
+                        Column(Modifier.padding(horizontal = 24.dp, vertical = 8.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("框线粗细", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                                Text(if (borderWidth == 0) "隐藏" else "${borderWidth}dp", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold))
+                            }
+                            Slider(
+                                value = borderWidth.toFloat(),
+                                onValueChange = { onBorderWidth((it + 0.5f).toInt()) },
+                                valueRange = 0f..6f,
+                                steps = 5,
+                            )
+                        }
                         CheckboxRow(
                             checked = progressEnabled,
                             onCheckedChange = onProgress,
