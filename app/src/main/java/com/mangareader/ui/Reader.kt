@@ -677,6 +677,20 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                     }
                     return@launch
                 }
+                if (b.source == "baidu") {
+                    withContext(Dispatchers.IO) {
+                        com.mangareader.baidubridge.data.BaiduProgressStore(com.mangareader.baidubridge.BaiduBridges.context)
+                            .saveProgress(chPathSnap, savedPage)
+                    }
+                    return@launch
+                }
+                if (b.source == "115_official" || b.source == "115_web") {
+                    withContext(Dispatchers.IO) {
+                        com.mangareader.bridge115.data.ProgressStore115(com.mangareader.bridge115.Bridges115.context)
+                            .saveProgress(chPathSnap, savedPage)
+                    }
+                    return@launch
+                }
                 val history = ReadingHistory(
                     bookId = b.id, pagesRead = savedPage + 1,
                     scrollX = cx, scrollY = cy, zoomLevel = zs
@@ -961,6 +975,102 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         }
     }
 
+    suspend fun enterBaiduReader(
+        b: com.mangareader.data.Book,
+        path: String,
+        targetPage: Int,
+    ): List<com.mangareader.viewer.ArchiveEngine.PageMeta> {
+        loading = true
+        smbUnsupportedInfo = null
+        try {
+            val baiduProgress = com.mangareader.baidubridge.data.BaiduProgressStore(com.mangareader.baidubridge.BaiduBridges.context).getProgress(path)
+            val saved = baiduProgress?.let {
+                com.mangareader.data.ReadingProgress(
+                    bookId = b.id, path = path, lastPage = it.lastPage,
+                    completed = false, updatedAt = it.updatedAt, totalPages = 0,
+                )
+            }
+            val resumePage = if (targetPage >= 0) targetPage else (baiduProgress?.lastPage ?: 0)
+            when (val r = com.mangareader.baidubridge.reader.BaiduBookRouter.openBaiduBook(path, resumePage)) {
+                is com.mangareader.baidubridge.reader.BaiduBookRouter.OpenResult.Supported -> {
+                    val supply = r.supply
+                    val metas = attachRemoteSession(supply, saved, targetPage, path)
+                    b.coverPath?.let { cvPath ->
+                        if (engine.loadCoverThumbBytes(cvPath) == null) {
+                            app.appScope.launch {
+                                try {
+                                    val bytes = withContext(Dispatchers.IO) { supply.loadPageRaw(0) }
+                                    if (bytes != null) {
+                                        engine.saveCoverThumbBytes(cvPath, bytes)
+                                    }
+                                } catch (_: Exception) {}
+                            }
+                        }
+                    }
+                    return metas
+                }
+                is com.mangareader.baidubridge.reader.BaiduBookRouter.OpenResult.Failed -> {
+                    android.widget.Toast.makeText(ctx, r.message, android.widget.Toast.LENGTH_SHORT).show()
+                    viewing = false; loading = false; return emptyList()
+                }
+            }
+        } catch (t: Throwable) {
+            android.util.Log.w("Reader", "enterBaiduReader failed", t)
+            android.widget.Toast.makeText(ctx, "打开失败：${t.message?.take(80)}", android.widget.Toast.LENGTH_SHORT).show()
+            viewing = false
+            loading = false
+            return emptyList()
+        }
+    }
+
+    suspend fun enter115Reader(
+        b: com.mangareader.data.Book,
+        path: String,
+        targetPage: Int,
+    ): List<com.mangareader.viewer.ArchiveEngine.PageMeta> {
+        loading = true
+        smbUnsupportedInfo = null
+        try {
+            val progress115 = com.mangareader.bridge115.data.ProgressStore115(com.mangareader.bridge115.Bridges115.context).getProgress(path)
+            val saved = progress115?.let {
+                com.mangareader.data.ReadingProgress(
+                    bookId = b.id, path = path, lastPage = it.lastPage,
+                    completed = false, updatedAt = it.updatedAt, totalPages = 0,
+                )
+            }
+            val resumePage = if (targetPage >= 0) targetPage else (progress115?.lastPage ?: 0)
+            when (val r = com.mangareader.bridge115.reader.Book115Router.open115Book(path, resumePage)) {
+                is com.mangareader.bridge115.reader.Book115Router.OpenResult.Supported -> {
+                    val supply = r.supply
+                    val metas = attachRemoteSession(supply, saved, targetPage, path)
+                    b.coverPath?.let { cvPath ->
+                        if (engine.loadCoverThumbBytes(cvPath) == null) {
+                            app.appScope.launch {
+                                try {
+                                    val bytes = withContext(Dispatchers.IO) { supply.loadPageRaw(0) }
+                                    if (bytes != null) {
+                                        engine.saveCoverThumbBytes(cvPath, bytes)
+                                    }
+                                } catch (_: Exception) {}
+                            }
+                        }
+                    }
+                    return metas
+                }
+                is com.mangareader.bridge115.reader.Book115Router.OpenResult.Failed -> {
+                    android.widget.Toast.makeText(ctx, r.message, android.widget.Toast.LENGTH_SHORT).show()
+                    viewing = false; loading = false; return emptyList()
+                }
+            }
+        } catch (t: Throwable) {
+            android.util.Log.w("Reader", "enter115Reader failed", t)
+            android.widget.Toast.makeText(ctx, "打开失败：${t.message?.take(80)}", android.widget.Toast.LENGTH_SHORT).show()
+            viewing = false
+            loading = false
+            return emptyList()
+        }
+    }
+
 
     /**
      * ★ 本地文件系统路径的归档阅读入口（下载到本地缓存的 mobi/azw3/rar/7z 等）。
@@ -1197,6 +1307,10 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         if (path.startsWith("komga:")) return enterKomgaReader(b, path, targetPage)
 
         if (path.startsWith("quark:")) return enterQuarkReader(b, path, targetPage)
+
+        if (path.startsWith("baidu:")) return enterBaiduReader(b, path, targetPage)
+
+        if (path.startsWith("115:")) return enter115Reader(b, path, targetPage)
 
         if (path.startsWith("opds:")) return enterOpdsReader(b, path, targetPage)
 
@@ -2369,6 +2483,20 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                 if (b.source == "quark") {
                     withContext(Dispatchers.IO) {
                         com.mangareader.quarkbridge.data.QuarkProgressStore(com.mangareader.quarkbridge.QuarkBridges.context)
+                            .saveProgress(chPathSnap, curPageCount - 1)
+                    }
+                    return@launch
+                }
+                if (b.source == "baidu") {
+                    withContext(Dispatchers.IO) {
+                        com.mangareader.baidubridge.data.BaiduProgressStore(com.mangareader.baidubridge.BaiduBridges.context)
+                            .saveProgress(chPathSnap, curPageCount - 1)
+                    }
+                    return@launch
+                }
+                if (b.source == "115_official" || b.source == "115_web") {
+                    withContext(Dispatchers.IO) {
+                        com.mangareader.bridge115.data.ProgressStore115(com.mangareader.bridge115.Bridges115.context)
                             .saveProgress(chPathSnap, curPageCount - 1)
                     }
                     return@launch

@@ -1,9 +1,8 @@
 package com.mangareader.quarkbridge.ui
 
-import android.graphics.BitmapFactory
+import android.graphics.Bitmap
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -16,7 +15,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -27,9 +25,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
-import com.mangareader.quarkbridge.QuarkConstants
 import com.mangareader.quarkbridge.auth.QrState
 import com.mangareader.quarkbridge.auth.QuarkLoginFlow
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.EncodeHintType
+import com.google.zxing.common.BitMatrix
+import com.google.zxing.qrcode.QRCodeWriter
 import kotlinx.coroutines.launch
 
 @Composable
@@ -40,16 +41,14 @@ fun QuarkLoginScreen(
     val scope = rememberCoroutineScope()
     var qrState by remember { mutableStateOf<QrState>(QrState.Generating) }
     var remainingSeconds by remember { mutableStateOf(120) }
-    var token by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
         if (qrState is QrState.Generating) {
             val state = loginFlow.generateQrCode()
             qrState = state
             if (state is QrState.Waiting) {
-                token = state.token
                 remainingSeconds = 120
-                val result = loginFlow.pollUntilConfirmed(state.token) { pollState ->
+                val result = loginFlow.pollUntilConfirmed(state.token, state.requestId) { pollState ->
                     qrState = pollState
                 }
                 qrState = result
@@ -90,9 +89,9 @@ fun QuarkLoginScreen(
                 Text("正在生成二维码...", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             is QrState.Waiting -> {
-                if (state.qrImageBytes.isNotEmpty()) {
-                    val bitmap = remember(state.qrImageBytes) {
-                        BitmapFactory.decodeByteArray(state.qrImageBytes, 0, state.qrImageBytes.size)
+                if (state.qrContentUrl.isNotEmpty()) {
+                    val bitmap = remember(state.qrContentUrl) {
+                        renderQrCode(state.qrContentUrl, 480)
                     }
                     if (bitmap != null) {
                         Image(
@@ -133,9 +132,8 @@ fun QuarkLoginScreen(
                         val newState = loginFlow.generateQrCode()
                         qrState = newState
                         if (newState is QrState.Waiting) {
-                            token = newState.token
                             remainingSeconds = 120
-                            val result = loginFlow.pollUntilConfirmed(newState.token) { pollState ->
+                            val result = loginFlow.pollUntilConfirmed(newState.token, newState.requestId) { pollState ->
                                 qrState = pollState
                             }
                             qrState = result
@@ -157,9 +155,8 @@ fun QuarkLoginScreen(
                         val newState = loginFlow.generateQrCode()
                         qrState = newState
                         if (newState is QrState.Waiting) {
-                            token = newState.token
                             remainingSeconds = 120
-                            val result = loginFlow.pollUntilConfirmed(newState.token) { pollState ->
+                            val result = loginFlow.pollUntilConfirmed(newState.token, newState.requestId) { pollState ->
                                 qrState = pollState
                             }
                             qrState = result
@@ -173,5 +170,27 @@ fun QuarkLoginScreen(
                 }
             }
         }
+    }
+}
+
+private fun renderQrCode(content: String, sizePx: Int): Bitmap? {
+    return try {
+        val hints = mapOf(
+            EncodeHintType.MARGIN to 1,
+            EncodeHintType.CHARACTER_SET to "UTF-8"
+        )
+        val matrix: BitMatrix = QRCodeWriter().encode(content, BarcodeFormat.QR_CODE, sizePx, sizePx, hints)
+        val w = matrix.width
+        val h = matrix.height
+        val pixels = IntArray(w * h)
+        for (y in 0 until h) {
+            val offset = y * w
+            for (x in 0 until w) {
+                pixels[offset + x] = if (matrix.get(x, y)) 0xFF000000.toInt() else 0xFFFFFFFF.toInt()
+            }
+        }
+        Bitmap.createBitmap(pixels, w, h, Bitmap.Config.ARGB_8888)
+    } catch (e: Exception) {
+        null
     }
 }

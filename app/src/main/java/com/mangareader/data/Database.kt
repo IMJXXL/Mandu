@@ -375,6 +375,12 @@ interface MangaDao {
     @Query("DELETE FROM manga_books WHERE source = 'quark'")
     suspend fun deleteQuarkBooks()
 
+    @Query("DELETE FROM manga_books WHERE source = 'baidu'")
+    suspend fun deleteBaiduBooks()
+
+    @Query("DELETE FROM manga_books WHERE source = '115_official' OR source = '115_web'")
+    suspend fun delete115Books()
+
     @Query("DELETE FROM manga_books WHERE source = 'opds' AND filePath LIKE 'opds:' || :serverId || ':%'")
     suspend fun deleteOpdsBooks(serverId: String)
 

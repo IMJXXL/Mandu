@@ -22,6 +22,7 @@ class QuarkRangeClient(
         val response = httpClient.get(cdnUrl) {
             header("Range", "bytes=$offset-$end")
             header("User-Agent", QuarkConstants.QUARK_UA)
+            header("Referer", QuarkConstants.QUARK_REFERER)
             if (tempCookie.isNotEmpty()) header("Cookie", tempCookie)
         }
         when (response.status.value) {
@@ -46,6 +47,7 @@ class QuarkRangeClient(
         val response = httpClient.get(cdnUrl) {
             header("Range", "bytes=0-0")
             header("User-Agent", QuarkConstants.QUARK_UA)
+            header("Referer", QuarkConstants.QUARK_REFERER)
             if (tempCookie.isNotEmpty()) header("Cookie", tempCookie)
         }
         return response.status == HttpStatusCode.PartialContent

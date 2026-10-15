@@ -31,13 +31,18 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.graphics.ColorMatrix
+
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import com.mangareader.R
 import com.mangareader.quarkbridge.QuarkBridges
 import com.mangareader.quarkbridge.auth.QuarkSessionStore
+import com.mangareader.baidubridge.BaiduBridges
+import com.mangareader.baidubridge.auth.BaiduSessionStore
+import com.mangareader.bridge115.Bridges115
+import com.mangareader.bridge115.auth.SessionStore115
+import com.mangareader.bridge115.auth.ModeStore115
+import com.mangareader.bridge115.Constants115
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
@@ -63,7 +68,33 @@ fun CloudDriveScreen(
         return
     }
 
-    val grayFilter = ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(0f) })
+    val baiduSessionStore = remember { BaiduSessionStore(BaiduBridges.context) }
+    var baiduLoggedIn by remember { mutableStateOf(baiduSessionStore.isValid()) }
+    var baiduNickname by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) {
+        if (baiduLoggedIn) {
+            baiduNickname = baiduSessionStore.load()?.nickname
+        }
+    }
+    var showBaiduPan by remember { mutableStateOf(false) }
+    if (showBaiduPan) {
+        com.mangareader.baidubridge.ui.BaiduPanScreen(onBack = { showBaiduPan = false }, onOpenBook = onOpenBook)
+        return
+    }
+
+    val session115 = remember { SessionStore115(Bridges115.context) }
+    val modeStore115 = remember { ModeStore115(Bridges115.context) }
+    var mode115 by remember { mutableStateOf(modeStore115.getMode()) }
+    var loggedIn115 by remember { mutableStateOf(
+        (mode115 == Constants115.MODE_OFFICIAL && session115.isValidOfficial()) ||
+        (mode115 == Constants115.MODE_WEB && session115.isValidWeb())
+    ) }
+    var show115Pan by remember { mutableStateOf(false) }
+    if (show115Pan) {
+        com.mangareader.bridge115.ui.Pan115Screen(onBack = { show115Pan = false }, onOpenBook = onOpenBook)
+        return
+    }
+
 
     Scaffold(
         topBar = {
@@ -109,10 +140,9 @@ fun CloudDriveScreen(
             }
 
             Card(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().clickable { showBaiduPan = true },
                 shape = RoundedCornerShape(12.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
             ) {
                 Row(
                     modifier = Modifier.padding(16.dp),
@@ -121,31 +151,25 @@ fun CloudDriveScreen(
                     androidx.compose.foundation.Image(
                         painter = painterResource(R.drawable.ic_baidu_pan),
                         contentDescription = null,
-                        modifier = Modifier.size(32.dp),
-                        colorFilter = grayFilter,
-                        alpha = 0.4f
+                        modifier = Modifier.size(32.dp)
                     )
                     Spacer(Modifier.size(12.dp))
                     Column(Modifier.weight(1f)) {
+                        Text("百度网盘", style = MaterialTheme.typography.titleMedium)
                         Text(
-                            "百度网盘",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                        )
-                        Text(
-                            "即将支持",
+                            if (baiduLoggedIn && baiduNickname != null) "已登录 · $baiduNickname" else "点击登录",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+                    Icon(Icons.Default.ChevronRight, contentDescription = null)
                 }
             }
 
             Card(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().clickable { show115Pan = true },
                 shape = RoundedCornerShape(12.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
             ) {
                 Row(
                     modifier = Modifier.padding(16.dp),
@@ -154,23 +178,18 @@ fun CloudDriveScreen(
                     androidx.compose.foundation.Image(
                         painter = painterResource(R.drawable.ic_115_pan),
                         contentDescription = null,
-                        modifier = Modifier.size(32.dp),
-                        colorFilter = grayFilter,
-                        alpha = 0.4f
+                        modifier = Modifier.size(32.dp)
                     )
                     Spacer(Modifier.size(12.dp))
                     Column(Modifier.weight(1f)) {
+                        Text("115网盘", style = MaterialTheme.typography.titleMedium)
                         Text(
-                            "115网盘",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                        )
-                        Text(
-                            "即将支持",
+                            if (loggedIn115) "已登录" else "点击登录",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+                    Icon(Icons.Default.ChevronRight, contentDescription = null)
                 }
             }
         }

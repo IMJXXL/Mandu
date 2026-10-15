@@ -20,6 +20,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.longOrNull
 
+
 data class QuarkFileEntry(
     val fid: String,
     val name: String,
@@ -56,15 +57,38 @@ class QuarkApiClient(
     }
 
     private fun io.ktor.client.request.HttpRequestBuilder.applyDeviceParams() {
+        parameter("pr", "ucpro")
         parameter("fr", "pc")
-        parameter("platform", "pc")
-        parameter("device_model", "Chrome")
-        parameter("entry", "other")
-        parameter("dmn", "quark.cn")
-        parameter("pf", "pc")
-        parameter("ve", "3.14.2")
-        parameter("ss", "1")
-        parameter("nw", "1")
+    }
+
+    private fun refreshPuusCookie(response: HttpResponse) {
+        val setCookies = response.headers.getAll("Set-Cookie") ?: return
+        for (setCookie in setCookies) {
+            val pair = setCookie.substringBefore(";")
+            val eqIdx = pair.indexOf('=')
+            if (eqIdx > 0) {
+                val name = pair.substring(0, eqIdx).trim()
+                if (name == "__puus") {
+                    val value = pair.substring(eqIdx + 1).trim()
+                    if (value.isNotEmpty()) {
+                    val store = sessionStore ?: return
+                    val creds = store.load() ?: return
+                    val updated = upsertCookieValue(creds.cookie, "__puus", value)
+                    if (updated != creds.cookie) {
+                        store.updateCookie(updated)
+                    }
+                        return
+                    }
+                }
+            }
+        }
+    }
+
+    private fun upsertCookieValue(cookie: String, name: String, value: String): String {
+        val parts = cookie.split("; ").map { it.trim() }.filter { it.isNotEmpty() }.toMutableList()
+        val idx = parts.indexOfFirst { it.startsWith("$name=") }
+        if (idx >= 0) parts[idx] = "$name=$value" else parts.add("$name=$value")
+        return parts.joinToString("; ")
     }
 
     private fun checkResponseCode(code: Int, msg: String) {
@@ -85,6 +109,7 @@ class QuarkApiClient(
         val response = httpClient.get("${QuarkConstants.API_BASE_PC}/1/clouddrive/file/sort") {
             header("Cookie", cookieHeader())
             header("User-Agent", QuarkConstants.QUARK_UA)
+            header("Referer", QuarkConstants.QUARK_REFERER)
             parameter("pdir_fid", pdirFid)
             parameter("_page", page.toString())
             parameter("_size", size.toString())
@@ -92,6 +117,7 @@ class QuarkApiClient(
             parameter("fetch_risk_file_name", "1")
             applyDeviceParams()
         }
+        refreshPuusCookie(response)
         val json = response.body<JsonObject>()
         val code = json["code"]?.jsonPrimitive?.intOrNull ?: -1
         val msg = json["message"]?.jsonPrimitive?.contentOrNull ?: "未知错误"
@@ -109,9 +135,11 @@ class QuarkApiClient(
         val response = httpClient.post("${QuarkConstants.API_BASE_PC}/1/clouddrive/file/download") {
             header("Cookie", cookieHeader())
             header("User-Agent", QuarkConstants.QUARK_UA)
+            header("Referer", QuarkConstants.QUARK_REFERER)
             setBody("""{"fids":["$fid"]}""")
             applyDeviceParams()
         }
+        refreshPuusCookie(response)
         val json = response.body<JsonObject>()
         val code = json["code"]?.jsonPrimitive?.intOrNull ?: -1
         val msg = json["message"]?.jsonPrimitive?.contentOrNull ?: "未知错误"
@@ -130,8 +158,10 @@ class QuarkApiClient(
             val response = httpClient.get("${QuarkConstants.API_BASE_PAN}/account/info") {
                 header("Cookie", cookieHeader())
                 header("User-Agent", QuarkConstants.QUARK_UA)
+                header("Referer", QuarkConstants.QUARK_REFERER)
                 applyDeviceParams()
             }
+            refreshPuusCookie(response)
             val json = response.body<JsonObject>()
             val code = json["code"]?.jsonPrimitive?.intOrNull ?: -1
             if (code != 0) return null

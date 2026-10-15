@@ -56,6 +56,10 @@ class QuarkSessionStore(context: Context) {
         prefs.edit().putString(KEY_NICKNAME, nickname).apply()
     }
 
+    fun updateCookie(newCookie: String) {
+        prefs.edit().putString(KEY_COOKIE, QuarkCredentialCrypto.encrypt(newCookie)).apply()
+    }
+
     companion object {
         private const val KEY_COOKIE = "cookie"
         private const val KEY_KPS = "kps"
