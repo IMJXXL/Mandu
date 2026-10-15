@@ -7,16 +7,22 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material.icons.Icons
@@ -46,6 +52,7 @@ import com.google.zxing.qrcode.QRCodeWriter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.regex.Pattern
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -61,6 +68,10 @@ fun QuarkLoginScreen(
     val scope = rememberCoroutineScope()
     var qrState by remember { mutableStateOf<QrState>(QrState.Generating) }
     var remainingSeconds by remember { mutableStateOf(120) }
+    var selectedTab by remember { mutableStateOf(0) }
+    var cookieInput by remember { mutableStateOf("") }
+    var cookieError by remember { mutableStateOf<String?>(null) }
+    var cookieLoading by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
@@ -102,16 +113,128 @@ fun QuarkLoginScreen(
         },
     ) { padding ->
         Column(
-            modifier = Modifier.fillMaxSize().padding(padding).padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+            modifier = Modifier.fillMaxSize().padding(padding)
         ) {
+            TabRow(selectedTabIndex = selectedTab) {
+                Tab(
+                    selected = selectedTab == 0,
+                    onClick = { selectedTab = 0 },
+                    text = { Text("扫码登录") }
+                )
+                Tab(
+                    selected = selectedTab == 1,
+                    onClick = { selectedTab = 1 },
+                    text = { Text("Cookie登录") }
+                )
+            }
+
+            if (selectedTab == 0) {
+                QrLoginContent(
+                    qrState = qrState,
+                    remainingSeconds = remainingSeconds,
+                    onRetry = {
+                        qrState = QrState.Generating
+                        scope.launch(Dispatchers.IO) {
+                            val newState = loginFlow.generateQrCode()
+                            qrState = newState
+                            if (newState is QrState.Waiting) {
+                                remainingSeconds = 120
+                                val result = loginFlow.pollUntilConfirmed(newState.token, newState.requestId) { pollState ->
+                                    qrState = pollState
+                                }
+                                qrState = result
+                                if (result is QrState.Confirmed) {
+                                    onLoginSuccess(result.credentials)
+                                }
+                            }
+                        }
+                    }
+                )
+            } else {
+                Column(
+                    modifier = Modifier.fillMaxSize().padding(24.dp).verticalScroll(rememberScrollState()),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Text(
+                        text = "手动填写Cookie",
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "从浏览器开发者工具或夸克App中获取Cookie，粘贴到下方",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    OutlinedTextField(
+                        value = cookieInput,
+                        onValueChange = { cookieInput = it; cookieError = null },
+                        label = { Text("Cookie") },
+                        modifier = Modifier.fillMaxWidth(),
+                        minLines = 3,
+                        maxLines = 6,
+                        isError = cookieError != null,
+                        supportingText = cookieError?.let { { Text(it, color = MaterialTheme.colorScheme.error) } }
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Button(
+                        onClick = {
+                            val cookie = cookieInput.trim()
+                            if (cookie.isEmpty()) {
+                                cookieError = "请输入Cookie"
+                                return@Button
+                            }
+                            if (!cookie.contains("__puus") && !cookie.contains("__pus")) {
+                                cookieError = "Cookie格式不正确，缺少关键字段"
+                                return@Button
+                            }
+                            cookieLoading = true
+                            cookieError = null
+                            scope.launch(Dispatchers.IO) {
+                                try {
+                                    val creds = parseCookieToCredentials(cookie)
+                                    sessionStore.save(creds)
+                                    cookieLoading = false
+                                    onLoginSuccess(creds)
+                                } catch (e: Exception) {
+                                    cookieLoading = false
+                                    cookieError = "登录失败: ${e.message ?: "未知错误"}"
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !cookieLoading
+                    ) {
+                        if (cookieLoading) {
+                            CircularProgressIndicator(modifier = Modifier.height(24.dp))
+                        } else {
+                            Text("登录")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun QrLoginContent(
+    qrState: QrState,
+    remainingSeconds: Int,
+    onRetry: () -> Unit,
+) {
+    Column(
+        modifier = Modifier.fillMaxSize().padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
         Text(
             text = "夸克网盘登录",
             style = MaterialTheme.typography.headlineMedium,
             color = MaterialTheme.colorScheme.onSurface
         )
-
         Spacer(modifier = Modifier.height(24.dp))
 
         when (val state = qrState) {
@@ -158,52 +281,35 @@ fun QuarkLoginScreen(
             is QrState.Expired -> {
                 Text("二维码已过期", color = MaterialTheme.colorScheme.error)
                 Spacer(modifier = Modifier.height(16.dp))
-                Button(onClick = {
-                    qrState = QrState.Generating
-                    scope.launch(Dispatchers.IO) {
-                        val newState = loginFlow.generateQrCode()
-                        qrState = newState
-                        if (newState is QrState.Waiting) {
-                            remainingSeconds = 120
-                            val result = loginFlow.pollUntilConfirmed(newState.token, newState.requestId) { pollState ->
-                                qrState = pollState
-                            }
-                            qrState = result
-                            if (result is QrState.Confirmed) {
-                                onLoginSuccess(result.credentials)
-                            }
-                        }
-                    }
-                }) {
-                    Text("重新扫描")
-                }
+                Button(onClick = onRetry) { Text("重新扫描") }
             }
             is QrState.Failed -> {
                 Text(state.message, color = MaterialTheme.colorScheme.error)
                 Spacer(modifier = Modifier.height(16.dp))
-                Button(onClick = {
-                    qrState = QrState.Generating
-                    scope.launch(Dispatchers.IO) {
-                        val newState = loginFlow.generateQrCode()
-                        qrState = newState
-                        if (newState is QrState.Waiting) {
-                            remainingSeconds = 120
-                            val result = loginFlow.pollUntilConfirmed(newState.token, newState.requestId) { pollState ->
-                                qrState = pollState
-                            }
-                            qrState = result
-                            if (result is QrState.Confirmed) {
-                                onLoginSuccess(result.credentials)
-                            }
-                        }
-                    }
-                }) {
-                    Text("重试")
-                }
+                Button(onClick = onRetry) { Text("重试") }
             }
         }
     }
-    }
+}
+
+private fun parseCookieToCredentials(cookie: String): QuarkCredentials {
+    val kps = extractCookieValue(cookie, "kps")
+    val sign = extractCookieValue(cookie, "sign")
+    val vcode = extractCookieValue(cookie, "vcode")
+    return QuarkCredentials(
+        cookie = cookie,
+        kps = kps,
+        sign = sign,
+        vcode = vcode,
+        nickname = "",
+        loginAt = System.currentTimeMillis()
+    )
+}
+
+private fun extractCookieValue(cookie: String, name: String): String {
+    val pattern = Pattern.compile("(?<!\\w)$name=([a-zA-Z0-9%+/=]+)[;&]?")
+    val matcher = pattern.matcher(cookie)
+    return if (matcher.find()) matcher.group(1).replace("%25", "%") else ""
 }
 
 private fun renderQrCode(content: String, sizePx: Int): Bitmap? {
