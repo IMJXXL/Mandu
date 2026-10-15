@@ -1,6 +1,11 @@
 package com.mangareader.quarkbridge.reader
 
 import com.hippo.ehviewer.library.RemoteRangeNotSupportedException
+import com.mangareader.cloudcommon.transport.ContentRangeParser
+import com.mangareader.cloudcommon.transport.DownloadGate
+import com.mangareader.cloudcommon.transport.RetryableJudge
+import com.mangareader.cloudcommon.transport.TransportRetry
+import com.mangareader.cloudcommon.transport.RequestDiagTracer
 import com.mangareader.quarkbridge.QuarkConstants
 import com.mangareader.quarkbridge.api.QuarkHttpClient
 import com.mangareader.quarkbridge.api.QuarkRateLimiter
@@ -16,20 +21,47 @@ class QuarkRangeClient(
     private val httpClient: HttpClient = QuarkHttpClient.client(),
     private val rateLimiter: QuarkRateLimiter = QuarkRateLimiter(),
 ) {
+    private val downloadGate = DownloadGate(4)
+    private val diagTracer = RequestDiagTracer("QuarkRange")
+
+    init {
+        android.util.Log.d("QuarkRange", "sticky session active: HttpClient reused for connection pooling")
+    }
+
     suspend fun readRange(cdnUrl: String, tempCookie: String, offset: Long, len: Int): ByteArray {
+        val diagStart = diagTracer.begin()
+        try {
         rateLimiter.acquire()
-        val end = offset + len - 1
-        val response = httpClient.get(cdnUrl) {
-            header("Range", "bytes=$offset-$end")
-            header("User-Agent", QuarkConstants.QUARK_UA)
-            header("Referer", QuarkConstants.QUARK_REFERER)
-            if (tempCookie.isNotEmpty()) header("Cookie", tempCookie)
+        return downloadGate.withPermit {
+            TransportRetry.withRetry(
+                maxRetry = 3,
+                backoffMs = listOf(500L, 1000L, 2000L),
+                retryable = RetryableJudge::isRetryable,
+            ) {
+                val end = offset + len - 1
+                val response = httpClient.get(cdnUrl) {
+                    header("Range", "bytes=$offset-$end")
+                    header("User-Agent", QuarkConstants.QUARK_UA)
+                    header("Referer", QuarkConstants.QUARK_REFERER)
+                    if (tempCookie.isNotEmpty()) header("Cookie", tempCookie)
+                }
+                when (response.status.value) {
+                    206 -> {
+                        val cr = response.headers["Content-Range"] ?: response.headers["content-range"]
+                        val rangeStart = ContentRangeParser.parseStart(cr)
+                        if (rangeStart == null || rangeStart != offset) {
+                            throw RemoteRangeNotSupportedException(cdnUrl, offset)
+                        }
+                        response.body()
+                    }
+                    200 -> throw RemoteRangeNotSupportedException(cdnUrl, offset)
+                    416 -> ByteArray(0)
+                    else -> throw java.io.IOException("CDN read failed: ${response.status.value}")
+                }
+            }
         }
-        when (response.status.value) {
-            206 -> return response.body()
-            200 -> throw RemoteRangeNotSupportedException(cdnUrl, offset)
-            416 -> return ByteArray(0)
-            else -> throw java.io.IOException("CDN read failed: ${response.status.value}")
+        } finally {
+            diagTracer.end(diagStart, false, 0)
         }
     }
 

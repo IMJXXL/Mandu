@@ -1,46 +1,44 @@
 package com.mangareader.bridge115.reader
 
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import com.hippo.ehviewer.library.IMAGE_EXTENSIONS
 import com.hippo.ehviewer.library.naturalCompare
 import com.mangareader.bridge115.Constants115
 import com.mangareader.bridge115.api.Api115Client
-import com.mangareader.bridge115.api.DownloadInfo115
 import com.mangareader.bridge115.api.FileEntry115
 import com.mangareader.bridge115.api.HttpClient115
 import com.mangareader.bridge115.api.Web115Client
-import com.mangareader.native.RemotePageSupply
-import io.ktor.client.call.body
-import io.ktor.client.request.get
-import io.ktor.client.request.header
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import com.mangareader.cloudcommon.folder.BaseFolderReader
+import com.mangareader.cloudcommon.folder.FolderIndexCache
+import io.ktor.client.HttpClient
 
 class FolderReader115(
     private val cid: String,
     private val mode: String,
     private val apiClient: Api115Client? = null,
     private val webClient: Web115Client? = null,
-) : RemotePageSupply {
+) : BaseFolderReader() {
 
     private var imageEntries: List<FileEntry115> = emptyList()
 
-    @Volatile
-    private var pageCountField: Int = 0
-
-    override val pageCount: Int get() = pageCountField
-
-    override val onPageCountGrow: MutableList<(newCount: Int) -> Unit> = java.util.concurrent.CopyOnWriteArrayList()
+    private val ua: String = if (mode == Constants115.MODE_OFFICIAL) Constants115.UA_OFFICIAL else Constants115.UA_WEB
 
     suspend fun load() {
+        val cacheKey = "115:${mode}:${cid}"
+        val cached: List<FileEntry115>? = FolderIndexCache.get(cacheKey)
+        if (cached != null) {
+            imageEntries = cached
+                .filter { it.name.substringAfterLast('.', "").lowercase() in IMAGE_EXTENSIONS }
+                .sortedWith { a, b -> naturalCompare(a.name, b.name) }
+            pageCountField = imageEntries.size
+            return
+        }
         val allItems = mutableListOf<FileEntry115>()
         if (mode == Constants115.MODE_OFFICIAL) {
-            val client = apiClient ?: throw IllegalStateException("未初始化官方客户端")
+            val client = apiClient ?: throw IllegalStateException("api client not initialized")
             val entries = client.list(cid)
             allItems.addAll(entries.filter { !it.isDir })
         } else {
-            val client = webClient ?: throw IllegalStateException("未初始化网页客户端")
+            val client = webClient ?: throw IllegalStateException("web client not initialized")
             val entries = client.list(cid)
             allItems.addAll(entries.filter { !it.isDir })
         }
@@ -48,47 +46,27 @@ class FolderReader115(
             .filter { it.name.substringAfterLast('.', "").lowercase() in IMAGE_EXTENSIONS }
             .sortedWith { a, b -> naturalCompare(a.name, b.name) }
         pageCountField = imageEntries.size
+        FolderIndexCache.put(cacheKey, allItems)
     }
 
-    private suspend fun getDownloadInfo(entry: FileEntry115): DownloadInfo115 {
+    private suspend fun getDownloadInfo(entry: FileEntry115): com.mangareader.bridge115.api.DownloadInfo115 {
         return if (mode == Constants115.MODE_OFFICIAL) {
-            apiClient?.downurl(entry.pickCode) ?: throw IllegalStateException("未初始化官方客户端")
+            apiClient?.downurl(entry.pickCode) ?: throw IllegalStateException("api client not initialized")
         } else {
-            webClient?.downurl(entry.pickCode) ?: throw IllegalStateException("未初始化网页客户端")
+            webClient?.downurl(entry.pickCode) ?: throw IllegalStateException("web client not initialized")
         }
     }
 
-    private val ua: String = if (mode == Constants115.MODE_OFFICIAL) Constants115.UA_OFFICIAL else Constants115.UA_WEB
-
-    override suspend fun loadPageRaw(index: Int): ByteArray? = withContext(Dispatchers.IO) {
-        if (index !in imageEntries.indices) return@withContext null
-        try {
-            val entry = imageEntries[index]
-            val downloadInfo = getDownloadInfo(entry)
-            val client = HttpClient115.client()
-            val response = client.get(downloadInfo.url) {
-                header("User-Agent", ua)
-            }
-            response.body<ByteArray>()
-        } catch (t: Throwable) {
-            android.util.Log.w("FolderReader115", "loadPageRaw($index) failed: ${t.message}")
-            null
-        }
+    override suspend fun getDownloadUrl(index: Int): String? {
+        if (index !in imageEntries.indices) return null
+        val entry = imageEntries[index]
+        val downloadInfo = getDownloadInfo(entry)
+        return downloadInfo.url
     }
 
-    override suspend fun loadBitmap(index: Int): Bitmap? {
-        val raw = loadPageRaw(index) ?: return null
-        return try {
-            BitmapFactory.decodeByteArray(raw, 0, raw.size)
-        } catch (e: OutOfMemoryError) {
-            System.gc()
-            try {
-                BitmapFactory.decodeByteArray(raw, 0, raw.size, BitmapFactory.Options().apply { inSampleSize = 2 })
-            } catch (_: Exception) { null }
-        }
+    override fun getAuthHeaders(url: String): Map<String, String> {
+        return mapOf("User-Agent" to ua)
     }
 
-    override fun onFocus(index: Int) {}
-
-    override suspend fun close() {}
+    override fun getHttpClient(): HttpClient = HttpClient115.client()
 }

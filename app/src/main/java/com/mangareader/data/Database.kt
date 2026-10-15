@@ -1633,17 +1633,18 @@ data class KomgaProgressSyncQueueEntity(
 )
 
 @Database(
-    entities = [Book::class, Folder::class, ReadingHistory::class, Bookshelf::class, BookshelfItem::class, Tag::class, TagLink::class, ReadingProgress::class, Bookmark::class, com.ehviewer.core.database.model.SmbSourceEntity::class, com.ehviewer.core.database.model.LibraryRootEntity::class, com.ehviewer.core.database.model.LocalGalleryEntity::class, com.ehviewer.core.database.model.WebDavSourceEntity::class, DownloadTaskEntity::class, KomgaSeriesCacheEntity::class, KomgaBookMemoEntity::class, KomgaProgressSyncQueueEntity::class, PageSoloFlag::class],
+    entities = [Book::class, Folder::class, ReadingHistory::class, Bookshelf::class, BookshelfItem::class, Tag::class, TagLink::class, ReadingProgress::class, Bookmark::class, com.ehviewer.core.database.model.SmbSourceEntity::class, com.ehviewer.core.database.model.LibraryRootEntity::class, com.ehviewer.core.database.model.LocalGalleryEntity::class, com.ehviewer.core.database.model.WebDavSourceEntity::class, DownloadTaskEntity::class, KomgaSeriesCacheEntity::class, KomgaBookMemoEntity::class, KomgaProgressSyncQueueEntity::class, PageSoloFlag::class, com.ehviewer.core.database.model.CloudAccountEntity::class],
     version = MangaDatabase.SCHEMA_VERSION,
     exportSchema = false
 )
 abstract class MangaDatabase : com.ehviewer.core.database.LocalLibraryDatabase() {
     abstract fun mangaDao(): MangaDao
     abstract override fun smbSourceDao(): com.ehviewer.core.database.dao.SmbSourceDao
+    abstract fun cloudAccountDao(): com.ehviewer.core.database.dao.CloudAccountDao
 
     companion object {
         /** ★ 数据库版本唯一事实源（注解与备份导出共用，防硬编码漂移） */
-        const val SCHEMA_VERSION = 29
+        const val SCHEMA_VERSION = 30
 
         @Volatile
         private var INSTANCE: MangaDatabase? = null
@@ -1952,6 +1953,23 @@ abstract class MangaDatabase : com.ehviewer.core.database.LocalLibraryDatabase()
             }
         }
 
+        private val MIGRATION_29_30 = object : androidx.room.migration.Migration(29, 30) {
+            override fun migrate(database: androidx.sqlite.db.SupportSQLiteDatabase) {
+                database.execSQL(
+                    "CREATE TABLE IF NOT EXISTS CLOUD_ACCOUNTS (" +
+                        "ID INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "PAN_TYPE TEXT NOT NULL, " +
+                        "DISPLAY_NAME TEXT NOT NULL, " +
+                        "IS_ACTIVE INTEGER NOT NULL DEFAULT 0, " +
+                        "LOGIN_STATUS TEXT NOT NULL DEFAULT '已登录', " +
+                        "MODE_115 TEXT NOT NULL DEFAULT '', " +
+                        "ADDED_AT INTEGER NOT NULL, " +
+                        "LAST_OK_AT INTEGER, " +
+                        "LAST_ERROR TEXT)"
+                )
+            }
+        }
+
         private val MIGRATION_23_24 = object : androidx.room.migration.Migration(23, 24) {
             override fun migrate(database: androidx.sqlite.db.SupportSQLiteDatabase) {
                 database.execSQL("ALTER TABLE tags ADD COLUMN sortOrder INTEGER NOT NULL DEFAULT 0")
@@ -1983,7 +2001,7 @@ abstract class MangaDatabase : com.ehviewer.core.database.LocalLibraryDatabase()
                     context.applicationContext,
                     MangaDatabase::class.java,
                     "manga_reader_db"
-                ).addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29)
+                ).addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30)
                 .fallbackToDestructiveMigrationOnDowngrade()
                 .build()
                 INSTANCE = instance

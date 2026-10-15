@@ -1,5 +1,6 @@
 package com.mangareader.baidubridge.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -32,17 +33,16 @@ fun BaiduPanScreen(
     val scope = rememberCoroutineScope()
     val dao = remember { BaiduBridges.database.mangaDao() }
 
+    BackHandler { onBack() }
+
     var isLoggedIn by remember { mutableStateOf(sessionStore.isValid()) }
     var loginChecking by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         if (isLoggedIn) {
             loginChecking = true
-            val accountInfo = apiClient.getAccountInfo()
-            if (accountInfo == null) {
-                sessionStore.clear()
-                isLoggedIn = false
-            } else if (accountInfo.nickname.isNotEmpty()) {
+            val accountInfo = withContext(Dispatchers.IO) { apiClient.getAccountInfo() }
+            if (accountInfo != null && accountInfo.nickname.isNotEmpty()) {
                 sessionStore.updateNickname(accountInfo.nickname)
             }
             loginChecking = false
@@ -92,8 +92,8 @@ fun BaiduPanScreen(
         )
     } else {
         BaiduLoginScreen(
-            loginFlow = loginFlow,
-            onLoginSuccess = { isLoggedIn = true }
+            onBack = onBack,
+            onLoginSuccess = { _ -> isLoggedIn = true }
         )
     }
 }

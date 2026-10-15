@@ -1,6 +1,7 @@
 package com.mangareader.quarkbridge.ui
 
 import android.graphics.Bitmap
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -11,8 +12,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -25,35 +33,49 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
+import com.mangareader.quarkbridge.QuarkBridges
+import com.mangareader.quarkbridge.api.QuarkApiClient
 import com.mangareader.quarkbridge.auth.QrState
 import com.mangareader.quarkbridge.auth.QuarkLoginFlow
+import com.mangareader.quarkbridge.auth.QuarkCredentials
+import com.mangareader.quarkbridge.auth.QuarkSessionStore
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
 import com.google.zxing.common.BitMatrix
 import com.google.zxing.qrcode.QRCodeWriter
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun QuarkLoginScreen(
-    loginFlow: QuarkLoginFlow,
-    onLoginSuccess: () -> Unit
+    onBack: () -> Unit = {},
+    onLoginSuccess: (QuarkCredentials) -> Unit = {},
 ) {
+    BackHandler { onBack() }
+    val context = QuarkBridges.context
+    val sessionStore = remember { QuarkSessionStore(context) }
+    val apiClient = remember { QuarkApiClient(sessionStore = sessionStore) }
+    val loginFlow = remember { QuarkLoginFlow(apiClient, sessionStore) }
     val scope = rememberCoroutineScope()
     var qrState by remember { mutableStateOf<QrState>(QrState.Generating) }
     var remainingSeconds by remember { mutableStateOf(120) }
 
     LaunchedEffect(Unit) {
-        if (qrState is QrState.Generating) {
-            val state = loginFlow.generateQrCode()
-            qrState = state
-            if (state is QrState.Waiting) {
-                remainingSeconds = 120
-                val result = loginFlow.pollUntilConfirmed(state.token, state.requestId) { pollState ->
-                    qrState = pollState
-                }
-                qrState = result
-                if (result is QrState.Confirmed) {
-                    onLoginSuccess()
+        withContext(Dispatchers.IO) {
+            if (qrState is QrState.Generating) {
+                val state = loginFlow.generateQrCode()
+                qrState = state
+                if (state is QrState.Waiting) {
+                    remainingSeconds = 120
+                    val result = loginFlow.pollUntilConfirmed(state.token, state.requestId) { pollState ->
+                        qrState = pollState
+                    }
+                    qrState = result
+                    if (result is QrState.Confirmed) {
+                        onLoginSuccess(result.credentials)
+                    }
                 }
             }
         }
@@ -69,11 +91,21 @@ fun QuarkLoginScreen(
         }
     }
 
-    Column(
-        modifier = Modifier.fillMaxSize().padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("添加夸克账号") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
+                },
+            )
+        },
+    ) { padding ->
+        Column(
+            modifier = Modifier.fillMaxSize().padding(padding).padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
         Text(
             text = "夸克网盘登录",
             style = MaterialTheme.typography.headlineMedium,
@@ -128,7 +160,7 @@ fun QuarkLoginScreen(
                 Spacer(modifier = Modifier.height(16.dp))
                 Button(onClick = {
                     qrState = QrState.Generating
-                    scope.launch {
+                    scope.launch(Dispatchers.IO) {
                         val newState = loginFlow.generateQrCode()
                         qrState = newState
                         if (newState is QrState.Waiting) {
@@ -138,7 +170,7 @@ fun QuarkLoginScreen(
                             }
                             qrState = result
                             if (result is QrState.Confirmed) {
-                                onLoginSuccess()
+                                onLoginSuccess(result.credentials)
                             }
                         }
                     }
@@ -151,7 +183,7 @@ fun QuarkLoginScreen(
                 Spacer(modifier = Modifier.height(16.dp))
                 Button(onClick = {
                     qrState = QrState.Generating
-                    scope.launch {
+                    scope.launch(Dispatchers.IO) {
                         val newState = loginFlow.generateQrCode()
                         qrState = newState
                         if (newState is QrState.Waiting) {
@@ -161,7 +193,7 @@ fun QuarkLoginScreen(
                             }
                             qrState = result
                             if (result is QrState.Confirmed) {
-                                onLoginSuccess()
+                                onLoginSuccess(result.credentials)
                             }
                         }
                     }
@@ -170,6 +202,7 @@ fun QuarkLoginScreen(
                 }
             }
         }
+    }
     }
 }
 

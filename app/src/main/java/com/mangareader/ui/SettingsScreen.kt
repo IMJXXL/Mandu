@@ -35,6 +35,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mangareader.App
+import com.mangareader.cloud.CloudUiConstants
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -308,6 +309,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?, Int) -> Unit
                     Column(Modifier.weight(1f)) {
                         Text("网盘", fontSize = 16.sp)
                         Text("浏览网盘漫画（夸克 / 百度 / 115）", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(CloudUiConstants.RISK_WARNING, fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
                     }
                     Icon(Icons.Default.ChevronRight, null)
                 }

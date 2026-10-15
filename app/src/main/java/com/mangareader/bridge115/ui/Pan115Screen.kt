@@ -1,5 +1,6 @@
 package com.mangareader.bridge115.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -42,16 +43,15 @@ fun Pan115Screen(
     val webClient = remember { Web115Client(sessionStore = sessionStore) }
     val dirService = remember { DirService115(apiClient = apiClient, webClient = webClient, cache = cacheManager) }
 
+    BackHandler { onBack() }
+
     LaunchedEffect(mode) {
         if (mode != null) {
             isLoggedIn = if (mode == Constants115.MODE_OFFICIAL) sessionStore.isValidOfficial() else sessionStore.isValidWeb()
             if (isLoggedIn && mode == Constants115.MODE_OFFICIAL) {
                 loginChecking = true
-                val name = apiClient.getAccountInfo()
-                if (name == null) {
-                    sessionStore.clearOfficial()
-                    isLoggedIn = false
-                } else if (name.isNotEmpty()) {
+                val name = withContext(Dispatchers.IO) { apiClient.getAccountInfo() }
+                if (name != null && name.isNotEmpty()) {
                     sessionStore.updateOfficialNickname(name)
                 }
                 loginChecking = false
@@ -68,9 +68,8 @@ fun Pan115Screen(
         }
         !isLoggedIn -> {
             Login115Screen(
-                loginFlow = loginFlow,
-                mode = mode!!,
-                onLoginSuccess = { isLoggedIn = true }
+                onBack = onBack,
+                onLoginSuccess = { _, _, _ -> isLoggedIn = true }
             )
         }
         else -> {

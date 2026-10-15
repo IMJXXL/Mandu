@@ -1,9 +1,11 @@
 package com.mangareader.bridge115.ui
 
 import android.graphics.Bitmap
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -14,9 +16,17 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -33,9 +43,14 @@ import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
 import com.google.zxing.common.BitMatrix
 import com.google.zxing.qrcode.QRCodeWriter
+import com.mangareader.bridge115.Bridges115
 import com.mangareader.bridge115.Constants115
 import com.mangareader.bridge115.auth.Login115Flow
 import com.mangareader.bridge115.auth.QrPayload115
+import com.mangareader.bridge115.auth.Session115Official
+import com.mangareader.bridge115.auth.Session115Web
+import com.mangareader.bridge115.auth.SessionStore115
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -49,28 +64,33 @@ private sealed class LoginState {
     data class Failed(val message: String) : LoginState()
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun Login115Screen(
-    loginFlow: Login115Flow,
-    mode: String,
-    onLoginSuccess: () -> Unit
+    onBack: () -> Unit = {},
+    onLoginSuccess: (String, Session115Official?, Session115Web?) -> Unit = { _, _, _ -> },
 ) {
+    BackHandler { onBack() }
+    val sessionStore = remember { SessionStore115(Bridges115.context) }
+    val loginFlow = remember { Login115Flow(sessionStore) }
     val scope = rememberCoroutineScope()
+    var selectedMode by remember { mutableStateOf<String?>(null) }
     var state by remember { mutableStateOf<LoginState>(LoginState.Idle) }
     var remainingSeconds by remember { mutableStateOf(120) }
     var appId by remember { mutableStateOf("") }
     var appSecret by remember { mutableStateOf("") }
 
+    val mode = selectedMode
     val isOfficial = mode == Constants115.MODE_OFFICIAL
 
-    LaunchedEffect(Unit) {
-        if (state is LoginState.Idle) {
+    LaunchedEffect(selectedMode) {
+        if (mode != null && state is LoginState.Idle) {
             state = LoginState.Generating
             if (isOfficial && appId.isEmpty()) {
                 state = LoginState.Failed("请输入 APP ID")
                 return@LaunchedEffect
             }
-            scope.launch {
+            scope.launch(Dispatchers.IO) {
                 try {
                     val payload = if (isOfficial) {
                         loginFlow.qrStartOfficial(appId)
@@ -82,7 +102,9 @@ fun Login115Screen(
                     pollLoop(loginFlow, mode, payload, scope) { newState ->
                         state = newState
                         if (newState is LoginState.Confirmed) {
-                            onLoginSuccess()
+                            val official = if (isOfficial) sessionStore.loadOfficial() else null
+                            val web = if (!isOfficial) sessionStore.loadWeb() else null
+                            onLoginSuccess(mode, official, web)
                         }
                     }
                 } catch (e: Exception) {
@@ -102,13 +124,40 @@ fun Login115Screen(
         }
     }
 
-    Column(
-        modifier = Modifier.fillMaxSize().padding(24.dp).verticalScroll(rememberScrollState()),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Text(
-            text = if (isOfficial) "115 网盘登录（官方）" else "115 网盘登录（非官方）",
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("添加115账号") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
+                },
+            )
+        },
+    ) { padding ->
+        if (mode == null) {
+            Column(
+                modifier = Modifier.fillMaxSize().padding(padding),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Text("选择登录模式", style = MaterialTheme.typography.headlineMedium)
+                Spacer(modifier = Modifier.height(24.dp))
+                OutlinedButton(onClick = { selectedMode = Constants115.MODE_OFFICIAL; state = LoginState.Idle }) {
+                    Text("官方模式")
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedButton(onClick = { selectedMode = Constants115.MODE_WEB; state = LoginState.Idle }) {
+                    Text("Web模式")
+                }
+            }
+        } else {
+        Column(
+            modifier = Modifier.fillMaxSize().padding(padding).padding(24.dp).verticalScroll(rememberScrollState()),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(
+                text = if (isOfficial) "115 网盘登录（官方）" else "115 网盘登录（非官方）",
             style = MaterialTheme.typography.headlineMedium,
             color = MaterialTheme.colorScheme.onSurface
         )
@@ -185,6 +234,8 @@ fun Login115Screen(
                 Button(onClick = { state = LoginState.Idle }) { Text("重试") }
             }
         }
+    }
+    }
     }
 }
 

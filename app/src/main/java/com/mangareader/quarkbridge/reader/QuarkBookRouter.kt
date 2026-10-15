@@ -24,6 +24,9 @@ import com.mangareader.quarkbridge.api.QuarkAuthException
 import com.mangareader.quarkbridge.api.QuarkDownloadInfo
 import com.mangareader.quarkbridge.api.QuarkHttpClient
 import com.mangareader.quarkbridge.auth.QuarkSessionStore
+import com.mangareader.cloudcommon.transport.SolidFallbackException
+import com.mangareader.cloudcommon.folder.FolderIndexCache
+import com.hippo.ehviewer.library.ZipAsDirListing
 import io.ktor.client.statement.bodyAsChannel
 import io.ktor.client.request.get
 import io.ktor.client.request.header
@@ -54,8 +57,29 @@ object QuarkBookRouter {
     suspend fun openQuarkBook(
         filePath: String,
         startPage: Int = 0,
+    ): OpenResult {
+        var lastResult: OpenResult = OpenResult.Failed("打开失败，请重试")
+        for (attempt in 0..2) {
+            lastResult = openQuarkBookInternal(filePath, startPage)
+            if (lastResult is OpenResult.Supported) return lastResult
+            val msg = (lastResult as? OpenResult.Failed)?.message ?: ""
+            if (msg.contains("登录已失效") || msg.contains("登录已过期") || msg.contains("无效")) return lastResult
+        }
+        return OpenResult.Failed("打开失败，请重试")
+    }
+
+    private suspend fun openQuarkBookInternal(
+        filePath: String,
+        startPage: Int = 0,
     ): OpenResult = withContext(Dispatchers.IO) {
-        val ref = QuarkPaths.parsePath(filePath) ?: return@withContext OpenResult.Failed("无效的夸克路径")
+        val ref0 = QuarkPaths.parsePath(filePath) ?: return@withContext OpenResult.Failed("无效的夸克路径")
+        val zipSplit = ZipAsDirListing.splitZipBrowsePath(ref0.name)
+        val ref = if (zipSplit != null && zipSplit.second.isNotEmpty()) {
+            val effectiveName = zipSplit.first
+            ref0.copy(name = effectiveName, ext = effectiveName.substringAfterLast('.', "").lowercase())
+        } else {
+            ref0
+        }
         val sessionStore = QuarkSessionStore(QuarkBridges.context)
         val apiClient = QuarkApiClient(sessionStore = sessionStore)
 
@@ -115,6 +139,21 @@ object QuarkBookRouter {
                     adapter.attach(loader, null, sizeSettled = true)
                     adapter.awaitClose()
                 }
+            } catch (e: SolidFallbackException) {
+                if (isDocumentFileName(ref.name)) throw e
+                android.util.Log.i(TAG, "solid failed → whole-download fallback: ${ref.name}")
+                adapter.resetForRetry()
+                val localPath = downloadWholeFile(downloadInfo, ref, urlProvider)
+                    ?: throw IllegalStateException("不支持断点续传，且整档下载未完成")
+                useArchivePageLoader(
+                    localPath.toPath(),
+                    info = null,
+                    startPage = startPage,
+                    passwdProvider = { throw IllegalStateException("该归档需要密码（当前未配置归档密码）") },
+                ) { loader ->
+                    adapter.attach(loader, null, sizeSettled = true)
+                    adapter.awaitClose()
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (t: Throwable) {
@@ -151,6 +190,14 @@ object QuarkBookRouter {
         val effectivePasswdProvider: PasswdProvider = passwdProvider ?: {
             throw IllegalStateException("该归档需要密码（当前未配置归档密码）")
         }
+
+        val routeTag = when {
+            isDocumentFileName(fileName) -> "document"
+            isSolidArchiveFileName(fileName) -> "solid"
+            isTarArchiveFileName(fileName) -> "tar"
+            else -> "archive"
+        }
+        android.util.Log.d(TAG, "dispatch route=$routeTag file=$fileName")
 
         if (isDocumentFileName(fileName)) {
             if (isPdfFileName(fileName) && !Settings.webDavPdfFastMode.value) {
@@ -195,7 +242,7 @@ object QuarkBookRouter {
                 throw e
             } catch (t: Throwable) {
                 android.util.Log.w(TAG, "solid open failed: ${t.message}")
-                throw t
+                throw SolidFallbackException(t)
             }
         } else if (isTarArchiveFileName(fileName)) {
             useTarChunkPageLoader(
@@ -281,4 +328,8 @@ object QuarkBookRouter {
     private const val OPEN_TIMEOUT_MS = 15_000L
     private const val TAG = "QuarkBookRouter"
     private val SETTLED_COUNT_EXTS = setOf("zip", "cbz", "epub", "pdf", "mobi", "azw", "azw3")
+
+    fun clearFolderCache() {
+        FolderIndexCache.clear()
+    }
 }

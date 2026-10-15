@@ -25,6 +25,8 @@ import com.mangareader.baidubridge.api.BaiduDownloadInfo
 import com.mangareader.baidubridge.api.BaiduHttpClient
 import com.mangareader.baidubridge.auth.BaiduLoginFlow
 import com.mangareader.baidubridge.auth.BaiduSessionStore
+import com.mangareader.cloudcommon.transport.SolidFallbackException
+import com.hippo.ehviewer.library.ZipAsDirListing
 import io.ktor.client.statement.bodyAsChannel
 import io.ktor.client.request.get
 import io.ktor.client.request.header
@@ -55,8 +57,29 @@ object BaiduBookRouter {
     suspend fun openBaiduBook(
         filePath: String,
         startPage: Int = 0,
+    ): OpenResult {
+        var lastResult: OpenResult = OpenResult.Failed("打开失败，请重试")
+        for (attempt in 0..2) {
+            lastResult = openBaiduBookInternal(filePath, startPage)
+            if (lastResult is OpenResult.Supported) return lastResult
+            val msg = (lastResult as? OpenResult.Failed)?.message ?: ""
+            if (msg.contains("登录已失效") || msg.contains("登录已过期") || msg.contains("无效")) return lastResult
+        }
+        return OpenResult.Failed("打开失败，请重试")
+    }
+
+    private suspend fun openBaiduBookInternal(
+        filePath: String,
+        startPage: Int = 0,
     ): OpenResult = withContext(Dispatchers.IO) {
-        val ref = BaiduPaths.parsePath(filePath) ?: return@withContext OpenResult.Failed("无效的百度路径")
+        val ref0 = BaiduPaths.parsePath(filePath) ?: return@withContext OpenResult.Failed("无效的百度路径")
+        val zipSplit = ZipAsDirListing.splitZipBrowsePath(ref0.name)
+        val ref = if (zipSplit != null && zipSplit.second.isNotEmpty()) {
+            val effectiveName = zipSplit.first
+            ref0.copy(name = effectiveName, ext = effectiveName.substringAfterLast('.', "").lowercase())
+        } else {
+            ref0
+        }
         val sessionStore = BaiduSessionStore(BaiduBridges.context)
         val loginFlow = BaiduLoginFlow(sessionStore)
         val apiClient = BaiduApiClient(sessionStore = sessionStore, loginFlow = loginFlow)
@@ -78,7 +101,7 @@ object BaiduBookRouter {
         }
 
         val downloadInfo = try {
-            apiClient.dlink(ref.path)
+            cachedDlink(apiClient, ref.path)
         } catch (e: BaiduAuthException) {
             return@withContext OpenResult.Failed("登录已失效，请重新授权")
         } catch (t: Throwable) {
@@ -86,7 +109,7 @@ object BaiduBookRouter {
         }
 
         val baiduPath = ref.path
-        val urlProvider: suspend () -> BaiduDownloadInfo = { apiClient.dlink(baiduPath) }
+        val urlProvider: suspend () -> BaiduDownloadInfo = { cachedDlink(apiClient, baiduPath) }
 
         val byteSource = BaiduArchiveByteSource(
             initialUrl = downloadInfo.url,
@@ -105,6 +128,21 @@ object BaiduBookRouter {
             } catch (e: RemoteRangeNotSupportedException) {
                 if (isDocumentFileName(ref.name)) throw e
                 android.util.Log.i(TAG, "RANGE unsupported → whole-download fallback: ${ref.name}")
+                adapter.resetForRetry()
+                val localPath = downloadWholeFile(downloadInfo, ref, urlProvider)
+                    ?: throw IllegalStateException("不支持断点续传，且整档下载未完成")
+                useArchivePageLoader(
+                    localPath.toPath(),
+                    info = null,
+                    startPage = startPage,
+                    passwdProvider = { throw IllegalStateException("该归档需要密码（当前未配置归档密码）") },
+                ) { loader ->
+                    adapter.attach(loader, null, sizeSettled = true)
+                    adapter.awaitClose()
+                }
+            } catch (e: SolidFallbackException) {
+                if (isDocumentFileName(ref.name)) throw e
+                android.util.Log.i(TAG, "solid failed → whole-download fallback: ${ref.name}")
                 adapter.resetForRetry()
                 val localPath = downloadWholeFile(downloadInfo, ref, urlProvider)
                     ?: throw IllegalStateException("不支持断点续传，且整档下载未完成")
@@ -154,6 +192,14 @@ object BaiduBookRouter {
             throw IllegalStateException("该归档需要密码（当前未配置归档密码）")
         }
 
+        val routeTag = when {
+            isDocumentFileName(fileName) -> "document"
+            isSolidArchiveFileName(fileName) -> "solid"
+            isTarArchiveFileName(fileName) -> "tar"
+            else -> "archive"
+        }
+        android.util.Log.d(TAG, "dispatch route=$routeTag file=$fileName")
+
         if (isDocumentFileName(fileName)) {
             if (isPdfFileName(fileName) && !Settings.webDavPdfFastMode.value) {
                 usePdfiumPageLoader(
@@ -197,7 +243,7 @@ object BaiduBookRouter {
                 throw e
             } catch (t: Throwable) {
                 android.util.Log.w(TAG, "solid open failed: ${t.message}")
-                throw t
+                throw SolidFallbackException(t)
             }
         } else if (isTarArchiveFileName(fileName)) {
             useTarChunkPageLoader(
@@ -282,4 +328,25 @@ object BaiduBookRouter {
     private const val OPEN_TIMEOUT_MS = 15_000L
     private const val TAG = "BaiduBookRouter"
     private val SETTLED_COUNT_EXTS = setOf("zip", "cbz", "epub", "pdf", "mobi", "azw", "azw3")
+    private const val DLINK_CACHE_TTL_MS = 300_000L
+
+    private data class DlinkCacheEntry(val info: BaiduDownloadInfo, val expiresAt: Long)
+
+    private val dlinkCache = object : LinkedHashMap<String, DlinkCacheEntry>(128, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, DlinkCacheEntry>?): Boolean = size > 128
+    }
+
+    private suspend fun cachedDlink(apiClient: BaiduApiClient, path: String): BaiduDownloadInfo {
+        val now = System.currentTimeMillis()
+        synchronized(dlinkCache) {
+            dlinkCache[path]?.let { entry ->
+                if (now < entry.expiresAt) return entry.info
+            }
+        }
+        val info = apiClient.dlink(path)
+        synchronized(dlinkCache) {
+            dlinkCache[path] = DlinkCacheEntry(info, now + DLINK_CACHE_TTL_MS)
+        }
+        return info
+    }
 }
