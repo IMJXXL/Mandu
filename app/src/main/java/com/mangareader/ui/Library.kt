@@ -709,7 +709,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
             val jobs = books!!.map { book ->
                 coverScope.launch(limitedDispatcher) {
                     val coverPath = book.coverPath ?: return@launch
-                    if (coverPath.startsWith("cv:smb:") || coverPath.startsWith("cv:webdav:") || coverPath.startsWith("cv:komga:") || coverPath.startsWith("cv:opds:")) return@launch
+                    if (coverPath.startsWith("cv:smb:") || coverPath.startsWith("cv:webdav:") || coverPath.startsWith("cv:komga:") || coverPath.startsWith("cv:opds:") || coverPath.startsWith("cv:quark:")) return@launch
                     // custom: 私有文件即取即显，无需预热
                     if (coverPath.startsWith("custom:")) return@launch
                     val key = synchronized(md5) { md5.reset(); md5.digest(coverPath.toByteArray()) }.joinToString("") { "%02x".format(it) }

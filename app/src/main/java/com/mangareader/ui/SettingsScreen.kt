@@ -69,6 +69,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?, Int) -> Unit
     var showWebDavServers by rememberSaveable { mutableStateOf(false) }
     var showKomgaServers by remember { mutableStateOf(false) }
     var showOpdsServers by remember { mutableStateOf(false) }
+    var showCloudDrive by remember { mutableStateOf(false) }
     var showWifiTransfer by remember { mutableStateOf(false) }
 
 
@@ -300,6 +301,20 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?, Int) -> Unit
             }
 
             item {
+            Card(Modifier.fillMaxWidth().clickable { showCloudDrive = true }) {
+                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Cloud, null, modifier = Modifier.size(24.dp))
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("网盘", fontSize = 16.sp)
+                        Text("浏览网盘漫画（夸克 / 百度 / 115）", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Icon(Icons.Default.ChevronRight, null)
+                }
+            }
+            }
+
+            item {
             Card(Modifier.fillMaxWidth().clickable { showWifiTransfer = true }) {
                 Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.Wifi, null, modifier = Modifier.size(24.dp))
@@ -508,6 +523,9 @@ fun SettingsScreen(onBack: () -> Unit, onOpenBook: ((Long, String?, Int) -> Unit
     }
     if (showOpdsServers) {
         com.mangareader.opdsbridge.ui.OpdsServersScreen(onBack = { showOpdsServers = false }, onOpenBook = { id -> onOpenBook?.invoke(id, null, -1) })
+    }
+    if (showCloudDrive) {
+        com.mangareader.quarkbridge.ui.CloudDriveScreen(onBack = { showCloudDrive = false }, onOpenBook = onOpenBook)
     }
     if (showWifiTransfer) {
         WifiTransferScreen(onBack = { showWifiTransfer = false })
