@@ -280,9 +280,8 @@ class ArchiveEngine(private val ctx: Context) {
     /** PDF 文档按 docKey 的打开互斥（防首屏并发段请求竞争重复 pdfOpen） */
     private val pdfOpenLocks = java.util.concurrent.ConcurrentHashMap<String, Any>()
     private val pdfSegOkMarked = java.util.Collections.newSetFromMap(java.util.concurrent.ConcurrentHashMap<String, Boolean>())
-    private val epubSpineCache = object : LinkedHashMap<String, List<Int>>(10, 0.75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<Int>>?): Boolean = size > 10
-    }
+    @Volatile
+    private var lastEpubScanUsedSpine = false
     private val sortedImageNamesCache = object : LinkedHashMap<String, List<String>>(30, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<String>>?): Boolean = size > 30
     }
@@ -980,7 +979,9 @@ class ArchiveEngine(private val ctx: Context) {
             }
             if (path.startsWith("a:") && result.isNotEmpty()) {
                 val p0 = parsePath(path)
-                if (p0 != null) writeArchivePageIndex(path, makeTree(p0.auth, p0.tree), p0.doc, result)
+                if (p0 != null && (p0.ext != "epub" || lastEpubScanUsedSpine)) {
+                    writeArchivePageIndex(path, makeTree(p0.auth, p0.tree), p0.doc, result)
+                }
             }
             d(TAG, "listPages path=${path.takeLast(40)} total=${result.size} first5=${result.take(5).map { it.index }}")
             result
@@ -2772,154 +2773,23 @@ class ArchiveEngine(private val ctx: Context) {
         val zipOpenNow = com.mangareader.native.NativeEngine.isOpenZip(cacheKey)
         if (!zipOpenNow) epubFail("zipopen")
 
-        // 解析 EPUB spine
+        lastEpubScanUsedSpine = false
         try {
-            // ★ A 提速：cacheKey 此时句柄已开（上方 openZipWithFd），走 libzip 按名直读快路径
-            val epubResult = com.mangareader.zip.EpubParser.parse(ctx, uri, cacheKey)
-            if (epubResult != null && epubResult.spineItems.isNotEmpty()) {
-                // 检查 spine items 是图片还是 HTML
-                val firstHref = epubResult.spineItems.first().href
-                val isImageSpine = firstHref.lowercase().let {
-                    it.endsWith(".jpg") || it.endsWith(".jpeg") || it.endsWith(".png") ||
-                    it.endsWith(".webp") || it.endsWith(".gif") || it.endsWith(".bmp")
-                }
-
-                if (isImageSpine) {
-                    // spine 直接是图片：用现有的 sortedNames + spine 映射
-                    val names = com.mangareader.native.NativeEngine.getZipEntryNames(cacheKey)
-                    if (names != null) {
-                        val sortedNames = names.indices
-                            .filter { isImg(names[it]) }
-                            .sortedWith(Comparator { a, b ->
-                                val depthA = names[a].count { c -> c == '/' || c == '\\' }
-                                val depthB = names[b].count { c -> c == '/' || c == '\\' }
-                                if (depthA != depthB) depthA - depthB
-                                else com.mangareader.util.ComicSortUtil.fileNameComparator.compare(names[a], names[b])
-                            })
-                            .map { names[it] }
-                            .toMutableList()
-
-                        val spineOrderedNames = mutableListOf<String>()
-                        val spineToSorted = mutableListOf<Int>()
-                        // ★ A 修复③：双索引替代 indexOfFirst O(N²)。
-                        //   suffixIdx 注册 n 本身及每个 '/' 边界后缀 → 命中 (n==href || endsWith("/"+href))
-                        //   的最小 index；baseIdx 命中 basename 相等的最小 index；两者取 min
-                        //   数学等价于旧"首个满足任一条件的元素"
-                        val suffixIdx = HashMap<String, Int>(sortedNames.size * 4)
-                        val baseIdx = HashMap<String, Int>(sortedNames.size * 2)
-                        sortedNames.forEachIndexed { si, n ->
-                            val b = n.substringAfterLast("/")
-                            if (!baseIdx.containsKey(b)) baseIdx[b] = si
-                            if (!suffixIdx.containsKey(n)) suffixIdx[n] = si
-                            var from = n.indexOf('/')
-                            while (from >= 0) {
-                                val suf = n.substring(from + 1)
-                                if (!suffixIdx.containsKey(suf)) suffixIdx[suf] = si
-                                from = n.indexOf('/', from + 1)
-                            }
-                        }
-                        for (item in epubResult.spineItems) {
-                            val h = item.href
-                            val matchIdx = minOf(
-                                suffixIdx[h] ?: Int.MAX_VALUE,
-                                baseIdx[h.substringAfterLast("/")] ?: Int.MAX_VALUE
-                            )
-                            if (matchIdx != Int.MAX_VALUE) {
-                                spineOrderedNames.add(sortedNames[matchIdx])
-                                spineToSorted.add(matchIdx)
-                            }
-                        }
-                        if (spineOrderedNames.isNotEmpty()) {
-                            synchronized(epubSpineCache) { epubSpineCache[cacheKey] = spineToSorted.toList() }
-                            sortedNames.clear()
-                            sortedNames.addAll(spineOrderedNames)
-                        }
-                        synchronized(sortedImageNamesCache) { sortedImageNamesCache[cacheKey] = sortedNames }
-                        Log.d(TAG, "scanEpub: spine image order, ${sortedNames.size} pages, first5=${sortedNames.take(5).map { it.substringAfterLast("/") }}")
-                        return sortedNames.mapIndexed { idx, n -> PageMeta(idx, "zip", doc, idx, name = n.substringAfterLast("/").substringBeforeLast(".")) }
-                    }
-                } else {
-                    // spine 是 HTML：解析 HTML 提取图片路径
-                    val htmlToImgMap = com.mangareader.zip.EpubParser.resolveImageHrefs(ctx, uri, epubResult.opfDir, epubResult.spineItems, cacheKey)
-                    Log.d(TAG, "scanEpub: htmlToImgMap size=${htmlToImgMap.size}, spineItems=${epubResult.spineItems.size}")
-                    if (htmlToImgMap.isNotEmpty()) {
-                        val names = com.mangareader.native.NativeEngine.getZipEntryNames(cacheKey)
-                        val allNames = names?.toList() ?: emptyList()
-
-                        // 构建 HashMap 加速匹配：O(1) per spine item（替代 O(N) linear scan）
-                        val nameByPath = HashMap<String, String>(allNames.size * 2)
-                        for (n in allNames) {
-                            nameByPath[n] = n
-                            val suffix = n.substringAfterLast("/")
-                            if (suffix.isNotEmpty()) nameByPath[suffix] = n
-                        }
-
-                        val spineOrderedNames = mutableListOf<String>()
-                        var matchCount = 0
-                        var missCount = 0
-                        for ((spineIdx, spineItem) in epubResult.spineItems.withIndex()) {
-                            val htmlHref = com.mangareader.zip.EpubParser.resolveHref(epubResult.opfDir, spineItem.href)
-                            val imgSrcs = htmlToImgMap[htmlHref] ?: htmlToImgMap[htmlHref.substringAfterLast("/")]
-                            if (imgSrcs != null) {
-                                for (imgSrc in imgSrcs) {
-                                    var normalizedImg: String = imgSrc
-                                    while (normalizedImg.startsWith("../") || normalizedImg.startsWith("./")) {
-                                        normalizedImg = if (normalizedImg.startsWith("../")) normalizedImg.substring(3) else normalizedImg.substring(2)
-                                    }
-                                    if (normalizedImg.startsWith("/")) normalizedImg = normalizedImg.substring(1)
-                                    val match = nameByPath[normalizedImg] ?: nameByPath[normalizedImg.substringAfterLast("/")]
-                                    if (match != null) {
-                                        spineOrderedNames.add(match)
-                                        matchCount++
-                                    } else {
-                                        missCount++
-                                        if (missCount <= 5) Log.d(TAG, "scanEpub: MISS spine[$spineIdx] imgSrc=$normalizedImg not in allNames(${allNames.size})")
-                                    }
-                                }
-                            } else {
-                                missCount++
-                                if (missCount <= 5) Log.d(TAG, "scanEpub: MISS spine[$spineIdx] href=$htmlHref not in htmlToImgMap")
-                            }
-                        }
-                        Log.d(TAG, "scanEpub: spine match result: $matchCount match, $missCount miss out of ${epubResult.spineItems.size}")
-
-                        if (spineOrderedNames.isNotEmpty()) {
-                            synchronized(sortedImageNamesCache) { sortedImageNamesCache[cacheKey] = spineOrderedNames }
-                            Log.d(TAG, "scanEpub: spine HTML→image order, ${spineOrderedNames.size} pages, first5=${spineOrderedNames.take(5).map { it.substringAfterLast("/") }}")
-                            return spineOrderedNames.mapIndexed { idx, n -> PageMeta(idx, "zip", doc, idx, name = n.substringAfterLast("/").substringBeforeLast(".")) }
-                        }
-                    }
-                }
+            val access = com.mangareader.zip.NativeZipAccess(cacheKey)
+            val result = com.mangareader.zip.EpubPageOrderResolver.resolve(access)
+            if (result != null && result.pageNames.isNotEmpty()) {
+                lastEpubScanUsedSpine = result.fromSpine
+                val sortedNames = result.pageNames
+                synchronized(sortedImageNamesCache) { sortedImageNamesCache[cacheKey] = sortedNames }
+                Log.d(TAG, "scanEpub: ${if (result.fromSpine) "spine" else "fallback"} order, ${sortedNames.size} pages, first5=${sortedNames.take(5).map { it.substringAfterLast("/") }}")
+                return sortedNames.mapIndexed { idx, n -> PageMeta(idx, "zip", doc, idx, name = n.substringAfterLast("/").substringBeforeLast(".")) }
             }
+            epubFail(if (result == null) "namesnull" else "0img")
         } catch (e: Exception) {
-            Log.e(TAG, "scanEpub spine parse failed: ${e.message}")
+            Log.e(TAG, "scanEpub parse failed: ${e.message}")
             epubFail("parseerr ${e.message?.take(40) ?: ""}")
         }
 
-        // 回退：文件名排序
-        val names = com.mangareader.native.NativeEngine.getZipEntryNames(cacheKey)
-        if (names != null) {
-            val sortedNames = names.indices
-                .filter { isImg(names[it]) }
-                .sortedWith(Comparator { a, b ->
-                    val depthA = names[a].count { c -> c == '/' || c == '\\' }
-                    val depthB = names[b].count { c -> c == '/' || c == '\\' }
-                    if (depthA != depthB) depthA - depthB
-                    else com.mangareader.util.ComicSortUtil.fileNameComparator.compare(names[a], names[b])
-                })
-                .map { names[it] }
-            if (sortedNames.isEmpty()) {
-                // ★ 无图 epub（纯文字书/DRM 乱名）：不缓存空表——旧代码连空表也进
-                //   sortedImageNamesCache，本进程内这本书永远秒回空=反复弹"文件暂时找不到"
-                epubFail("0img entries=${names.size}")
-                lastOpenHint = "此 EPUB 内没有可显示的图片页（可能是纯文字书或内容不受支持）"
-                return emptyList()
-            }
-            synchronized(sortedImageNamesCache) { sortedImageNamesCache[cacheKey] = sortedNames }
-            return sortedNames.mapIndexed { idx, n -> PageMeta(idx, "zip", doc, idx, name = n.substringAfterLast("/").substringBeforeLast(".")) }
-        }
-        epubFail("namesnull")
-        // ★ 2026-10-12 问题3：zip 句柄都没开成 → 大概率中央目录缺失（截断下载/损坏），别再误报"找不到"
         if (!zipOpenNow) {
             lastOpenHint = "压缩包无法打开：文件可能损坏或未下载完整，建议重新下载后再试"
         }

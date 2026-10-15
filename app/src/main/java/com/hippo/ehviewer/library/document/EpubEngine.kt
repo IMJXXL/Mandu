@@ -69,30 +69,7 @@ class EpubEngine private constructor(
     }
 
     companion object {
-        private val IMG_SRC_REGEX = Regex(
-            """(?i)(?:src|xlink:href)\s*=\s*["']([^"']+)["']""",
-        )
-        private val CONTAINER_ROOTFILE = Regex(
-            """(?is)<rootfile[^>]*full-path\s*=\s*["']([^"']+)["']""",
-        )
-        private val MANIFEST_ITEM = Regex(
-            """(?is)<item\b([^>]*?)/?>""",
-        )
-        private val ATTR = Regex(
-            """(?i)([a-zA-Z_:][\w:.-]*)\s*=\s*["']([^"']*)["']""",
-        )
-        private val SPINE_ITEMREF = Regex(
-            """(?is)<itemref\b([^>]*?)/?>""",
-        )
-        private val META_COVER = Regex(
-            """(?is)<meta\b[^>]*name\s*=\s*["']cover["'][^>]*content\s*=\s*["']([^"']+)["']""" +
-                """|(?is)<meta\b[^>]*content\s*=\s*["']([^"']+)["'][^>]*name\s*=\s*["']cover["']""",
-        )
 
-        /**
-         * @param coverOnly if true, keep only the cover / first image in the list.
-         * @return engine or null if not a readable ZIP; empty [pageCount] means no images.
-         */
         fun open(
             source: ArchiveByteSource,
             remoteSize: Long = 0L,
@@ -131,13 +108,17 @@ class EpubEngine private constructor(
         }
 
         private fun buildPageList(zip: ZipCentralDirectory, coverOnly: Boolean): List<PageRef> {
-            val parsed = runCatching { parseOpf(zip) }.onFailure { logcat("Epub", it) }.getOrNull()
-            val pages = if (parsed != null && parsed.pages.isNotEmpty()) {
-                if (coverOnly) {
-                    listOfNotNull(parsed.coverPage ?: parsed.pages.firstOrNull())
-                } else {
-                    parsed.pages
+            val access = com.mangareader.zip.ZipCentralDirAccess(zip)
+            val resolved = runCatching { com.mangareader.zip.EpubPageOrderResolver.resolve(access) }.getOrNull()
+            val pages = if (resolved != null && resolved.pageNames.isNotEmpty()) {
+                val refs = resolved.pageNames.mapNotNull { name ->
+                    val entry = zip.find(name) ?: return@mapNotNull null
+                    if (entry.isDirectory || entry.isEncrypted) return@mapNotNull null
+                    val ext = FileUtils.getExtensionFromFilename(entry.name)?.lowercase() ?: return@mapNotNull null
+                    if (ext !in IMAGE_EXTENSIONS) return@mapNotNull null
+                    PageRef(zipName = entry.name, ext = ext, uncSize = entry.uncompressedSize)
                 }
+                if (coverOnly) refs.take(1) else refs
             } else {
                 val fb = fallbackImagePages(zip)
                 if (coverOnly) fb.take(1) else fb
@@ -145,109 +126,6 @@ class EpubEngine private constructor(
             return pages
         }
 
-        private data class OpfParse(
-            val pages: List<PageRef>,
-            val coverPage: PageRef?,
-        )
-
-        private fun parseOpf(zip: ZipCentralDirectory): OpfParse? {
-            val containerEntry = zip.find("META-INF/container.xml") ?: return null
-            val containerXml = zip.extract(containerEntry)?.toString(Charsets.UTF_8) ?: return null
-            val opfPath = CONTAINER_ROOTFILE.find(containerXml)?.groupValues?.get(1)
-                ?.replace('\\', '/')
-                ?.trimStart('/')
-                ?: return null
-            val opfEntry = zip.find(opfPath) ?: return null
-            val opf = zip.extract(opfEntry)?.toString(Charsets.UTF_8) ?: return null
-            val opfDir = opfPath.substringBeforeLast('/', missingDelimiterValue = "")
-
-            val manifest = LinkedHashMap<String, ManifestItem>()
-            for (m in MANIFEST_ITEM.findAll(opf)) {
-                val attrs = parseAttrs(m.groupValues[1])
-                val id = attrs["id"] ?: continue
-                val href = attrs["href"] ?: continue
-                val media = attrs["media-type"].orEmpty()
-                val props = attrs["properties"].orEmpty()
-                manifest[id] = ManifestItem(
-                    id = id,
-                    href = resolveZipPath(opfDir, href),
-                    mediaType = media.lowercase(),
-                    properties = props.lowercase(),
-                )
-            }
-            if (manifest.isEmpty()) return null
-
-            val spineIds = SPINE_ITEMREF.findAll(opf).mapNotNull { m ->
-                parseAttrs(m.groupValues[1])["idref"]
-            }.toList()
-            if (spineIds.isEmpty()) return null
-
-            val coverId = META_COVER.find(opf)?.let { mr ->
-                mr.groupValues[1].ifBlank { mr.groupValues[2] }
-            }?.takeIf { it.isNotBlank() }
-                ?: manifest.values.firstOrNull { "cover-image" in it.properties }?.id
-
-            fun pageRefForPath(path: String): PageRef? {
-                val e = zip.find(path) ?: return null
-                if (e.isDirectory || e.isEncrypted) return null
-                val ext = FileUtils.getExtensionFromFilename(e.name)?.lowercase() ?: return null
-                if (ext !in IMAGE_EXTENSIONS) return null
-                return PageRef(zipName = e.name, ext = ext, uncSize = e.uncompressedSize)
-            }
-
-            val ordered = LinkedHashSet<String>()
-            fun addImagePath(path: String) {
-                pageRefForPath(path)?.let { ordered += it.zipName }
-            }
-
-            for (idref in spineIds) {
-                val item = manifest[idref] ?: continue
-                when {
-                    item.mediaType.startsWith("image/") || extOf(item.href) in IMAGE_EXTENSIONS -> {
-                        addImagePath(item.href)
-                    }
-                    item.mediaType.contains("html") ||
-                        item.mediaType.contains("xml") ||
-                        extOf(item.href) in setOf("xhtml", "html", "htm", "xml") -> {
-                        val xhtmlEntry = zip.find(item.href) ?: continue
-                        if (xhtmlEntry.uncompressedSize > 2L * 1024 * 1024) continue
-                        val xhtml = zip.extract(xhtmlEntry)?.toString(Charsets.UTF_8) ?: continue
-                        val baseDir = item.href.substringBeforeLast('/', missingDelimiterValue = "")
-                        for (mm in IMG_SRC_REGEX.findAll(xhtml)) {
-                            val raw = mm.groupValues[1].trim()
-                            if (raw.startsWith("data:", ignoreCase = true)) continue
-                            if (raw.startsWith("http://", ignoreCase = true) ||
-                                raw.startsWith("https://", ignoreCase = true)
-                            ) {
-                                continue
-                            }
-                            val resolved = resolveZipPath(
-                                baseDir,
-                                raw.substringBefore('#').substringBefore('?'),
-                            )
-                            addImagePath(resolved)
-                        }
-                    }
-                }
-            }
-
-            if (ordered.isEmpty()) {
-                manifest.values
-                    .filter {
-                        it.mediaType.startsWith("image/") || extOf(it.href) in IMAGE_EXTENSIONS
-                    }
-                    .sortedWith { a, b -> naturalCompare(a.href, b.href) }
-                    .forEach { addImagePath(it.href) }
-            }
-
-            val pages = ordered.mapNotNull { pageRefForPath(it) }
-            if (pages.isEmpty()) return null
-
-            val coverPage = coverId?.let { id ->
-                manifest[id]?.let { pageRefForPath(it.href) }
-            }
-            return OpfParse(pages = pages, coverPage = coverPage)
-        }
 
         private fun fallbackImagePages(zip: ZipCentralDirectory): List<PageRef> = zip.entries
             .filter { !it.isDirectory && !it.isEncrypted }
@@ -265,37 +143,5 @@ class EpubEngine private constructor(
                 PageRef(zipName = e.name, ext = ext, uncSize = e.uncompressedSize)
             }
 
-        private data class ManifestItem(
-            val id: String,
-            val href: String,
-            val mediaType: String,
-            val properties: String,
-        )
-
-        private fun parseAttrs(s: String): Map<String, String> {
-            val map = HashMap<String, String>()
-            for (m in ATTR.findAll(s)) {
-                map[m.groupValues[1].lowercase()] = m.groupValues[2]
-            }
-            return map
-        }
-
-        private fun resolveZipPath(baseDir: String, href: String): String {
-            var h = href.replace('\\', '/').trim()
-            if (h.startsWith("/")) return h.trimStart('/')
-            val base = baseDir.trim('/')
-            val parts = ArrayList<String>()
-            if (base.isNotEmpty()) parts += base.split('/').filter { it.isNotEmpty() }
-            for (seg in h.split('/')) {
-                when (seg) {
-                    "", "." -> Unit
-                    ".." -> if (parts.isNotEmpty()) parts.removeAt(parts.lastIndex)
-                    else -> parts += seg
-                }
-            }
-            return parts.joinToString("/")
-        }
-
-        private fun extOf(path: String): String? = FileUtils.getExtensionFromFilename(path.substringAfterLast('/'))?.lowercase()
     }
 }

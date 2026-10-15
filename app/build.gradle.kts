@@ -240,6 +240,9 @@ dependencies {
     // ZXing (QR code rendering for Quark login)
     implementation("com.google.zxing:core:3.5.3")
 
+    // Jsoup (EPUB OPF/XHTML parsing)
+    implementation("org.jsoup:jsoup:1.22.2")
+
     // ktor (WebDAV + Komga HTTP client)
     implementation("io.ktor:ktor-client-core:3.5.0")
     implementation("io.ktor:ktor-client-android:3.5.0")

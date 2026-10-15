@@ -643,38 +643,6 @@ internal const val PDF_INDEX_SAVE_EVERY = 16
 @PublishedApi
 internal const val PDF_INDEX_YIELD_MS = 16L
 
-suspend inline fun <T> useLocalDocumentExtractPageLoader(
-    file: Path,
-    info: GalleryInfo? = null,
-    startPage: Int = 0,
-    hasAds: Boolean = false,
-    crossinline block: suspend (PageLoader) -> T,
-): T {
-    val pathStr = file.toString()
-    val name = file.name
-    val format = when {
-        isEpubFileName(name) -> "epub"
-        isPdfFileName(name) -> "pdf"
-        else -> error("Not a document: $name")
-    }
-    val pfd = file.openFileDescriptor("r")
-    val source = PfdArchiveByteSource(pfd, ownsPfd = true)
-    // Full filename incl. extension (pdf/epub).
-    val titleHint = name.ifEmpty { "Document" }
-    // cacheKey = path string so browse thumbs share the same document_extract + cover key.
-    return useDocumentExtractPageLoader(
-        source = source,
-        cacheKey = pathStr,
-        titleHint = titleHint,
-        formatHint = format,
-        info = info,
-        startPage = startPage,
-        hasAds = hasAds,
-        remoteSize = runCatching { source.size }.getOrDefault(0L),
-        localPathForLibrary = pathStr,
-        block = block,
-    )
-}
 
 @PublishedApi
 internal fun openDocumentEngine(

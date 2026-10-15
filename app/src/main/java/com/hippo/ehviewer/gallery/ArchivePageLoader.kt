@@ -53,14 +53,14 @@ typealias PasswdInvalidator = (String) -> Boolean
 typealias PasswdProvider = suspend (PasswdInvalidator) -> String
 
 /**
- * ¡ï ¼ÇÒäÃÜÂë×Ô¶¯³¢ÊÔ£¨0930£©£ºÏÈÊÔ×î½üÃüÖÐÃÜÂë£¨front£¬"ÖÐµÄ·ÅÇ°±ß"£©£¬ÔÙ±éÀúÕû¸öÁÐ±í£¬
- *   Öð¸ö½»¸ø native ÑéÖ¤£¨providePassword = ÉèÃÜÂë + ÖØ½¨Ì½²â»á»°£©¡£ÃüÖÐ·µ»Ø true¡ª¡ª
- *   native passwd ÒÑ¾ÍÎ»£¬µ±Ç°´ò¿ªÁ÷³Ì¿ÉÖ±½Ó¼ÌÐøÈ¡ÄÚÈÝ¡£Î´¼ÓÃÜ°ü²»»á×ßµ½ÕâÀï£¬Áã¿ªÏú¡£
- *   Èý¸ö¼ÓÔØÆ÷£¨±¾µØ/Solid/Á÷Ê½£©Óë·âÃæÌáÈ¡¹²ÓÃ±¾º¯Êý£¬¼ÇÒä¿âÍ¬Ò»·Ý£¨Settings.archivePasswds£©¡£
+ * ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ô¶ï¿½ï¿½ï¿½ï¿½Ô£ï¿½0930ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ë£¨frontï¿½ï¿½"ï¿½ÐµÄ·ï¿½Ç°ï¿½ï¿½"ï¿½ï¿½ï¿½ï¿½ï¿½Ù±ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ð±ï¿½ï¿½ï¿½
+ *   ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ native ï¿½ï¿½Ö¤ï¿½ï¿½providePassword = ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ + ï¿½Ø½ï¿½Ì½ï¿½ï¿½á»°ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ð·ï¿½ï¿½ï¿½ trueï¿½ï¿½ï¿½ï¿½
+ *   native passwd ï¿½Ñ¾ï¿½Î»ï¿½ï¿½ï¿½ï¿½Ç°ï¿½ï¿½ï¿½ï¿½ï¿½Ì¿ï¿½Ö±ï¿½Ó¼ï¿½ï¿½ï¿½È¡ï¿½ï¿½ï¿½Ý¡ï¿½Î´ï¿½ï¿½ï¿½Ü°ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ßµï¿½ï¿½ï¿½ï¿½ï£¬ï¿½ã¿ªï¿½ï¿½ï¿½ï¿½
+ *   ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½/Solid/ï¿½ï¿½Ê½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½È¡ï¿½ï¿½ï¿½Ã±ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Í¬Ò»ï¿½Ý£ï¿½Settings.archivePasswdsï¿½ï¿½ï¿½ï¿½
  */
 fun archivePasswdTryKnown(): Boolean {
     val front = archivePasswdFront
-    // front ±ØÐëÈÔÔÚ¿âÄÚ²ÅÊÔ£ºÓÃ»§¾­±à¼­Æ÷É¾³ýµÄÃÜÂë²»ÔÊÐí¼ÌÐø±»×Ô¶¯³¢ÊÔ
+    // front ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ú¿ï¿½ï¿½Ú²ï¿½ï¿½Ô£ï¿½ï¿½Ã»ï¿½ï¿½ï¿½ï¿½à¼­ï¿½ï¿½É¾ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ë²»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ô¶ï¿½ï¿½ï¿½ï¿½ï¿½
     if (front.isNotEmpty() && front in archivePasswds && providePassword(front)) return true
     val hit = archivePasswds.firstOrNull { it.isNotEmpty() && it != front && providePassword(it) } ?: return false
     archivePasswdFront = hit
@@ -86,7 +86,7 @@ suspend inline fun <T> useArchivePageLoader(
         coroutineScope {
             val pfd = install(file.openFileDescriptor("r"))
             // sortEntries: EH downloads with real gallery info keep pack order; local / zip sort by name.
-            // Must not key only on info==null â€?local archives now pass GalleryInfo for read progress.
+            // Must not key only on info==null ï¿½?local archives now pass GalleryInfo for read progress.
             val sortEntries = info == null ||
                 isZipArchiveFileName(file.name) ||
                 info.token == com.hippo.ehviewer.library.LOCAL_GALLERY_TOKEN ||
@@ -104,7 +104,30 @@ suspend inline fun <T> useArchivePageLoader(
                 archivePasswds += pwd
                 archivePasswdFront = pwd
             }
-            val indexMap = if (imageNames.isEmpty() && memberPrefix.isEmpty()) {
+            val pathStr = file.toString()
+            val f = File(pathStr)
+            val indexMap = if (imageNames.isEmpty() && memberPrefix.isEmpty() &&
+                file.name.endsWith(".epub", ignoreCase = true)) {
+                val epubOrder = try {
+                    java.util.zip.ZipFile(f).use { zf ->
+                        val access = com.mangareader.zip.JavaZipFileAccess(zf)
+                        com.mangareader.zip.EpubPageOrderResolver.resolve(access)
+                            ?.takeIf { it.fromSpine }?.pageNames
+                    }
+                } catch (_: Exception) { null }
+                if (epubOrder != null) {
+                    val names = List(opened) { getArchiveFilename(it) }
+                    val nameToIdx = HashMap<String, Int>(names.size * 2)
+                    names.forEachIndexed { i, n ->
+                        nameToIdx[n] = i
+                        val base = n.substringAfterLast('/')
+                        if (base.isNotEmpty() && !nameToIdx.containsKey(base)) nameToIdx[base] = i
+                    }
+                    epubOrder.mapNotNull { nameToIdx[it] ?: nameToIdx[it.substringAfterLast('/')] }
+                        .toIntArray()
+                        .takeIf { it.isNotEmpty() }
+                } else null
+            } else if (imageNames.isEmpty() && memberPrefix.isEmpty()) {
                 null
             } else {
                 val names = List(opened) { getArchiveFilename(it) }
@@ -116,8 +139,7 @@ suspend inline fun <T> useArchivePageLoader(
             val nat: (Int) -> Int = { index -> indexMap?.getOrNull(index) ?: index }
             // Serialize JNI extract; libarchive is process-global and not MT-safe.
             val extractLock = Any()
-            val pathStr = file.toString()
-            val f = File(pathStr)
+
             val mtime = f.takeIf { it.isFile }?.lastModified() ?: 0L
             val len = f.takeIf { it.isFile }?.length() ?: 0L
             val loader = install(
@@ -158,7 +180,7 @@ suspend inline fun <T> useArchivePageLoader(
                             releaseByteBuffer(native)
                             return byteBufferSource(ByteBuffer.wrap(bytes)) {}
                         }
-                        // â˜?fallback: libarchive extractToByteBuffer å¤±è´¥ï¼ˆæŸäº?ZIP entry åŽ‹ç¼©æ–¹æ³•ä¸æ”¯æŒï¼‰ï¼?                        //   ç”?java.util.zip.ZipFile æŒ?entry name éšæœºæå–ï¼ˆæ”¯æŒ?ZIP64/deflate/store ç­‰ï¼‰
+                        // ï¿½?fallback: libarchive extractToByteBuffer å¤±è´¥ï¼ˆæŸï¿½?ZIP entry åŽ‹ç¼©æ–¹æ³•ä¸æ”¯æŒï¼‰ï¿½?                        //   ï¿½?java.util.zip.ZipFile ï¿½?entry name éšæœºæå–ï¼ˆæ”¯ï¿½?ZIP64/deflate/store ç­‰ï¼‰
                         val entryName = getArchiveFilename(nativeIndex)
                         val fallbackBytes = try {
                             java.util.zip.ZipFile(f).use { zf ->
