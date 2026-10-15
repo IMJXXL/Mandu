@@ -298,6 +298,9 @@ object BaiduBookRouter {
         val response = client.get(url) {
             header("User-Agent", BaiduConstants.BAIDU_UA)
         }
+        if (response.status.value !in 200..299) {
+            throw java.io.IOException("下载失败，HTTP ${response.status.value}")
+        }
         val channel = response.bodyAsChannel()
         java.io.FileOutputStream(target).use { out ->
             val buffer = ByteArray(64 * 1024)

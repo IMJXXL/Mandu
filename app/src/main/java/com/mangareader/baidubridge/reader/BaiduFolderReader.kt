@@ -28,11 +28,13 @@ class BaiduFolderReader(
         }
         val allItems = mutableListOf<com.mangareader.baidubridge.api.BaiduFileEntry>()
         var start = 0
-        while (true) {
+        var pageCount = 0
+        while (pageCount < 1000) {
             val entries = apiClient.listDir(folderPath, start)
             if (entries.isEmpty()) break
             allItems.addAll(entries.filter { !it.isDir })
             start += BaiduConstants.PAGE_SIZE
+            pageCount++
         }
         imageEntries = allItems
             .filter { it.name.substringAfterLast('.', "").lowercase() in IMAGE_EXTENSIONS }

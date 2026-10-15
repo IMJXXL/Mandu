@@ -8,6 +8,7 @@ import com.mangareader.quarkbridge.QuarkConstants
 import com.mangareader.quarkbridge.api.QuarkApiClient
 import com.mangareader.quarkbridge.api.QuarkHttpClient
 import io.ktor.client.HttpClient
+import java.util.concurrent.ConcurrentHashMap
 
 class QuarkFolderReader(
     private val folderFid: String,
@@ -16,7 +17,7 @@ class QuarkFolderReader(
 
     private var imageEntries: List<com.mangareader.quarkbridge.api.QuarkFileEntry> = emptyList()
 
-    private var currentCookie: String = ""
+    private val urlCookies = ConcurrentHashMap<String, String>()
 
     suspend fun load() {
         val cacheKey = "quark:${folderFid}"
@@ -31,7 +32,7 @@ class QuarkFolderReader(
         val allItems = mutableListOf<com.mangareader.quarkbridge.api.QuarkFileEntry>()
         var page = 1
         var hasMore = true
-        while (hasMore) {
+        while (hasMore && page <= 1000) {
             val result = apiClient.listDir(folderFid, page)
             allItems.addAll(result.items.filter { !it.isDir })
             hasMore = result.hasMore
@@ -48,13 +49,16 @@ class QuarkFolderReader(
         if (index !in imageEntries.indices) return null
         val entry = imageEntries[index]
         val downloadInfo = apiClient.getDownloadUrl(entry.fid)
-        currentCookie = downloadInfo.tempCookie
+        if (downloadInfo.tempCookie.isNotEmpty()) {
+            urlCookies[downloadInfo.url] = downloadInfo.tempCookie
+        }
         return downloadInfo.url
     }
 
     override fun getAuthHeaders(url: String): Map<String, String> {
         val headers = mutableMapOf("User-Agent" to QuarkConstants.QUARK_UA)
-        if (currentCookie.isNotEmpty()) headers["Cookie"] = currentCookie
+        val cookie = urlCookies[url]
+        if (!cookie.isNullOrEmpty()) headers["Cookie"] = cookie
         return headers
     }
 

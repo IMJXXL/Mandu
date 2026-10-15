@@ -34,7 +34,7 @@ class Api115Client(
         return loginFlow?.ensureOfficialToken() ?: accessToken()
     }
 
-    suspend fun list(cid: String): List<FileEntry115> {
+    suspend fun list(cid: String, offset: Int = 0): List<FileEntry115> {
         val token = ensureAccessToken()
         rateLimiter.acquire()
         val response = httpClient.get("https://proapi.115.com/open/ufile/files") {
@@ -42,7 +42,7 @@ class Api115Client(
             header("User-Agent", Constants115.UA_OFFICIAL)
             parameter("cid", cid)
             parameter("limit", Constants115.PAGE_SIZE.toString())
-            parameter("offset", "0")
+            parameter("offset", offset.toString())
         }
         val json = response.body<JsonObject>()
         val state = json["state"]?.jsonPrimitive?.contentOrNull
@@ -50,7 +50,7 @@ class Api115Client(
         if (code == 99 || (40100..40200).contains(code) || (401000..402000).contains(code)) {
             val newToken = loginFlow?.refreshOfficial()?.accessToken
             if (newToken != null) {
-                return listRetry(cid, newToken)
+                return listRetry(cid, newToken, offset)
             }
             throw Auth115Exception("登录已失效，请重新授权")
         }
@@ -63,14 +63,14 @@ class Api115Client(
         return listArr.map { it.jsonObject.toFileEntry(cid) }
     }
 
-    private suspend fun listRetry(cid: String, token: String): List<FileEntry115> {
+    private suspend fun listRetry(cid: String, token: String, offset: Int = 0): List<FileEntry115> {
         rateLimiter.acquire()
         val response = httpClient.get("https://proapi.115.com/open/ufile/files") {
             header("Authorization", token)
             header("User-Agent", Constants115.UA_OFFICIAL)
             parameter("cid", cid)
             parameter("limit", Constants115.PAGE_SIZE.toString())
-            parameter("offset", "0")
+            parameter("offset", offset.toString())
         }
         val json = response.body<JsonObject>()
         val data = json["data"]?.jsonObject ?: return emptyList()

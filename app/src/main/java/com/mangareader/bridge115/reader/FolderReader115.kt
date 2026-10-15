@@ -35,12 +35,28 @@ class FolderReader115(
         val allItems = mutableListOf<FileEntry115>()
         if (mode == Constants115.MODE_OFFICIAL) {
             val client = apiClient ?: throw IllegalStateException("api client not initialized")
-            val entries = client.list(cid)
-            allItems.addAll(entries.filter { !it.isDir })
+            var offset = 0
+            var pageCount = 0
+            while (pageCount < 1000) {
+                val entries = client.list(cid, offset)
+                if (entries.isEmpty()) break
+                allItems.addAll(entries.filter { !it.isDir })
+                if (entries.size < Constants115.PAGE_SIZE) break
+                offset += Constants115.PAGE_SIZE
+                pageCount++
+            }
         } else {
             val client = webClient ?: throw IllegalStateException("web client not initialized")
-            val entries = client.list(cid)
-            allItems.addAll(entries.filter { !it.isDir })
+            var offset = 0
+            var pageCount = 0
+            while (pageCount < 1000) {
+                val entries = client.list(cid, offset)
+                if (entries.isEmpty()) break
+                allItems.addAll(entries.filter { !it.isDir })
+                if (entries.size < Constants115.PAGE_SIZE) break
+                offset += Constants115.PAGE_SIZE
+                pageCount++
+            }
         }
         imageEntries = allItems
             .filter { it.name.substringAfterLast('.', "").lowercase() in IMAGE_EXTENSIONS }

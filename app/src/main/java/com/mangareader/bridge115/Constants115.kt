@@ -15,7 +15,7 @@ object Constants115 {
     const val API_BASE_PRO = "https://proapi.115.com"
     const val API_BASE_PASSPORT = "https://passportapi.115.com"
     const val API_BASE_WEB = "https://webapi.115.com"
-    const val API_BASE_WEB_ALT = "http://web.api.115.com"
+    const val API_BASE_WEB_ALT = "https://web.api.115.com"
     const val API_BASE_APS = "https://aps.115.com"
     const val API_BASE_QRCODE = "https://qrcodeapi.115.com"
 

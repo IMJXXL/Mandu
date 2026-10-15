@@ -297,6 +297,9 @@ object QuarkBookRouter {
             header("User-Agent", QuarkConstants.QUARK_UA)
             if (cookie.isNotEmpty()) header("Cookie", cookie)
         }
+        if (response.status.value !in 200..299) {
+            throw java.io.IOException("下载失败，HTTP ${response.status.value}")
+        }
         val channel = response.bodyAsChannel()
         java.io.FileOutputStream(target).use { out ->
             val buffer = ByteArray(64 * 1024)

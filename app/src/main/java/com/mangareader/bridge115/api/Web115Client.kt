@@ -38,11 +38,11 @@ class Web115Client(
 
     private val webListUrls = listOf(
         "https://webapi.115.com/files",
-        "http://web.api.115.com/files",
+        "https://web.api.115.com/files",
         "https://aps.115.com/natsort/files.php"
     )
 
-    suspend fun list(cid: String): List<FileEntry115> {
+    suspend fun list(cid: String, offset: Int = 0): List<FileEntry115> {
         wafCooldown.ensureAllowed()
         var saw405Count = 0
         for (url in webListUrls) {
@@ -53,7 +53,7 @@ class Web115Client(
                     header("User-Agent", Constants115.UA_WEB)
                     parameter("cid", cid)
                     parameter("limit", Constants115.PAGE_SIZE.toString())
-                    parameter("offset", "0")
+                    parameter("offset", offset.toString())
                     parameter("show_dir", "1")
                 }
                 when (response.status.value) {

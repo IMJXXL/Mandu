@@ -36,7 +36,7 @@ object QuarkCredentialCrypto {
 
     fun encrypt(plain: String): String {
         if (plain.isEmpty()) return ""
-        val key = getOrCreateKey() ?: return ""
+        val key = getOrCreateKey() ?: return plain
         return try {
             val cipher = Cipher.getInstance("AES/CBC/PKCS7Padding")
             cipher.init(Cipher.ENCRYPT_MODE, key)
@@ -45,7 +45,7 @@ object QuarkCredentialCrypto {
             val combined = iv + encrypted
             QuarkConstants.ENCRYPT_PREFIX + Base64.encodeToString(combined, Base64.NO_WRAP)
         } catch (_: Throwable) {
-            ""
+            plain
         }
     }
 
