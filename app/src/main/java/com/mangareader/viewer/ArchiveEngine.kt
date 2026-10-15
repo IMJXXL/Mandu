@@ -2785,6 +2785,9 @@ class ArchiveEngine(private val ctx: Context) {
                 return sortedNames.mapIndexed { idx, n -> PageMeta(idx, "zip", doc, idx, name = n.substringAfterLast("/").substringBeforeLast(".")) }
             }
             epubFail(if (result == null) "namesnull" else "0img")
+            if (result != null && result.pageNames.isEmpty()) {
+                lastOpenHint = "此 EPUB 内没有可显示的图片页（可能是纯文字书或内容不受支持）"
+            }
         } catch (e: Exception) {
             Log.e(TAG, "scanEpub parse failed: ${e.message}")
             epubFail("parseerr ${e.message?.take(40) ?: ""}")

@@ -1088,11 +1088,17 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
             if (tileModeEnabled && !trimWhiteBorder && !(cropLeftPct > 0.001f || cropRightPct > 0.001f) && meta.segmentIndex <= 0 && meta.splitSide == 0) {
                 val tileFile = obtainTileFile(idx)
                 if (tileFile != null) {
-                    ArchiveEngine.d("WebtoonRV", "tile OK idx=$idx file=${tileFile.length()}B")
-                    tileFileCache[idx] = tileFile
-                    recycler.post { adapter?.notifyItemChanged(idx, "ld") }
-                    onResult?.invoke(null)
-                    return@launch
+                    val opts = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    runCatching { android.graphics.BitmapFactory.decodeFile(tileFile.absolutePath, opts) }
+                    val h = opts.outHeight; val w = opts.outWidth
+                    val r = if (w > 0) h.toFloat() / w else 0f
+                    if (h <= 0 || ((h > 3000 || r > 2.5f) && h <= 10000 && r <= 8f)) {
+                        ArchiveEngine.d("WebtoonRV", "tile OK idx=$idx file=${tileFile.length()}B")
+                        tileFileCache[idx] = tileFile
+                        recycler.post { adapter?.notifyItemChanged(idx, "ld") }
+                        onResult?.invoke(null)
+                        return@launch
+                    }
                 }
                 ArchiveEngine.d("WebtoonRV", "tile MISS idx=$idx -> fallback decode")
             }
@@ -1694,9 +1700,14 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
         }
         fun setTileFile(file: java.io.File) {
             heldBitmap = null
-            iv.visibility = android.view.View.GONE
             val ssv = ssiv ?: return
             ssv.visibility = android.view.View.VISIBLE
+            val hasPlaceholder = iv.visibility == android.view.View.VISIBLE && iv.drawable != null
+            if (!hasPlaceholder) iv.visibility = android.view.View.GONE
+            ssv.setOnImageEventListener(object : com.davemorrissey.labs.subscaleview.SubsamplingScaleImageView.DefaultOnImageEventListener() {
+                override fun onReady() { ssv.setOnImageEventListener(null); iv.visibility = android.view.View.GONE }
+                override fun onImageLoadError(e: Exception) { ssv.setOnImageEventListener(null); iv.visibility = android.view.View.GONE }
+            })
             ssv.setImage(com.davemorrissey.labs.subscaleview.ImageSource.uri(itemView.context, android.net.Uri.fromFile(file)))
             hasImage = true
         }

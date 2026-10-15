@@ -127,6 +127,13 @@ object SrPipeline {
         }
     }
 
+    fun hasSrResultForUi(pageIndex: Int): Boolean {
+        if (peekSrMemory(pageIndex) != null) return true
+        if (SrCore.diskCache.hasArtifact(sessionBookId, artifactChapterKey(), artifactFingerprint(), pageIndex)) return true
+        if (batchChapterOnDisk() && slotIsWholePage(pageIndex)) return true
+        return false
+    }
+
     /** 对比叠层"右侧"取图：页级持久产物优先；超分结果次之；黑白独立模式下退而求其次取黑白优化结果；
      *  最后兜底查批量离线产物（手动开超分切换模型后内存缓存键不命中时仍可对比） */
     fun peekSr(pageIndex: Int): Bitmap? {

@@ -1764,14 +1764,20 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
                 pageAnimFlags.none { it.pageIdx == idx && it.kind != AnimKind.NONE }) {
                 val tileFile = obtainTileFile(idx, supply)
                 if (tileFile != null) {
-                    com.mangareader.viewer.ArchiveEngine.d("PagerView", "tileHit idx=$idx tileOn=$tileModeEnabled trimOn=$trimWhiteBorder")
+                    val opts = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    runCatching { android.graphics.BitmapFactory.decodeFile(tileFile.absolutePath, opts) }
+                    val h = opts.outHeight; val w = opts.outWidth
+                    val r = if (w > 0) h.toFloat() / w else 0f
+                    if (h <= 0 || ((h > 3000 || r > 2.5f) && h <= 10000 && r <= 8f)) {
+                        com.mangareader.viewer.ArchiveEngine.d("PagerView", "tileHit idx=$idx tileOn=$tileModeEnabled trimOn=$trimWhiteBorder")
 
-                    tileFileCache[idx] = tileFile
-                    withContext(Dispatchers.Main) {
-                        val adapterPos = positionOf(idx)
-                        if (adapterPos >= 0 && adapterPos < (pagerAdapter?.itemCount ?: 0)) pagerAdapter?.notifyItemChanged(adapterPos, "loaded")
+                        tileFileCache[idx] = tileFile
+                        withContext(Dispatchers.Main) {
+                            val adapterPos = positionOf(idx)
+                            if (adapterPos >= 0 && adapterPos < (pagerAdapter?.itemCount ?: 0)) pagerAdapter?.notifyItemChanged(adapterPos, "loaded")
+                        }
+                        return@launch
                     }
-                    return@launch
                 }
             }
             if (supply == null) {
@@ -2759,27 +2765,24 @@ class PagerReaderView(context: Context) : FrameLayout(context), ReaderViewDelega
             isSplitPage = false
             heldBitmap = null
             val container = itemView as android.widget.FrameLayout
-            // ★ 修复翻页闪烁：复用已有 SSIV（setImage 会重置内部 decoder/状态），
-            //   原来每次 removeView+new SSIV 产生空白帧 = 闪烁
             val ssv = ssiv ?: createSsiv().also { container.addView(it); ssiv = it }
             ssv.visibility = View.VISIBLE
-            iv?.visibility = View.GONE
-            // ★ 占位动画：SSIV setImage(uri) 异步 decode+tile 初始化，onReady 之前显示 loadingBar
-            loadingBar?.visibility = View.VISIBLE
-            // ★ base 同步双保险（同 setImage 2026-10-06）：瓦片路径 onReady 前拿不到源图尺寸，
-            //   置 0 回落 minScale——setImage 后 SSIV 内部 minScale 即新图 contain，判定不残留旧页值
+            val hasPlaceholder = iv?.visibility == View.VISIBLE && iv?.drawable != null
+            if (!hasPlaceholder) {
+                iv?.visibility = View.GONE
+                loadingBar?.visibility = View.VISIBLE
+            }
             try { ssv.viewportBaseScale = 0f } catch (_: Exception) {}
             ssv.setOnImageEventListener(object : com.davemorrissey.labs.subscaleview.SubsamplingScaleImageView.DefaultOnImageEventListener() {
                 override fun onReady() {
                     ssv.setOnImageEventListener(null)
                     loadingBar?.visibility = View.GONE
+                    iv?.visibility = View.GONE
                     val sw = ssv.sWidth; val sh = ssv.sHeight
                     if (sw <= 0 || sh <= 0) return
-                    // ★ 瓦片路径并入 applyPlanScale 统一公式（原内联版还有一处
-                    //   "平板宽图+landscapeZoom关=contain"的分裂特例，一并消灭）
                     applyPlanScale(ssv, sw.toFloat(), sh.toFloat(), landscapeZoom, forward = true)
                 }
-                override fun onImageLoadError(e: Exception) { ssv.setOnImageEventListener(null); loadingBar?.visibility = View.GONE }
+                override fun onImageLoadError(e: Exception) { ssv.setOnImageEventListener(null); loadingBar?.visibility = View.GONE; iv?.visibility = View.GONE }
             })
             ssv.setImage(com.davemorrissey.labs.subscaleview.ImageSource.uri(itemView.context, android.net.Uri.fromFile(file)))
         }

@@ -2945,7 +2945,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                             run {
                                 com.mangareader.sr.SrUiState.srTick.intValue
                                 val c = cur
-                                !com.mangareader.sr.SrPipeline.computing(c) && com.mangareader.sr.SrPipeline.peekSrMemory(c) != null
+                                !com.mangareader.sr.SrPipeline.computing(c) && com.mangareader.sr.SrPipeline.hasSrResultForUi(c)
                             }
                         if (srCompareVisible) {
                             add(BottomBarAction(Icons.Default.CompareArrows, if (com.mangareader.sr.SrUiState.compareActive.value) "退出对比" else "对比") {

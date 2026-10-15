@@ -89,6 +89,7 @@ object EpubPageOrderResolver {
                 }
                 isHtmlMediaType(item.mediaType) || isHtmlName(item.href) -> {
                     val xhtmlData = access.readEntry(item.href) ?: continue
+                    if (xhtmlData.size > 2 * 1024 * 1024) continue
                     val xhtmlDoc = runCatching {
                         Jsoup.parse(xhtmlData.inputStream(), "UTF-8", item.href, Parser.xmlParser())
                     }.getOrNull() ?: continue

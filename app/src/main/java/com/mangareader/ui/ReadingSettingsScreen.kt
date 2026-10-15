@@ -237,7 +237,7 @@ fun ReadingSettingsScreen(onBack: () -> Unit, onOpenKeyMap: (() -> Unit)? = null
                     Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text("按需解码", fontSize = 16.sp)
-                            Text("开启后按可见区域局部解码，内存占用更低，适用于超长图片类漫画（PDF 条漫模糊请用条漫分割）；画质增强、旋转适配失效；裁剪白边开启时本功能自动停用", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("开启后对长图按可见区域局部解码，降低内存占用，适用于长图低性能设备；超长单图请用条漫分割；可能造成翻页闪烁；画质增强、旋转适配失效；裁剪白边开启时本功能自动停用", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         Switch(checked = config.tileModeEnabled, onCheckedChange = { config = config.copy(tileModeEnabled = it); config.save(ctx) })
                     }

@@ -23,12 +23,7 @@ class RealESRGANProcessor(
         }
         if (handle != 0L) release()
 
-        // 规避部分设备 OpenMP 线程亲和性问题
-        System.setProperty("KMP_AFFINITY", "disabled")
-        System.setProperty("OMP_NUM_THREADS", "1")
 
-        // ★ 文件名跟随实际解析出的目录名（降噪变体目录里的文件按变体名命名；
-        //   基础模型目录名==modelDirName，行为不变）
         val dirName = File(modelPath).name
         val paramPath = "$modelPath/$dirName.param"
         val binPath = "$modelPath/$dirName.bin"
@@ -92,6 +87,8 @@ class RealESRGANProcessor(
         private const val TAG = "SrProcessor"
         val nativeLibraryLoaded: Boolean by lazy {
             try {
+                android.system.Os.setenv("KMP_AFFINITY", "disabled", true)
+                android.system.Os.setenv("OMP_NUM_THREADS", "1", true)
                 System.loadLibrary("sr_engine")
                 Log.i(TAG, "libsr_engine.so loaded successfully")
                 true
