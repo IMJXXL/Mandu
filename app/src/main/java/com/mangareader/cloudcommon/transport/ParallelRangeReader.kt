@@ -4,11 +4,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 
 object ParallelRangeReader {
     private const val CHUNK_SIZE = 512 * 1024
     private const val PARALLEL_THRESHOLD = 2 * 1024 * 1024
+    private const val MAX_CONCURRENT = 4
 
     @Volatile
     var enabled = false
@@ -33,8 +36,9 @@ object ParallelRangeReader {
         }
 
         coroutineScope {
+            val sem = Semaphore(MAX_CONCURRENT)
             val results = chunks.map { (chunkOffset, chunkLen) ->
-                async { readChunk(chunkOffset, chunkLen) }
+                async { sem.withPermit { readChunk(chunkOffset, chunkLen) } }
             }.awaitAll()
 
             val buf = ByteArray(len)

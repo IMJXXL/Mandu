@@ -12,6 +12,7 @@ import io.ktor.client.request.get
 import io.ktor.client.request.header
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlin.coroutines.cancellation.CancellationException
 
 abstract class BaseFolderReader : RemotePageSupply {
 
@@ -48,6 +49,8 @@ abstract class BaseFolderReader : RemotePageSupply {
 
             pageCache.put(index, bytes)
             bytes
+        } catch (e: CancellationException) {
+            throw e
         } catch (t: Throwable) {
             Log.w("BaseFolderReader", "loadPageRaw($index) failed: ${t.message}")
             null
@@ -87,6 +90,9 @@ abstract class BaseFolderReader : RemotePageSupply {
         val response = client.get(url) {
             hdrs.forEach { (k, v) -> header(k, v) }
         }
+        if (response.status.value !in 200..299) {
+            throw java.io.IOException("下载失败，HTTP ${response.status.value}")
+        }
         return response.body()
     }
 
@@ -100,6 +106,6 @@ abstract class BaseFolderReader : RemotePageSupply {
     override suspend fun close() {}
 
     companion object {
-        private const val MAX_RANGE_FILE_SIZE = 50L * 1024 * 1024
+        private const val MAX_RANGE_FILE_SIZE = 20L * 1024 * 1024
     }
 }

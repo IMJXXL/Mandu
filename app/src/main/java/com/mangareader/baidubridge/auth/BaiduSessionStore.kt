@@ -50,7 +50,7 @@ class BaiduSessionStore(context: Context) {
     fun isValid(): Boolean {
         val session = load() ?: return false
         if (session.accessToken.isEmpty() || session.refreshToken.isEmpty()) return false
-        return true
+        return session.expiresAt > System.currentTimeMillis()
     }
 
     fun updateTokens(accessToken: String, refreshToken: String, expiresAt: Long) {

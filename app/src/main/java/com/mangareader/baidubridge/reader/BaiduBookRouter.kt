@@ -95,6 +95,8 @@ object BaiduBookRouter {
                 }
             } catch (e: BaiduAuthException) {
                 OpenResult.Failed("登录已失效，请重新授权")
+            } catch (e: CancellationException) {
+                throw e
             } catch (t: Throwable) {
                 OpenResult.Failed(humanize(t))
             }
@@ -104,6 +106,8 @@ object BaiduBookRouter {
             cachedDlink(apiClient, ref.path)
         } catch (e: BaiduAuthException) {
             return@withContext OpenResult.Failed("登录已失效，请重新授权")
+        } catch (e: CancellationException) {
+            throw e
         } catch (t: Throwable) {
             return@withContext OpenResult.Failed(humanize(t))
         }
@@ -171,6 +175,8 @@ object BaiduBookRouter {
         } catch (e: TimeoutCancellationException) {
             adapter.close()
             OpenResult.Failed("连接超时，请稍后重试")
+        } catch (e: CancellationException) {
+            throw e
         } catch (t: Throwable) {
             adapter.close()
             OpenResult.Failed(humanize(t))
@@ -279,12 +285,16 @@ object BaiduBookRouter {
         try {
             downloadTo(initialInfo.url, localFile)
             localFile.absolutePath
+        } catch (e: CancellationException) {
+            throw e
         } catch (t: Throwable) {
             android.util.Log.w(TAG, "whole download failed, trying refresh: ${t.message}")
             try {
                 val fresh = urlProvider()
                 downloadTo(fresh.url, localFile)
                 localFile.absolutePath
+            } catch (e: CancellationException) {
+                throw e
             } catch (t2: Throwable) {
                 android.util.Log.w(TAG, "whole download failed after refresh: ${t2.message}")
                 null

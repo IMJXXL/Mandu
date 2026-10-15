@@ -107,6 +107,8 @@ object Book115Router {
                 }
             } catch (e: Auth115Exception) {
                 OpenResult.Failed("登录已失效，请重新授权")
+            } catch (e: CancellationException) {
+                throw e
             } catch (t: Throwable) {
                 OpenResult.Failed(humanize(t))
             }
@@ -116,6 +118,8 @@ object Book115Router {
             fetchDownloadUrl(ref, sessionStore, loginFlow)
         } catch (e: Auth115Exception) {
             return@withContext OpenResult.Failed("登录已失效，请重新授权")
+        } catch (e: CancellationException) {
+            throw e
         } catch (t: Throwable) {
             return@withContext OpenResult.Failed(humanize(t))
         }
@@ -187,6 +191,8 @@ object Book115Router {
         } catch (e: TimeoutCancellationException) {
             adapter.close()
             OpenResult.Failed("连接超时，请稍后重试")
+        } catch (e: CancellationException) {
+            throw e
         } catch (t: Throwable) {
             adapter.close()
             OpenResult.Failed(humanize(t))
@@ -311,12 +317,16 @@ object Book115Router {
         try {
             downloadTo(initialInfo.url, localFile, ua)
             localFile.absolutePath
+        } catch (e: CancellationException) {
+            throw e
         } catch (t: Throwable) {
             android.util.Log.w(TAG, "whole download failed, trying refresh: ${t.message}")
             try {
                 val fresh = urlProvider()
                 downloadTo(fresh.url, localFile, ua)
                 localFile.absolutePath
+            } catch (e: CancellationException) {
+                throw e
             } catch (t2: Throwable) {
                 android.util.Log.w(TAG, "whole download failed after refresh: ${t2.message}")
                 null

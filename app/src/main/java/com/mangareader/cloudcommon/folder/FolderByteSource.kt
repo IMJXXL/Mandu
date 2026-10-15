@@ -7,6 +7,8 @@ import io.ktor.client.call.body
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.head
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import java.io.IOException
 
@@ -25,7 +27,7 @@ class FolderByteSource(
         val actualLen = minOf(len.toLong(), size - offset).toInt()
         if (actualLen <= 0) return 0
         val hdrs = this.headers
-        return runBlocking {
+        return runBlocking(Dispatchers.IO) {
             try {
                 val end = offset + actualLen - 1
                 val response = httpClient.get(url) {
@@ -58,6 +60,7 @@ class FolderByteSource(
                 hdrs.forEach { (k, v) -> header(k, v) }
             }
                 response.headers["Content-Length"]?.toLongOrNull() ?: -1L
+            } catch (e: CancellationException) { throw e
             } catch (_: Throwable) { -1L }
         }
     }

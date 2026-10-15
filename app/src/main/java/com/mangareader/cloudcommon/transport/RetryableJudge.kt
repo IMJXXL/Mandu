@@ -1,6 +1,7 @@
 package com.mangareader.cloudcommon.transport
 
 import com.hippo.ehviewer.library.RemoteRangeNotSupportedException
+import java.io.FileNotFoundException
 import java.io.IOException
 import java.net.ConnectException
 import java.net.SocketException
@@ -14,6 +15,7 @@ object RetryableJudge {
         while (cur != null) {
             when (cur) {
                 is RemoteRangeNotSupportedException -> return false
+                is FileNotFoundException -> return false
                 is SocketException,
                 is SocketTimeoutException,
                 is ConnectException,
@@ -31,7 +33,10 @@ object RetryableJudge {
                 return true
             }
             val code = Regex("""\b([45]\d\d)\b""").find(msg)?.groupValues?.getOrNull(1)?.toIntOrNull()
-            if (code != null && code in 400..499) return false
+            if (code != null) {
+                if (code in 400..499) return false
+                if (code in 500..599) return true
+            }
             cur = cur.cause
         }
         return false

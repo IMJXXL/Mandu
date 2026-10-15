@@ -94,6 +94,8 @@ object QuarkBookRouter {
                 }
             } catch (e: QuarkAuthException) {
                 OpenResult.Failed("登录已过期，请重新扫码登录")
+            } catch (e: CancellationException) {
+                throw e
             } catch (t: Throwable) {
                 OpenResult.Failed(humanize(t))
             }
@@ -103,6 +105,8 @@ object QuarkBookRouter {
             apiClient.getDownloadUrl(ref.fid)
         } catch (e: QuarkAuthException) {
             return@withContext OpenResult.Failed("登录已过期，请重新扫码登录")
+        } catch (e: CancellationException) {
+            throw e
         } catch (t: Throwable) {
             return@withContext OpenResult.Failed(humanize(t))
         }
@@ -170,6 +174,8 @@ object QuarkBookRouter {
         } catch (e: TimeoutCancellationException) {
             adapter.close()
             OpenResult.Failed("连接超时，请稍后重试")
+        } catch (e: CancellationException) {
+            throw e
         } catch (t: Throwable) {
             adapter.close()
             OpenResult.Failed(humanize(t))
@@ -277,12 +283,16 @@ object QuarkBookRouter {
         try {
             downloadTo(initialInfo.url, initialInfo.tempCookie, localFile)
             localFile.absolutePath
+        } catch (e: CancellationException) {
+            throw e
         } catch (t: Throwable) {
             android.util.Log.w(TAG, "whole download failed, trying refresh: ${t.message}")
             try {
                 val fresh = urlProvider()
                 downloadTo(fresh.url, fresh.tempCookie, localFile)
                 localFile.absolutePath
+            } catch (e: CancellationException) {
+                throw e
             } catch (t2: Throwable) {
                 android.util.Log.w(TAG, "whole download failed after refresh: ${t2.message}")
                 null

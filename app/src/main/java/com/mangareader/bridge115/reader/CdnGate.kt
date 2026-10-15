@@ -16,7 +16,7 @@ class CdnGate(
     private var lastRefillAt = System.currentTimeMillis()
     private val lock = Any()
 
-    private fun acquireToken() {
+    private fun tryAcquireToken(): Boolean {
         synchronized(lock) {
             val now = System.currentTimeMillis()
             val elapsed = now - lastRefillAt
@@ -27,12 +27,16 @@ class CdnGate(
             }
             if (tokens > 0) {
                 tokens--
+                return true
             }
+            return false
         }
     }
 
     suspend fun <T> withGate(block: suspend () -> T): T {
-        acquireToken()
+        while (!tryAcquireToken()) {
+            delay(minIntervalMs)
+        }
         return inFlight.withPermit { block() }
     }
 }

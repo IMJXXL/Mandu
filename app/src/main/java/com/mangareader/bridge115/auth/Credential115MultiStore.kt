@@ -77,7 +77,8 @@ object Credential115MultiStore {
 
     fun isValidOfficial(accountId: Long): Boolean {
         val session = loadOfficial(accountId) ?: return false
-        return session.accessToken.isNotEmpty() && session.refreshToken.isNotEmpty()
+        if (session.accessToken.isEmpty() || session.refreshToken.isEmpty()) return false
+        return session.expiresAt > System.currentTimeMillis()
     }
 
     fun isValidWeb(accountId: Long): Boolean {

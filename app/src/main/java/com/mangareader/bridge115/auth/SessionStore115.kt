@@ -56,7 +56,8 @@ class SessionStore115(context: Context) {
 
     fun isValidOfficial(): Boolean {
         val session = loadOfficial() ?: return false
-        return session.accessToken.isNotEmpty() && session.refreshToken.isNotEmpty()
+        if (session.accessToken.isEmpty() || session.refreshToken.isEmpty()) return false
+        return session.expiresAt > System.currentTimeMillis()
     }
 
     fun updateOfficialTokens(accessToken: String, refreshToken: String, expiresAt: Long) {
