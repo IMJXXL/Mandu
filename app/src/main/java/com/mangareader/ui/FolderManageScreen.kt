@@ -67,7 +67,7 @@ fun FolderManageScreen(onBack: () -> Unit) {
     var showSettings by remember { mutableStateOf(false) }
     var showArchivePassword by remember { mutableStateOf(false) }
     var archivePasswds by remember { mutableStateOf(Settings.archivePasswds) }
-    BackHandler { if (showBuiltInBrowser) showBuiltInBrowser = false else if (showFilePickerOptions) showFilePickerOptions = false else if (showArchivePassword) showArchivePassword = false else if (showSettings) showSettings = false else onBack() }
+
     val ctx = LocalContext.current
     val app = ctx.applicationContext as App
     val dao = remember { app.db.mangaDao() }
@@ -93,6 +93,7 @@ fun FolderManageScreen(onBack: () -> Unit) {
     var showFilePickerOptions by remember { mutableStateOf(false) }
     var showBuiltInBrowser by remember { mutableStateOf(false) }
     var alwaysShowBrowser by remember { mutableStateOf(prefs.getBoolean("always_show_builtin_browser", false)) }
+    BackHandler { if (showBuiltInBrowser) showBuiltInBrowser = false else if (showFilePickerOptions) showFilePickerOptions = false else if (showArchivePassword) showArchivePassword = false else if (showSettings) showSettings = false else onBack() }
 
 
     LaunchedEffect(folders) {
