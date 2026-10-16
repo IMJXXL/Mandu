@@ -30,7 +30,9 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlin.math.abs
@@ -93,6 +95,7 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
     private val inflightLoads = java.util.concurrent.ConcurrentHashMap<Int, Long>()
     // ★ 2026-10-12 问题4 灰页自愈：失败/被取消的加载按 idx 计数的延时重载（限次防坏页空转）
     private val grayRetryCounts = java.util.concurrent.ConcurrentHashMap<Int, Int>()
+    private val decodeGate = Semaphore(4)
     private var pageList: List<ArchiveEngine.PageMeta> = emptyList()
     private var currentPage = 0
 
@@ -1170,13 +1173,13 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
         val n = (grayRetryCounts[idx] ?: 0) + 1
         grayRetryCounts[idx] = n
         if (n > 3) return
-        ArchiveEngine.w("WebtoonRV", "gray retry #$n scheduled idx=$idx +800ms")
+        ArchiveEngine.w("WebtoonRV", "gray retry #$n scheduled idx=$idx +300ms")
         recycler?.postDelayed({
             val stillEmpty = synchronized(bitmapCache) { bitmapCache[idx] == null }
             if (stillEmpty && pageList.getOrNull(idx) != null && recycler?.isAttachedToWindow == true) {
                 loadPageAsync(idx)
             }
-        }, 800)
+        }, 300)
     }
 
     private fun loadMobiPageAsync(meta: ArchiveEngine.PageMeta): Bitmap? {
@@ -1249,8 +1252,16 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
         val meta0 = pageList.getOrNull(idx) ?: return
         val cached = synchronized(bitmapCache) { bitmapCache[idx] }
         if (cached != null) return
+        val pitTs = inflightLoads[idx]
+        val nowTs = android.os.SystemClock.uptimeMillis()
+        if (pitTs != null && nowTs - pitTs < 5000L) {
+            ArchiveEngine.d("Dedup", "preloadOne drop idx=$idx age=${nowTs - pitTs}ms")
+            return
+        }
+        inflightLoads[idx] = nowTs
         val startMs = android.os.SystemClock.uptimeMillis()
         try {
+        decodeGate.withPermit {
         val bmp = withContext(Dispatchers.IO) {
             var result: Bitmap? = null
             val meta = meta0
@@ -1288,10 +1299,13 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
             ArchiveEngine.w("WebtoonRV", "preload FAIL idx=$idx src=${pageList.getOrNull(idx)?.source}")
             scheduleGrayRetry(idx)
         }
+        }
         } catch (ce: kotlinx.coroutines.CancellationException) {
             ArchiveEngine.w("WebtoonRV", "preload CANCELLED idx=$idx（预载被取消）")
             scheduleGrayRetry(idx)
             throw ce
+        } finally {
+            if (inflightLoads[idx] == nowTs) inflightLoads.remove(idx)
         }
     }
 
