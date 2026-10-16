@@ -3,6 +3,7 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <string.h>
+#include <android/log.h>
 
 struct PreadContext {
     int fd;
@@ -236,7 +237,11 @@ uint8_t* LibzipWrapper::readEntry(const std::string& path, int index, uint32_t* 
     if (it == handles.end()) return nullptr;
 
     struct zip_file* zf = zip_fopen_index(it->second.za, (zip_uint64_t)index, 0);
-    if (!zf) return nullptr;
+    if (!zf) {
+        zip_error_t* ze = zip_get_error(it->second.za);
+        __android_log_print(ANDROID_LOG_ERROR, "LibzipWrapper", "readEntry: zip_fopen_index failed index=%d err=%s", index, ze ? zip_error_strerror(ze) : "null");
+        return nullptr;
+    }
 
     std::vector<uint8_t> data;
     char buf[65536];
@@ -244,9 +249,17 @@ uint8_t* LibzipWrapper::readEntry(const std::string& path, int index, uint32_t* 
     while ((n = zip_fread(zf, buf, sizeof(buf))) > 0) {
         data.insert(data.end(), buf, buf + n);
     }
+    if (n < 0) {
+        zip_error_t* fe = zip_file_get_error(zf);
+        __android_log_print(ANDROID_LOG_ERROR, "LibzipWrapper", "readEntry: zip_fread error index=%d err=%s", index, fe ? zip_error_strerror(fe) : "null");
+    }
     zip_fclose(zf);
 
-    if (data.empty()) return nullptr;
+    if (data.empty()) {
+        __android_log_print(ANDROID_LOG_ERROR, "LibzipWrapper", "readEntry: data empty after fread index=%d", index);
+
+        return nullptr;
+    }
 
     uint8_t* result = (uint8_t*)malloc(data.size());
     if (!result) return nullptr;
@@ -260,6 +273,16 @@ bool LibzipWrapper::setPassword(const std::string& path, const std::string& pass
     auto it = handles.find(path);
     if (it == handles.end()) return false;
     return zip_set_default_password(it->second.za, password.c_str()) == 0;
+}
+
+bool LibzipWrapper::canReadEntry(const std::string& path, int index) {
+    std::lock_guard<std::mutex> lock(mutex);
+    auto it = handles.find(path);
+    if (it == handles.end()) return false;
+    struct zip_file* zf = zip_fopen_index(it->second.za, (zip_uint64_t)index, 0);
+    if (!zf) return false;
+    zip_fclose(zf);
+    return true;
 }
 
 std::vector<std::string> LibzipWrapper::getAllEntryNames(const std::string& path) {

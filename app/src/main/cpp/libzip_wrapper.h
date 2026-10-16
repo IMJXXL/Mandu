@@ -31,6 +31,7 @@ public:
     std::vector<std::string> getAllEntryNames(const std::string& path);
     int findEntryByName(const std::string& path, const std::string& name);
     bool setPassword(const std::string& path, const std::string& password);
+    bool canReadEntry(const std::string& path, int index);
 
 private:
     LibzipWrapper() = default;

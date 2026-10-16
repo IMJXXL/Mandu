@@ -334,21 +334,9 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     val isRtl = mode == Mode.RTL
     // ★ §34.3：VERT_PAGER 翻页模式（竖向 ViewPager2）——与 isVerticalMode（条漫）分开
     val isVerticalPagerMode = mode == Mode.VERT_PAGER
-    // ★ 逐格入口可用性（与 NES begin 判定同源）：翻页族单页 + 非竖翻/瓦片/横屏自动双页/横屏自动条漫/仿真翻页。
-    //   双页分割（pageLayout==0 下拆半页）可用——半页图直接检测；双页拼合（pageLayout 1/2）一期不支持。
-    val panelGuideUsable = (mode == Mode.FLIP || mode == Mode.RTL || mode == Mode.VERT_PAGER) &&
-        !config.tileModeEnabled &&
-        config.pageLayout == com.mangareader.data.ReaderConfig.PageLayout.SINGLE &&
-        !(config.autoDoubleLandscape && !config.doublePageSplit && LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE) &&
-        !(config.landscapeAutoWebtoon && LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE) &&
-        !com.mangareader.native.curl.isCurlEnabled(
-            flipAnimationEnabled = config.isFlipAnimation,
-            pageCurlAnimationEnabled = config.isPageCurlAnimation,
-            isVertical = false,
-            verticalPager = isVerticalPagerMode,
-            doublePageSplit = config.doublePageSplit,
-            tileModeEnabled = config.tileModeEnabled,
-        )
+    // ★ 逐格入口可用性：所有阅读模式均支持（翻页/条漫/仿真翻页），仅排除瓦片模式和双页拼合。
+    val panelGuideUsable = !config.tileModeEnabled &&
+        config.pageLayout == com.mangareader.data.ReaderConfig.PageLayout.SINGLE
 
     // ★ §36 目录/网格子项阅读状态徽章 + §37 刷 progressForToc
     //   一次拉该书所有 reading_progress，共享给 ReaderTocSheet 与 ItemGrid 两处徽章计算，
@@ -1105,17 +1093,39 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                     withContext(Dispatchers.IO) { runCatching { dao.restoreBookToRemote(b.id) } }
                 }
             } else if (cachePath != null && cachePath.startsWith("a:")) {
-                // ★ 先尝试 SAF 路径（zip/cbz 等），空则转文件系统路径走 enterLocalArchiveReader（mobi/azw3）
                 val safPages = withContext(Dispatchers.IO) { runCatching { engine.listPages(cachePath) }.getOrDefault(emptyList()) }
                 if (safPages.isNotEmpty()) {
-                    withContext(Dispatchers.IO) {
-                        val oldProgress = readProgressCompat(b.id, path)
-                        if (oldProgress != null && dao.getProgress(b.id, cachePath) == null) {
-                            dao.upsertProgress(b.id, cachePath, oldProgress.lastPage, oldProgress.completed, oldProgress.updatedAt, oldProgress.totalPages)
+                    val libzipCanRead = withContext(Dispatchers.IO) {
+                        val zipIdx = com.mangareader.native.NativeEngine.findZipImageEntry(cachePath, 0)
+                        zipIdx >= 0 && com.mangareader.native.NativeEngine.canReadZipEntry(cachePath, zipIdx)
+                    }
+                    if (libzipCanRead) {
+                        withContext(Dispatchers.IO) {
+                            val oldProgress = readProgressCompat(b.id, path)
+                            if (oldProgress != null && dao.getProgress(b.id, cachePath) == null) {
+                                dao.upsertProgress(b.id, cachePath, oldProgress.lastPage, oldProgress.completed, oldProgress.updatedAt, oldProgress.totalPages)
+                            }
+                        }
+                        navStack = listOf(cachePath)
+                        return enterReader(cachePath, targetPage)
+                    } else {
+                        val docId = cachePath.split("|").getOrNull(2) ?: ""
+                        val realPath = if (docId.startsWith("primary:")) {
+                            android.os.Environment.getExternalStorageDirectory().absolutePath + "/" + docId.substringAfter("primary:")
+                        } else null
+                        if (realPath != null && withContext(Dispatchers.IO) { java.io.File(realPath).exists() }) {
+                            withContext(Dispatchers.IO) {
+                                val oldProgress = readProgressCompat(b.id, path)
+                                if (oldProgress != null && dao.getProgress(b.id, realPath) == null) {
+                                    dao.upsertProgress(b.id, realPath, oldProgress.lastPage, oldProgress.completed, oldProgress.updatedAt, oldProgress.totalPages)
+                                }
+                            }
+                            return enterLocalArchiveReader(b, realPath, targetPage)
+                        } else {
+                            navStack = listOf(cachePath)
+                            return enterReader(cachePath, targetPage)
                         }
                     }
-                    navStack = listOf(cachePath)
-                    return enterReader(cachePath, targetPage)
                 } else {
                     // a:auth|treePath|docId|ext → primary:xxx → /storage/emulated/0/xxx
                     val docId = cachePath.split("|").getOrNull(2) ?: ""
@@ -1227,6 +1237,21 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             loading = false
             isSwitching = false
             return emptyList()
+        }
+        if (path.startsWith("a:") && pages.isNotEmpty()) {
+            val libzipCanRead = withContext(Dispatchers.IO) {
+                val zipIdx = com.mangareader.native.NativeEngine.findZipImageEntry(path, 0)
+                zipIdx >= 0 && com.mangareader.native.NativeEngine.canReadZipEntry(path, zipIdx)
+            }
+            if (!libzipCanRead) {
+                val docId = path.split("|").getOrNull(2) ?: ""
+                val realPath = if (docId.startsWith("primary:")) {
+                    android.os.Environment.getExternalStorageDirectory().absolutePath + "/" + docId.substringAfter("primary:")
+                } else null
+                if (realPath != null && withContext(Dispatchers.IO) { java.io.File(realPath).exists() }) {
+                    return enterLocalArchiveReader(b, realPath, targetPage)
+                }
+            }
         }
         if (config.autoWebtoon && pages.size >= 2 && pages.firstOrNull()?.source != "pdf" && mode != Mode.VERT && mode != Mode.VERT_PAGER && mode != Mode.WEBTOON_GAP) {
             val userSetMode = if (com.mangareader.data.ReaderScope.hasBookModeChoice(prefs, currentBookId)) 0 else -1

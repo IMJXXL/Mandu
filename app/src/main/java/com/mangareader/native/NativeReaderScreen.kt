@@ -742,10 +742,8 @@ fun NativeReaderScreen(
     ).toArgb()
     DisposableEffect(panelGuideActive, treePath, isVertical, effectiveUseCurl, tileModeEnabled, pageLayout, panelGuideEink) {
         val overlay = panelOverlayRef
-        // ★ 全局开关语义（2026-10-11 用户拍板）：开关开启但当前视图/模式不支持时【静默不启用】
-        //   ——不清开关、不弹 Toast；切回翻页单页族（或换到支持的书）自动恢复启用
         val d = activeDelegate(isVertical)
-        if (panelGuideActive && d is PagerReaderView && !isVertical && !effectiveUseCurl && !tileModeEnabled && pageLayout == 0) {
+        if (panelGuideActive && !tileModeEnabled && pageLayout == 0) {
             overlay?.begin(
                 com.mangareader.panel.PanelGuideOverlay.Session(
                     treePath = treePath,

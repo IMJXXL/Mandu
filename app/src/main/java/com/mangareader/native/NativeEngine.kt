@@ -162,6 +162,7 @@ object NativeEngine {
     fun getZipEntryNames(path: String): Array<String> = nativeGetZipEntryNames(path)
     fun findZipEntryByName(path: String, name: String): Int = nativeFindZipEntryByName(path, name)
     fun setZipPassword(path: String, password: String): Boolean = nativeSetZipPassword(path, password)
+    fun canReadZipEntry(path: String, index: Int): Boolean = nativeCanReadZipEntry(path, index)
     fun readArchiveEntryFd(fd: Int, targetIndex: Int): ByteArray? = nativeReadArchiveEntryFd(fd, targetIndex)
     fun countArchiveEntriesFd(fd: Int): Int = nativeCountArchiveEntriesFd(fd)
 
@@ -174,6 +175,7 @@ object NativeEngine {
     @FastNative private external fun nativeGetZipEntryNames(path: String): Array<String>
     @FastNative private external fun nativeFindZipEntryByName(path: String, name: String): Int
     private external fun nativeSetZipPassword(path: String, password: String): Boolean
+    private external fun nativeCanReadZipEntry(path: String, index: Int): Boolean
     private external fun nativeReadArchiveEntryFd(fd: Int, targetIndex: Int): ByteArray?
     private external fun nativeCountArchiveEntriesFd(fd: Int): Int
     external fun nativeForceExit(code: Int)

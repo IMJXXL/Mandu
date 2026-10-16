@@ -2171,6 +2171,40 @@ class ArchiveEngine(private val ctx: Context) {
             Log.w(TAG, "loadArchiveCover: getRealFile returned null for $coverKey")
         }
 
+        if (realFile != null && realFile.isFile) {
+            try {
+                val pfd = android.os.ParcelFileDescriptor.open(realFile, android.os.ParcelFileDescriptor.MODE_READ_ONLY)
+                val entryCount = com.hippo.ehviewer.jni.openArchive(pfd.fd, realFile.length(), true)
+                if (entryCount > 0) {
+                    if (com.hippo.ehviewer.jni.needPassword()) {
+                        com.hippo.ehviewer.gallery.archivePasswdTryKnown()
+                    }
+                    for (i in 0 until entryCount) {
+                        val name = com.hippo.ehviewer.jni.getArchiveFilename(i)
+                        if (isImg(name)) {
+                            val buf = com.hippo.ehviewer.jni.extractToByteBuffer(i)
+                            if (buf != null) {
+                                val data = ByteArray(buf.remaining())
+                                buf.get(data)
+                                com.hippo.ehviewer.jni.releaseByteBuffer(buf)
+                                val bmp = safeDecodeCover(data)
+                                if (bmp != null) {
+                                    saveCoverToDisk(coverKey, bmp)
+                                    synchronized(coverCache) { coverCache[coverKey] = bmp }
+                                    Log.d(TAG, "loadArchiveCover: OK via libarchive")
+                                    com.hippo.ehviewer.jni.closeArchive()
+                                    pfd.close()
+                                    return bmp
+                                }
+                            }
+                        }
+                    }
+                }
+                com.hippo.ehviewer.jni.closeArchive()
+                pfd.close()
+            } catch (e: Exception) { Log.d(TAG, "loadArchiveCover libarchive: ${e.message}") }
+        }
+
         Log.w(TAG, "loadArchiveCover: ALL fallbacks failed for $coverKey")
         synchronized(debugLogBuffer) { debugLogBuffer.appendLine("${System.currentTimeMillis()} loadArchiveCover: ALL FAILED for $coverKey") }
         flushLog(ctx)
@@ -3263,32 +3297,27 @@ class ArchiveEngine(private val ctx: Context) {
                     }
                 }
                 val provider = zipPasswdProvider
-                synchronized(debugLogBuffer) { debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: provider=${if (provider != null) "non-null" else "null"}") }
-                flushLog(ctx)
+                Log.d(TAG, "loadFromZip: provider=${if (provider != null) "non-null" else "null"} zipIdx=$zipIdx")
                 if (provider != null) {
                     try {
                         val pwd = kotlinx.coroutines.runBlocking {
                             provider { p ->
                                 val setResult = com.mangareader.native.NativeEngine.setZipPassword(cacheKey, p)
                                 val r = com.mangareader.native.NativeEngine.readZipEntry(cacheKey, zipIdx)
-                                synchronized(debugLogBuffer) { debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: passwd test setResult=$setResult readSize=${r?.size ?: "null"}") }
-                                flushLog(ctx)
+                                Log.d(TAG, "loadFromZip: passwd test setResult=$setResult readSize=${r?.size ?: "null"}")
                                 r != null && r.isNotEmpty()
                             }
                         }
-                        synchronized(debugLogBuffer) { debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: provider returned pwd=${if (pwd != null) "non-null(len=${pwd.length})" else "null"}") }
-                        flushLog(ctx)
+                        Log.d(TAG, "loadFromZip: provider returned pwd=${if (pwd != null) "non-null(len=${pwd.length})" else "null"}")
                         if (pwd != null) {
                             com.hippo.ehviewer.Settings.archivePasswds += pwd
                             com.hippo.ehviewer.Settings.archivePasswdFront = pwd
                             val r = com.mangareader.native.NativeEngine.readZipEntry(cacheKey, zipIdx)
-                            synchronized(debugLogBuffer) { debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: final readZipEntry ${r?.size ?: "null"} bytes") }
-                            flushLog(ctx)
+                            Log.d(TAG, "loadFromZip: final readZipEntry ${r?.size ?: "null"} bytes")
                             if (r != null && r.isNotEmpty()) { return r }
                         }
                     } catch (e: Exception) {
-                        synchronized(debugLogBuffer) { debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: provider exception: ${e.message}") }
-                        flushLog(ctx)
+                        Log.d(TAG, "loadFromZip: provider exception: ${e.message}")
                     }
                 }
             } else {
