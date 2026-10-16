@@ -1095,11 +1095,10 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             } else if (cachePath != null && cachePath.startsWith("a:")) {
                 val safPages = withContext(Dispatchers.IO) { runCatching { engine.listPages(cachePath) }.getOrDefault(emptyList()) }
                 if (safPages.isNotEmpty()) {
-                    val libzipCanRead = withContext(Dispatchers.IO) {
-                        val zipIdx = com.mangareader.native.NativeEngine.findZipImageEntry(cachePath, 0)
-                        zipIdx >= 0 && com.mangareader.native.NativeEngine.canReadZipEntry(cachePath, zipIdx)
-                    }
-                    if (libzipCanRead) {
+                    val zipIdx = withContext(Dispatchers.IO) { com.mangareader.native.NativeEngine.findZipImageEntry(cachePath, 0) }
+                    val libzipCanRead = zipIdx >= 0 && withContext(Dispatchers.IO) { com.mangareader.native.NativeEngine.canReadZipEntry(cachePath, zipIdx) }
+                    val isEncryptedZip = zipIdx >= 0 && !libzipCanRead
+                    if (!isEncryptedZip) {
                         withContext(Dispatchers.IO) {
                             val oldProgress = readProgressCompat(b.id, path)
                             if (oldProgress != null && dao.getProgress(b.id, cachePath) == null) {
@@ -1239,11 +1238,10 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             return emptyList()
         }
         if (path.startsWith("a:") && pages.isNotEmpty()) {
-            val libzipCanRead = withContext(Dispatchers.IO) {
-                val zipIdx = com.mangareader.native.NativeEngine.findZipImageEntry(path, 0)
-                zipIdx >= 0 && com.mangareader.native.NativeEngine.canReadZipEntry(path, zipIdx)
-            }
-            if (!libzipCanRead) {
+            val zipIdx = withContext(Dispatchers.IO) { com.mangareader.native.NativeEngine.findZipImageEntry(path, 0) }
+            val libzipCanRead = zipIdx >= 0 && withContext(Dispatchers.IO) { com.mangareader.native.NativeEngine.canReadZipEntry(path, zipIdx) }
+            val isEncryptedZip = zipIdx >= 0 && !libzipCanRead
+            if (isEncryptedZip) {
                 val docId = path.split("|").getOrNull(2) ?: ""
                 val realPath = if (docId.startsWith("primary:")) {
                     android.os.Environment.getExternalStorageDirectory().absolutePath + "/" + docId.substringAfter("primary:")
