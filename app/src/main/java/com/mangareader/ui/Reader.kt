@@ -408,9 +408,13 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             showPasswordDialog = true
             passwordError = false
             passwordInput = ""
+            android.util.Log.d("Reader", "archivePasswdProvider: 显示密码弹窗, 等待输入...")
             val pwd = deferred.await()
+            android.util.Log.d("Reader", "archivePasswdProvider: 收到密码 pwdLen=${pwd.length}")
             if (pwd.isEmpty()) throw IllegalStateException("用户取消密码输入")
-            if (invalidator(pwd)) {
+            val valid = invalidator(pwd)
+            android.util.Log.d("Reader", "archivePasswdProvider: invalidator返回=$valid")
+            if (valid) {
                 showPasswordDialog = false
                 return@passwdProvider pwd
             }
@@ -1271,6 +1275,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                 }
             }
         }
+
         // ★ 宽图二分（2026-10-02→v1.384 退役）：宽图二分从引擎层展开上移到 SpreadTable slot
         //   （Komiho dualPageSplit 跟进）——横宽页由表层占两个半页 slot、渲染层视口定位，
         //   引擎页表恒原页 1:1。此前"进书逐页探测→探测失败整页透传→页数漂移"（rar 首开
@@ -2754,13 +2759,11 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                             isActive = pageBookmarked
                         ) { toggleBookmark() })
                         add(BottomBarAction(Icons.Default.AutoFixHigh, "画质增强") { showSrPanel = true })
-                        if (panelGuideUsable || panelGuideActive) {
-                            add(BottomBarAction(
-                                Icons.Default.GridView,
-                                "逐格阅读",
-                                isActive = panelGuideActive,
-                            ) { showPanelGuideSheet = true })
-                        }
+                        add(BottomBarAction(
+                            Icons.Default.GridView,
+                            "逐格阅读",
+                            isActive = panelGuideActive,
+                        ) { showPanelGuideSheet = true })
                         val srCompareVisible = com.mangareader.sr.SrUiState.scope.intValue > 0 ||
                             com.mangareader.sr.SrPipeline.sessionHasBatch ||
                             com.mangareader.sr.SrUiState.compareActive.value ||
@@ -3257,7 +3260,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                         showCompare = com.mangareader.sr.SrUiState.scope.intValue > 0 || com.mangareader.sr.SrPipeline.sessionHasBatch,
                         compareActive = com.mangareader.sr.SrUiState.compareActive.value,
                         pageBookmarked = pageBookmarked,
-                        showPanelGuide = panelGuideUsable || panelGuideActive,
+                        showPanelGuide = true,
                         panelGuideActive = panelGuideActive,
                         onPanelGuide = { showPanelGuideSheet = true },
                         onBack = ::goBack,
@@ -3395,6 +3398,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             confirmButton = {
                 TextButton(onClick = {
                     val pwd = passwordInput
+                    android.util.Log.d("Reader", "密码弹窗解锁按钮: pwdLen=${pwd.length} deferred=${if (passwordDeferred != null) "non-null" else "null"}")
                     passwordInput = ""
                     passwordDeferred?.complete(pwd)
                 }) { Text("解锁") }

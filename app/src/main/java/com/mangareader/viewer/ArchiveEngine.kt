@@ -3263,22 +3263,33 @@ class ArchiveEngine(private val ctx: Context) {
                     }
                 }
                 val provider = zipPasswdProvider
+                synchronized(debugLogBuffer) { debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: provider=${if (provider != null) "non-null" else "null"}") }
+                flushLog(ctx)
                 if (provider != null) {
                     try {
                         val pwd = kotlinx.coroutines.runBlocking {
                             provider { p ->
-                                com.mangareader.native.NativeEngine.setZipPassword(cacheKey, p)
+                                val setResult = com.mangareader.native.NativeEngine.setZipPassword(cacheKey, p)
                                 val r = com.mangareader.native.NativeEngine.readZipEntry(cacheKey, zipIdx)
+                                synchronized(debugLogBuffer) { debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: passwd test setResult=$setResult readSize=${r?.size ?: "null"}") }
+                                flushLog(ctx)
                                 r != null && r.isNotEmpty()
                             }
                         }
+                        synchronized(debugLogBuffer) { debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: provider returned pwd=${if (pwd != null) "non-null(len=${pwd.length})" else "null"}") }
+                        flushLog(ctx)
                         if (pwd != null) {
                             com.hippo.ehviewer.Settings.archivePasswds += pwd
                             com.hippo.ehviewer.Settings.archivePasswdFront = pwd
                             val r = com.mangareader.native.NativeEngine.readZipEntry(cacheKey, zipIdx)
-                            if (r != null && r.isNotEmpty()) { flushLog(ctx); return r }
+                            synchronized(debugLogBuffer) { debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: final readZipEntry ${r?.size ?: "null"} bytes") }
+                            flushLog(ctx)
+                            if (r != null && r.isNotEmpty()) { return r }
                         }
-                    } catch (_: Exception) {}
+                    } catch (e: Exception) {
+                        synchronized(debugLogBuffer) { debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: provider exception: ${e.message}") }
+                        flushLog(ctx)
+                    }
                 }
             } else {
                 synchronized(debugLogBuffer) { debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: findZipImageEntry=-1, trying fallbacks") }

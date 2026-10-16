@@ -1694,7 +1694,7 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
             LazyRow(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 val visibleFilters = FilterMode.entries.filter { f ->
                     when (f) {
-                        FilterMode.ALL -> true
+                        FilterMode.ALL -> !prefs.getBoolean("hide_filter_all", false)
                         FilterMode.READING -> !prefs.getBoolean("hide_filter_reading", false)
                         FilterMode.UNREAD -> !prefs.getBoolean("hide_filter_unread", false)
                         FilterMode.FINISHED -> !prefs.getBoolean("hide_filter_finished", false)

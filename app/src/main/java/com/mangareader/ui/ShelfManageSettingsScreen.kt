@@ -71,28 +71,32 @@ fun ShelfManageSettingsScreen(onBack: () -> Unit) {
 
             // ===== 隐藏初始书架 =====
             SettingsCard(Icons.Default.VisibilityOff, "隐藏初始书架") {
-                Text("勾选后首页筛选栏不显示该标签，让自建书架往前排", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("取消勾选可隐藏首页筛选标签，让自建书架往前排", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.height(8.dp))
                 val filterPrefs = ctx.getSharedPreferences("manga_reader", Context.MODE_PRIVATE)
+                var showAll by remember { mutableStateOf(!filterPrefs.getBoolean("hide_filter_all", false)) }
                 var showReading by remember { mutableStateOf(!filterPrefs.getBoolean("hide_filter_reading", false)) }
                 var showUnread by remember { mutableStateOf(!filterPrefs.getBoolean("hide_filter_unread", false)) }
                 var showFinished by remember { mutableStateOf(!filterPrefs.getBoolean("hide_filter_finished", false)) }
                 var showFav by remember { mutableStateOf(!filterPrefs.getBoolean("hide_filter_fav", false)) }
-                Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = showReading, onCheckedChange = { showReading = it; filterPrefs.edit().putBoolean("hide_filter_reading", !it).apply() }, modifier = Modifier.size(32.dp))
-                    Text("阅读中", fontSize = 13.sp)
-                }
-                Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = showUnread, onCheckedChange = { showUnread = it; filterPrefs.edit().putBoolean("hide_filter_unread", !it).apply() }, modifier = Modifier.size(32.dp))
-                    Text("未读", fontSize = 13.sp)
-                }
-                Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = showFinished, onCheckedChange = { showFinished = it; filterPrefs.edit().putBoolean("hide_filter_finished", !it).apply() }, modifier = Modifier.size(32.dp))
-                    Text("已读完", fontSize = 13.sp)
-                }
-                Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = showFav, onCheckedChange = { showFav = it; filterPrefs.edit().putBoolean("hide_filter_fav", !it).apply() }, modifier = Modifier.size(32.dp))
-                    Text("收藏", fontSize = 13.sp)
+                val toggles = listOf(
+                    "全部" to showAll to { v: Boolean -> showAll = v; filterPrefs.edit().putBoolean("hide_filter_all", !v).apply() },
+                    "阅读中" to showReading to { v: Boolean -> showReading = v; filterPrefs.edit().putBoolean("hide_filter_reading", !v).apply() },
+                    "未读" to showUnread to { v: Boolean -> showUnread = v; filterPrefs.edit().putBoolean("hide_filter_unread", !v).apply() },
+                    "已读完" to showFinished to { v: Boolean -> showFinished = v; filterPrefs.edit().putBoolean("hide_filter_finished", !v).apply() },
+                    "收藏" to showFav to { v: Boolean -> showFav = v; filterPrefs.edit().putBoolean("hide_filter_fav", !v).apply() },
+                )
+                for (i in toggles.indices step 2) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        for (j in i until minOf(i + 2, toggles.size)) {
+                            val (pair, onChange) = toggles[j]
+                            val (label, checked) = pair
+                            Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(checked = checked, onCheckedChange = onChange, modifier = Modifier.size(32.dp))
+                                Text(label, fontSize = 13.sp)
+                            }
+                        }
+                    }
                 }
             }
 
