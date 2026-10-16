@@ -1692,8 +1692,17 @@ fun Library(openBook: (Long, String?) -> Unit, toggleTheme: () -> Unit, onSettin
                 }
             }
             LazyRow(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(FilterMode.entries.size) { i ->
-                    val f = FilterMode.entries[i]
+                val visibleFilters = FilterMode.entries.filter { f ->
+                    when (f) {
+                        FilterMode.ALL -> true
+                        FilterMode.READING -> !prefs.getBoolean("hide_filter_reading", false)
+                        FilterMode.UNREAD -> !prefs.getBoolean("hide_filter_unread", false)
+                        FilterMode.FINISHED -> !prefs.getBoolean("hide_filter_finished", false)
+                        FilterMode.FAV -> !prefs.getBoolean("hide_filter_fav", false)
+                    }
+                }
+                items(visibleFilters.size) { i ->
+                    val f = visibleFilters[i]
                     FilterChip(selected = filter == f && selectedShelfId == null, onClick = {
                         filter = f
                         prefs.edit().putString("library_filter", f.name).apply()

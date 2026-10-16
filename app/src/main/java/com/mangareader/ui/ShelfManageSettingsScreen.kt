@@ -69,6 +69,33 @@ fun ShelfManageSettingsScreen(onBack: () -> Unit) {
                 }
             }
 
+            // ===== 隐藏初始书架 =====
+            SettingsCard(Icons.Default.VisibilityOff, "隐藏初始书架") {
+                Text("勾选后首页筛选栏不显示该标签，让自建书架往前排", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(8.dp))
+                val filterPrefs = ctx.getSharedPreferences("manga_reader", Context.MODE_PRIVATE)
+                var showReading by remember { mutableStateOf(!filterPrefs.getBoolean("hide_filter_reading", false)) }
+                var showUnread by remember { mutableStateOf(!filterPrefs.getBoolean("hide_filter_unread", false)) }
+                var showFinished by remember { mutableStateOf(!filterPrefs.getBoolean("hide_filter_finished", false)) }
+                var showFav by remember { mutableStateOf(!filterPrefs.getBoolean("hide_filter_fav", false)) }
+                Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = showReading, onCheckedChange = { showReading = it; filterPrefs.edit().putBoolean("hide_filter_reading", !it).apply() }, modifier = Modifier.size(32.dp))
+                    Text("阅读中", fontSize = 13.sp)
+                }
+                Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = showUnread, onCheckedChange = { showUnread = it; filterPrefs.edit().putBoolean("hide_filter_unread", !it).apply() }, modifier = Modifier.size(32.dp))
+                    Text("未读", fontSize = 13.sp)
+                }
+                Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = showFinished, onCheckedChange = { showFinished = it; filterPrefs.edit().putBoolean("hide_filter_finished", !it).apply() }, modifier = Modifier.size(32.dp))
+                    Text("已读完", fontSize = 13.sp)
+                }
+                Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = showFav, onCheckedChange = { showFav = it; filterPrefs.edit().putBoolean("hide_filter_fav", !it).apply() }, modifier = Modifier.size(32.dp))
+                    Text("收藏", fontSize = 13.sp)
+                }
+            }
+
             // ===== 自动打标签 =====
             SettingsCard(Icons.Default.Sell, "自动打标签") {
                 Text("勾选后导入的书会按这些字段自动打上标签。\n「系列」写入书籍信息，书架里同系列自动合并显示 N 卷", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
