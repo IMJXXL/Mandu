@@ -96,6 +96,22 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
     // ★ 2026-10-12 问题4 灰页自愈：失败/被取消的加载按 idx 计数的延时重载（限次防坏页空转）
     private val grayRetryCounts = java.util.concurrent.ConcurrentHashMap<Int, Int>()
     private val decodeGate = Semaphore(4)
+    private val activeJobs = java.util.concurrent.ConcurrentHashMap<Int, MutableSet<kotlinx.coroutines.Job>>()
+    private fun registerLoadJob(idx: Int, job: kotlinx.coroutines.Job): kotlinx.coroutines.Job {
+        activeJobs.getOrPut(idx) { java.util.Collections.synchronizedSet(HashSet()) }.add(job)
+        job.invokeOnCompletion { activeJobs[idx]?.let { it.remove(job); if (it.isEmpty()) activeJobs.remove(idx, it) } }
+        return job
+    }
+    private fun cancelDistantLoads(center: Int, keep: Int = 5) {
+        val it = activeJobs.entries.iterator()
+        while (it.hasNext()) {
+            val e = it.next()
+            if (abs(e.key - center) > keep) {
+                e.value.forEach { j -> j.cancel() }
+                it.remove()
+            }
+        }
+    }
     private var pageList: List<ArchiveEngine.PageMeta> = emptyList()
     private var currentPage = 0
 
@@ -303,7 +319,7 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
                 if (f != RecyclerView.NO_POSITION) pendingAnchorSp = f
                 isSettleWindowActive = false
                 updatePage()
-                loadScope.coroutineContext.cancelChildren()
+                cancelDistantLoads(currentPage)
                 preloadAround(currentPage, jump = false)
                 diagMark("deferred user-takeover f=$f")
                 return@Runnable
@@ -680,7 +696,7 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
                         recycler.removeCallbacks(settleWindowRunnable)
                         isSettleWindowActive = false
                         updatePage()
-                        loadScope.coroutineContext.cancelChildren()
+                        cancelDistantLoads(currentPage)
                         preloadAround(currentPage, jump = false)
                         return
                     }
@@ -692,7 +708,7 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
                         return
                     }
                     updatePage()
-                    loadScope.coroutineContext.cancelChildren()
+                    cancelDistantLoads(currentPage)
                     preloadAround(currentPage, jump = false)
                 }
             }
@@ -1084,7 +1100,7 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
         }
         val sm = maxOf(width, height).takeIf { it > 1 }
             ?: maxOf(context.resources.displayMetrics.widthPixels, context.resources.displayMetrics.heightPixels)
-        loadScope.launch {
+        registerLoadJob(idx, loadScope.launch {
             try {
             // ★ 段页不走 tile：tile 按「整图文件+区域」渲染，不认识 segmentIndex，会显示错误区域；
             //   宽图二分半页（splitSide）同理——tile 整图渲染会漏掉裁半（2026-10-02）
@@ -1163,7 +1179,7 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
             } finally {
                 if (myPitTs != -1L && inflightLoads[idx] == myPitTs) inflightLoads.remove(idx)
             }
-        }
+        })
     }
 
     /** ★ 2026-10-12 问题4 灰页自愈：加载失败/渲染链被取消的页，800ms 后缓存仍空则重载。
@@ -1235,15 +1251,8 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
             val bwd = currentPage - i
             if (bwd in pageList.indices && bwd !in loadList) loadList.add(bwd)
         }
-        loadScope.launch {
-            // ★ 分批并发（2026-09-26）：串行解码 ±6 项窗口需 3s+，滑动永远追不上。
-            //   按渲染槽数分批并行（ArchiveEngine renderSlot=4），段窗口 <1s 填满；
-            //   引擎层 inflightSegments 去重防重复渲染。
-            kotlinx.coroutines.coroutineScope {
-                for (batch in loadList.chunked(4)) {
-                    batch.map { idx -> async { preloadOne(idx) } }.awaitAll()
-                }
-            }
+        loadList.forEach { idx ->
+            registerLoadJob(idx, loadScope.launch { preloadOne(idx) })
         }
     }
 
@@ -1303,7 +1312,7 @@ class WebtoonReaderView(context: Context) : FrameLayout(context), ReaderViewDele
         } catch (ce: kotlinx.coroutines.CancellationException) {
             ArchiveEngine.w("WebtoonRV", "preload CANCELLED idx=$idx（预载被取消）")
             scheduleGrayRetry(idx)
-            throw ce
+
         } finally {
             if (inflightLoads[idx] == nowTs) inflightLoads.remove(idx)
         }
