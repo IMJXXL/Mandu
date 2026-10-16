@@ -181,6 +181,17 @@ object ReaderPrefMigration {
         }
     }
 
+    fun zoomStartDefaultCenterIfNeeded(prefs: SharedPreferences) {
+        if (prefs.getBoolean("zoom_start_v2_done", false)) return
+        synchronized(ReaderPrefMigration) {
+            if (prefs.getBoolean("zoom_start_v2_done", false)) return
+            if (prefs.contains("zoomStart") && prefs.getInt("zoomStart", 2) == 0) {
+                prefs.edit().putInt("zoomStart", 2).apply()
+            }
+            prefs.edit().putBoolean("zoom_start_v2_done", true).apply()
+        }
+    }
+
     /** 回滚：从最近一份快照恢复 book_* 键（当前不在快照内的 book_ 键删除） */
     fun restoreLatestSnapshot(context: Context): Boolean {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)

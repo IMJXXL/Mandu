@@ -128,6 +128,9 @@ class App : Application(), SingletonImageLoader.Factory {
                 ReaderPrefMigration.tapZoneRelocateIfNeeded(
                     getSharedPreferences("manga_reader", MODE_PRIVATE)
                 )
+                ReaderPrefMigration.zoomStartDefaultCenterIfNeeded(
+                    getSharedPreferences("manga_reader", MODE_PRIVATE)
+                )
             }
         }
         try { System.loadLibrary("archive_stream") } catch (_: Throwable) {}

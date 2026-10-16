@@ -74,7 +74,7 @@ data class ReaderConfig(
     //   横滑直接翻页（原"适应宽度"对竖图纵向溢出，横屏体验差）。动过此设置的用户不受影响
     val imageScaleMode: Int = 0,
     /** 缩放起始位置（mihon zoomStart）：0=自动(跟随阅读方向,RTL→右缘) 1=左 2=中 3=右；横向留白/宽图放大后对齐此缘 */
-    val zoomStart: Int = 0,
+    val zoomStart: Int = 2,
     val panNavigation: Boolean = true,
     val doublePageShift: Int = 0,
     val doublePageSplit: Boolean = false,
@@ -365,7 +365,7 @@ data class ReaderConfig(
                 landscapeZoom = rBoolean("landscapeZoom", false),
                 isDoubleTapZoom = rBoolean("isDoubleTapZoom", true),
                 imageScaleMode = rInt("imageScaleMode", 0).let { if (it in 0..5) it else 0 },   // 0..5 与 ScalePlan 档位一致（mihon 六档）
-                zoomStart = rInt("zoomStart", 0).let { if (it in 0..3) it else 0 },             // 0..3 与 ScalePlan zoomStart 一致
+                zoomStart = rInt("zoomStart", 2).let { if (it in 0..3) it else 2 },             // 0..3 与 ScalePlan zoomStart 一致
                 panNavigation = rBoolean("panNavigation", true),
                 doublePageShift = rInt("doublePageShift", 0),
                 doublePageSplit = rBoolean("doublePageSplit", false),

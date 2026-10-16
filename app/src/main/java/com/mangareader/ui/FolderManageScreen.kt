@@ -67,7 +67,7 @@ fun FolderManageScreen(onBack: () -> Unit) {
     var showSettings by remember { mutableStateOf(false) }
     var showArchivePassword by remember { mutableStateOf(false) }
     var archivePasswds by remember { mutableStateOf(Settings.archivePasswds) }
-    BackHandler { if (showArchivePassword) showArchivePassword = false else if (showSettings) showSettings = false else onBack() }
+    BackHandler { if (showBuiltInBrowser) showBuiltInBrowser = false else if (showFilePickerOptions) showFilePickerOptions = false else if (showArchivePassword) showArchivePassword = false else if (showSettings) showSettings = false else onBack() }
     val ctx = LocalContext.current
     val app = ctx.applicationContext as App
     val dao = remember { app.db.mangaDao() }
@@ -90,6 +90,9 @@ fun FolderManageScreen(onBack: () -> Unit) {
     var folderTagsWithCounts by remember { mutableStateOf(listOf<com.mangareader.data.TagWithCount>()) }
     var verifyZipContent by remember { mutableStateOf(prefs.getBoolean("scan_verify_zip_content", false)) }
     var autoRefresh by remember { mutableStateOf(prefs.getBoolean("auto_refresh", false)) }
+    var showFilePickerOptions by remember { mutableStateOf(false) }
+    var showBuiltInBrowser by remember { mutableStateOf(false) }
+    var alwaysShowBrowser by remember { mutableStateOf(prefs.getBoolean("always_show_builtin_browser", false)) }
 
 
     LaunchedEffect(folders) {
@@ -145,7 +148,13 @@ fun FolderManageScreen(onBack: () -> Unit) {
                     IconButton(onClick = { showSettings = true }) {
                         Icon(Icons.Default.Settings, "本地漫画设置")
                     }
-                    IconButton(onClick = { picker.launch(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply { putExtra("android.content.extra.SHOW_ADVANCED", true) }) }) {
+                    IconButton(onClick = {
+                        if (alwaysShowBrowser || com.mangareader.ui.StorageUriHelper.hasMultipleStorageVolumes()) {
+                            showFilePickerOptions = true
+                        } else {
+                            picker.launch(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply { putExtra("android.content.extra.SHOW_ADVANCED", true) })
+                        }
+                    }) {
                         Icon(Icons.Default.Add, "导入文件夹")
                     }
                 }
@@ -472,6 +481,16 @@ fun FolderManageScreen(onBack: () -> Unit) {
                             prefs.edit().putBoolean("t2s_enabled", v).apply()
                         })
                     }
+                    Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("始终显示内置文件浏览", fontSize = 16.sp)
+                            Text("开启后导入文件夹时始终显示内置文件浏览选项；关闭时仅检测到多个存储卷才显示", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(checked = alwaysShowBrowser, onCheckedChange = { v ->
+                            alwaysShowBrowser = v
+                            prefs.edit().putBoolean("always_show_builtin_browser", v).apply()
+                        })
+                    }
                     // ★ 批量应用：对已入库的书按文件名重新解析改名（解决老书/当时没勾选的情况）
                     var showRetitle by remember { mutableStateOf(false) }
                     TextButton(onClick = { showRetitle = true }) {
@@ -550,5 +569,64 @@ fun FolderManageScreen(onBack: () -> Unit) {
     }
     if (showArchivePassword) {
         ArchivePasswordScreen(onBack = { showArchivePassword = false; archivePasswds = Settings.archivePasswds })
+    }
+    if (showFilePickerOptions) {
+        ModalBottomSheet(onDismissRequest = { showFilePickerOptions = false }) {
+            Column(Modifier.padding(16.dp)) {
+                Text("选择文件夹", fontSize = 18.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(bottom = 12.dp))
+                ListItem(
+                    modifier = Modifier.clickable {
+                        showFilePickerOptions = false
+                        picker.launch(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply { putExtra("android.content.extra.SHOW_ADVANCED", true) })
+                    },
+                    headlineContent = { Text("系统文件管理器") },
+                    supportingContent = { Text("使用系统自带的文件选择器") },
+                    leadingContent = { Icon(Icons.Default.Folder, null) }
+                )
+                ListItem(
+                    modifier = Modifier.clickable {
+                        showFilePickerOptions = false
+                        showBuiltInBrowser = true
+                    },
+                    headlineContent = { Text("内置文件浏览") },
+                    supportingContent = { Text("直接浏览存储目录，可访问系统选择器不显示的存储") },
+                    leadingContent = { Icon(Icons.Default.Search, null) }
+                )
+            }
+        }
+    }
+    if (showBuiltInBrowser) {
+        BuiltInFileBrowserScreen(
+            onBack = { showBuiltInBrowser = false },
+            onSelect = { selectedFile ->
+                showBuiltInBrowser = false
+                scope.launch {
+                    val treeUri = withContext(Dispatchers.IO) { com.mangareader.ui.StorageUriHelper.fileToSafTreeUri(selectedFile) }
+                    if (treeUri == null) {
+                        Toast.makeText(ctx, "无法转换路径: ${selectedFile.absolutePath}", Toast.LENGTH_LONG).show()
+                        return@launch
+                    }
+                    val isDup = withContext(Dispatchers.IO) {
+                        folders.any { f ->
+                            val existingUri = android.net.Uri.parse(f.treeUri)
+                            val existingAuth = existingUri.authority ?: ""
+                            val existingDocId = android.net.Uri.decode(existingUri.lastPathSegment ?: "").removePrefix("tree:")
+                            val newAuth = treeUri.authority ?: ""
+                            val newDocId = android.net.Uri.decode(treeUri.lastPathSegment ?: "").removePrefix("tree:")
+                            "a:$existingAuth|$existingDocId" == "a:$newAuth|$newDocId"
+                        }
+                    }
+                    if (isDup) {
+                        Toast.makeText(ctx, "该文件夹已导入", Toast.LENGTH_SHORT).show()
+                        return@launch
+                    }
+                    try { ctx.contentResolver.takePersistableUriPermission(treeUri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION) } catch (_: Exception) {}
+                    scanning = true; scanTarget = "扫描中…"; scanCount = 0
+                    val n = withContext(Dispatchers.IO) { scanner.scanAndCommit(treeUri) { count -> scanCount = count } }
+                    scanning = false
+                    Toast.makeText(ctx, if (n > 0) "导入成功，共 $n 本漫画，封面后台加载中" else "未找到漫画文件", Toast.LENGTH_SHORT).show()
+                }
+            }
+        )
     }
 }

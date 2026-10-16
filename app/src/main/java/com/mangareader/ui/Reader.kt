@@ -590,6 +590,8 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         if (progressIsExpandedTable(list)) (list.getOrNull(curIdx)?.originalPageIdx ?: curIdx) else curIdx
     fun progressHalfSide(list: List<com.mangareader.viewer.ArchiveEngine.PageMeta>, curIdx: Int, viewHalfRight: Boolean): Boolean =
         if (progressIsExpandedTable(list)) (list.getOrNull(curIdx)?.splitSide == 3 - progressFirstSplitSide()) else viewHalfRight
+    fun progressSegmentIndex(list: List<com.mangareader.viewer.ArchiveEngine.PageMeta>, curIdx: Int): Int =
+        if (progressIsExpandedTable(list)) (list.getOrNull(curIdx)?.segmentIndex ?: 0) else 0
 
     // ★ 3+5 改动4：扩展 onDispose 兜底 save —— 与 goBack() 的 save() 互补。
     //   场景：用户按 Home 键离开后系统回收 Activity、或非 goBack 路径退出 Reader 时，
@@ -621,6 +623,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                 //   旧版这里写展开流位 curSnap，恢复块按物理页解释 → 拆分书彻底退出重进向前跳页
                 val savedPageSnap = progressPhysicalPage(pageListSnap, curSnap)
                 val halfRightSnap = progressHalfSide(pageListSnap, curSnap, viewHalfRightSnap)
+                val segIdxSnap = progressSegmentIndex(pageListSnap, curSnap)
                 app.appScope.launch {
                     try {
                         val history = ReadingHistory(
@@ -631,6 +634,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                             dao.saveReaderProgressBatch(b.id, savedPageSnap + 1, now, chPathSnap, savedPageSnap, done, history, effectiveSize)
                             // ★ 半页位补写（splitHalfRight 是纯字段，release 后读取安全）
                             runCatching { dao.updateProgressHalfRight(b.id, chPathSnap, halfRightSnap, now) }
+                            runCatching { dao.updateProgressSegmentIndex(b.id, chPathSnap, segIdxSnap, now) }
                         }
                         syncBookStatusFromProgress(b, now, effectiveSize)
                     } catch (_: Exception) {}
@@ -661,6 +665,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         //   ★ B1（2026-10-04）：换算收口到 progressPhysicalPage/progressHalfSide，与 onDispose 共用
         val savedPage = progressPhysicalPage(pageListSnap, curSnap)
         val halfRight = progressHalfSide(pageListSnap, curSnap, viewHalfRight)
+        val segIdx = progressSegmentIndex(pageListSnap, curSnap)
         val chPathSnap = com.mangareader.data.RemotePaths.normalizeBookKey(navStack.lastOrNull() ?: b.filePath)
         val now = System.currentTimeMillis()
         val effectiveSize = if (expandedPageCount > 0) expandedPageCount else pageListSnap.size
@@ -702,6 +707,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
                     dao.saveReaderProgressBatch(b.id, savedPage + 1, now, chPathSnap, savedPage, done, history, effectiveSize)
                     // ★ 半页位补写（同事务外单条 UPDATE；lastPage 两半同值，halfRight 区分右半）
                     runCatching { dao.updateProgressHalfRight(b.id, chPathSnap, halfRight, now) }
+                    runCatching { dao.updateProgressSegmentIndex(b.id, chPathSnap, segIdx, now) }
                 }
                 syncBookStatusFromProgress(b, now, effectiveSize)
             } catch (_: Exception) {
@@ -1524,7 +1530,10 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         if (restoreHalf) {
             val firstSide = if (!(isRtl != config.doublePageReverse)) 1 else 2
             val wantSide = if (progress.halfRight) 3 - firstSide else firstSide
-            val mapped = expandedPages.indexOfFirst { it.originalPageIdx == cur && it.splitSide == wantSide }
+            val savedSeg = progress.segmentIndex
+            val mapped = expandedPages.indexOfFirst { it.originalPageIdx == cur && it.splitSide == wantSide && it.segmentIndex == savedSeg }
+                .takeIf { it >= 0 }
+                ?: expandedPages.indexOfFirst { it.originalPageIdx == cur && it.segmentIndex == savedSeg }
                 .takeIf { it >= 0 }
                 ?: expandedPages.indexOfFirst { it.originalPageIdx == cur }
             if (mapped >= 0) cur = mapped

@@ -35,7 +35,7 @@ object ScalePlan {
     const val ZOOM_LEFT = 1
     const val ZOOM_CENTER = 2
     const val ZOOM_RIGHT = 3
-    const val ZOOM_DEFAULT = ZOOM_AUTO
+    const val ZOOM_DEFAULT = ZOOM_CENTER
     fun isValidZoomStart(z: Int) = z in ZOOM_AUTO..ZOOM_RIGHT
 
     /**

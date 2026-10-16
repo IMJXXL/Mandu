@@ -191,7 +191,9 @@ data class ReadingProgress(
     // ★ 拆分双页半页位（2026-10-04）：lastPage 存的是原页号（左右半同值），此标记区分
     //   看到的是右半——恢复时精确落回看过的那半页，不再恒落左半（顺序错乱感）
     @ColumnInfo(defaultValue = "0")
-    val halfRight: Boolean = false
+    val halfRight: Boolean = false,
+    @ColumnInfo(defaultValue = "0")
+    val segmentIndex: Int = 0
 )
 
 /**
@@ -910,6 +912,9 @@ interface MangaDao {
     /** ★ 拆分双页半页位（2026-10-04）：save 主流程后单独补写——lastPage 两半同值，此列区分右半 */
     @Query("UPDATE reading_progress SET halfRight = :halfRight, updatedAt = :updatedAt WHERE bookId = :bookId AND path = :path")
     suspend fun updateProgressHalfRight(bookId: Long, path: String, halfRight: Boolean, updatedAt: Long)
+
+    @Query("UPDATE reading_progress SET segmentIndex = :segmentIndex, updatedAt = :updatedAt WHERE bookId = :bookId AND path = :path")
+    suspend fun updateProgressSegmentIndex(bookId: Long, path: String, segmentIndex: Int, updatedAt: Long)
 
     // ★ 3+5 改动2：@Transaction 批量保存阅读进度——把 updateReadingProgress + upsertProgress + insertHistory
     //   三条写入打包在单个事务内，save/兜底 save 共用此方法。@Transaction 保证不读到半折叠状态。
@@ -1644,7 +1649,7 @@ abstract class MangaDatabase : com.ehviewer.core.database.LocalLibraryDatabase()
 
     companion object {
         /** ★ 数据库版本唯一事实源（注解与备份导出共用，防硬编码漂移） */
-        const val SCHEMA_VERSION = 30
+        const val SCHEMA_VERSION = 31
 
         @Volatile
         private var INSTANCE: MangaDatabase? = null
@@ -1970,6 +1975,12 @@ abstract class MangaDatabase : com.ehviewer.core.database.LocalLibraryDatabase()
             }
         }
 
+        private val MIGRATION_30_31 = object : androidx.room.migration.Migration(30, 31) {
+            override fun migrate(database: androidx.sqlite.db.SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE reading_progress ADD COLUMN segmentIndex INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         private val MIGRATION_23_24 = object : androidx.room.migration.Migration(23, 24) {
             override fun migrate(database: androidx.sqlite.db.SupportSQLiteDatabase) {
                 database.execSQL("ALTER TABLE tags ADD COLUMN sortOrder INTEGER NOT NULL DEFAULT 0")
@@ -2001,7 +2012,7 @@ abstract class MangaDatabase : com.ehviewer.core.database.LocalLibraryDatabase()
                     context.applicationContext,
                     MangaDatabase::class.java,
                     "manga_reader_db"
-                ).addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30)
+                ).addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31)
                 .fallbackToDestructiveMigrationOnDowngrade()
                 .build()
                 INSTANCE = instance

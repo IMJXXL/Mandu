@@ -165,7 +165,7 @@ class ConfigManager(private val context: Context) {
                 ambienceSound = json.optString("ambienceSound", ""),
                 ambienceVolume = json.optInt("ambienceVolume", 60),
                 imageScaleMode = json.optInt("imageScaleMode", 1).let { if (it in 0..4) it else 1 },
-                zoomStart = json.optInt("zoomStart", 0).let { if (it in 0..3) it else 0 },
+                zoomStart = json.optInt("zoomStart", 2).let { if (it in 0..3) it else 2 },
                 seamlessNextVolume = json.optBoolean("seamlessNextVolume", true),
                 tileModeEnabled = json.optBoolean("tileModeEnabled", false),
                 tallSplitEnabled = json.optBoolean("tallSplitEnabled", false),

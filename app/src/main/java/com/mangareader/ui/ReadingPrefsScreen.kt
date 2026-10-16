@@ -110,7 +110,7 @@ internal val PREF_DEFAULTS: Map<String, Any> = mapOf(
     "brightnessEnabled" to false, "screenBrightnessEnabled" to false, "contrastEnabled" to false, "gammaEnabled" to false,
     "textureEnabled" to false, "texturePresetId" to 0, "textureAlpha" to 15, "textureConcentration" to 100, "textureScope" to 0,
     "ambienceSound" to "", "ambienceVolume" to 60,
-    "imageScaleMode" to 0, "zoomStart" to 0, "seamlessNextVolume" to true, "tileModeEnabled" to false,
+    "imageScaleMode" to 0, "zoomStart" to 2, "seamlessNextVolume" to true, "tileModeEnabled" to false,
     "tallSplitEnabled" to false, "tallSplitSensitivity" to 0, "downsampleTier" to "STANDARD", "clickFlipType" to "LEFT_RIGHT",
     "scrollMode" to "HORIZONTAL_LEFT",
     "webtoon_tap_scroll_ratio" to 0.8f,
@@ -149,7 +149,7 @@ internal val PREF_ROWS: List<PrefRow> = listOf(
         listOf("适应屏幕" to 0, "拉伸" to 5, "适应宽度" to 1, "适应高度" to 2, "原始尺寸" to 3, "智能适应" to 4),
         info = "智能适应=小图不放大；拉伸=填满屏幕溢出裁边。条漫恒适应宽度；仿真/静态视图自动收敛：溢出类→适应宽度"
     ), section = "画面"),
-    PrefRow("zoomStart", "缩放起始位置", 0, PrefEditor.Chips(
+    PrefRow("zoomStart", "缩放起始位置", 2, PrefEditor.Chips(
         listOf("自动" to 0, "左" to 1, "中" to 2, "右" to 3),
         info = "横向有留白/宽图放大后对齐哪一侧；“自动”跟随阅读方向（日漫右开→右缘）"
     ), section = "画面"),

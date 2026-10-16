@@ -1,12 +1,16 @@
 package com.mangareader.ui
 
+import android.app.Activity
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
 import com.mangareader.ui.theme.*
 
 enum class AppTheme(val label: String) {
@@ -182,7 +186,6 @@ fun Theme(
     content: @Composable () -> Unit
 ) {
     val scheme = when {
-        // 自定义主色优先：独立于预设，直接按该颜色整体染色生成全套色板
         customPrimary != null -> tintedColorScheme(dark, customPrimary)
         dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             val ctx = LocalContext.current
@@ -191,6 +194,13 @@ fun Theme(
         else ->
             colorSchemes[appTheme]?.getColorScheme(dark, isAmoled)
                 ?: colorSchemes[AppTheme.BLUE]!!.getColorScheme(dark, isAmoled)
+    }
+    val view = LocalView.current
+    if (!view.isInEditMode) {
+        SideEffect {
+            val window = (view.context as Activity).window
+            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !dark
+        }
     }
     MaterialTheme(colorScheme = scheme, content = content)
 }
