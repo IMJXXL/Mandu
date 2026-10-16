@@ -420,6 +420,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         }
         error("unreachable")
     }
+    engine.zipPasswdProvider = archivePasswdProvider
 
     // ★ 远程供给挂接：视图随模式切换整体重建（key 五元组），这里响应式重挂到当前活跃视图
     LaunchedEffect(smbSession, activePagerRef, activeWebtoonRef) {

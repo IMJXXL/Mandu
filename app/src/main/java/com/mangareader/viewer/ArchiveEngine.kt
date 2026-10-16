@@ -199,6 +199,8 @@ class ArchiveEngine(private val ctx: Context) {
     @Volatile
     var scopeBookId: Long = -1L
 
+    var zipPasswdProvider: (suspend ((String) -> Boolean) -> String?)? = null
+
     private val isEink by lazy { config.isEinkMode }
     private val forceFullDecode: Boolean get() {
         val prefs = ctx.getSharedPreferences("manga_reader", android.content.Context.MODE_PRIVATE)
@@ -3245,6 +3247,39 @@ class ArchiveEngine(private val ctx: Context) {
                 val raw = com.mangareader.native.NativeEngine.readZipEntry(cacheKey, zipIdx)
                 synchronized(debugLogBuffer) { debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: readZipEntry ${raw?.size ?: 0} bytes") }
                 if (raw != null && raw.isNotEmpty()) { flushLog(ctx); return raw }
+                val front = com.hippo.ehviewer.Settings.archivePasswdFront
+                if (front.isNotEmpty() && front in com.hippo.ehviewer.Settings.archivePasswds) {
+                    com.mangareader.native.NativeEngine.setZipPassword(cacheKey, front)
+                    val r = com.mangareader.native.NativeEngine.readZipEntry(cacheKey, zipIdx)
+                    if (r != null && r.isNotEmpty()) { flushLog(ctx); return r }
+                }
+                for (pwd in com.hippo.ehviewer.Settings.archivePasswds) {
+                    if (pwd.isEmpty() || pwd == front) continue
+                    com.mangareader.native.NativeEngine.setZipPassword(cacheKey, pwd)
+                    val r = com.mangareader.native.NativeEngine.readZipEntry(cacheKey, zipIdx)
+                    if (r != null && r.isNotEmpty()) {
+                        com.hippo.ehviewer.Settings.archivePasswdFront = pwd
+                        flushLog(ctx); return r
+                    }
+                }
+                val provider = zipPasswdProvider
+                if (provider != null) {
+                    try {
+                        val pwd = kotlinx.coroutines.runBlocking {
+                            provider { p ->
+                                com.mangareader.native.NativeEngine.setZipPassword(cacheKey, p)
+                                val r = com.mangareader.native.NativeEngine.readZipEntry(cacheKey, zipIdx)
+                                r != null && r.isNotEmpty()
+                            }
+                        }
+                        if (pwd != null) {
+                            com.hippo.ehviewer.Settings.archivePasswds += pwd
+                            com.hippo.ehviewer.Settings.archivePasswdFront = pwd
+                            val r = com.mangareader.native.NativeEngine.readZipEntry(cacheKey, zipIdx)
+                            if (r != null && r.isNotEmpty()) { flushLog(ctx); return r }
+                        }
+                    } catch (_: Exception) {}
+                }
             } else {
                 synchronized(debugLogBuffer) { debugLogBuffer.appendLine("${System.currentTimeMillis()} loadFromZip: findZipImageEntry=-1, trying fallbacks") }
             }

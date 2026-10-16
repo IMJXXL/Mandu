@@ -492,6 +492,16 @@ Java_com_mangareader_native_NativeEngine_nativeFindZipEntryByName(JNIEnv* env, j
     return result;
 }
 
+JNIEXPORT jboolean JNICALL
+Java_com_mangareader_native_NativeEngine_nativeSetZipPassword(JNIEnv* env, jobject thiz, jstring path, jstring password) {
+    const char* cPath = env->GetStringUTFChars(path, nullptr);
+    const char* cPwd = env->GetStringUTFChars(password, nullptr);
+    bool result = LibzipWrapper::instance().setPassword(std::string(cPath), std::string(cPwd));
+    env->ReleaseStringUTFChars(path, cPath);
+    env->ReleaseStringUTFChars(password, cPwd);
+    return result ? JNI_TRUE : JNI_FALSE;
+}
+
 // ==================== MOBI 方法 ====================
 
 JNIEXPORT jbyteArray JNICALL

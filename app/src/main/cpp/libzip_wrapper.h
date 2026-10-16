@@ -30,6 +30,7 @@ public:
     void clearAll();
     std::vector<std::string> getAllEntryNames(const std::string& path);
     int findEntryByName(const std::string& path, const std::string& name);
+    bool setPassword(const std::string& path, const std::string& password);
 
 private:
     LibzipWrapper() = default;

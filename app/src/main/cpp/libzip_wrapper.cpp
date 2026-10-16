@@ -255,6 +255,13 @@ uint8_t* LibzipWrapper::readEntry(const std::string& path, int index, uint32_t* 
     return result;
 }
 
+bool LibzipWrapper::setPassword(const std::string& path, const std::string& password) {
+    std::lock_guard<std::mutex> lock(mutex);
+    auto it = handles.find(path);
+    if (it == handles.end()) return false;
+    return zip_set_default_password(it->second.za, password.c_str()) == 0;
+}
+
 std::vector<std::string> LibzipWrapper::getAllEntryNames(const std::string& path) {
     std::lock_guard<std::mutex> lock(mutex);
     auto it = handles.find(path);
