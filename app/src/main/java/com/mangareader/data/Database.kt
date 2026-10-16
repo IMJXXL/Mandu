@@ -374,14 +374,6 @@ interface MangaDao {
     @Query("DELETE FROM manga_books WHERE source = 'komga' AND filePath LIKE 'komga:' || :serverId || ':%'")
     suspend fun deleteKomgaBooks(serverId: String)
 
-    @Query("DELETE FROM manga_books WHERE source = 'quark'")
-    suspend fun deleteQuarkBooks()
-
-    @Query("DELETE FROM manga_books WHERE source = 'baidu'")
-    suspend fun deleteBaiduBooks()
-
-    @Query("DELETE FROM manga_books WHERE source = '115_official' OR source = '115_web'")
-    suspend fun delete115Books()
 
     @Query("DELETE FROM manga_books WHERE source = 'opds' AND filePath LIKE 'opds:' || :serverId || ':%'")
     suspend fun deleteOpdsBooks(serverId: String)
@@ -1638,18 +1630,17 @@ data class KomgaProgressSyncQueueEntity(
 )
 
 @Database(
-    entities = [Book::class, Folder::class, ReadingHistory::class, Bookshelf::class, BookshelfItem::class, Tag::class, TagLink::class, ReadingProgress::class, Bookmark::class, com.ehviewer.core.database.model.SmbSourceEntity::class, com.ehviewer.core.database.model.LibraryRootEntity::class, com.ehviewer.core.database.model.LocalGalleryEntity::class, com.ehviewer.core.database.model.WebDavSourceEntity::class, DownloadTaskEntity::class, KomgaSeriesCacheEntity::class, KomgaBookMemoEntity::class, KomgaProgressSyncQueueEntity::class, PageSoloFlag::class, com.ehviewer.core.database.model.CloudAccountEntity::class],
+    entities = [Book::class, Folder::class, ReadingHistory::class, Bookshelf::class, BookshelfItem::class, Tag::class, TagLink::class, ReadingProgress::class, Bookmark::class, com.ehviewer.core.database.model.SmbSourceEntity::class, com.ehviewer.core.database.model.LibraryRootEntity::class, com.ehviewer.core.database.model.LocalGalleryEntity::class, com.ehviewer.core.database.model.WebDavSourceEntity::class, DownloadTaskEntity::class, KomgaSeriesCacheEntity::class, KomgaBookMemoEntity::class, KomgaProgressSyncQueueEntity::class, PageSoloFlag::class],
     version = MangaDatabase.SCHEMA_VERSION,
     exportSchema = false
 )
 abstract class MangaDatabase : com.ehviewer.core.database.LocalLibraryDatabase() {
     abstract fun mangaDao(): MangaDao
     abstract override fun smbSourceDao(): com.ehviewer.core.database.dao.SmbSourceDao
-    abstract fun cloudAccountDao(): com.ehviewer.core.database.dao.CloudAccountDao
 
     companion object {
         /** ★ 数据库版本唯一事实源（注解与备份导出共用，防硬编码漂移） */
-        const val SCHEMA_VERSION = 31
+        const val SCHEMA_VERSION = 32
 
         @Volatile
         private var INSTANCE: MangaDatabase? = null
@@ -1981,6 +1972,13 @@ abstract class MangaDatabase : com.ehviewer.core.database.LocalLibraryDatabase()
             }
         }
 
+        private val MIGRATION_31_32 = object : androidx.room.migration.Migration(31, 32) {
+            override fun migrate(database: androidx.sqlite.db.SupportSQLiteDatabase) {
+                database.execSQL("DROP TABLE IF EXISTS CLOUD_ACCOUNTS")
+                database.execSQL("DELETE FROM manga_books WHERE source IN ('quark', 'baidu', '115_official', '115_web')")
+            }
+        }
+
         private val MIGRATION_23_24 = object : androidx.room.migration.Migration(23, 24) {
             override fun migrate(database: androidx.sqlite.db.SupportSQLiteDatabase) {
                 database.execSQL("ALTER TABLE tags ADD COLUMN sortOrder INTEGER NOT NULL DEFAULT 0")
@@ -2012,7 +2010,7 @@ abstract class MangaDatabase : com.ehviewer.core.database.LocalLibraryDatabase()
                     context.applicationContext,
                     MangaDatabase::class.java,
                     "manga_reader_db"
-                ).addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31)
+                ).addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32)
                 .fallbackToDestructiveMigrationOnDowngrade()
                 .build()
                 INSTANCE = instance

@@ -336,8 +336,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
     val isVerticalPagerMode = mode == Mode.VERT_PAGER
     // ★ 逐格入口可用性（与 NES begin 判定同源）：翻页族单页 + 非竖翻/瓦片/横屏自动双页/横屏自动条漫/仿真翻页。
     //   双页分割（pageLayout==0 下拆半页）可用——半页图直接检测；双页拼合（pageLayout 1/2）一期不支持。
-    val panelGuideUsable = (mode == Mode.FLIP || mode == Mode.RTL) &&
-        !isVerticalPagerMode &&
+    val panelGuideUsable = (mode == Mode.FLIP || mode == Mode.RTL || mode == Mode.VERT_PAGER) &&
         !config.tileModeEnabled &&
         config.pageLayout == com.mangareader.data.ReaderConfig.PageLayout.SINGLE &&
         !(config.autoDoubleLandscape && !config.doublePageSplit && LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE) &&
@@ -676,27 +675,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         saveJob?.cancel()
         saveJob = app.appScope.launch {
             try {
-                if (b.source == "quark") {
-                    withContext(Dispatchers.IO) {
-                        com.mangareader.quarkbridge.data.QuarkProgressStore(com.mangareader.quarkbridge.QuarkBridges.context)
-                            .saveProgress(chPathSnap, savedPage)
-                    }
-                    return@launch
-                }
-                if (b.source == "baidu") {
-                    withContext(Dispatchers.IO) {
-                        com.mangareader.baidubridge.data.BaiduProgressStore(com.mangareader.baidubridge.BaiduBridges.context)
-                            .saveProgress(chPathSnap, savedPage)
-                    }
-                    return@launch
-                }
-                if (b.source == "115_official" || b.source == "115_web") {
-                    withContext(Dispatchers.IO) {
-                        com.mangareader.bridge115.data.ProgressStore115(com.mangareader.bridge115.Bridges115.context)
-                            .saveProgress(chPathSnap, savedPage)
-                    }
-                    return@launch
-                }
+
                 val history = ReadingHistory(
                     bookId = b.id, pagesRead = savedPage + 1,
                     scrollX = cx, scrollY = cy, zoomLevel = zs
@@ -934,149 +913,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         }
     }
 
-    suspend fun enterQuarkReader(
-        b: com.mangareader.data.Book,
-        path: String,
-        targetPage: Int,
-    ): List<com.mangareader.viewer.ArchiveEngine.PageMeta> {
-        loading = true
-        smbUnsupportedInfo = null
-        try {
-            val quarkProgress = com.mangareader.quarkbridge.data.QuarkProgressStore(com.mangareader.quarkbridge.QuarkBridges.context).getProgress(path)
-            val saved = quarkProgress?.let {
-                com.mangareader.data.ReadingProgress(
-                    bookId = b.id, path = path, lastPage = it.lastPage,
-                    completed = false, updatedAt = it.updatedAt, totalPages = 0,
-                )
-            }
-            val resumePage = if (targetPage >= 0) targetPage else (quarkProgress?.lastPage ?: 0)
-            when (val r = com.mangareader.quarkbridge.reader.QuarkBookRouter.openQuarkBook(path, resumePage)) {
-                is com.mangareader.quarkbridge.reader.QuarkBookRouter.OpenResult.Supported -> {
-                    val supply = r.supply
-                    val metas = attachRemoteSession(supply, saved, targetPage, path)
-                    b.coverPath?.let { cvPath ->
-                        if (engine.loadCoverThumbBytes(cvPath) == null) {
-                            app.appScope.launch {
-                                try {
-                                    val bytes = withContext(Dispatchers.IO) { supply.loadPageRaw(0) }
-                                    if (bytes != null) {
-                                        engine.saveCoverThumbBytes(cvPath, bytes)
-                                    }
-                                } catch (_: Exception) {}
-                            }
-                        }
-                    }
-                    return metas
-                }
-                is com.mangareader.quarkbridge.reader.QuarkBookRouter.OpenResult.Failed -> {
-                    android.widget.Toast.makeText(ctx, r.message, android.widget.Toast.LENGTH_SHORT).show()
-                    viewing = false; loading = false; return emptyList()
-                }
-            }
-        } catch (t: Throwable) {
-            android.util.Log.w("Reader", "enterQuarkReader failed", t)
-            android.widget.Toast.makeText(ctx, "打开失败：${t.message?.take(80)}", android.widget.Toast.LENGTH_SHORT).show()
-            viewing = false
-            loading = false
-            return emptyList()
-        }
-    }
 
-    suspend fun enterBaiduReader(
-        b: com.mangareader.data.Book,
-        path: String,
-        targetPage: Int,
-    ): List<com.mangareader.viewer.ArchiveEngine.PageMeta> {
-        loading = true
-        smbUnsupportedInfo = null
-        try {
-            val baiduProgress = com.mangareader.baidubridge.data.BaiduProgressStore(com.mangareader.baidubridge.BaiduBridges.context).getProgress(path)
-            val saved = baiduProgress?.let {
-                com.mangareader.data.ReadingProgress(
-                    bookId = b.id, path = path, lastPage = it.lastPage,
-                    completed = false, updatedAt = it.updatedAt, totalPages = 0,
-                )
-            }
-            val resumePage = if (targetPage >= 0) targetPage else (baiduProgress?.lastPage ?: 0)
-            when (val r = com.mangareader.baidubridge.reader.BaiduBookRouter.openBaiduBook(path, resumePage)) {
-                is com.mangareader.baidubridge.reader.BaiduBookRouter.OpenResult.Supported -> {
-                    val supply = r.supply
-                    val metas = attachRemoteSession(supply, saved, targetPage, path)
-                    b.coverPath?.let { cvPath ->
-                        if (engine.loadCoverThumbBytes(cvPath) == null) {
-                            app.appScope.launch {
-                                try {
-                                    val bytes = withContext(Dispatchers.IO) { supply.loadPageRaw(0) }
-                                    if (bytes != null) {
-                                        engine.saveCoverThumbBytes(cvPath, bytes)
-                                    }
-                                } catch (_: Exception) {}
-                            }
-                        }
-                    }
-                    return metas
-                }
-                is com.mangareader.baidubridge.reader.BaiduBookRouter.OpenResult.Failed -> {
-                    android.widget.Toast.makeText(ctx, r.message, android.widget.Toast.LENGTH_SHORT).show()
-                    viewing = false; loading = false; return emptyList()
-                }
-            }
-        } catch (t: Throwable) {
-            android.util.Log.w("Reader", "enterBaiduReader failed", t)
-            android.widget.Toast.makeText(ctx, "打开失败：${t.message?.take(80)}", android.widget.Toast.LENGTH_SHORT).show()
-            viewing = false
-            loading = false
-            return emptyList()
-        }
-    }
-
-    suspend fun enter115Reader(
-        b: com.mangareader.data.Book,
-        path: String,
-        targetPage: Int,
-    ): List<com.mangareader.viewer.ArchiveEngine.PageMeta> {
-        loading = true
-        smbUnsupportedInfo = null
-        try {
-            val progress115 = com.mangareader.bridge115.data.ProgressStore115(com.mangareader.bridge115.Bridges115.context).getProgress(path)
-            val saved = progress115?.let {
-                com.mangareader.data.ReadingProgress(
-                    bookId = b.id, path = path, lastPage = it.lastPage,
-                    completed = false, updatedAt = it.updatedAt, totalPages = 0,
-                )
-            }
-            val resumePage = if (targetPage >= 0) targetPage else (progress115?.lastPage ?: 0)
-            when (val r = com.mangareader.bridge115.reader.Book115Router.open115Book(path, resumePage)) {
-                is com.mangareader.bridge115.reader.Book115Router.OpenResult.Supported -> {
-                    val supply = r.supply
-                    val metas = attachRemoteSession(supply, saved, targetPage, path)
-                    b.coverPath?.let { cvPath ->
-                        if (engine.loadCoverThumbBytes(cvPath) == null) {
-                            app.appScope.launch {
-                                try {
-                                    val bytes = withContext(Dispatchers.IO) { supply.loadPageRaw(0) }
-                                    if (bytes != null) {
-                                        engine.saveCoverThumbBytes(cvPath, bytes)
-                                    }
-                                } catch (_: Exception) {}
-                            }
-                        }
-                    }
-                    return metas
-                }
-                is com.mangareader.bridge115.reader.Book115Router.OpenResult.Failed -> {
-                    android.widget.Toast.makeText(ctx, r.message, android.widget.Toast.LENGTH_SHORT).show()
-                    viewing = false; loading = false; return emptyList()
-                }
-            }
-        } catch (t: Throwable) {
-            android.util.Log.w("Reader", "enter115Reader failed", t)
-            android.widget.Toast.makeText(ctx, "打开失败：${t.message?.take(80)}", android.widget.Toast.LENGTH_SHORT).show()
-            viewing = false
-            loading = false
-            return emptyList()
-        }
-    }
 
 
     /**
@@ -1313,11 +1150,6 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
 
         if (path.startsWith("komga:")) return enterKomgaReader(b, path, targetPage)
 
-        if (path.startsWith("quark:")) return enterQuarkReader(b, path, targetPage)
-
-        if (path.startsWith("baidu:")) return enterBaiduReader(b, path, targetPage)
-
-        if (path.startsWith("115:")) return enter115Reader(b, path, targetPage)
 
         if (path.startsWith("opds:")) return enterOpdsReader(b, path, targetPage)
 
@@ -1392,7 +1224,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
             isSwitching = false
             return emptyList()
         }
-        if (config.autoWebtoon && pages.size >= 2 && mode != Mode.VERT && mode != Mode.VERT_PAGER && mode != Mode.WEBTOON_GAP) {
+        if (config.autoWebtoon && pages.size >= 2 && pages.firstOrNull()?.source != "pdf" && mode != Mode.VERT && mode != Mode.VERT_PAGER && mode != Mode.WEBTOON_GAP) {
             val userSetMode = if (com.mangareader.data.ReaderScope.hasBookModeChoice(prefs, currentBookId)) 0 else -1
             if (userSetMode < 0) {
                 val treeStr = path
@@ -2490,27 +2322,7 @@ fun Reader(bookId: Long, jumpPath: String? = null, startPage: Int = -1, back: ()
         val now = System.currentTimeMillis()
         app.appScope.launch {
             try {
-                if (b.source == "quark") {
-                    withContext(Dispatchers.IO) {
-                        com.mangareader.quarkbridge.data.QuarkProgressStore(com.mangareader.quarkbridge.QuarkBridges.context)
-                            .saveProgress(chPathSnap, curPageCount - 1)
-                    }
-                    return@launch
-                }
-                if (b.source == "baidu") {
-                    withContext(Dispatchers.IO) {
-                        com.mangareader.baidubridge.data.BaiduProgressStore(com.mangareader.baidubridge.BaiduBridges.context)
-                            .saveProgress(chPathSnap, curPageCount - 1)
-                    }
-                    return@launch
-                }
-                if (b.source == "115_official" || b.source == "115_web") {
-                    withContext(Dispatchers.IO) {
-                        com.mangareader.bridge115.data.ProgressStore115(com.mangareader.bridge115.Bridges115.context)
-                            .saveProgress(chPathSnap, curPageCount - 1)
-                    }
-                    return@launch
-                }
+
                 withContext(Dispatchers.IO) {
                     dao.upsertProgress(b.id, chPathSnap, curPageCount - 1, true, now, curPageCount)
                 }

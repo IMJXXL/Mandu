@@ -237,8 +237,6 @@ dependencies {
     // AAR 已移除——其库在 K80 上 DSP 传输层建立失败（4000→14001），且会与本 jniLibs 的
     // 同名 2.50.0 库发生打包冲突，勿再引回。
 
-    // ZXing (QR code rendering for Quark login)
-    implementation("com.google.zxing:core:3.5.3")
 
     // Jsoup (EPUB OPF/XHTML parsing)
     implementation("org.jsoup:jsoup:1.22.2")
