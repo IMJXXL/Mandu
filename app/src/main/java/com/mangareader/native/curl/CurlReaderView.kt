@@ -348,6 +348,7 @@ class CurlReaderView(context: Context) : FrameLayout(context), ReaderViewDelegat
         loader.preloadAround(page, pageList.size) { idx ->
             reloadTrigger.intValue++
         }
+        onPageChanged?.invoke(page)
     }
 
     override fun release() {
